@@ -1,0 +1,830 @@
+<title>yt.flow — 디자인 방향</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #111111;
+  padding: 3rem 2rem 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.page-header {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #222;
+}
+
+.page-header-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #444;
+}
+
+.page-header-sub {
+  font-size: 12px;
+  color: #333;
+  margin-top: 6px;
+}
+
+.dir-block { max-width: 900px; margin: 0 auto; width: 100%; }
+
+.dir-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dir-letter {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #444;
+  letter-spacing: 0.1em;
+}
+
+.dir-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.dir-desc {
+  font-size: 12px;
+  color: #3A3A3A;
+}
+
+.browser {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.55);
+}
+
+.browser-bar {
+  background: #2A2A2A;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bdots { display: flex; gap: 5px; }
+
+.bdot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.bdot-r { background: #FF5F57; }
+.bdot-y { background: #FEBC2E; }
+.bdot-g { background: #28C840; }
+
+.burl {
+  flex: 1;
+  max-width: 220px;
+  margin: 0 auto;
+  background: #1A1A1A;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #4A4A4A;
+  text-align: center;
+}
+
+/* ==========================================================
+   DIRECTION A — Foundation Dossier (light)
+   ========================================================== */
+
+.da { background: #ECEAE6; }
+
+.da-nav {
+  background: #FFFFFF;
+  border-bottom: 1px solid #D6D2CC;
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.da-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #1C1C1A;
+}
+
+.da-logo-pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #B91C1C;
+  flex-shrink: 0;
+}
+
+.da-nav-r {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.da-nav-link {
+  font-size: 11px;
+  color: #8A8680;
+  cursor: pointer;
+}
+
+.da-cta {
+  background: #B91C1C;
+  color: #fff;
+  border: none;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.da-body { padding: 24px; }
+
+.da-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9A9690;
+  margin-bottom: 12px;
+}
+
+.da-table-wrap { overflow-x: auto; }
+
+.da-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #FFFFFF;
+  border: 1px solid #D6D2CC;
+  border-radius: 2px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.da-th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9A9690;
+  border-bottom: 1px solid #D6D2CC;
+  background: #F4F2EE;
+  white-space: nowrap;
+}
+
+.da-tr { border-bottom: 1px solid #EEECE8; }
+.da-tr:last-child { border-bottom: none; }
+
+.da-td {
+  padding: 14px 16px;
+  vertical-align: middle;
+  font-size: 13px;
+  color: #1C1C1A;
+}
+
+.da-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1C1C1A;
+}
+
+.da-title-sub { font-size: 11px; color: #8A8680; margin-top: 2px; }
+
+.da-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.da-badge-run  { background: #EBF3FB; color: #1D70A4; }
+.da-badge-wait { background: #FEF3E0; color: #9A5200; }
+.da-badge-done { background: #E8F5EE; color: #1A6940; }
+.da-badge-fail { background: #FBEAEA; color: #B91C1C; }
+
+.da-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.da-dot-run  { background: #1D70A4; }
+.da-dot-wait { background: #9A5200; }
+.da-dot-done { background: #1A6940; }
+.da-dot-fail { background: #B91C1C; }
+
+.da-stage {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #8A8680;
+}
+
+.da-time { font-size: 11px; color: #9A9690; white-space: nowrap; }
+
+.da-btn {
+  background: none;
+  border: 1px solid #D6D2CC;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: #6B6860;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: system-ui, sans-serif;
+}
+
+/* ==========================================================
+   DIRECTION B — Deep Monitor (dark)
+   ========================================================== */
+
+.db { background: #0C1117; }
+
+.db-nav {
+  background: #0F1924;
+  border-bottom: 1px solid #192638;
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+}
+
+.db-logo {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #E87C0C;
+}
+
+.db-logo-sep { color: #243648; font-weight: 400; }
+
+.db-nav-r {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.db-nav-link { font-size: 11px; color: #2E4A60; cursor: pointer; }
+
+.db-cta {
+  background: #E87C0C;
+  color: #0C1117;
+  border: none;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.db-body { padding: 24px; }
+
+.db-eyebrow {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #243648;
+  margin-bottom: 14px;
+}
+
+.db-table-wrap { overflow-x: auto; }
+
+.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-th {
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #243648;
+  border-bottom: 1px solid #192638;
+  white-space: nowrap;
+}
+
+.db-tr { border-bottom: 1px solid #131E2A; }
+.db-tr:last-child { border-bottom: none; }
+.db-tr:hover { background: #101820; }
+
+.db-td {
+  padding: 14px 14px;
+  vertical-align: middle;
+  font-size: 13px;
+  color: #C0D8EC;
+}
+
+.db-id {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: #E87C0C;
+  letter-spacing: 0.02em;
+}
+
+.db-title-sub { font-size: 11px; color: #2E4A60; margin-top: 2px; }
+
+.db-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.db-badge-run  { background: rgba(232,124,12,0.12); color: #E87C0C; }
+.db-badge-wait { background: rgba(74,152,220,0.12); color: #4A98DC; }
+.db-badge-done { background: rgba(48,180,100,0.12); color: #30B464; }
+.db-badge-fail { background: rgba(218,60,60,0.12); color: #DA3C3C; }
+
+.db-glow { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.db-glow-run  { background: #E87C0C; box-shadow: 0 0 5px rgba(232,124,12,0.8); }
+.db-glow-wait { background: #4A98DC; }
+.db-glow-done { background: #30B464; }
+.db-glow-fail { background: #DA3C3C; }
+
+.db-stage {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #2E4A60;
+}
+
+.db-time { font-size: 11px; color: #243648; white-space: nowrap; }
+
+.db-btn {
+  background: none;
+  border: 1px solid #192638;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: #2E4A60;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: system-ui, sans-serif;
+}
+
+/* ==========================================================
+   DIRECTION C — Zinc System (iOS-native dark)
+   ========================================================== */
+
+.dc { background: #1C1C1E; }
+
+.dc-nav {
+  background: #1C1C1E;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+}
+
+.dc-logo {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #F2F2F7;
+  letter-spacing: -0.02em;
+}
+
+.dc-logo-dot { color: #0A84FF; }
+
+.dc-nav-r {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dc-nav-link {
+  font-size: 13px;
+  color: #0A84FF;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.dc-cta {
+  background: #0A84FF;
+  color: #fff;
+  border: none;
+  padding: 7px 15px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.dc-body { padding: 20px 24px; }
+
+.dc-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  color: #636366;
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+.dc-list {
+  border-radius: 12px;
+  overflow: hidden;
+  background: #2C2C2E;
+}
+
+.dc-row {
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+
+.dc-row:last-child { border-bottom: none; }
+.dc-row:hover { background: #323234; }
+
+.dc-row-id-block { min-width: 88px; display: flex; flex-direction: column; gap: 2px; }
+
+.dc-row-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #F2F2F7;
+  letter-spacing: 0.01em;
+}
+
+.dc-row-name {
+  font-size: 11px;
+  color: #48484A;
+}
+
+.dc-row-mid { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+
+.dc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.dc-badge-run  { background: rgba(255,159,10,0.18); color: #FF9F0A; }
+.dc-badge-wait { background: rgba(191,90,242,0.18); color: #BF5AF2; }
+.dc-badge-done { background: rgba(48,209,88,0.18); color: #30D158; }
+.dc-badge-fail { background: rgba(255,69,58,0.18); color: #FF453A; }
+
+.dc-row-stage { font-size: 11px; color: #48484A; }
+
+.dc-row-time {
+  font-size: 12px;
+  color: #48484A;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dc-chevron { color: #3A3A3C; font-size: 14px; }
+</style>
+
+<div class="page-header">
+  <div class="page-header-title">yt.flow — 디자인 방향</div>
+  <div class="page-header-sub">같은 대시보드를 세 가지 시각 방향으로 적용한 비교 모형</div>
+</div>
+
+<!-- ===== DIRECTION A ===== -->
+<div class="dir-block">
+  <div class="dir-label">
+    <span class="dir-letter">A</span>
+    <span class="dir-name">Foundation Dossier</span>
+    <span class="dir-desc">기관 라이트 — SCP 격리-레드 액센트, 문서 원장 테이블, 테두리 위주 구조</span>
+  </div>
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="bdots">
+        <div class="bdot bdot-r"></div>
+        <div class="bdot bdot-y"></div>
+        <div class="bdot bdot-g"></div>
+      </div>
+      <div class="burl">localhost:8000</div>
+    </div>
+    <div class="da">
+      <nav class="da-nav">
+        <div class="da-logo">
+          <div class="da-logo-pip"></div>
+          yt.flow
+        </div>
+        <div class="da-nav-r">
+          <span class="da-nav-link">Langfuse ↗</span>
+          <button class="da-cta">+ 새 실행</button>
+        </div>
+      </nav>
+      <div class="da-body">
+        <div class="da-eyebrow">실행 목록</div>
+        <div class="da-table-wrap">
+          <table class="da-table">
+            <thead>
+              <tr>
+                <th class="da-th">실행</th>
+                <th class="da-th">상태</th>
+                <th class="da-th">현재 스테이지</th>
+                <th class="da-th">게이트</th>
+                <th class="da-th">시작</th>
+                <th class="da-th"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="da-tr">
+                <td class="da-td">
+                  <div class="da-id">SCP-096</div>
+                  <div class="da-title-sub">수줍음쟁이</div>
+                </td>
+                <td class="da-td">
+                  <span class="da-badge da-badge-run">
+                    <span class="da-dot da-dot-run"></span>실행 중
+                  </span>
+                </td>
+                <td class="da-td"><span class="da-stage">scenario</span></td>
+                <td class="da-td"><span class="da-dot da-dot-run"></span></td>
+                <td class="da-td"><span class="da-time">14분 전</span></td>
+                <td class="da-td"><button class="da-btn">열기</button></td>
+              </tr>
+              <tr class="da-tr">
+                <td class="da-td">
+                  <div class="da-id">SCP-173</div>
+                  <div class="da-title-sub">조각상</div>
+                </td>
+                <td class="da-td">
+                  <span class="da-badge da-badge-wait">
+                    <span class="da-dot da-dot-wait"></span>승인 대기
+                  </span>
+                </td>
+                <td class="da-td"><span class="da-stage">image</span></td>
+                <td class="da-td"><span class="da-dot da-dot-wait"></span></td>
+                <td class="da-td"><span class="da-time">2시간 전</span></td>
+                <td class="da-td"><button class="da-btn">열기</button></td>
+              </tr>
+              <tr class="da-tr">
+                <td class="da-td">
+                  <div class="da-id">SCP-049</div>
+                  <div class="da-title-sub">역병 의사</div>
+                </td>
+                <td class="da-td">
+                  <span class="da-badge da-badge-done">
+                    <span class="da-dot da-dot-done"></span>완료
+                  </span>
+                </td>
+                <td class="da-td"><span class="da-stage">complete</span></td>
+                <td class="da-td"><span class="da-dot da-dot-done"></span></td>
+                <td class="da-td"><span class="da-time">1일 전</span></td>
+                <td class="da-td"><button class="da-btn">열기</button></td>
+              </tr>
+              <tr class="da-tr">
+                <td class="da-td">
+                  <div class="da-id">SCP-682</div>
+                  <div class="da-title-sub">파충류</div>
+                </td>
+                <td class="da-td">
+                  <span class="da-badge da-badge-fail">
+                    <span class="da-dot da-dot-fail"></span>실패
+                  </span>
+                </td>
+                <td class="da-td"><span class="da-stage">tts</span></td>
+                <td class="da-td"><span class="da-dot da-dot-fail"></span></td>
+                <td class="da-td"><span class="da-time">3시간 전</span></td>
+                <td class="da-td"><button class="da-btn">열기</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DIRECTION B ===== -->
+<div class="dir-block">
+  <div class="dir-label">
+    <span class="dir-letter">B</span>
+    <span class="dir-name">Deep Monitor</span>
+    <span class="dir-desc">딥 블루-블랙 다크 — 앰버 액티브 상태, 글로우 상태 점, 터미널 느낌</span>
+  </div>
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="bdots">
+        <div class="bdot bdot-r"></div>
+        <div class="bdot bdot-y"></div>
+        <div class="bdot bdot-g"></div>
+      </div>
+      <div class="burl">localhost:8000</div>
+    </div>
+    <div class="db">
+      <nav class="db-nav">
+        <div class="db-logo">
+          yt<span class="db-logo-sep">.</span>flow
+        </div>
+        <div class="db-nav-r">
+          <span class="db-nav-link">Langfuse ↗</span>
+          <button class="db-cta">+ 새 실행</button>
+        </div>
+      </nav>
+      <div class="db-body">
+        <div class="db-eyebrow">pipeline runs</div>
+        <div class="db-table-wrap">
+          <table class="db-table">
+            <thead>
+              <tr>
+                <th class="db-th">실행</th>
+                <th class="db-th">상태</th>
+                <th class="db-th">스테이지</th>
+                <th class="db-th">경과</th>
+                <th class="db-th"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="db-tr">
+                <td class="db-td">
+                  <div class="db-id">SCP-096</div>
+                  <div class="db-title-sub">수줍음쟁이</div>
+                </td>
+                <td class="db-td">
+                  <span class="db-badge db-badge-run">
+                    <span class="db-glow db-glow-run"></span>실행 중
+                  </span>
+                </td>
+                <td class="db-td"><span class="db-stage">scenario</span></td>
+                <td class="db-td"><span class="db-time">14분 전</span></td>
+                <td class="db-td"><button class="db-btn">열기 →</button></td>
+              </tr>
+              <tr class="db-tr">
+                <td class="db-td">
+                  <div class="db-id">SCP-173</div>
+                  <div class="db-title-sub">조각상</div>
+                </td>
+                <td class="db-td">
+                  <span class="db-badge db-badge-wait">
+                    <span class="db-glow db-glow-wait"></span>승인 대기
+                  </span>
+                </td>
+                <td class="db-td"><span class="db-stage">image</span></td>
+                <td class="db-td"><span class="db-time">2시간 전</span></td>
+                <td class="db-td"><button class="db-btn">열기 →</button></td>
+              </tr>
+              <tr class="db-tr">
+                <td class="db-td">
+                  <div class="db-id">SCP-049</div>
+                  <div class="db-title-sub">역병 의사</div>
+                </td>
+                <td class="db-td">
+                  <span class="db-badge db-badge-done">
+                    <span class="db-glow db-glow-done"></span>완료
+                  </span>
+                </td>
+                <td class="db-td"><span class="db-stage">complete</span></td>
+                <td class="db-td"><span class="db-time">1일 전</span></td>
+                <td class="db-td"><button class="db-btn">열기 →</button></td>
+              </tr>
+              <tr class="db-tr">
+                <td class="db-td">
+                  <div class="db-id">SCP-682</div>
+                  <div class="db-title-sub">파충류</div>
+                </td>
+                <td class="db-td">
+                  <span class="db-badge db-badge-fail">
+                    <span class="db-glow db-glow-fail"></span>실패
+                  </span>
+                </td>
+                <td class="db-td"><span class="db-stage">tts</span></td>
+                <td class="db-td"><span class="db-time">3시간 전</span></td>
+                <td class="db-td"><button class="db-btn">열기 →</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DIRECTION C ===== -->
+<div class="dir-block">
+  <div class="dir-label">
+    <span class="dir-letter">C</span>
+    <span class="dir-name">Zinc System</span>
+    <span class="dir-desc">iOS-네이티브 다크 — 시스템 블루 액센트, 그룹드 카드 리스트, 테이블 없음</span>
+  </div>
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="bdots">
+        <div class="bdot bdot-r"></div>
+        <div class="bdot bdot-y"></div>
+        <div class="bdot bdot-g"></div>
+      </div>
+      <div class="burl">localhost:8000</div>
+    </div>
+    <div class="dc">
+      <nav class="dc-nav">
+        <div class="dc-logo">yt<span class="dc-logo-dot">.</span>flow</div>
+        <div class="dc-nav-r">
+          <span class="dc-nav-link">Langfuse ↗</span>
+          <button class="dc-cta">+ 새 실행</button>
+        </div>
+      </nav>
+      <div class="dc-body">
+        <div class="dc-eyebrow">실행 목록</div>
+        <div class="dc-list">
+          <div class="dc-row">
+            <div class="dc-row-id-block">
+              <div class="dc-row-id">SCP-096</div>
+              <div class="dc-row-name">수줍음쟁이</div>
+            </div>
+            <div class="dc-row-mid">
+              <span class="dc-badge dc-badge-run">● 실행 중</span>
+              <span class="dc-row-stage">scenario</span>
+            </div>
+            <span class="dc-row-time">14분 전</span>
+            <span class="dc-chevron">›</span>
+          </div>
+          <div class="dc-row">
+            <div class="dc-row-id-block">
+              <div class="dc-row-id">SCP-173</div>
+              <div class="dc-row-name">조각상</div>
+            </div>
+            <div class="dc-row-mid">
+              <span class="dc-badge dc-badge-wait">⏸ 승인 대기</span>
+              <span class="dc-row-stage">image</span>
+            </div>
+            <span class="dc-row-time">2시간 전</span>
+            <span class="dc-chevron">›</span>
+          </div>
+          <div class="dc-row">
+            <div class="dc-row-id-block">
+              <div class="dc-row-id">SCP-049</div>
+              <div class="dc-row-name">역병 의사</div>
+            </div>
+            <div class="dc-row-mid">
+              <span class="dc-badge dc-badge-done">✓ 완료</span>
+              <span class="dc-row-stage">complete</span>
+            </div>
+            <span class="dc-row-time">1일 전</span>
+            <span class="dc-chevron">›</span>
+          </div>
+          <div class="dc-row">
+            <div class="dc-row-id-block">
+              <div class="dc-row-id">SCP-682</div>
+              <div class="dc-row-name">파충류</div>
+            </div>
+            <div class="dc-row-mid">
+              <span class="dc-badge dc-badge-fail">✗ 실패</span>
+              <span class="dc-row-stage">tts</span>
+            </div>
+            <span class="dc-row-time">3시간 전</span>
+            <span class="dc-chevron">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,471 @@
+<title>yt.flow — Dashboard</title>
+<style>
+/* Governs: EXPERIENCE.md §Dashboard, §Run Row, §SCP Picker, §Component Patterns */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:            #1C1C1E;
+  --card:          #2C2C2E;
+  --card-hover:    #323234;
+  --border:        rgba(255,255,255,0.07);
+  --fg:            #F2F2F7;
+  --fg-muted:      #8E8E93;
+  --fg-subtle:     #48484A;
+  --primary:       #0A84FF;
+  --primary-fg:    #FFFFFF;
+  --s-run:         #FF9F0A;
+  --s-run-bg:      rgba(255,159,10,0.18);
+  --s-wait:        #BF5AF2;
+  --s-wait-bg:     rgba(191,90,242,0.18);
+  --s-done:        #30D158;
+  --s-done-bg:     rgba(48,209,88,0.18);
+  --s-fail:        #FF453A;
+  --s-fail-bg:     rgba(255,69,58,0.18);
+  --mono:          'Courier New', Consolas, Menlo, monospace;
+}
+
+html, body {
+  background: #111;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Browser frame */
+.frame {
+  width: 900px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.65);
+}
+
+.chrome {
+  background: #2D2D2D;
+  padding: 11px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dots { display: flex; gap: 6px; }
+.dot  { width: 11px; height: 11px; border-radius: 50%; }
+.dr { background: #FF5F57; }
+.dy { background: #FEBC2E; }
+.dg { background: #28C840; }
+
+.url-bar {
+  flex: 1;
+  max-width: 220px;
+  margin: 0 auto;
+  background: #1A1A1A;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #4A4A4A;
+  text-align: center;
+}
+
+/* App shell */
+.app { background: var(--bg); min-height: 560px; }
+
+/* Nav */
+nav {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+}
+
+.wordmark {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.02em;
+}
+
+.wordmark-dot { color: var(--primary); }
+
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-link {
+  font-size: 13px;
+  color: var(--primary);
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.btn-cta {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border: none;
+  padding: 7px 15px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+/* Main content */
+main { padding: 20px 24px; }
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+/* Run list */
+.run-list {
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.run-row {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.run-row:last-child { border-bottom: none; }
+.run-row:hover { background: var(--card-hover); }
+
+/* Awaiting rows get a subtle left accent strip */
+.run-row-wait {
+  border-left: 2px solid var(--s-wait);
+  padding-left: 14px;
+}
+
+.run-id-block { min-width: 92px; display: flex; flex-direction: column; gap: 2px; }
+
+.run-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg);
+  letter-spacing: 0.01em;
+}
+
+.run-name { font-size: 11px; color: var(--fg-subtle); }
+
+.run-middle { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  width: fit-content;
+  white-space: nowrap;
+}
+
+.badge-run  { background: var(--s-run-bg);  color: var(--s-run);  }
+.badge-wait { background: var(--s-wait-bg); color: var(--s-wait); }
+.badge-done { background: var(--s-done-bg); color: var(--s-done); }
+.badge-fail { background: var(--s-fail-bg); color: var(--s-fail); }
+
+.run-stage {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+
+.run-time {
+  font-size: 12px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.chevron { color: var(--fg-subtle); font-size: 15px; }
+
+/* SCP Picker overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.dialog {
+  background: #2C2C2E;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  width: 520px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+
+.dialog-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+
+.search-input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  outline: none;
+  letter-spacing: -0.01em;
+}
+
+.search-input::placeholder { color: var(--fg-subtle); }
+
+.search-input:focus { border-color: var(--primary); }
+
+.picker-list { max-height: 280px; overflow-y: auto; }
+
+.picker-row {
+  padding: 11px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.picker-row:last-child { border-bottom: none; }
+.picker-row:hover { background: rgba(255,255,255,0.04); }
+.picker-row-active { background: rgba(10,132,255,0.15); }
+
+.picker-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg);
+  min-width: 76px;
+}
+
+.picker-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.picker-title { font-size: 13px; color: var(--fg); }
+.picker-meta { font-size: 11px; color: var(--fg-muted); }
+
+.picker-rating {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-subheader {
+  padding: 7px 20px 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.picker-sort-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.picker-match-count {
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+
+.picker-hint {
+  padding: 8px 20px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  border-top: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+
+.dialog-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-ghost {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--primary);
+  border: none;
+  padding: 7px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-fg);
+  border-radius: 8px;
+  cursor: pointer;
+}
+</style>
+
+<div class="frame">
+  <div class="chrome">
+    <div class="dots">
+      <div class="dot dr"></div>
+      <div class="dot dy"></div>
+      <div class="dot dg"></div>
+    </div>
+    <div class="url-bar">localhost:8000</div>
+  </div>
+
+  <!-- App: Dashboard with SCP Picker open -->
+  <div class="app" style="position:relative;">
+    <nav>
+      <span class="wordmark">yt<span class="wordmark-dot">.</span>flow</span>
+      <div class="nav-right">
+        <span class="nav-link">Langfuse ↗</span>
+        <button class="btn-cta">+ 새 실행</button>
+      </div>
+    </nav>
+
+    <main>
+      <div class="section-label">실행 목록</div>
+      <div class="run-list">
+
+        <!-- Awaiting rows float to top -->
+        <div class="run-row run-row-wait">
+          <div class="run-id-block">
+            <div class="run-id">SCP-096</div>
+            <div class="run-name">수줍음쟁이</div>
+          </div>
+          <div class="run-middle">
+            <span class="badge badge-wait">⏸ 승인 대기</span>
+            <span class="run-stage">image</span>
+          </div>
+          <span class="run-time">14분 전</span>
+          <span class="chevron">›</span>
+        </div>
+
+        <div class="run-row run-row-wait">
+          <div class="run-id-block">
+            <div class="run-id">SCP-173</div>
+            <div class="run-name">조각상</div>
+          </div>
+          <div class="run-middle">
+            <span class="badge badge-wait">⏸ 승인 대기</span>
+            <span class="run-stage">scenario</span>
+          </div>
+          <span class="run-time">2시간 전</span>
+          <span class="chevron">›</span>
+        </div>
+
+        <div class="run-row">
+          <div class="run-id-block">
+            <div class="run-id">SCP-049</div>
+            <div class="run-name">역병 의사</div>
+          </div>
+          <div class="run-middle">
+            <span class="badge badge-run">● 실행 중</span>
+            <span class="run-stage">tts</span>
+          </div>
+          <span class="run-time">45분 전</span>
+          <span class="chevron">›</span>
+        </div>
+
+        <div class="run-row">
+          <div class="run-id-block">
+            <div class="run-id">SCP-682</div>
+            <div class="run-name">파충류</div>
+          </div>
+          <div class="run-middle">
+            <span class="badge badge-fail">✗ 실패</span>
+            <span class="run-stage">tts</span>
+          </div>
+          <span class="run-time">3시간 전</span>
+          <span class="chevron">›</span>
+        </div>
+
+        <div class="run-row">
+          <div class="run-id-block">
+            <div class="run-id">SCP-055</div>
+            <div class="run-name">반기억</div>
+          </div>
+          <div class="run-middle">
+            <span class="badge badge-done">✓ 완료</span>
+            <span class="run-stage">complete</span>
+          </div>
+          <span class="run-time">1일 전</span>
+          <span class="chevron">›</span>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- SCP Picker Dialog (overlay state) -->
+    <div class="overlay">
+      <div class="dialog">
+        <div class="dialog-header">
+          <div class="dialog-title">새 실행 — SCP 선택</div>
+          <input class="search-input" type="text" placeholder="번호(096), 영어 이름(shy guy), ID(SCP-096)…" value="shy" />
+        </div>
+        <div class="picker-subheader">
+          <span class="picker-sort-label">스코어 높은 순</span>
+          <span class="picker-match-count">1개 일치</span>
+        </div>
+        <div class="picker-list">
+          <div class="picker-row picker-row-active">
+            <span class="picker-id">SCP-096</span>
+            <div class="picker-info">
+              <span class="picker-title">Shy Guy</span>
+              <span class="picker-meta">Euclid</span>
+            </div>
+            <span class="picker-rating">★ 4,669</span>
+          </div>
+        </div>
+        <div class="picker-hint">검색 없이 전체 보기 — 스코어 내림차순 정렬</div>
+        <div class="dialog-footer">
+          <button class="btn-ghost">취소</button>
+          <button class="btn-primary">실행 시작</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

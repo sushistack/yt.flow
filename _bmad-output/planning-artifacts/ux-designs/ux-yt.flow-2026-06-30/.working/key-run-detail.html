@@ -1,0 +1,508 @@
+<title>yt.flow — Run Detail</title>
+<style>
+/* Governs: EXPERIENCE.md §Stage Sidebar, §Artifact Panel, §Gate Controls,
+            §Retry Button, §State Patterns (image stage awaiting approval) */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #1C1C1E;
+  --card:       #2C2C2E;
+  --card-hover: #323234;
+  --border:     rgba(255,255,255,0.07);
+  --fg:         #F2F2F7;
+  --fg-muted:   #8E8E93;
+  --fg-subtle:  #48484A;
+  --primary:    #0A84FF;
+  --primary-fg: #FFFFFF;
+  --s-run:      #FF9F0A;
+  --s-run-bg:   rgba(255,159,10,0.18);
+  --s-wait:     #BF5AF2;
+  --s-wait-bg:  rgba(191,90,242,0.18);
+  --s-done:     #30D158;
+  --s-done-bg:  rgba(48,209,88,0.18);
+  --s-fail:     #FF453A;
+  --s-fail-bg:  rgba(255,69,58,0.18);
+  --mono:       'Courier New', Consolas, Menlo, monospace;
+  --sidebar-w:  220px;
+}
+
+html, body {
+  background: #111;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Browser frame */
+.frame {
+  width: 960px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.65);
+}
+
+.chrome {
+  background: #2D2D2D;
+  padding: 11px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dots { display: flex; gap: 6px; }
+.dot  { width: 11px; height: 11px; border-radius: 50%; }
+.dr { background: #FF5F57; }
+.dy { background: #FEBC2E; }
+.dg { background: #28C840; }
+
+.url-bar {
+  flex: 1;
+  max-width: 260px;
+  margin: 0 auto;
+  background: #1A1A1A;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #4A4A4A;
+  text-align: center;
+}
+
+/* App shell */
+.app { background: var(--bg); display: flex; flex-direction: column; min-height: 620px; }
+
+/* Nav */
+nav {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.wordmark {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.02em;
+  cursor: pointer;
+}
+
+.wordmark-dot { color: var(--primary); }
+
+.nav-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 14px;
+}
+
+.crumb-sep { color: var(--fg-subtle); font-size: 16px; }
+
+.crumb-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+
+.crumb-name { font-size: 13px; color: var(--fg-muted); }
+
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-wait { background: var(--s-wait-bg); color: var(--s-wait); }
+.badge-run  { background: var(--s-run-bg);  color: var(--s-run);  }
+.badge-done { background: var(--s-done-bg); color: var(--s-done); }
+.badge-fail { background: var(--s-fail-bg); color: var(--s-fail); }
+
+.langfuse-link { font-size: 13px; color: var(--primary); cursor: pointer; }
+
+/* Two-column body */
+.body-cols {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Stage sidebar */
+aside {
+  width: var(--sidebar-w);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.stage-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  position: relative;
+}
+
+.stage-item-active {
+  background: rgba(10,132,255,0.1);
+  border-left: 2px solid var(--primary);
+  padding-left: 10px;
+}
+
+.stage-item-wait {
+  background: rgba(191,90,242,0.08);
+  border-left: 2px solid var(--s-wait);
+  padding-left: 10px;
+}
+
+.stage-item-done {
+  border-left: 2px solid var(--s-done);
+  padding-left: 10px;
+}
+
+.stage-item-pending {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.stage-icon { font-size: 13px; flex-shrink: 0; }
+
+.stage-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+
+.stage-token {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.stage-token-muted { color: var(--fg-subtle); }
+
+.stage-state-label {
+  font-size: 10px;
+  color: var(--fg-subtle);
+}
+
+.stage-state-wait { color: var(--s-wait); }
+.stage-state-done { color: var(--s-done); }
+
+/* Main panel */
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.panel-stage-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.panel-scene-count {
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+.panel-header-actions { margin-left: auto; }
+
+.btn-outline {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 6px 13px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+/* Image gallery */
+.gallery {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+.scene-card {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  position: relative;
+}
+
+.scene-card:hover .scene-overlay { opacity: 1; }
+
+.scene-img {
+  width: 100%;
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--fg-subtle);
+}
+
+.scene-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10,132,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.scene-label {
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-subtle);
+  border-top: 1px solid var(--border);
+}
+
+/* Panel footer — gate controls */
+.panel-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gate-label {
+  font-size: 12px;
+  color: var(--s-wait);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.gate-label-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--s-wait);
+}
+
+.btn-approve {
+  background: var(--primary);
+  border: none;
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-fg);
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.btn-reject {
+  background: none;
+  border: 1px solid rgba(255,69,58,0.4);
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--s-fail);
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+</style>
+
+<div class="frame">
+  <div class="chrome">
+    <div class="dots">
+      <div class="dot dr"></div>
+      <div class="dot dy"></div>
+      <div class="dot dg"></div>
+    </div>
+    <div class="url-bar">localhost:8000/runs/r_096_2026</div>
+  </div>
+
+  <div class="app">
+    <nav>
+      <span class="wordmark">yt<span class="wordmark-dot">.</span>flow</span>
+      <div class="nav-crumb">
+        <span class="crumb-sep">›</span>
+        <span class="crumb-id">SCP-096</span>
+        <span class="crumb-sep">/</span>
+        <span class="crumb-name">수줍음쟁이</span>
+      </div>
+      <div class="nav-right">
+        <span class="badge badge-wait">⏸ 승인 대기</span>
+        <span class="langfuse-link">Langfuse ↗</span>
+      </div>
+    </nav>
+
+    <div class="body-cols">
+
+      <!-- Stage sidebar -->
+      <aside>
+        <!-- scenario: done -->
+        <div class="stage-item stage-item-done">
+          <span class="stage-icon" style="color:var(--s-done);">✓</span>
+          <div class="stage-info">
+            <span class="stage-token">scenario</span>
+            <span class="stage-state-label stage-state-done">승인됨</span>
+          </div>
+        </div>
+
+        <!-- image: awaiting (active + awaiting = purple wins) -->
+        <div class="stage-item stage-item-wait">
+          <span class="stage-icon" style="color:var(--s-wait);">⏸</span>
+          <div class="stage-info">
+            <span class="stage-token">image</span>
+            <span class="stage-state-label stage-state-wait">승인 대기</span>
+          </div>
+        </div>
+
+        <!-- tts: not reached -->
+        <div class="stage-item stage-item-pending">
+          <span class="stage-icon">○</span>
+          <div class="stage-info">
+            <span class="stage-token stage-token-muted">tts</span>
+            <span class="stage-state-label">대기 중</span>
+          </div>
+        </div>
+
+        <!-- subtitle: not reached -->
+        <div class="stage-item stage-item-pending">
+          <span class="stage-icon">○</span>
+          <div class="stage-info">
+            <span class="stage-token stage-token-muted">subtitle</span>
+            <span class="stage-state-label">대기 중</span>
+          </div>
+        </div>
+
+        <!-- video: not reached -->
+        <div class="stage-item stage-item-pending">
+          <span class="stage-icon">○</span>
+          <div class="stage-info">
+            <span class="stage-token stage-token-muted">video</span>
+            <span class="stage-state-label">대기 중</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main artifact panel: image stage awaiting approval -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-stage-name">image</span>
+          <span class="panel-scene-count">8개 씬</span>
+          <div class="panel-header-actions">
+            <button class="btn-outline">재시도</button>
+          </div>
+        </div>
+
+        <div class="gallery">
+          <!-- Scene 1 -->
+          <div class="scene-card">
+            <div class="scene-img" style="background: linear-gradient(135deg,#1a1a2e,#16213e);">
+              <span>씬 1</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label">scene_001.png</div>
+          </div>
+          <!-- Scene 2 -->
+          <div class="scene-card">
+            <div class="scene-img" style="background: linear-gradient(135deg,#0f2027,#203a43);">
+              <span>씬 2</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label">scene_002.png</div>
+          </div>
+          <!-- Scene 3 — visually different / "off" -->
+          <div class="scene-card" style="border-color: rgba(255,69,58,0.3);">
+            <div class="scene-img" style="background: linear-gradient(135deg,#3a1c1c,#6b2d2d);">
+              <span style="color:var(--s-fail);">씬 3</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label" style="color:var(--s-fail);">scene_003.png</div>
+          </div>
+          <!-- Scene 4 -->
+          <div class="scene-card">
+            <div class="scene-img" style="background: linear-gradient(135deg,#1c1c2e,#2a2a4a);">
+              <span>씬 4</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label">scene_004.png</div>
+          </div>
+          <!-- Scene 5 -->
+          <div class="scene-card">
+            <div class="scene-img" style="background: linear-gradient(135deg,#0d0d1a,#1a1a33);">
+              <span>씬 5</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label">scene_005.png</div>
+          </div>
+          <!-- Scene 6 -->
+          <div class="scene-card">
+            <div class="scene-img" style="background: linear-gradient(135deg,#12121f,#1e1e3a);">
+              <span>씬 6</span>
+            </div>
+            <div class="scene-overlay"><span style="color:#fff;font-size:18px;">⤢</span></div>
+            <div class="scene-label">scene_006.png</div>
+          </div>
+        </div>
+
+        <!-- Gate controls footer -->
+        <div class="panel-footer">
+          <span class="gate-label">
+            <span class="gate-label-dot"></span>
+            이미지 생성 완료 — 검토 후 승인하세요
+          </span>
+          <button class="btn-reject">반려</button>
+          <button class="btn-approve">승인</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
