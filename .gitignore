@@ -1,6 +1,18 @@
 # env
 .env
 
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.pytest_cache/
+
+# project artifacts
+yt_flow.db
+workspace/
+
 # bmad
 _bmad
 
