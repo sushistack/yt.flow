@@ -1,6 +1,10 @@
+---
+baseline_commit: 4683a5261d962b147ab49eb9aa70997ececa6f46
+---
+
 # Story 1.1: Langfuse Environment Verification
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -18,26 +22,26 @@ so that Prompt Hub migration and `@observe` instrumentation have a confirmed fou
 
 ## Tasks / Subtasks
 
-- [ ] Establish the minimum Python package substrate for this story only (AC: 1, 2, 3)
-  - [ ] Create the smallest `pyproject.toml` needed for Python 3.12, `uv`, `langfuse`, `pydantic-settings`, `pydantic`, `pytest`, and `python-dotenv` or Pydantic dotenv loading.
-  - [ ] Create only the package paths needed by this story: `src/yt_flow/__init__.py` and `src/yt_flow/config.py`.
-  - [ ] Do not create the full `domain/`, `pipeline/`, `services/`, `db/`, or `api/` scaffold in this story; Story 1.2 owns that broader structure.
-- [ ] Implement `src/yt_flow/config.py` (AC: 2, 3)
-  - [ ] Define a settings class using `pydantic_settings.BaseSettings` and `SettingsConfigDict(env_prefix="YTFLOW_", env_file=".env", extra="ignore")`.
-  - [ ] Require `langfuse_host`, `langfuse_public_key`, and `langfuse_secret_key` as non-empty strings.
-  - [ ] Provide a tiny helper such as `get_settings()` only if useful; avoid speculative abstractions.
-  - [ ] Ensure missing values raise Pydantic `ValidationError` that includes the missing field name.
-- [ ] Verify Langfuse SDK authentication against the homelab instance (AC: 1)
-  - [ ] Add a minimal verification command or script that loads `YTFLOW_` settings and calls `Langfuse(...).auth_check()`.
-  - [ ] Preserve compatibility with the story's explicit smoke command, or document any unavoidable SDK v4 constructor requirement in the test/README notes.
-  - [ ] Do not print secret values. Verification output may print only boolean status and host.
-- [ ] Add focused tests (AC: 2, 3)
-  - [ ] Test successful settings load from environment variables without requiring real Langfuse network access.
-  - [ ] Test missing `YTFLOW_LANGFUSE_PUBLIC_KEY`, `YTFLOW_LANGFUSE_SECRET_KEY`, and `YTFLOW_LANGFUSE_HOST` produce `ValidationError` with field names.
-  - [ ] Keep the real `auth_check()` as an explicit smoke check, not a default unit test, so CI/local tests do not depend on homelab availability.
-- [ ] Update local developer docs minimally (AC: 1)
-  - [ ] Add a `.env.example` with placeholder `YTFLOW_LANGFUSE_HOST`, `YTFLOW_LANGFUSE_PUBLIC_KEY`, and `YTFLOW_LANGFUSE_SECRET_KEY`.
-  - [ ] Add or update a short run note in `CLAUDE.md` only if needed after implementation; avoid broad documentation churn.
+- [x] Establish the minimum Python package substrate for this story only (AC: 1, 2, 3)
+  - [x] Create the smallest `pyproject.toml` needed for Python 3.12, `uv`, `langfuse`, `pydantic-settings`, `pydantic`, `pytest`, and `python-dotenv` or Pydantic dotenv loading.
+  - [x] Create only the package paths needed by this story: `src/yt_flow/__init__.py` and `src/yt_flow/config.py`.
+  - [x] Do not create the full `domain/`, `pipeline/`, `services/`, `db/`, or `api/` scaffold in this story; Story 1.2 owns that broader structure.
+- [x] Implement `src/yt_flow/config.py` (AC: 2, 3)
+  - [x] Define a settings class using `pydantic_settings.BaseSettings` and `SettingsConfigDict(env_prefix="YTFLOW_", env_file=".env", extra="ignore")`.
+  - [x] Require `langfuse_host`, `langfuse_public_key`, and `langfuse_secret_key` as non-empty strings.
+  - [x] Provide a tiny helper such as `get_settings()` only if useful; avoid speculative abstractions.
+  - [x] Ensure missing values raise Pydantic `ValidationError` that includes the missing field name.
+- [x] Verify Langfuse SDK authentication against the homelab instance (AC: 1)
+  - [x] Add a minimal verification command or script that loads `YTFLOW_` settings and calls `Langfuse(...).auth_check()`.
+  - [x] Preserve compatibility with the story's explicit smoke command, or document any unavoidable SDK v4 constructor requirement in the test/README notes.
+  - [x] Do not print secret values. Verification output may print only boolean status and host.
+- [x] Add focused tests (AC: 2, 3)
+  - [x] Test successful settings load from environment variables without requiring real Langfuse network access.
+  - [x] Test missing `YTFLOW_LANGFUSE_PUBLIC_KEY`, `YTFLOW_LANGFUSE_SECRET_KEY`, and `YTFLOW_LANGFUSE_HOST` produce `ValidationError` with field names.
+  - [x] Keep the real `auth_check()` as an explicit smoke check, not a default unit test, so CI/local tests do not depend on homelab availability.
+- [x] Update local developer docs minimally (AC: 1)
+  - [x] Add a `.env.example` with placeholder `YTFLOW_LANGFUSE_HOST`, `YTFLOW_LANGFUSE_PUBLIC_KEY`, and `YTFLOW_LANGFUSE_SECRET_KEY`.
+  - [x] Add or update a short run note in `CLAUDE.md` only if needed after implementation; avoid broad documentation churn.
 
 ## Dev Notes
 
@@ -120,16 +124,32 @@ Actionable implication: there are no established code patterns yet beyond the ar
 
 ### Agent Model Used
 
-TBD by dev-story agent
+claude-sonnet-4-6
 
 ### Debug Log References
 
-TBD
+None — clean implementation, no blockers.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Langfuse 4.x SDK confirmed: `auth_check()` exists and returns `True` against homelab at `https://langfuse.eli.kr`.
+- Epic smoke command `python -c "from langfuse import Langfuse; Langfuse().auth_check()"` would read `LANGFUSE_*` env vars (not `YTFLOW_*`). `scripts/check_langfuse.py` maps settings into the constructor instead — this is the correct smoke command for this project.
+- No module-level `settings` singleton in `config.py` — tests each instantiate `Settings()` after `monkeypatch` sets env; avoids stale cached state.
+- `_env_file=None` passed in missing-field tests to bypass `.env` file read and force env-only validation.
+- `dependency-groups` used instead of deprecated `tool.uv.dev-dependencies`.
 
 ### File List
 
-TBD by dev-story agent
+- `pyproject.toml`
+- `.gitignore` (updated — added Python, .venv, yt_flow.db, workspace/)
+- `.env.example`
+- `src/yt_flow/__init__.py`
+- `src/yt_flow/config.py`
+- `tests/__init__.py`
+- `tests/test_config.py`
+- `scripts/check_langfuse.py`
+
+### Change Log
+
+- 2026-07-01: Story 1.1 implemented — minimal Python package substrate, Pydantic settings with YTFLOW_ prefix, Langfuse homelab auth verified (True), 4 unit tests passing.

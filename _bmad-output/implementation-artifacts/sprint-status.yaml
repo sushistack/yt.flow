@@ -50,7 +50,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   # ── Epic 1: Project Foundation & Pipeline Core ──────────────────────────────
   epic-1: in-progress
-  1-1-langfuse-env-verification: ready-for-dev
+  1-1-langfuse-env-verification: review
   1-2-project-scaffold-domain-types: ready-for-dev
   1-3-prompt-hub-migration: ready-for-dev
   1-4-langgraph-asyncsqlitesaver: ready-for-dev
