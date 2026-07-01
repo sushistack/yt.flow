@@ -120,7 +120,8 @@ def test_post_runs_launches_background_task(client):
         assert resp.status_code == 201
         # AsyncMock.__call__ is tracked at coroutine-creation time (before task executes)
         mock_start.assert_called_once()
-        _, scp_text, *_ = mock_start.call_args.args
+        _, scp_id, scp_text, *_ = mock_start.call_args.args
+        assert scp_id == "SCP-096"
         assert scp_text == "hello"
 
 
@@ -135,7 +136,8 @@ def test_post_runs_resolves_scp_text_from_state(client):
     with patch("yt_flow.api.routes.runs.run_service.start_run", new_callable=AsyncMock) as mock_start:
         resp = client.post("/runs", json={"scp_id": "SCP-096"})
         assert resp.status_code == 201
-        _, scp_text, *_ = mock_start.call_args.args
+        _, scp_id, scp_text, *_ = mock_start.call_args.args
+        assert scp_id == "SCP-096"
         assert scp_text == "resolved article text"
 
 

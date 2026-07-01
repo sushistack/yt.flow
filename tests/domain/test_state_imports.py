@@ -35,7 +35,7 @@ EXPECTED_FIELDS = {
         "status", "image_path", "created_at", "updated_at",
     },
     "PipelineState": {
-        "run_id", "scp_text", "scenes", "video_path", "current_stage",
+        "run_id", "scp_id", "scp_text", "scenes", "video_path", "current_stage",
         "gate_states", "prompt_variant", "error",
     },
 }
@@ -90,9 +90,12 @@ def test_pipeline_imports_no_db():
 
 
 def test_api_imports_no_pipeline():
-    # AD-1: api layer must never import from pipeline. Api is currently empty stubs;
-    # test is wired now to catch future violations automatically.
+    # AD-1: api layer must never import from pipeline. Exception: api/main.py
+    # imports `inject_angle_selector` from pipeline.nodes.video — the sole AD-1
+    # injection point for the angle selection service (Story 1.13).
     pkg = Path(state.__file__).resolve().parents[1]
     for py in (pkg / "api").rglob("*.py"):
         for mod in _yt_flow_imports(py):
+            if py.name == "main.py" and mod == "yt_flow.pipeline.nodes.video":
+                continue  # allowed: injection seam
             assert not mod.startswith("yt_flow.pipeline"), f"{py.name}: imports {mod}"

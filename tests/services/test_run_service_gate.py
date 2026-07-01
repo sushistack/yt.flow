@@ -72,7 +72,7 @@ async def test_start_run_pauses_at_scenario_gate(env):
     _seed(run_id)
     reg = _FakeRegistry()
 
-    await run_service.start_run(run_id, "scp text", reg)
+    await run_service.start_run(run_id, "SCP-096", "scp text", reg)
 
     run = _load(run_id)
     assert run.status == "awaiting_approval"
@@ -87,7 +87,7 @@ async def test_approve_advances_to_next_gate(env):
     run_id = str(uuid.uuid4())
     _seed(run_id)
     reg = _FakeRegistry()
-    await run_service.start_run(run_id, "t", reg)
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
     reg.events.clear()
 
     await run_service.resume_run(run_id, "scenario", "approve", reg)
@@ -105,7 +105,7 @@ async def test_reject_scenario_fails_and_terminates(env):
     run_id = str(uuid.uuid4())
     _seed(run_id)
     reg = _FakeRegistry()
-    await run_service.start_run(run_id, "t", reg)
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
     reg.events.clear()
 
     await run_service.resume_run(run_id, "scenario", "reject", reg)
@@ -121,7 +121,7 @@ async def test_reject_image_loops_back_to_pending(env):
     run_id = str(uuid.uuid4())
     _seed(run_id)
     reg = _FakeRegistry()
-    await run_service.start_run(run_id, "t", reg)
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
     await run_service.resume_run(run_id, "scenario", "approve", reg)  # pause at image
     reg.events.clear()
 
@@ -138,7 +138,7 @@ async def test_full_approval_completes(env):
     run_id = str(uuid.uuid4())
     _seed(run_id)
     reg = _FakeRegistry()
-    await run_service.start_run(run_id, "t", reg)
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
     for stage in ("scenario", "image", "tts", "subtitle", "video"):
         await run_service.resume_run(run_id, stage, "approve", reg)
 
@@ -159,7 +159,7 @@ async def test_astream_failure_marks_failed(env, monkeypatch):
         yield  # unreachable — makes this an async generator
 
     monkeypatch.setattr(run_service._graph, "astream", _boom)
-    await run_service.start_run(run_id, "t", reg)
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
 
     run = _load(run_id)
     assert run.status == "failed"

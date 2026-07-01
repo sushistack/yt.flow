@@ -126,7 +126,7 @@ async def test_create_ab_run_copies_state(_setup):
     assert new.scp_id == "SCP-096"
     assert new.status == "running"
     # AC 2/8: launched via the standard start_run driver with Variant B's scp_text
-    mstart.assert_called_once_with(new_id, "SOURCE TEXT", None, prompt_variant="B")
+    mstart.assert_called_once_with(new_id, "SCP-096", "SOURCE TEXT", None, prompt_variant="B")
 
 
 async def test_create_ab_run_missing_scp_text_raises(_setup):

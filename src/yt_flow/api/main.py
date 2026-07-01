@@ -4,13 +4,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 
 from yt_flow import db
 from yt_flow.api.routes import characters, progress, runs, scps, stages
 from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
+from yt_flow.pipeline.nodes.video import inject_angle_selector
 from yt_flow.services import run_service
+from yt_flow.services.character_service import CharacterService
 
 __all__ = ["app", "ScpEntry"]
 
@@ -22,6 +25,15 @@ async def lifespan(app: FastAPI):
     app.state.workspace_path = str(Path(settings.workspace_path).resolve())
     app.state.sse_registry = SSEQueueRegistry()
     saver = await run_service.init(settings)  # services builds the graph; api stays off pipeline (AD-1)
+
+    # Story 1.13: inject character angle selector into video_node
+    async def _select_angles(scp_id: str, scenes: list) -> dict | None:
+        with Session(db._engine) as session:
+            svc = CharacterService(session, settings=settings)
+            return await svc.select_character_angles(scp_id, scenes)
+
+    inject_angle_selector(_select_angles)
+
     scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]
     try:

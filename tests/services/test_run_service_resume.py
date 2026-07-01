@@ -89,7 +89,7 @@ async def test_resume_from_failure_does_not_rerun_scenario(spy):
     _seed(run_id)
     spy.fail_next_video = True
 
-    await run_service.start_run(run_id, "scp text", None)
+    await run_service.start_run(run_id, "SCP-173", "scp text", None)
     assert spy.scenario_calls == 1
     assert spy.video_calls == 1
     assert _load(run_id).status == "failed"
@@ -108,7 +108,7 @@ async def test_full_restart_reenters_scenario(spy):
     run_id = str(uuid.uuid4())
     _seed(run_id)
 
-    await run_service.start_run(run_id, "scp text", None)
+    await run_service.start_run(run_id, "SCP-173", "scp text", None)
     assert spy.scenario_calls == 1
     assert _load(run_id).status == "complete"
 
@@ -124,7 +124,7 @@ async def test_full_restart_resets_stale_state(spy):
     # accumulate — the post-restart checkpoint holds exactly one freshly-produced run.
     run_id = str(uuid.uuid4())
     _seed(run_id)
-    await run_service.start_run(run_id, "scp text", None)
+    await run_service.start_run(run_id, "SCP-173", "scp text", None)
 
     await run_service.full_restart_run(run_id)
     snap = await run_service._graph.aget_state({"configurable": {"thread_id": run_id}})
@@ -155,7 +155,7 @@ async def test_trace_id_deterministic_and_reused_on_resume(spy, monkeypatch):
     monkeypatch.setattr(run_service, "get_client", lambda: _FakeClient())
 
     spy.fail_next_video = True
-    await run_service.start_run(run_id, "scp text", None)
+    await run_service.start_run(run_id, "SCP-173", "scp text", None)
     await run_service.resume_run_from_failure(run_id)
 
     assert rec["seeds"] == [run_id, run_id]                       # AC3: seed is always run_id
@@ -184,7 +184,7 @@ async def test_tracing_enter_failure_is_non_fatal(spy, monkeypatch):
 
     monkeypatch.setattr(run_service, "get_client", lambda: _FakeClient())
 
-    await run_service.start_run(run_id, "scp text", None)
+    await run_service.start_run(run_id, "SCP-173", "scp text", None)
 
     assert spy.scenario_calls == 1
     assert _load(run_id).status == "complete"   # pipeline unaffected by tracing failure

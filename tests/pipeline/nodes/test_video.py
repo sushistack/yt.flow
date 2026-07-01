@@ -923,3 +923,123 @@ async def test_character_overlay_filtergraph_renders(tmp_path):
     )
     assert rc == 0, f"layered filtergraph rejected by ffmpeg: {stderr[-500:]}"
     assert out.exists()
+
+
+# ── Story 1.13: LLM angle pre-selection integration ───────────────────────────
+
+
+async def test_angle_selector_injection_sets_character_path(monkeypatch, tmp_path, assets):
+    """When angle selector is injected, character_path is overwritten with the selected angle."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    angle_asset = tmp_path / "angle_front.png"
+    angle_asset.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+
+    async def _selector(scp_id, scenes):
+        return {"1:S001": {"angle": "front", "path": str(angle_asset)}}
+
+    monkeypatch.setattr(video, "_angle_selector", _selector)
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        character=assets.character,
+    )
+    state = _state([scene], scp_id="SCP-096")
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    # character_path should have been overwritten by the angle selector
+    assert scene["shots"][0]["character_path"] == str(angle_asset)
+
+
+async def test_angle_selector_not_injected_does_not_crash(monkeypatch, tmp_path, assets):
+    """Without an injected selector, video_node should work normally (no angle selection)."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_angle_selector", None)
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        character=assets.character,
+    )
+    state = _state([scene])
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    # character_path should remain unchanged
+    assert scene["shots"][0]["character_path"] == assets.character
+
+
+async def test_angle_selector_failure_is_non_fatal(monkeypatch, tmp_path, assets):
+    """Angle selection failure must never fail the pipeline (AD-10)."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    async def _failing_selector(scp_id, scenes):
+        raise RuntimeError("LLM down")
+
+    monkeypatch.setattr(video, "_angle_selector", _failing_selector)
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        character=assets.character,
+    )
+    state = _state([scene])
+    out = await video_node(state)
+
+    assert out.get("error") is None  # pipeline must not fail
+    # character_path should remain unchanged (existing value preserved)
+    assert scene["shots"][0]["character_path"] == assets.character
+
+
+async def test_angle_selector_returns_none_skips(monkeypatch, tmp_path, assets):
+    """When selector returns None (no character), shots keep their existing character_path."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    async def _selector(scp_id, scenes):
+        return None
+
+    monkeypatch.setattr(video, "_angle_selector", _selector)
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        character=assets.character,
+    )
+    state = _state([scene])
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    assert scene["shots"][0]["character_path"] == assets.character
+
+
+async def test_angle_selector_trace_metadata(monkeypatch, tmp_path, assets):
+    """Trace metadata includes angle_selection info when selector runs."""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    angle_asset = tmp_path / "angle_front.png"
+    angle_asset.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+
+    async def _selector(scp_id, scenes):
+        return {"1:S001": {"angle": "front", "path": str(angle_asset)}}
+
+    monkeypatch.setattr(video, "_angle_selector", _selector)
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        character=assets.character,
+    )
+    state = _state([scene], scp_id="SCP-096")
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    assert "angle_selection" in captured
+    asel = captured["angle_selection"]
+    assert asel["scp_id"] == "SCP-096"  # AC6: scp_id in angle_selection metadata
+    assert asel["shots_analyzed"] == 1
+    assert "front" in asel["angles_selected"]
+    assert "latency_ms" in asel
