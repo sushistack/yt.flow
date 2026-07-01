@@ -110,11 +110,12 @@ class TestCharacterCRUD:
 
     def test_list_characters(self, service):
         service.create_character("SCP-096", "Shy Guy")
-        service.create_character("SCP-096", "Shy Guy v2")
         service.create_character("SCP-173", "The Sculpture")
+        service.create_character("SCP-682", "Hard-to-Destroy Reptile")
 
         results = service.list_characters("SCP-096")
-        assert len(results) == 2
+        assert len(results) == 1
+        assert results[0].scp_id == "SCP-096"
 
         results_173 = service.list_characters("SCP-173")
         assert len(results_173) == 1

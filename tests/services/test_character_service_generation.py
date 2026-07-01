@@ -391,7 +391,7 @@ class TestCandidateSelection:
         # Set first candidate (front) ready
         service.update_candidate_status(candidates[0].id, "ready", "/tmp/front.png")
 
-        char, cand = service.select_candidate("SCP-096", 1, "front")
+        char = service.select_candidate("SCP-096", 1, "front")
         assert char.angle_front_path == "/tmp/front.png"
         # Front angle also sets selected_image_path
         assert char.selected_image_path == "/tmp/front.png"
@@ -402,7 +402,7 @@ class TestCandidateSelection:
         candidates = service.create_candidate_batch("SCP-096")
         service.update_candidate_status(candidates[1].id, "ready", "/tmp/back.png")
 
-        char, cand = service.select_candidate("SCP-096", 1, "back")
+        char = service.select_candidate("SCP-096", 1, "back")
         assert char.angle_back_path == "/tmp/back.png"
 
     def test_select_candidate_auto_creates_character(self, service):
@@ -411,7 +411,7 @@ class TestCandidateSelection:
         service.update_candidate_status(candidates[0].id, "ready", "/tmp/front.png")
 
         # No character exists yet — select_candidate should create one
-        char, cand = service.select_candidate("SCP-049", 1, "front")
+        char = service.select_candidate("SCP-049", 1, "front")
         assert char.scp_id == "SCP-049"
         assert char.angle_front_path == "/tmp/front.png"
 
