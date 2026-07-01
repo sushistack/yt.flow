@@ -40,3 +40,11 @@ class Settings(BaseSettings):
     qwen_tts_model: str = "qwen3-tts-flash"
     qwen_tts_voice: str = "Cherry"
     qwen_tts_mock: bool = False
+
+    # Forced alignment for subtitle generation (Story 1.8). Strategy is config-driven;
+    # swap the aligner name without touching subtitle_node. whisperx is not in
+    # pyproject.toml — install separately before using the real aligner.
+    aligner: str = "whisperx"
+    aligner_model: str = "base"
+    aligner_device: str = "cpu"
+    aligner_compute_type: str = "int8"
