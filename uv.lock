@@ -950,6 +950,7 @@ name = "yt-flow"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiosqlite" },
     { name = "alembic" },
     { name = "fastapi" },
     { name = "langfuse" },
@@ -970,6 +971,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20" },
     { name = "alembic", specifier = ">=1,<2" },
     { name = "fastapi", specifier = "==0.138.2" },
     { name = "langfuse", specifier = "==4.12.0" },
