@@ -25,3 +25,10 @@ def get_session():
         raise RuntimeError("db.init() has not been called")
     with Session(_engine) as session:
         yield session
+
+
+def get_engine():
+    """Return the current SQLAlchemy engine (for background tasks)."""
+    if _engine is None:
+        raise RuntimeError("db.init() has not been called")
+    return _engine
