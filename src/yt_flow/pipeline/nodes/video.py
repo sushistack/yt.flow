@@ -33,6 +33,16 @@ _DIRECTION_POOL = ["in-center", "pan-right", "pan-left", "out-center", "pan-up",
 XFADE_TRANSITION = "fade"
 XFADE_DURATION = 0.5  # seconds
 
+# ── Character idle-motion constants (Story 1.9c) ──────────────────────────────
+# Sway = larger/slower horizontal drift; bob = subtle/faster vertical breathing.
+# Tremble (tense scenes) is out of scope until a scene ever requests it.
+# ponytail: fixed tasteful defaults, not per-scene config; add a knob when a shot
+# actually needs different motion.
+SWAY_AMPLITUDE = 12   # px, x-axis idle drift
+SWAY_FREQ = 0.8       # rad/s
+BOB_AMPLITUDE = 8     # px, y-axis breathing/bob
+BOB_FREQ = 1.2        # rad/s
+
 
 # ── EffectSpec dataclass ──────────────────────────────────────────────────────
 
@@ -148,6 +158,19 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
     )
 
 
+def _overlay_filter() -> str:
+    """Character sway+bob idle-motion overlay, centered on the background. [AC:1,2]
+
+    ``eval=frame`` is REQUIRED and set explicitly: under the ``eval=init`` default
+    for *some* builds the ``t``/``n`` timeline vars collapse to NAN and the
+    character freezes. Two sines (x sway, y bob) at different freq/amplitude give
+    the subtle "alive" drift without rigging.
+    """
+    x = f"(main_w-overlay_w)/2 + sin(t*{SWAY_FREQ})*{SWAY_AMPLITUDE}"
+    y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ})*{BOB_AMPLITUDE}"
+    return f"overlay=x='{x}':y='{y}':eval=frame"
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -184,6 +207,7 @@ def _record_trace(
     returncode: int | None = None,
     effects: list | None = None,
     upscale_pass: bool = True,
+    character_scenes: int = 0,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -199,6 +223,12 @@ def _record_trace(
                 "transition": XFADE_TRANSITION,
                 "transition_duration": XFADE_DURATION,
                 "upscale_pass": upscale_pass,
+                # Character idle-motion params (Story 1.9c) — constant across scenes.
+                "character_scenes": character_scenes,
+                "character_motion": {
+                    "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
+                    "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
+                },
                 **({"error": repr(error)} if error is not None else {}),
             }
         )
@@ -225,6 +255,12 @@ def _validate_scene_assets(scenes: list[SceneState]) -> None:
         subtitle = scene.get("subtitle_path")
         if not subtitle or not Path(subtitle).exists():
             raise FileNotFoundError(f"scene {n}: subtitle_path missing or not found: {subtitle!r}")
+        # character_path is optional (None = background-only, AC:3). But if a shot
+        # *claims* a character layer, a missing file is a real error — fail loudly
+        # rather than silently dropping the character overlay. [AC:1]
+        character = shot.get("character_path")
+        if character and not Path(character).exists():
+            raise FileNotFoundError(f"scene {n}: character_path set but not found: {character!r}")
         # audio_duration drives zoompan frame count + xfade offset; a missing/≤0 value
         # would silently truncate the scene (via -shortest) or corrupt timing. Fail fast
         # instead of inventing a fallback duration. [review:D]
@@ -247,18 +283,33 @@ async def _run_ffmpeg(*args: str) -> tuple[int, str]:
     return rc, (stderr_bytes or b"").decode(errors="replace")
 
 
+_OUTPUT_ARGS = (
+    "-c:v", "libx264", "-preset", "fast",
+    "-c:a", "aac", "-b:a", "128k",
+    "-pix_fmt", "yuv420p",
+    "-shortest",
+)
+
+
 async def _compose_scene(
     scene: SceneState,
     scene_index: int,
     out_dir: Path,
-) -> tuple[Path, EffectSpec]:
-    """Render one scene to MP4 segment with Ken Burns zoompan + burned SRT. [AC:1]"""
+) -> tuple[Path, EffectSpec, bool]:
+    """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
+    transparent character composited on top with idle motion. [AC:1,3]
+
+    Returns (segment_path, effect_spec, character_overlaid).
+    """
     n = scene["scene_num"]
     shots = scene.get("shots") or []
     shot = next((s for s in shots if s.get("image_path")), None)
     if shot is None:  # defensive; _validate_scene_assets guarantees this upstream
         raise ValueError(f"scene {n}: no shot has a valid image_path")
-    image_path = shot["image_path"]
+    # Prefer the opaque background layer for Ken Burns; fall back to image_path so
+    # 1.9/1.9b (non-layered) shots still render. [1.6b contract]
+    bg_path = shot.get("background_path") or shot["image_path"]
+    character_path = shot.get("character_path")  # None = background-only (AC:3)
     audio_path: str = scene["audio_path"]  # type: ignore[assignment]
     subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
     duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive upstream
@@ -266,29 +317,42 @@ async def _compose_scene(
 
     spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
-
-    # zoompan already emits exactly COMP_W x COMP_H (s=), so no rescale/pad needed;
-    # just burn subtitles (path escaped + single-quoted for the filtergraph).
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
-    vf = f"{zp_chain},subtitles='{sub}'"
 
-    rc, stderr = await _run_ffmpeg(
-        "-y",
-        "-loop", "1", "-framerate", str(FPS),
-        "-i", str(image_path),
-        "-i", audio_path,
-        "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast",
-        "-c:a", "aac", "-b:a", "128k",
-        "-pix_fmt", "yuv420p",
-        "-shortest",
-        str(seg_path),
-    )
+    if character_path:
+        # Layered: zoompan the background, overlay the moving character, then burn
+        # subtitles on top. Two looped image inputs (0=bg, 1=char) + audio (2).
+        filter_complex = (
+            f"[0:v]{zp_chain}[bg];"
+            f"[bg][1:v]{_overlay_filter()}[ov];"
+            f"[ov]subtitles='{sub}'[out]"
+        )
+        rc, stderr = await _run_ffmpeg(
+            "-y",
+            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
+            "-loop", "1", "-framerate", str(FPS), "-i", str(character_path),
+            "-i", audio_path,
+            "-filter_complex", filter_complex,
+            "-map", "[out]", "-map", "2:a",
+            *_OUTPUT_ARGS,
+            str(seg_path),
+        )
+    else:
+        # Background-only (1.9b): zoompan already emits COMP_W x COMP_H, just burn SRT.
+        vf = f"{zp_chain},subtitles='{sub}'"
+        rc, stderr = await _run_ffmpeg(
+            "-y",
+            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
+            "-i", audio_path,
+            "-vf", vf,
+            *_OUTPUT_ARGS,
+            str(seg_path),
+        )
     if rc != 0:
         raise RuntimeError(f"FFmpeg scene {n} failed (rc={rc}): {stderr[-500:]}")
     if not seg_path.exists():
         raise RuntimeError(f"FFmpeg scene {n}: output not created: {seg_path}")
-    return seg_path, spec
+    return seg_path, spec, bool(character_path)
 
 
 async def _join_with_xfade(
@@ -376,20 +440,20 @@ async def video_node(state: PipelineState) -> dict:
         run_dir = Path(s.workspace_path) / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        segs_with_specs: list[tuple[Path, float, EffectSpec]] = []
+        segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         for i, scene in enumerate(scenes):
-            seg_path, spec = await _compose_scene(scene, i, run_dir)
+            seg_path, spec, has_char = await _compose_scene(scene, i, run_dir)
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
-            segs_with_specs.append((seg_path, duration, spec))
+            segs_with_specs.append((seg_path, duration, spec, has_char))
 
         output = run_dir / "video.mp4"
-        segs = [p for p, _, _ in segs_with_specs]
+        segs = [p for p, _, _, _ in segs_with_specs]
 
         if len(segs) == 1:
             segs[0].replace(output)  # replace: atomic overwrite, cross-platform
         else:  # 2+ scenes: xfade join (label wiring handles n>=2 uniformly)
             await _join_with_xfade(
-                [(p, d) for p, d, _ in segs_with_specs],
+                [(p, d) for p, d, _, _ in segs_with_specs],
                 output,
             )
 
@@ -399,14 +463,16 @@ async def video_node(state: PipelineState) -> dict:
                 "direction": spec.direction,
                 "start_zoom": spec.start_zoom,
                 "end_zoom": spec.end_zoom,
+                "character_overlay": has_char,
             }
-            for i, (_, _, spec) in enumerate(segs_with_specs)
+            for i, (_, _, spec, has_char) in enumerate(segs_with_specs)
         ]
 
         _record_trace(
             run_id=run_id, scene_count=len(scenes),
             latency_ms=_ms(t0), output_path=str(output),
             returncode=0, effects=effects_meta, upscale_pass=True,
+            character_scenes=sum(1 for *_, hc in segs_with_specs if hc),
         )
         return {"current_stage": "video", "video_path": str(output)}
 
