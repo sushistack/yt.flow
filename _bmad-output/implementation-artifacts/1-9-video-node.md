@@ -178,6 +178,31 @@ claude-sonnet-4-6
 - `_bmad-output/implementation-artifacts/1-9-video-node.md` (modified — story tracking)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — in-progress → review)
 
+## Review Findings
+
+### Follow-up adversarial code review — 2026-07-01 (Opus 4.8)
+
+Three-layer review (Blind Hunter / Edge Case Hunter / Acceptance Auditor) run against
+the merged 1.9/1.9b `video_node`. Most findings had already been resolved by the 1.9b
+review (subtitle-path escaping, empty-scene guard, dead `len==2` branch, defensive
+`next()`, cross-device `.replace()`). Two genuinely live defects were fixed:
+
+- [x] [Review][Patch] `static` camera effect silently broken — `_zoompan_filter` ignored
+  `EffectSpec.start_zoom/end_zoom` and always ran to `ZOOM_IN_MAX`, so a `static` shot
+  got a full 8% push-in instead of the intended 1.0→1.005 drift. Filter now honors the
+  spec zoom range for every direction. [src/yt_flow/pipeline/nodes/video.py]
+- [x] [Review][Patch] `audio_duration` neither validated nor safe — a missing/≤0 value
+  fell back to an invented `2.0`s that drives zoompan frame count and (via `-shortest`)
+  could silently truncate a longer scene. `_validate_scene_assets` now rejects
+  non-positive/absent `audio_duration`; the invented fallback is removed. [src/yt_flow/pipeline/nodes/video.py]
+
+Deferred / dismissed (no action):
+- [x] [Review][Defer] Sub-`XFADE_DURATION` scenes → negative xfade offset / acrossfade underflow — already an explicit `# ponytail:` simplification with a documented clamp upgrade path; TTS narration is always multi-second.
+- [x] [Review][Defer] Segment-length precision (metadata vs actual encode), no ffmpeg subprocess timeout, multi-shot scenes render only the first image (1.9c scope) — real but out of scope for 1.9/1.9b.
+
+Fixes committed on branch `story/1-9-video-node` (commit `6239261`) and merged to master (`aa9a136`). Full suite: 206 passed, 1 skipped.
+
 ## Change Log
 
 - 2026-07-01: Story 1.9 implemented — video_node with FFmpeg composition, observability, full test coverage (claude-sonnet-4-6)
+- 2026-07-01: Follow-up code review — fixed static Ken Burns effect + audio_duration validation; merged to master (Opus 4.8)
