@@ -45,3 +45,56 @@ export type ScpEntry = {
   scp_text?: string
   tags?: string[]
 }
+
+// ── Character Management (Story 3.7) ───────────────────────────────────────
+
+export type AngleName = "front" | "back" | "side" | "three_quarter"
+
+export type Character = {
+  id: string
+  scp_id: string
+  canonical_name: string
+  aliases: string[]
+  visual_descriptor: string | null
+  style_guide: string | null
+  image_prompt_base: string | null
+  selected_image_path: string | null
+  angle_front_path: string | null
+  angle_back_path: string | null
+  angle_side_path: string | null
+  angle_three_quarter_path: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CharacterDetail = Character & {
+  references: ReferenceImage[]
+  candidates: CharacterCandidate[]
+}
+
+export type ReferenceImage = {
+  id: string
+  character_id: string
+  url: string
+  local_path: string
+  width: number | null
+  height: number | null
+  created_at: string
+}
+
+export type CharacterCandidate = {
+  id: string
+  character_id: string | null
+  scp_id: string
+  angle: AngleName
+  candidate_num: number
+  status: "pending" | "generating" | "ready" | "failed"
+  image_path: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CandidateBatchResponse = {
+  candidates: CharacterCandidate[]
+  message: string
+}

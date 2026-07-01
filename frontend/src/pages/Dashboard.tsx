@@ -14,6 +14,15 @@ function TopNav({ onNewRun }: { onNewRun: () => void }) {
       <span className="text-[15px] font-semibold tracking-tight text-foreground">
         yt<span className="text-primary">.</span>flow
       </span>
+      <div className="ml-6 flex items-center gap-1">
+        <a
+          href="/characters"
+          onClick={(e) => { e.preventDefault(); navigate("/characters") }}
+          className="rounded px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground"
+        >
+          캐릭터
+        </a>
+      </div>
       <button
         type="button"
         onClick={onNewRun}

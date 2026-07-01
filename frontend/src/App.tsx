@@ -3,12 +3,31 @@ import { Dashboard } from "@/pages/Dashboard"
 import { RunAbComparisonPage } from "@/pages/RunAbComparisonPage"
 import { RunDetail } from "@/pages/RunDetail"
 
-// Client-side routing (Story 3.4): /runs/{id} → Run Detail, everything else →
-// Dashboard. Tolerant of the /app base prefix the SPA is served under.
+// Client-side routing (Story 3.4). Story 3.7 adds /characters routes.
 export default function App() {
   const pathname = usePathname()
-  const abMatch = pathname.match(/\/runs\/([^/?#]+)\/ab/)
+
+  // /runs/{id}/ab (also under /app)
+  const abMatch = pathname.match(/\/(?:app\/)?runs\/([^/?#]+)\/ab/)
   if (abMatch) return <RunAbComparisonPage runId={abMatch[1]} />
-  const match = pathname.match(/\/runs\/([^/?#]+)/)
-  return match ? <RunDetail runId={match[1]} /> : <Dashboard />
+
+  // /characters/{id} — validate UUID to avoid matching /characters/new etc.
+  const charIdMatch = pathname.match(/\/(?:app\/)?characters\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/)
+  if (charIdMatch) return <CharacterDetailPage charId={charIdMatch[1]} />
+
+  // /characters (with or without /app/ prefix, trailing-slash tolerant)
+  if (/^\/(?:app\/)?characters\/?$/.test(pathname)) {
+    return <CharacterListPage />
+  }
+
+  // /runs/{id} (also under /app)
+  const runMatch = pathname.match(/\/(?:app\/)?runs\/([^/?#]+)/)
+  return runMatch ? <RunDetail runId={runMatch[1]} /> : <Dashboard />
 }
+
+// ── Character Pages (Story 3.7) ────────────────────────────────────────────
+// ponytail: module-level imports (not React.lazy) — the SPA is small enough
+// that code-splitting isn't needed; all pages load eagerly.
+
+import { CharacterListPage } from "@/pages/CharacterListPage"
+import { CharacterDetailPage } from "@/pages/CharacterDetailPage"
