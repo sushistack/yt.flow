@@ -7,9 +7,8 @@ def test_settings_load_from_env(monkeypatch):
     monkeypatch.setenv("YTFLOW_LANGFUSE_PUBLIC_KEY", "pk-test")
     monkeypatch.setenv("YTFLOW_LANGFUSE_SECRET_KEY", "sk-test")
 
-    # Re-import to pick up monkeypatched env (Settings reads at instantiation)
     from yt_flow.config import Settings
-    s = Settings()
+    s = Settings(_env_file=None)  # env-only: ignore any local .env so the test is hermetic
 
     assert s.langfuse_host == "https://langfuse.example.com"
     assert s.langfuse_public_key == "pk-test"
@@ -32,4 +31,6 @@ def test_missing_field_raises_validation_error(monkeypatch, missing_key):
         Settings(_env_file=None)  # ponytail: skip .env to force env-only lookup
 
     field_name = missing_key.removeprefix("YTFLOW_").lower()
-    assert field_name in str(exc_info.value).lower()
+    # Inspect structured errors (version-stable) rather than the formatted message string.
+    missing_locs = {loc for err in exc_info.value.errors() for loc in err["loc"]}
+    assert field_name in missing_locs
