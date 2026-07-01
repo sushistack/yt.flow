@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlmodel import Session, select
 
 from yt_flow.db import get_session
@@ -36,11 +36,22 @@ class RunRead(BaseModel):
     gate_states: str | None
     prompt_variant: str | None
     ab_pair_id: str | None
+    ab_result: dict | None = None
     error: str | None
     extra: str | None
     langfuse_trace_url: str | None
     started_at: str
     updated_at: str
+
+    @field_validator("ab_result", mode="before")
+    @classmethod
+    def parse_ab_result(cls, v):
+        """Parse ab_result from JSON string (DB storage) to dict (API response)."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        return json.loads(v)
 
 
 @router.post("", status_code=201, response_model=RunRead)

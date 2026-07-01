@@ -1,11 +1,15 @@
-"""services/eval_service.py — A/B evaluation orchestrator (Story 4.2).
+"""services/eval_service.py — A/B evaluation orchestrator (Story 4.2 + 4.3).
 
-Scores two completed runs against the OQ-1 3-axis rubric (LLM-as-judge) plus
-rule-based structural metrics, then determines a winner with OQ-6 pairwise
-position-bias mitigation. Reads each run's ``PipelineState`` directly from its
-LangGraph checkpoint (AD-2); the ``runs`` table is consulted only to validate
-status + ``ab_pair_id`` (AD-6). Never creates/mutates runs and never touches the
-graph. [AD-1, AD-4]
+Story 4.2: Scores two completed runs against the OQ-1 3-axis rubric
+(LLM-as-judge) plus rule-based structural metrics, then determines a winner
+with OQ-6 pairwise position-bias mitigation. Reads each run's ``PipelineState``
+directly from its LangGraph checkpoint (AD-2); the ``runs`` table is consulted
+only to validate status + ``ab_pair_id`` (AD-6).
+
+Story 4.3: Persists evaluation results to the runs table (``ab_result`` JSON)
+and Langfuse (individual score observations with idempotency keys). Provides
+``determine_winner()`` as a standalone pure function implementing the OQ-6
+algorithm (quality floor, pairwise majority, rule-based tiebreaker).
 
 DeepSeek is OpenAI-compatible, so the judge uses the already-installed ``httpx``
 client — same pattern as ``scenario_node`` — instead of adding the ``openai`` SDK.
@@ -15,8 +19,10 @@ Judge/pairwise prompts live in Langfuse Prompt Hub (``evaluation/judge``,
 
 import asyncio
 import json
+import logging
 import statistics
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import httpx
 from langfuse import get_client, observe
@@ -24,6 +30,8 @@ from langfuse import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState
 from yt_flow.services.prompt_service import get_prompt
+
+logger = logging.getLogger(__name__)
 
 AXES = ("atmosphere", "narrative_coherence", "article_fidelity")
 REPS_PER_AXIS = 3            # OQ-1: each axis scored 3 times, then averaged
@@ -367,6 +375,9 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
     runs concurrently; rule-based metrics are pure Python. All spans nest under a
     single Langfuse trace deterministically keyed by ``ab_pair_id`` (AC6); Langfuse
     failures are non-fatal — the returned EvaluationResult is authoritative (AD-10).
+
+    Story 4.3: After evaluation, results are persisted to the runs table
+    (``ab_result`` JSON) and Langfuse scores via ``store_evaluation_results()``.
     """
     s = _settings()
     if not s.deepseek_api_key:
@@ -390,6 +401,23 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
         )
         winner, winner_run_id, reason = _resolve_winner(pairwise, run_a_id, run_b_id)
         trace_url = _finish_trace(span, ab_pair_id, winner, reason)
+
+        # Story 4.3: Persist results to DB + Langfuse scores
+        await store_evaluation_results(
+            run_a_id=run_a_id,
+            run_b_id=run_b_id,
+            llm_judge_scores={
+                "A": _axis_scores_to_dict(scores_a),
+                "B": _axis_scores_to_dict(scores_b),
+            },
+            rule_based_scores={
+                "A": _rule_metrics_to_dict(metrics_a),
+                "B": _rule_metrics_to_dict(metrics_b),
+            },
+            pairwise_result=_pairwise_to_dict(pairwise),
+            trace_url=trace_url,
+        )
+
         return EvaluationResult(
             ab_pair_id=ab_pair_id, run_a_id=run_a_id, run_b_id=run_b_id,
             scores_a=scores_a, scores_b=scores_b, metrics_a=metrics_a, metrics_b=metrics_b,
@@ -411,6 +439,215 @@ def _resolve_winner(
     if winner == "B":
         return "B", run_b_id, "run B preferred"
     return "tie", None, "no decisive winner"
+
+
+# ── Story 4.3: Winner determination (pure function, OQ-6) ───────────────────
+
+
+def determine_winner(
+    llm_judge_scores: dict,     # {"A": {axis: float}, "B": {axis: float}}
+    rule_based_scores: dict,    # {"A": {metric: float}, "B": {metric: float}}
+    pairwise_result: dict,      # {"majority_winner": str, ...}
+) -> "tuple[str | None, str | None]":
+    """Pure-function OQ-6 winner determination.
+
+    Returns (winner, reason).
+    winner: "A" | "B" | "tie" | None
+    reason: None | "both_below_floor"
+    """
+    QUALITY_FLOOR = 2.0
+
+    # Step 1: Quality floor check
+    a_below = any(
+        llm_judge_scores["A"].get(axis, 0) < QUALITY_FLOOR
+        for axis in ("atmosphere", "narrative_coherence", "article_fidelity")
+    )
+    b_below = any(
+        llm_judge_scores["B"].get(axis, 0) < QUALITY_FLOOR
+        for axis in ("atmosphere", "narrative_coherence", "article_fidelity")
+    )
+
+    if a_below and b_below:
+        return (None, "both_below_floor")
+    if a_below:
+        return ("B", None)
+    if b_below:
+        return ("A", None)
+
+    # Step 2: Pairwise majority (2/3 required)
+    winner = pairwise_result.get("majority_winner")
+    if winner in ("A", "B"):
+        return (winner, None)
+
+    # Step 3: Rule-based tiebreaker
+    # 3a. Scene count match rate (higher = better)
+    a_scene = rule_based_scores["A"]["scene_count_match_rate"]
+    b_scene = rule_based_scores["B"]["scene_count_match_rate"]
+    if abs(a_scene - b_scene) > 0.01:
+        return ("A" if a_scene > b_scene else "B", None)
+
+    # 3b. Subtitle sync error (lower = better)
+    a_sync = rule_based_scores["A"]["subtitle_sync_error"]
+    b_sync = rule_based_scores["B"]["subtitle_sync_error"]
+    if abs(a_sync - b_sync) > 0.01:
+        return ("A" if a_sync < b_sync else "B", None)
+
+    # 3c. Audio duration variance (lower = better)
+    a_var = rule_based_scores["A"]["audio_duration_variance"]
+    b_var = rule_based_scores["B"]["audio_duration_variance"]
+    if abs(a_var - b_var) > 0.01:
+        return ("A" if a_var < b_var else "B", None)
+
+    # Step 4: All tiebreakers exhausted → tie
+    return ("tie", None)
+
+
+# ── Story 4.3: Result storage (DB + Langfuse, AD-10 non-fatal) ──────────────
+
+
+def _build_trace_id(ab_pair_id: str) -> str | None:
+    """Recreate the deterministic Langfuse trace id from ab_pair_id."""
+    try:
+        client = get_client()
+        return client.create_trace_id(seed=ab_pair_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def store_evaluation_results(
+    run_a_id: str,
+    run_b_id: str,
+    llm_judge_scores: dict,
+    rule_based_scores: dict,
+    pairwise_result: dict,
+    trace_url: str | None = None,
+) -> dict:
+    """Persist A/B evaluation results to DB (both runs) and Langfuse (scores).
+
+    Returns the ``ab_result`` dict that was persisted. Langfuse score creation
+    failures are non-fatal per AD-10 — the DB write is the authoritative record.
+    """
+    # ── Compute ab_result ───────────────────────────────────────────────────
+    winner, reason = determine_winner(llm_judge_scores, rule_based_scores, pairwise_result)
+    evaluated_at = datetime.now(tz=timezone.utc).isoformat()
+
+    ab_result: dict = {
+        "axis_scores": llm_judge_scores,
+        "pairwise_winner": pairwise_result,
+        "rule_based_scores": rule_based_scores,
+        "winner": winner,
+        "reason": reason,
+        "langfuse_eval_trace_url": trace_url,
+        "evaluated_at": evaluated_at,
+    }
+    ab_result_json = json.dumps(ab_result)
+
+    # ── Persist to runs table (both runs get the same ab_result, AD-6) ─────
+    from sqlmodel import Session
+
+    from yt_flow import db as db_module
+    from yt_flow.db.models import Run
+
+    with Session(db_module._engine) as session:
+        for run_id in (run_a_id, run_b_id):
+            run = session.get(Run, run_id)
+            if run is not None:
+                run.ab_result = ab_result_json
+                run.updated_at = evaluated_at
+        session.commit()
+
+    # ── Langfuse score ingestion (non-fatal, AD-10) ─────────────────────────
+    try:
+        langfuse = get_client()
+
+        # Per-axis scores (6 total: 3 axes × 2 variants)
+        for variant in ("A", "B"):
+            variant_run_id = run_a_id if variant == "A" else run_b_id
+            for axis in ("atmosphere", "narrative_coherence", "article_fidelity"):
+                value = float(llm_judge_scores[variant].get(axis, 0))
+                langfuse.create_score(
+                    name=f"{axis}_{variant}",
+                    value=value,
+                    trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+                    data_type="NUMERIC",
+                    score_id=f"{variant_run_id}-{axis}_{variant}",
+                    comment=f"3-run average for {axis} (variant {variant})",
+                )
+
+        # Pairwise winner as CATEGORICAL score
+        majority = pairwise_result.get("majority_winner", "tie")
+        langfuse.create_score(
+            name="pairwise_winner",
+            value=majority,
+            trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+            data_type="CATEGORICAL",
+            score_id=f"{run_a_id}-pairwise_winner",
+        )
+
+        # Rule-based metrics as NUMERIC scores
+        for variant in ("A", "B"):
+            variant_run_id = run_a_id if variant == "A" else run_b_id
+            for metric in ("scene_count_match_rate", "subtitle_sync_error", "audio_duration_variance"):
+                value = float(rule_based_scores[variant].get(metric, 0))
+                langfuse.create_score(
+                    name=f"{metric}_{variant}",
+                    value=value,
+                    trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+                    data_type="NUMERIC",
+                    score_id=f"{variant_run_id}-{metric}_{variant}",
+                )
+    except Exception:
+        logger.warning("Langfuse score ingestion failed — result persisted to DB only", exc_info=True)
+
+    return ab_result
+
+
+# ── Dataclass → dict conversion helpers (Story 4.3 wire-up) ──────────────────
+
+
+def _axis_scores_to_dict(scores: AxisScores) -> dict:
+    return {
+        "atmosphere": scores.atmosphere,
+        "narrative_coherence": scores.narrative_coherence,
+        "article_fidelity": scores.article_fidelity,
+    }
+
+
+def _rule_metrics_to_dict(metrics: RuleBasedMetrics) -> dict:
+    return {
+        "scene_count_match_rate": metrics.scene_count_match_rate,
+        "subtitle_sync_error": metrics.avg_subtitle_sync_error,
+        "audio_duration_variance": metrics.audio_duration_variance_pct / 100.0,
+    }
+
+
+def _pairwise_to_dict(pairwise: PairwiseResult) -> dict:
+    """Convert PairwiseResult to the ab_result pairwise_winner shape."""
+    runs = []
+    if pairwise.a_to_b_winner is not None:
+        runs.append({"order": "A_vs_B", "winner": pairwise.a_to_b_winner})
+    if pairwise.b_to_a_winner is not None:
+        runs.append({"order": "B_vs_A", "winner": pairwise.b_to_a_winner})
+    if pairwise.tiebreaker_winner is not None:
+        runs.append({"order": "A_vs_B", "winner": pairwise.tiebreaker_winner})
+
+    # Determine majority_count and total_runs
+    total_runs = len(runs)
+    final = pairwise.final_winner
+    if final and final != "tie":
+        # Count how many runs agree with the final winner
+        majority_count = sum(1 for r in runs if r["winner"] == final)
+        if majority_count < 2:
+            majority_count = max(majority_count, 1)
+    else:
+        majority_count = 0
+
+    return {
+        "majority_winner": final,
+        "majority_count": majority_count,
+        "total_runs": total_runs,
+        "runs": runs,
+    }
 
 
 # ── Trace lifecycle helpers (all guarded — tracing is non-fatal, AD-10) ─────
