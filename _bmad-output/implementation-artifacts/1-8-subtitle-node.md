@@ -1,6 +1,10 @@
+---
+baseline_commit: 9ddfc9feb256d08d8c79776ad5fe5a5da25eff0d
+---
+
 # Story 1.8: subtitle_node
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -20,39 +24,39 @@ so that each scene has a subtitle file with accurate word-level timing.
 
 ## Tasks / Subtasks
 
-- [ ] Confirm preconditions from prior Epic 1 stories before editing code (AC: 1, 3)
-  - [ ] Verify `src/yt_flow/domain/state.py` defines `PipelineState`, `SceneState`, and `WordTiming` with `audio_path`, `audio_duration`, `word_timings`, and `subtitle_path` fields matching the architecture.
-  - [ ] Verify `src/yt_flow/config.py` uses Pydantic `BaseSettings` with `YTFLOW_` env prefix, and add aligner/subtitle settings there if absent.
-  - [ ] Verify `src/yt_flow/pipeline/graph.py` already contains the `subtitle` node between `gate_tts` and `gate_subtitle`; if it still uses stubs, replace only the subtitle stub behavior.
-- [ ] Add config-driven subtitle alignment support (AC: 1, 2)
-  - [ ] Add `YTFLOW_ALIGNER` with a default suitable for local development, expected value `"whisperx"` unless the existing config already establishes another default.
-  - [ ] Add any needed aligner settings without hardcoding model names inside the node, for example `YTFLOW_ALIGNER_MODEL`, `YTFLOW_ALIGNER_DEVICE`, `YTFLOW_ALIGNER_COMPUTE_TYPE`, or equivalent names consistent with the existing config style.
-  - [ ] Implement a small strategy resolver, keeping the stage node call site stable: configured aligner name in, aligner object/function out.
-  - [ ] Fail fast with a clear `ValueError` or project-local exception for unsupported `YTFLOW_ALIGNER` values.
-- [ ] Implement `subtitle_node` in `src/yt_flow/pipeline/nodes/subtitle.py` (AC: 1, 3, 4, 5)
-  - [ ] Treat the stage literal as exactly `"subtitle"` everywhere: node name, `current_stage`, errors, and Langfuse span.
-  - [ ] For each scene, require non-empty `narration` and an existing `audio_path`; do not attempt alignment against missing files.
-  - [ ] Use known `SceneState.narration` as the transcript source; do not re-transcribe when forced alignment can consume known text.
-  - [ ] Write one `.srt` file per scene under `workspace/{run_id}/subtitles/` or the existing workspace convention established by earlier stories.
-  - [ ] Return a new state update replacing `scenes` wholesale with updated scene dictionaries; do not mutate nested state in place.
-  - [ ] Set each `SceneState.subtitle_path` to the generated file path and set `current_stage` to `"subtitle"`.
-- [ ] Implement SRT formatting and timing rules (AC: 1, 5)
-  - [ ] Generate standards-compliant SRT: 1-based cue index, `HH:MM:SS,mmm --> HH:MM:SS,mmm`, subtitle text, blank line.
-  - [ ] Ensure each generated file has at least one cue when narration exists.
-  - [ ] Ensure cue timings are monotonic, non-negative, and do not exceed the scene audio duration when duration data is available.
-  - [ ] Preserve Korean narration text as UTF-8.
-  - [ ] Keep line splitting deterministic and readable; prefer word/sentence timing from the aligner over arbitrary fixed-duration chunks.
-- [ ] Add observability and error handling (AC: 3, 4)
-  - [ ] Decorate or instrument the node with Langfuse `@observe` using span name `"subtitle"` following the patterns from prior node stories.
-  - [ ] Capture latency in the span metadata or observation data.
-  - [ ] On failure, return or raise according to the established node pattern, but ensure `PipelineState.error` carries enough detail for `services/` and Langfuse: `stage`, `run_id`, and a human-readable message.
-  - [ ] Keep Langfuse failure non-fatal only if the existing observability wrapper has already established that behavior; do not let tracing outages block subtitle generation.
-- [ ] Add tests and fixtures (AC: 1, 2, 3, 4)
-  - [ ] Unit-test SRT formatting independently from WhisperX or any cloud/local model dependency.
-  - [ ] Unit-test `YTFLOW_ALIGNER` strategy selection, including unsupported aligner error behavior.
-  - [ ] Unit-test `subtitle_node` with a fake aligner and fixture audio path so CI/local tests do not require WhisperX model downloads.
-  - [ ] Test missing `audio_path`, missing audio file, empty narration, and aligner exception paths.
-  - [ ] Test that returned `scenes` contains updated `subtitle_path` values and does not introduce DB writes or API-layer imports.
+- [x] Confirm preconditions from prior Epic 1 stories before editing code (AC: 1, 3)
+  - [x] Verify `src/yt_flow/domain/state.py` defines `PipelineState`, `SceneState`, and `WordTiming` with `audio_path`, `audio_duration`, `word_timings`, and `subtitle_path` fields matching the architecture.
+  - [x] Verify `src/yt_flow/config.py` uses Pydantic `BaseSettings` with `YTFLOW_` env prefix, and add aligner/subtitle settings there if absent.
+  - [x] Verify `src/yt_flow/pipeline/graph.py` already contains the `subtitle` node between `gate_tts` and `gate_subtitle`; if it still uses stubs, replace only the subtitle stub behavior.
+- [x] Add config-driven subtitle alignment support (AC: 1, 2)
+  - [x] Add `YTFLOW_ALIGNER` with a default suitable for local development, expected value `"whisperx"` unless the existing config already establishes another default.
+  - [x] Add any needed aligner settings without hardcoding model names inside the node, for example `YTFLOW_ALIGNER_MODEL`, `YTFLOW_ALIGNER_DEVICE`, `YTFLOW_ALIGNER_COMPUTE_TYPE`, or equivalent names consistent with the existing config style.
+  - [x] Implement a small strategy resolver, keeping the stage node call site stable: configured aligner name in, aligner object/function out.
+  - [x] Fail fast with a clear `ValueError` or project-local exception for unsupported `YTFLOW_ALIGNER` values.
+- [x] Implement `subtitle_node` in `src/yt_flow/pipeline/nodes/subtitle.py` (AC: 1, 3, 4, 5)
+  - [x] Treat the stage literal as exactly `"subtitle"` everywhere: node name, `current_stage`, errors, and Langfuse span.
+  - [x] For each scene, require non-empty `narration` and an existing `audio_path`; do not attempt alignment against missing files.
+  - [x] Use known `SceneState.narration` as the transcript source; do not re-transcribe when forced alignment can consume known text.
+  - [x] Write one `.srt` file per scene under `workspace/{run_id}/subtitles/` or the existing workspace convention established by earlier stories.
+  - [x] Return a new state update replacing `scenes` wholesale with updated scene dictionaries; do not mutate nested state in place.
+  - [x] Set each `SceneState.subtitle_path` to the generated file path and set `current_stage` to `"subtitle"`.
+- [x] Implement SRT formatting and timing rules (AC: 1, 5)
+  - [x] Generate standards-compliant SRT: 1-based cue index, `HH:MM:SS,mmm --> HH:MM:SS,mmm`, subtitle text, blank line.
+  - [x] Ensure each generated file has at least one cue when narration exists.
+  - [x] Ensure cue timings are monotonic, non-negative, and do not exceed the scene audio duration when duration data is available.
+  - [x] Preserve Korean narration text as UTF-8.
+  - [x] Keep line splitting deterministic and readable; prefer word/sentence timing from the aligner over arbitrary fixed-duration chunks.
+- [x] Add observability and error handling (AC: 3, 4)
+  - [x] Decorate or instrument the node with Langfuse `@observe` using span name `"subtitle"` following the patterns from prior node stories.
+  - [x] Capture latency in the span metadata or observation data.
+  - [x] On failure, return or raise according to the established node pattern, but ensure `PipelineState.error` carries enough detail for `services/` and Langfuse: `stage`, `run_id`, and a human-readable message.
+  - [x] Keep Langfuse failure non-fatal only if the existing observability wrapper has already established that behavior; do not let tracing outages block subtitle generation.
+- [x] Add tests and fixtures (AC: 1, 2, 3, 4)
+  - [x] Unit-test SRT formatting independently from WhisperX or any cloud/local model dependency.
+  - [x] Unit-test `YTFLOW_ALIGNER` strategy selection, including unsupported aligner error behavior.
+  - [x] Unit-test `subtitle_node` with a fake aligner and fixture audio path so CI/local tests do not require WhisperX model downloads.
+  - [x] Test missing `audio_path`, missing audio file, empty narration, and aligner exception paths.
+  - [x] Test that returned `scenes` contains updated `subtitle_path` values and does not introduce DB writes or API-layer imports.
 
 ## Dev Notes
 
@@ -235,14 +239,45 @@ There is no implementation code history yet. The highest-confidence guidance is 
 
 ### Agent Model Used
 
-TBD by dev agent.
+claude-sonnet-4-6
 
 ### Debug Log References
+
+- Test fix: `_FakeAligner(segments=[])` used `or` instead of `is not None` check, causing default segments to be returned on empty list.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented `subtitle_node` with `@observe(name="subtitle")` Langfuse span (AC3).
+- Added config-driven aligner strategy (`YTFLOW_ALIGNER`, `YTFLOW_ALIGNER_MODEL`, `YTFLOW_ALIGNER_DEVICE`, `YTFLOW_ALIGNER_COMPUTE_TYPE`) to `config.py` (AC2).
+- `WhisperXAligner` uses lazy import (not in pyproject.toml); kept behind `SubtitleAligner` Protocol.
+- Reuses `SceneState.word_timings` from `tts_node` when populated; calls aligner only when empty (AC1).
+- SRT files written to `workspace/{run_id}/subtitles/scene_NNN.srt` as UTF-8 (AC1, AC5).
+- Error contract: `stage=subtitle run_id=<id>: <message>` in `PipelineState.error` (AC4).
+- 29 unit tests, 0 regressions in the full suite (116 passed, 1 skipped).
+- `nodes/__init__.py` and `graph.py` unchanged — consistent with prior stories (1.5-1.7 pattern).
 
 ### File List
 
-TBD by dev agent.
+- `src/yt_flow/config.py` — added `aligner`, `aligner_model`, `aligner_device`, `aligner_compute_type` fields
+- `src/yt_flow/pipeline/nodes/subtitle.py` — new: `subtitle_node`, `WhisperXAligner`, `_get_aligner`, `format_srt`, `_word_timings_to_segments`, `_validate_segments`
+- `tests/pipeline/nodes/test_subtitle.py` — new: 29 unit tests
+
+### Change Log
+
+- Added aligner config settings to Settings class (2026-07-01)
+- Implemented subtitle_node with forced-alignment SRT generation, WhisperX strategy, Langfuse observability, and full error handling (2026-07-01)
+- Applied 4 code review patches (asyncio, audio_duration guard, SRT trailing newline, last_end fallback) (2026-07-01)
+
+### Review Findings
+
+- [x] [Review][Patch] asyncio.get_event_loop() → get_running_loop() in async context [subtitle.py:43]
+- [x] [Review][Patch] _validate_segments audio_duration falsy-zero guard → is not None [subtitle.py:133]
+- [x] [Review][Patch] format_srt missing trailing blank line after last SRT cue [subtitle.py:93]
+- [x] [Review][Patch] WhisperXAligner last_end sentinel 999.0 → len(audio)/16000 [subtitle.py:59]
+- [x] [Review][Defer] Partial alignment: word_segments non-empty but all unaligned silently returns [] [subtitle.py:64] — deferred, WhisperX-specific edge case, no test path without live model
+- [x] [Review][Defer] WhisperX model reloaded on every scene (performance) [subtitle.py:48] — deferred, correctness not affected; cache model in instance if throughput matters
+- [x] [Review][Defer] Error format is a flat string, not a structured dict (AC4 ambiguity) [subtitle.py:208] — deferred, consistent with prior nodes; revisit in API layer if parsers need structured errors
+- [x] [Review][Defer] Overlapping input word_timings from TTS not pre-validated [subtitle.py:108] — deferred, TTS node is responsible for monotonic output; guard here if TTS diverges
+- [x] [Review][Defer] Empty scenes list is a valid no-op but video_node has no downstream guard [subtitle.py:180] — deferred, add guard in video_node integration story
+- [x] [Review][Defer] run_id path traversal via Path(workspace)/run_id with no sanitisation [subtitle.py:176] — deferred, internal CLI state; add sanitisation if run_id ever comes from HTTP input
