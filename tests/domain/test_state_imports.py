@@ -21,6 +21,19 @@ EXPECTED_FIELDS = {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
         "word_timings", "subtitle_path",
     },
+    "SearchResult": {"url", "thumbnail_url", "title"},
+    "ReferenceImage": {"id", "character_id", "url", "local_path", "width", "height", "created_at"},
+    "Character": {
+        "id", "scp_id", "canonical_name", "aliases",
+        "visual_descriptor", "style_guide", "image_prompt_base",
+        "selected_image_path",
+        "angle_front_path", "angle_back_path", "angle_side_path", "angle_three_quarter_path",
+        "created_at", "updated_at",
+    },
+    "CharacterCandidate": {
+        "id", "character_id", "scp_id", "angle", "candidate_num",
+        "status", "image_path", "created_at", "updated_at",
+    },
     "PipelineState": {
         "run_id", "scp_text", "scenes", "video_path", "current_stage",
         "gate_states", "prompt_variant", "error",
@@ -29,7 +42,8 @@ EXPECTED_FIELDS = {
 
 
 def test_typeddicts_import():
-    for name in ("PipelineState", "SceneState", "ShotData", "WordTiming"):
+    for name in ("PipelineState", "SceneState", "ShotData", "WordTiming",
+                  "SearchResult", "ReferenceImage", "Character", "CharacterCandidate", "AngleName"):
         assert hasattr(state, name), name
 
 

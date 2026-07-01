@@ -1,4 +1,4 @@
-import type { GateState, Run, ScpEntry, StageName } from "@/lib/types"
+import type { CandidateBatchResponse, Character, CharacterCandidate, CharacterDetail, GateState, ReferenceImage, Run, ScpEntry, StageName } from "@/lib/types"
 
 // Single place that assembles URLs and parses responses. Components never fetch
 // ad hoc. Same-origin: the SPA is served by FastAPI, so relative paths work and
@@ -18,17 +18,19 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(path, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
-    })
+    const headers: Record<string, string> = {}
+    // Only set Content-Type when we have a body to send; bodyless POSTs
+    // (e.g. search-refs, finalize, retry) must not send JSON content-type
+    // or FastAPI may reject the empty body as invalid JSON. [code-review 3.7]
+    if (init?.body) headers["Content-Type"] = "application/json"
+    Object.assign(headers, init?.headers)
+    res = await fetch(path, { ...init, headers })
   } catch {
     // Network failure / server down — distinct from an HTTP error status.
     throw new ApiError("서버에 연결할 수 없습니다")
   }
   if (!res.ok) throw new ApiError(await errorMessage(res, "요청을 처리할 수 없습니다"))
   if (res.status === 204) return undefined as T
-  if (typeof res.text !== "function") return res.json() as Promise<T>
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
 }
@@ -91,9 +93,13 @@ export async function getStageArtifacts(id: string, stage: StageName): Promise<S
 }
 
 // Artifact paths are workspace/{run_id}/...; the /files static mount serves them.
+// Path traversal prevention: strip ../ and normalize before serving.
 export function fileUrl(serverPath: string): string {
   const parts = serverPath.split(/workspace[\\/]/)
-  return "/files/" + parts[parts.length - 1].replace(/^[\\/]+/, "")
+  let rel = parts[parts.length - 1].replace(/^[\\/]+/, "")
+  // Strip path traversal sequences
+  rel = rel.replace(/\.\.(\/|\\)/g, "").replace(/^\.\.$/, "")
+  return "/files/" + rel
 }
 
 export const videoDownloadUrl = (id: string) => `/runs/${id}/artifact`
@@ -133,3 +139,38 @@ export const patchStageArtifact = (id: string, stage: StageName, text: string) =
     method: "PATCH",
     body: JSON.stringify({ body: text }),
   })
+
+// ── Character Management (Story 3.7) ────────────────────────────────────────
+
+export type CharacterCreate = { scp_id: string; canonical_name: string; aliases?: string[] }
+export type CharacterUpdate = Partial<Pick<Character, "canonical_name" | "aliases" | "visual_descriptor" | "style_guide" | "image_prompt_base">>
+
+export const getCharacters = (scpId?: string) =>
+  json<Character[]>(`/api/characters${scpId ? `?scp_id=${encodeURIComponent(scpId)}` : ""}`)
+
+export const getCharacter = (id: string) =>
+  json<CharacterDetail>(`/api/characters/${id}`)
+
+export const createCharacter = (body: CharacterCreate) =>
+  json<Character>("/api/characters", { method: "POST", body: JSON.stringify(body) })
+
+export const updateCharacter = (id: string, body: CharacterUpdate) =>
+  json<Character>(`/api/characters/${id}`, { method: "PATCH", body: JSON.stringify(body) })
+
+export const deleteCharacter = (id: string) =>
+  json<void>(`/api/characters/${id}`, { method: "DELETE" })
+
+export const searchCharacterRefs = (id: string) =>
+  json<{ references: ReferenceImage[]; count: number }>(`/api/characters/${id}/search-refs`, { method: "POST" })
+
+export const getCharacterRefs = (id: string) =>
+  json<ReferenceImage[]>(`/api/characters/${id}/references`)
+
+export const generateCandidates = (id: string) =>
+  json<CandidateBatchResponse>(`/api/characters/${id}/generate`, { method: "POST" })
+
+export const getCharacterCandidates = (id: string, angle?: string) =>
+  json<CharacterCandidate[]>(`/api/characters/${id}/candidates${angle ? `?angle=${encodeURIComponent(angle)}` : ""}`)
+
+export const finalizeCharacter = (id: string) =>
+  json<CharacterDetail>(`/api/characters/${id}/finalize`, { method: "POST" })
