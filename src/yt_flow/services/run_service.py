@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException
+from langgraph.graph import START
 from langgraph.types import Command
 from sqlmodel import Session
 
@@ -31,6 +32,11 @@ _STAGES = ("scenario", "image", "tts", "subtitle", "video")
 _ACTION_TO_DECISION = {"approve": "approved", "reject": "rejected"}
 _RETRYABLE = frozenset({"approved", "rejected", "failed"})  # AC1 — retry preconditions
 _EDITABLE = ("scenario", "subtitle")  # AD-8 — only these stages carry editable text
+# Retry entry point (AD-9): to actually RE-RUN a stage node, aupdate_state must attribute
+# the update to the stage's *predecessor* (START, else the prior gate). Using as_node=stage
+# would resume at gate_<stage> and skip re-execution. Verified against the real graph.
+_RETRY_ENTRY = {s: f"gate_{_STAGES[i - 1]}" for i, s in enumerate(_STAGES)}
+_RETRY_ENTRY["scenario"] = START
 
 
 def _settings() -> Settings:
@@ -122,6 +128,17 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
 # Injected compiled pipeline graph + per-run RunnableConfig (thread_id) for resume.
 _graph: Any = None
 _configs: dict[str, dict] = {}
+# Strong refs to fire-and-forget background tasks — the event loop only keeps a weak
+# ref, so without this a running resume/retry can be GC'd and silently cancelled.
+_bg_tasks: set = set()
+
+
+def spawn(coro) -> "asyncio.Task":
+    """Schedule a background task and retain a strong reference until it finishes."""
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
 
 
 def configure(graph: Any) -> None:
@@ -312,14 +329,14 @@ async def retry_stage(run_id: str, stage: str, sse_registry: "SSEQueueRegistry |
     values = snap.values or {}
     update = _nullify(stage, values.get("scenes") or [])
     update["gate_states"] = _reset_gates(values.get("gate_states") or {}, stage)
-    # ponytail: as_node=stage per AD-9's literal contract. True re-run may need the
-    # predecessor node as the entry point; verify against the real graph in 2.3 integration.
-    await _graph.aupdate_state(config, update, as_node=stage)
+    # Attribute the update to the stage's predecessor so astream(None) re-runs the stage
+    # node itself, not just its gate (AD-9). See _RETRY_ENTRY.
+    await _graph.aupdate_state(config, update, as_node=_RETRY_ENTRY[stage])
     _write_run(run_id, status="running", current_stage=stage, error=None,
                gate_states=json.dumps(_reset_gates(gate_states, stage)))
     await _publish(sse_registry, run_id, "stage_entry", {"run_id": run_id, "stage": stage})
     _configs[run_id] = config
-    asyncio.create_task(_run(run_id, _graph.astream(None, config, stream_mode="updates"), sse_registry))
+    spawn(_run(run_id, _graph.astream(None, config, stream_mode="updates"), sse_registry))
     return {
         "run_id": run_id, "stage": stage, "status": "retrying",
         "message": "Stage retry initiated — stage_entry SSE event will confirm execution start",

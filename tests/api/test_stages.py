@@ -248,7 +248,8 @@ def test_retry_scenario_cascade_clears_downstream(client):
     })
     client.post("/runs/r1/stages/scenario/retry")
     values, as_node = g.updates[-1]
-    assert as_node == "scenario"
+    # retry re-enters via the stage's predecessor so the stage node actually re-runs (AD-9)
+    assert as_node == run_service._RETRY_ENTRY["scenario"]
     assert values["scenes"] == []
     assert values["video_path"] is None
     assert all(v == "pending" for v in values["gate_states"].values())

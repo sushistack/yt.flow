@@ -1,4 +1,3 @@
-import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -56,7 +55,7 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     session.commit()
     session.refresh(run)
     registry = getattr(request.app.state, "sse_registry", None)
-    asyncio.create_task(run_service.start_run(run.id, body.scp_text, registry))
+    run_service.spawn(run_service.start_run(run.id, body.scp_text, registry))
     return RunRead.model_validate(run, from_attributes=True)
 
 
@@ -89,7 +88,7 @@ async def gate(run_id: str, stage: str, body: GateAction, request: Request,
     if run.status != "awaiting_approval" or gate_states.get(stage) != "pending":
         raise HTTPException(status_code=409, detail=f"Gate not pending for stage '{stage}'")
     registry = getattr(request.app.state, "sse_registry", None)
-    asyncio.create_task(run_service.resume_run(run_id, stage, body.action, registry))
+    run_service.spawn(run_service.resume_run(run_id, stage, body.action, registry))
     return {"status": "accepted", "run_id": run_id, "stage": stage, "action": body.action}
 
 

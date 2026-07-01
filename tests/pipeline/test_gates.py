@@ -12,8 +12,9 @@ import pytest
 from langgraph.types import Command
 
 from yt_flow.config import Settings
-from yt_flow.pipeline import gates
+from yt_flow.pipeline import gates, nodes
 from yt_flow.pipeline.graph import build_graph
+from yt_flow.services import run_service
 
 _ALL = ("scenario", "image", "tts", "subtitle", "video")
 
@@ -120,5 +121,43 @@ async def test_all_approved_reaches_end(tmp_path):
             result = await graph.ainvoke(Command(resume="approved"), config)
         assert "__interrupt__" not in result                      # reached END
         assert all(result["gate_states"][s] == "approved" for s in _ALL)
+    finally:
+        await saver.conn.close()
+
+
+async def test_retry_reruns_stage_node(tmp_path, monkeypatch):
+    """AD-9 regression: retry must RE-RUN the stage node, not just re-hit its gate.
+
+    Attributing the checkpoint update to the stage itself (as_node=stage) would resume
+    at gate_<stage> and skip re-execution. run_service uses _RETRY_ENTRY (the stage's
+    predecessor) precisely so the node runs again. Instrument the real image node and
+    prove it executes a second time after a retry.
+    """
+    ran: list[str] = []
+
+    def counting_image(state):
+        ran.append("image")
+        return {"current_stage": "image"}
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "image", counting_image)
+
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        await graph.ainvoke(_state(run_id), config)              # pause at scenario
+        await graph.ainvoke(Command(resume="approved"), config)  # run image, pause at gate_image
+        assert ran == ["image"]                                   # image ran once
+
+        # Simulate run_service.retry_stage's checkpoint rewind for "image".
+        snap = await graph.aget_state(config)
+        update = {"scenes": [], "video_path": None,
+                  "gate_states": {**snap.values["gate_states"], "image": "pending"}}
+        await graph.aupdate_state(config, update, as_node=run_service._RETRY_ENTRY["image"])
+        result = await graph.ainvoke(None, config)               # resume from predecessor
+
+        assert ran == ["image", "image"]                          # image RE-RAN (the fix)
+        assert "__interrupt__" in result
+        assert result["__interrupt__"][0].value == {"stage": "image"}  # paused at gate_image again
     finally:
         await saver.conn.close()
