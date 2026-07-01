@@ -106,34 +106,36 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
     safe_w = round(COMP_W * (1 - ZOOM_SAFE_MARGIN))
     safe_h = round(COMP_H * (1 - ZOOM_SAFE_MARGIN))
 
-    inc = (ZOOM_IN_MAX - 1.0) / frames
-
+    # Honor the EffectSpec zoom range so 'static' (1.0→1.005) drifts subtly instead
+    # of getting a full push-in. start_zoom/end_zoom were previously ignored — the
+    # filter always ran to ZOOM_IN_MAX regardless of spec. [review:G]
+    lo, hi = spec.start_zoom, spec.end_zoom
     direction = spec.direction
-    if direction == "in-center":
-        z_expr = f"min(zoom+{inc:.6f},{ZOOM_IN_MAX})"
+    if direction == "out-center":
+        # zoom-out is stateful: the conditional re-seeds zoom to `lo` on the first
+        # frame, then decrements by `inc` toward `hi`.
+        inc = (lo - hi) / frames
+        z_expr = f"if(lte(zoom,{hi}),{lo},max({hi + 0.001:.6f},zoom-{inc:.6f}))"
         x_expr = "iw/2-(iw/zoom/2)"
         y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "out-center":
-        # zoom-out needs the conditional: zoompan clamps z≥1 and is stateful
-        z_expr = f"if(lte(zoom,1.0),{ZOOM_IN_MAX},max(1.001,zoom-{inc:.6f}))"
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "pan-right":
-        z_expr = f"min(zoom+{inc:.6f},{ZOOM_IN_MAX})"
-        x_expr = f"(iw-iw/zoom)*on/{frames}"
-        y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "pan-left":
-        z_expr = f"min(zoom+{inc:.6f},{ZOOM_IN_MAX})"
-        x_expr = f"(iw-iw/zoom)*(1-on/{frames})"
-        y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "pan-up":
-        z_expr = f"min(zoom+{inc:.6f},{ZOOM_IN_MAX})"
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = f"(ih-ih/zoom)*on/{frames}"
-    else:  # pan-down
-        z_expr = f"min(zoom+{inc:.6f},{ZOOM_IN_MAX})"
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = f"(ih-ih/zoom)*(1-on/{frames})"
+    else:
+        inc = (hi - lo) / frames
+        z_expr = f"min(zoom+{inc:.6f},{hi})"
+        if direction == "pan-right":
+            x_expr = f"(iw-iw/zoom)*on/{frames}"
+            y_expr = "ih/2-(ih/zoom/2)"
+        elif direction == "pan-left":
+            x_expr = f"(iw-iw/zoom)*(1-on/{frames})"
+            y_expr = "ih/2-(ih/zoom/2)"
+        elif direction == "pan-up":
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = f"(ih-ih/zoom)*on/{frames}"
+        elif direction == "pan-down":
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = f"(ih-ih/zoom)*(1-on/{frames})"
+        else:  # in-center
+            x_expr = "iw/2-(iw/zoom/2)"
+            y_expr = "ih/2-(ih/zoom/2)"
 
     zp = (
         f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}'"
@@ -223,6 +225,12 @@ def _validate_scene_assets(scenes: list[SceneState]) -> None:
         subtitle = scene.get("subtitle_path")
         if not subtitle or not Path(subtitle).exists():
             raise FileNotFoundError(f"scene {n}: subtitle_path missing or not found: {subtitle!r}")
+        # audio_duration drives zoompan frame count + xfade offset; a missing/≤0 value
+        # would silently truncate the scene (via -shortest) or corrupt timing. Fail fast
+        # instead of inventing a fallback duration. [review:D]
+        dur = scene.get("audio_duration")
+        if not isinstance(dur, (int, float)) or dur <= 0:
+            raise ValueError(f"scene {n}: audio_duration must be a positive number, got {dur!r}")
 
 
 async def _run_ffmpeg(*args: str) -> tuple[int, str]:
@@ -253,7 +261,7 @@ async def _compose_scene(
     image_path = shot["image_path"]
     audio_path: str = scene["audio_path"]  # type: ignore[assignment]
     subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
-    duration = scene.get("audio_duration") or 2.0
+    duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive upstream
     seg_path = out_dir / f"seg_{n:03d}.mp4"
 
     spec = select_effect(shot, scene_index)
@@ -371,7 +379,7 @@ async def video_node(state: PipelineState) -> dict:
         segs_with_specs: list[tuple[Path, float, EffectSpec]] = []
         for i, scene in enumerate(scenes):
             seg_path, spec = await _compose_scene(scene, i, run_dir)
-            duration = scene.get("audio_duration") or 2.0
+            duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec))
 
         output = run_dir / "video.mp4"

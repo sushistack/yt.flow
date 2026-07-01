@@ -224,6 +224,15 @@ def test_zoompan_filter_zoom_out_uses_conditional():
     assert "if(lte(zoom,1.0)" in filt
 
 
+def test_zoompan_filter_honors_spec_zoom_range():
+    """[review:G] 'static' EffectSpec (1.0→1.005) must produce a subtle drift, not a
+    full 1.08 push-in. The filter previously ignored start_zoom/end_zoom entirely."""
+    spec = select_effect(_shot(camera_movement="static"), 0)  # → 1.0→1.005 in-center
+    filt = _zoompan_filter(spec, duration=2.0)
+    assert "1.005" in filt          # honors spec.end_zoom
+    assert "1.08" not in filt       # not the hardcoded ZOOM_IN_MAX target
+
+
 def test_zoompan_filter_all_directions_build():
     """All 6 pool directions produce a valid-looking filter string."""
     for direction in video._DIRECTION_POOL:
@@ -346,6 +355,15 @@ def test_validate_subtitle_not_found(assets):
 def test_validate_passes_with_valid_assets(assets):
     scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
     _validate_scene_assets([scene])  # should not raise
+
+
+@pytest.mark.parametrize("bad", [0, -1.0, None])
+def test_validate_rejects_nonpositive_audio_duration(assets, bad):
+    """[review:D] missing/≤0 audio_duration must fail fast, not silently default to 2.0."""
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+                   audio_duration=bad)
+    with pytest.raises(ValueError, match="audio_duration must be a positive number"):
+        _validate_scene_assets([scene])
 
 
 def test_validate_ignores_unused_later_shot_missing_image(assets):
