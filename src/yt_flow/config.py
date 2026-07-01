@@ -14,3 +14,9 @@ class Settings(BaseSettings):
 
     # Single SQLite file shared by LangGraph checkpoints and future SQLModel tables. [AD-7]
     db_path: str = "yt_flow.db"
+
+    # ComfyUI image generation (Story 1.6). Reachability is checked at image_node
+    # entry, not app startup. In mock mode the HTTP client is never instantiated.
+    comfyui_url: str = "http://127.0.0.1:8188"
+    comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
+    comfyui_mock: bool = False
