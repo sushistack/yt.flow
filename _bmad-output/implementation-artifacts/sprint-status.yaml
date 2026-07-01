@@ -57,7 +57,7 @@ development_status:
   1-5-scenario-node: done
   1-6-image-node: done
   1-7-tts-node: done
-  1-8-subtitle-node: ready-for-dev
+  1-8-subtitle-node: done
   1-9-video-node: ready-for-dev
   1-9b-video-effects-kenburns-transitions: ready-for-dev  # depends on 1-9 done
   1-9c-video-character-idle-motion: blocked  # depends on 1-6 layered-asset extension + 1-9b
