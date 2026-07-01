@@ -19,6 +19,7 @@ from yt_flow.pipeline.nodes.video import (
     XFADE_DURATION,
     EffectSpec,
     _join_with_xfade,
+    _overlay_filter,
     _validate_scene_assets,
     _zoompan_filter,
     select_effect,
@@ -44,7 +45,13 @@ async def _fake_ffmpeg_fail(*args):
     return 1, "error: codec not found"
 
 
-def _shot(image_path: str | None = None, camera_movement: str | None = None) -> ShotData:
+def _shot(
+    image_path: str | None = None,
+    camera_movement: str | None = None,
+    *,
+    background_path: str | None = None,
+    character_path: str | None = None,
+) -> ShotData:
     return {  # type: ignore[return-value]
         "shot_id": "S001",
         "sentence_indices": [0],
@@ -53,8 +60,8 @@ def _shot(image_path: str | None = None, camera_movement: str | None = None) -> 
         "camera_angle": None,
         "camera_movement": camera_movement,
         "image_path": image_path,
-        "background_path": None,
-        "character_path": None,
+        "background_path": background_path,
+        "character_path": character_path,
     }
 
 
@@ -65,13 +72,16 @@ def _scene(
     audio: str | None = None,
     subtitle: str | None = None,
     camera_movement: str | None = None,
+    background: str | None = None,
+    character: str | None = None,
     audio_duration: float = 2.0,
     **over,
 ) -> SceneState:
     base: dict = {
         "scene_num": scene_num,
         "narration": f"narration {scene_num}",
-        "shots": [_shot(image, camera_movement)],
+        "shots": [_shot(image, camera_movement,
+                        background_path=background, character_path=character)],
         "audio_path": audio,
         "audio_duration": audio_duration,
         "word_timings": [],
@@ -104,7 +114,11 @@ def assets(tmp_path) -> SimpleNamespace:
     audio.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt ")
     subtitle = tmp_path / "scene.srt"
     subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n\n", encoding="utf-8")
-    return SimpleNamespace(image=str(image), audio=str(audio), subtitle=str(subtitle))
+    character = tmp_path / "character.png"
+    character.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    return SimpleNamespace(
+        image=str(image), audio=str(audio), subtitle=str(subtitle), character=str(character)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -682,6 +696,147 @@ def test_no_db_api_service_imports():
         assert forbidden not in source, f"video.py must not import {forbidden}"
 
 
+# ── character idle-motion overlay (Story 1.9c) ────────────────────────────────
+
+
+def _capture_arg_flag(flag: str):
+    """Return (ffmpeg_fake, captured_list) that records the value after ``flag``."""
+    captured: list[str] = []
+
+    async def _fake(*args):
+        al = list(args)
+        if flag in al:
+            captured.append(al[al.index(flag) + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    return _fake, captured
+
+
+def test_overlay_filter_has_sinusoidal_motion():
+    """Overlay must animate both axes with sin(t). [AC:1]"""
+    f = _overlay_filter()
+    assert "overlay=" in f
+    assert "sin(t*" in f
+    # both axes carry motion
+    assert f.count("sin(t*") >= 2
+
+
+def test_overlay_filter_eval_frame_not_init():
+    """eval=frame is REQUIRED; eval=init freezes motion (t/n → NAN). [AC:2]"""
+    f = _overlay_filter()
+    assert "eval=frame" in f
+    assert "eval=init" not in f
+
+
+async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, assets):
+    """A shot with character_path renders via filter_complex overlay + eval=frame. [AC:1,2]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    assert captured, "filter_complex not used for a character shot"
+    fc = captured[0]
+    assert "zoompan" in fc          # background still gets Ken Burns
+    assert "overlay=" in fc         # character composited on top
+    assert "eval=frame" in fc       # motion animates per-frame
+    assert "subtitles=" in fc       # subtitles burned last
+
+
+async def test_video_node_character_maps_output_and_audio(monkeypatch, tmp_path, assets):
+    """filter_complex path maps the composed [out] and the audio input. [AC:1]"""
+    calls: list[tuple] = []
+
+    async def _rec(*args):
+        calls.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _rec)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+    )
+    out = await video_node(_state([scene]))
+    assert out.get("error") is None
+
+    args = list(calls[0])
+    assert "[out]" in args          # -map [out]
+    # audio is the 3rd input (idx 2): bg, character, audio
+    assert "2:a" in args
+
+
+async def test_video_node_no_character_uses_vf_fallback(monkeypatch, tmp_path, assets):
+    """No character_path → unchanged 1.9b -vf Ken-Burns path, no overlay. [AC:3]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    assert captured_vf, "background-only shot must use -vf"
+    assert "overlay=" not in captured_vf[0]
+    assert "zoompan" in captured_vf[0]
+
+
+def test_validate_character_path_set_but_missing(assets):
+    """A set-but-missing character_path fails loudly (not silently dropped). [AC:1]"""
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character="/no/such/character.png", audio=assets.audio, subtitle=assets.subtitle,
+    )
+    with pytest.raises(FileNotFoundError, match="character_path"):
+        _validate_scene_assets([scene])
+
+
+def test_validate_none_character_ok(assets):
+    """character_path=None is a valid background-only shot. [AC:3]"""
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    _validate_scene_assets([scene])  # must not raise
+
+
+async def test_trace_records_character_motion(monkeypatch, tmp_path, assets):
+    """Trace metadata gains character-overlay flag + motion params + count. [AC:4]"""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+    )
+    await video_node(_state([scene]))
+
+    assert captured.get("character_scenes") == 1
+    effects = captured["effects"]
+    assert effects[0]["character_overlay"] is True
+
+
+async def test_trace_character_overlay_false_when_absent(monkeypatch, tmp_path, assets):
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene]))
+
+    assert captured.get("character_scenes") == 0
+    assert captured["effects"][0]["character_overlay"] is False
+
+
 # ── integration test (skipped without ffmpeg+ffprobe) ────────────────────────
 
 
@@ -723,3 +878,27 @@ async def test_xfade_join_integration(tmp_path):
     actual = float(result.stdout.strip())
     expected = dur1 + dur2 - XFADE_DURATION
     assert abs(actual - expected) < 0.5, f"Duration {actual:.2f}s ≠ expected {expected:.2f}s"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+async def test_character_overlay_filtergraph_renders(tmp_path):
+    """Real FFmpeg: the layered zoompan→overlay(eval=frame) filtergraph is valid and
+    renders rc=0. Guards against a syntax/eval regression that live ffmpeg would reject."""
+    from yt_flow.pipeline.nodes.video import _run_ffmpeg, _zoompan_filter
+
+    spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    zp = _zoompan_filter(spec, duration=1.0)
+    fc = f"[0:v]{zp}[bg];[bg][1:v]{_overlay_filter()}[out]"
+
+    out = tmp_path / "ov.mp4"
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=1",
+        "-f", "lavfi", "-i", "color=c=red@0.5:s=64x64:r=25:d=1,format=rgba",
+        "-filter_complex", fc,
+        "-map", "[out]",
+        "-frames:v", "25", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    )
+    assert rc == 0, f"layered filtergraph rejected by ffmpeg: {stderr[-500:]}"
+    assert out.exists()
