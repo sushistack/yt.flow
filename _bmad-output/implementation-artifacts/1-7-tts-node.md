@@ -1,6 +1,10 @@
+---
+baseline_commit: 6600b04
+---
+
 # Story 1.7: tts_node
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -18,36 +22,36 @@ so that each scene has playable audio and timing data for subtitle alignment.
 
 ## Tasks / Subtasks
 
-- [ ] Verify the dependency substrate from earlier stories before coding (AC: 1, 2, 3)
-  - [ ] Confirm `src/yt_flow/domain/state.py` defines `PipelineState`, `SceneState`, and `WordTiming` exactly as the architecture spine specifies.
-  - [ ] Confirm `src/yt_flow/pipeline/nodes/tts.py` exists as a stub from Story 1.4 or create it only if the scaffold exists and the graph imports it.
-  - [ ] Confirm config already exposes `YTFLOW_WORKSPACE_PATH`; add TTS-specific config only if absent.
-- [ ] Add Qwen TTS configuration and client boundary (AC: 1, 2)
-  - [ ] Add `YTFLOW_QWEN_TTS_API_KEY`, `YTFLOW_QWEN_TTS_MODEL`, `YTFLOW_QWEN_TTS_VOICE`, and `YTFLOW_QWEN_TTS_MOCK` settings using the existing Pydantic `YTFLOW_` config pattern.
-  - [ ] Pin the Qwen TTS model identifier in config, never in node code.
-  - [ ] Keep the API client wrapper local and small; do not introduce a broad provider abstraction unless another implemented TTS provider already exists.
-- [ ] Implement `tts_node(state: PipelineState) -> Partial PipelineState` (AC: 1, 2, 3)
-  - [ ] Iterate `state["scenes"]` in `scene_num` order and synthesize each `SceneState.narration`.
-  - [ ] Write audio files under `workspace/{run_id}/audio/scene_{scene_num:03d}.wav` or the closest existing workspace naming convention.
-  - [ ] Return a new `scenes` list with each scene replaced; do not mutate nested scene dictionaries in place.
-  - [ ] Return `current_stage: "tts"` from the node result and preserve all upstream `shots`, `narration`, and prior fields.
-  - [ ] On failure, return or raise consistently with existing node patterns, but ensure `PipelineState.error` contains `stage="tts"` and `run_id`.
-- [ ] Produce honest `WordTiming` data (AC: 1)
-  - [ ] Do not assume Qwen TTS returns word-level timestamps; current official Qwen-TTS docs describe audio output and usage, not a word-timestamp response contract.
-  - [ ] If the API response has no word timings, derive provisional timings from measured audio duration and narration tokens, and document the fallback in code/tests.
-  - [ ] Keep `start_sec >= 0`, `end_sec > start_sec`, monotonic ordering, and final `end_sec <= audio_duration` with a small rounding tolerance.
-  - [ ] Store `audio_duration` on each `SceneState` because Story 1.8 and UI artifact preview depend on it.
-- [ ] Add Langfuse observability (AC: 2, 3)
-  - [ ] Decorate the node or the smallest stable node entry function with `@observe(name="tts")` following the existing Langfuse SDK v4 pattern.
-  - [ ] Capture per-scene latency, total latency, model, voice, run_id, scene count, and usage/token-equivalent metrics if the provider returns them.
-  - [ ] Capture error details without logging API keys or raw secrets.
-  - [ ] Treat Langfuse send failures as non-fatal, consistent with AD-10.
-- [ ] Add focused tests and fixtures (AC: 1, 2, 3)
-  - [ ] Unit test mock-mode TTS without network access; fixture should create deterministic WAV files under a temp workspace.
-  - [ ] Unit test returned scenes preserve upstream fields while adding `audio_path`, `audio_duration`, and `word_timings`.
-  - [ ] Unit test Qwen/API error handling sets `stage="tts"` and includes the `run_id`.
-  - [ ] Unit test timing monotonicity and file existence.
-  - [ ] Add an explicit manual smoke command for real Qwen TTS, separate from default unit tests.
+- [x] Verify the dependency substrate from earlier stories before coding (AC: 1, 2, 3)
+  - [x] Confirm `src/yt_flow/domain/state.py` defines `PipelineState`, `SceneState`, and `WordTiming` exactly as the architecture spine specifies.
+  - [x] Confirm `src/yt_flow/pipeline/nodes/tts.py` exists as a stub from Story 1.4 or create it only if the scaffold exists and the graph imports it.
+  - [x] Confirm config already exposes `YTFLOW_WORKSPACE_PATH`; add TTS-specific config only if absent.
+- [x] Add Qwen TTS configuration and client boundary (AC: 1, 2)
+  - [x] Add `YTFLOW_QWEN_TTS_API_KEY`, `YTFLOW_QWEN_TTS_MODEL`, `YTFLOW_QWEN_TTS_VOICE`, and `YTFLOW_QWEN_TTS_MOCK` settings using the existing Pydantic `YTFLOW_` config pattern.
+  - [x] Pin the Qwen TTS model identifier in config, never in node code.
+  - [x] Keep the API client wrapper local and small; do not introduce a broad provider abstraction unless another implemented TTS provider already exists.
+- [x] Implement `tts_node(state: PipelineState) -> Partial PipelineState` (AC: 1, 2, 3)
+  - [x] Iterate `state["scenes"]` in `scene_num` order and synthesize each `SceneState.narration`.
+  - [x] Write audio files under `workspace/{run_id}/audio/scene_{scene_num:03d}.wav` or the closest existing workspace naming convention.
+  - [x] Return a new `scenes` list with each scene replaced; do not mutate nested scene dictionaries in place.
+  - [x] Return `current_stage: "tts"` from the node result and preserve all upstream `shots`, `narration`, and prior fields.
+  - [x] On failure, return or raise consistently with existing node patterns, but ensure `PipelineState.error` contains `stage="tts"` and `run_id`.
+- [x] Produce honest `WordTiming` data (AC: 1)
+  - [x] Do not assume Qwen TTS returns word-level timestamps; current official Qwen-TTS docs describe audio output and usage, not a word-timestamp response contract.
+  - [x] If the API response has no word timings, derive provisional timings from measured audio duration and narration tokens, and document the fallback in code/tests.
+  - [x] Keep `start_sec >= 0`, `end_sec > start_sec`, monotonic ordering, and final `end_sec <= audio_duration` with a small rounding tolerance.
+  - [x] Store `audio_duration` on each `SceneState` because Story 1.8 and UI artifact preview depend on it.
+- [x] Add Langfuse observability (AC: 2, 3)
+  - [x] Decorate the node or the smallest stable node entry function with `@observe(name="tts")` following the existing Langfuse SDK v4 pattern.
+  - [x] Capture per-scene latency, total latency, model, voice, run_id, scene count, and usage/token-equivalent metrics if the provider returns them.
+  - [x] Capture error details without logging API keys or raw secrets.
+  - [x] Treat Langfuse send failures as non-fatal, consistent with AD-10.
+- [x] Add focused tests and fixtures (AC: 1, 2, 3)
+  - [x] Unit test mock-mode TTS without network access; fixture should create deterministic WAV files under a temp workspace.
+  - [x] Unit test returned scenes preserve upstream fields while adding `audio_path`, `audio_duration`, and `word_timings`.
+  - [x] Unit test Qwen/API error handling sets `stage="tts"` and includes the `run_id`.
+  - [x] Unit test timing monotonicity and file existence.
+  - [x] Add an explicit manual smoke command for real Qwen TTS, separate from default unit tests.
 
 ## Dev Notes
 
@@ -173,17 +177,56 @@ The React artifact panel for `tts` expects per-scene native `<audio controls>` w
 
 ### Agent Model Used
 
-TBD by dev-story agent
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
-TBD
+- Implemented on isolated worktree `story/1-7-tts-node` off `master` (6600b04) because a concurrent session held uncommitted Story 1.5 work (`config.py`, `scenario.py`) in the main checkout. This avoids live clobbering of the shared `config.py`; merge instructions are below.
+- `uv run pytest -q`: 46 passed, 1 skipped (real-Qwen smoke, skipped by default). `uv run ruff check`: clean.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
 - Qwen TTS word-timing ambiguity is explicitly handled; implementation must not claim provider word timings unless the actual API response includes them.
+- ✅ `tts_node` implemented as a standalone module (`pipeline/nodes/tts.py`), mirroring Story 1.5's `scenario.py` convention: `@observe(name="tts")`, `_settings()` injection seam, best-effort `_record_trace()`, errors returned as `{"current_stage": "tts", "error": "stage=tts run_id=..."}` rather than raised.
+- **Graph wiring deferred (deliberate):** `nodes/__init__.py` still binds the Story 1.4 stub `tts`, exactly as Story 1.5 left `scenario` on its stub. This keeps stage stories independent and avoids the graph requiring every real node at once; a later integration story owns rewiring `STAGE_NODES` to the real callables. All ACs are verified by calling `tts_node` directly (AC1/AC2/AC3 do not require graph reachability).
+- **Provider contract:** confirmed via DashScope docs that Qwen3-TTS returns a pre-signed `output.audio.url` (≈24h TTL, WAV) and **no word-level timestamps** — so provisional timings are derived from the measured WAV duration (stdlib `wave`) split evenly across whitespace tokens, with the final `end_sec` pinned to the exact duration. Real synthesis path (`_synthesize`) uses the already-installed `httpx` — no new dependency, no provider abstraction (ponytail).
+- **Mock mode** (`YTFLOW_QWEN_TTS_MOCK=true`) writes deterministic silent WAVs (100ms/word) into `workspace/{run_id}/audio/`, mirroring Story 1.6's file-writing mock, so downstream file-existence/duration checks are meaningful offline.
+- Real-provider smoke: `YTFLOW_QWEN_TTS_SMOKE=1 uv run pytest tests/pipeline/nodes/test_tts.py -k smoke`.
 
 ### File List
 
-TBD by dev-story agent
+- `src/yt_flow/pipeline/nodes/tts.py` (new) — `tts_node` + Qwen synthesis / mock / provisional-timing / trace helpers.
+- `src/yt_flow/config.py` (modified) — added `workspace_path` + `qwen_tts_*` settings.
+- `tests/pipeline/nodes/test_tts.py` (new) — mock-mode, purity, ordering, timing-bounds, error, observability, and skipped real smoke tests.
+- `tests/pipeline/nodes/__init__.py` (new) — test package marker (absent on `master`).
+- `.env.example` (modified) — added `YTFLOW_QWEN_TTS_MOCK` and `YTFLOW_WORKSPACE_PATH`.
+
+### Change Log
+
+- 2026-07-01: Implemented `tts_node` (Qwen TTS + provisional word timings + Langfuse `tts` span) on worktree `story/1-7-tts-node`. Status → review.
+
+### Merge Instructions
+
+Concurrent Story 1.5 work sits uncommitted in the main checkout. To integrate this branch:
+
+```
+# from the main checkout, once 1.5 is committed:
+git merge story/1-7-tts-node
+```
+
+Expected conflicts (both resolvable by keeping both sides):
+- `src/yt_flow/config.py` — 1.5 appends `deepseek_*`, this branch appends `workspace_path` + `qwen_tts_*`. Keep both blocks.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 1.5 flips its own line, this branch flips `1-7-tts-node: review`. Keep both status changes.
+- `.env.example` — both add distinct keys; keep all.
+
+Then remove the worktree: `git worktree remove ../yt.flow-wt-1-7`.
+
+## Review Findings (code review 2026-07-01)
+
+- [x] [Review][Patch] `_settings()` moved inside `try` so a config/env `ValidationError` surfaces as `PipelineState.error` instead of being raised past the node [tts.py]
+- [x] [Review][Patch] `_wav_duration` now guards `wave.Error`/`EOFError` and raises a clear "not a readable WAV" error on real-provider format drift, instead of a cryptic `wave` exception [tts.py]
+- [x] [Review][Patch] Documented in-code that Qwen TTS carries no token/usage field, so latency is the recorded "documented usage metric" (AC3) [tts.py]
+- [x] [Review][Patch] Duplicate-`scene_num` file-overwrite risk resolved upstream in `scenario.py` (`scene_num = idx+1`), which guarantees unique per-scene `.wav` names
+- [x] [Review][Defer] Real node not wired into graph `STAGE_NODES` (deliberate, no AC requires it) — see `deferred-work.md`
+- Dismissed as noise: empty-string narration → empty `word_timings` (upstream `scenario_node` guarantees non-empty narration, so unreachable); `_ms()` sub-millisecond truncation (no minimum-latency AC).

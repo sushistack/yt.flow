@@ -28,3 +28,15 @@ class Settings(BaseSettings):
     comfyui_url: str = "http://127.0.0.1:8188"
     comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
     comfyui_mock: bool = False
+
+    # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
+    workspace_path: str = "./workspace"
+
+    # Qwen TTS via Alibaba DashScope (international). Model/voice are config-pinned,
+    # never hardcoded in nodes. ponytail: api_key defaults to "" so Settings() stays
+    # constructible in tests/tooling; tts_node guards for a missing key at call time.
+    qwen_tts_api_key: str = ""
+    qwen_tts_endpoint: str = "https://dashscope-intl.aliyuncs.com"
+    qwen_tts_model: str = "qwen3-tts-flash"
+    qwen_tts_voice: str = "Cherry"
+    qwen_tts_mock: bool = False
