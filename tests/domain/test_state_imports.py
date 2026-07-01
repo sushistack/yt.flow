@@ -15,6 +15,7 @@ EXPECTED_FIELDS = {
     "ShotData": {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
         "camera_angle", "camera_movement", "image_path",
+        "background_path", "character_path",
     },
     "SceneState": {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
