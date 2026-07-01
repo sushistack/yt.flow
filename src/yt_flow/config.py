@@ -56,3 +56,15 @@ class Settings(BaseSettings):
     aligner_model: str = "base"
     aligner_device: str = "cpu"
     aligner_compute_type: str = "int8"
+
+    # Image search provider (Story 1.11). DuckDuckGo is the default; no API key needed.
+    image_search_provider: str = "duckduckgo"
+
+    # Character image generation (Story 1.12). Provider-specific character image
+    # generation for multi-angle character portraits.
+    character_image_provider: str = "comfyui"  # "comfyui" or "qwen"
+    character_comfyui_workflow_path: str = "data/workflows/comfyui_character_multi_angle_api.json"
+    character_qwen_model: str = "qwen-image-max"
+    character_qwen_api_key: str = ""
+    character_image_width: int = 1664
+    character_image_height: int = 928

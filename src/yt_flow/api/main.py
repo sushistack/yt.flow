@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from yt_flow import db
-from yt_flow.api.routes import progress, runs, scps, stages
+from yt_flow.api.routes import characters, progress, runs, scps, stages
 from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
@@ -53,6 +53,7 @@ def mount_workspace_files(application: FastAPI, workspace_dir: Path) -> None:
 
 
 app = FastAPI(title="yt.flow API", lifespan=lifespan)
+app.include_router(characters.router)
 app.include_router(runs.router)
 app.include_router(progress.router)
 app.include_router(scps.router)
