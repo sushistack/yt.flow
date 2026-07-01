@@ -1,7 +1,7 @@
 """Tests for /runs endpoints (Story 2.1 AC: 1-7)."""
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -78,7 +78,7 @@ def test_post_runs_extra_field_roundtrip(client):
 # ── AC 3: GET /runs returns list sorted by started_at desc ──────────────────
 
 def test_get_runs_sorted(client):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     with Session(db._engine) as session:
         session.add(Run(id="id-old", scp_id="SCP-001", status="running",
                         started_at=(now - timedelta(seconds=10)).isoformat(),

@@ -21,8 +21,8 @@ class ScpEntry(BaseModel):
 async def lifespan(app: FastAPI):
     settings = Settings()
     db.init(f"sqlite:///{settings.db_path}")
-    app.state.workspace_path = settings.workspace_path
-    scps_path = Path("data/scps.json")
+    app.state.workspace_path = str(Path(settings.workspace_path).resolve())
+    scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]
     yield
 

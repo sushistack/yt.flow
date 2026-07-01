@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -14,5 +14,5 @@ class Run(SQLModel, table=True):
     error: str | None = None
     extra: str | None = None  # JSON blob for reserved extra: dict
     langfuse_trace_url: str | None = None
-    started_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    started_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
