@@ -4,7 +4,7 @@ baseline_commit: 66667f4540bfae294aa8644cf121a64fd8c2e1b3
 
 # Story 2.2: SSE Infrastructure
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -300,6 +300,31 @@ claude-sonnet-4-6
 - `tests/api/test_sse.py` (new)
 - `tests/api/test_runs.py` (modified — updated call_args unpack for new start_run signature)
 
+## Code Review Record
+
+### Review Layers
+
+- **Blind Hunter** (adversarial diff review): CancelledError swallowed in subscribe(), double-subscribe orphans first queue
+- **Edge Case Hunter** (project read access): Confirmed double-subscribe bug; `finally` pop must check identity to avoid removing a newer subscriber's queue
+- **Acceptance Auditor** (spec validation): AC-4 confirmed (`run.status = "failed"`); AC-3 (gate_pending) deferred to Story 2.3 per scope boundary
+
+### Fixes Applied
+
+- `sse.py subscribe()`: Removed `except asyncio.CancelledError: pass` — cancellation now propagates correctly
+- `sse.py subscribe()`: Added double-subscribe protection — sends `_CLOSE` sentinel to existing queue before replacing; uses identity check in `finally` to avoid removing a newer subscriber's queue
+- `tests/api/test_sse.py`: Added `test_registry_double_subscribe_closes_first` to cover reconnect path
+
+### Deferred / Acceptable
+
+- AC-3 gate_pending: Infrastructure supports it; trigger (interrupt()) deferred to Story 2.3
+- `exc._stage` always "unknown": stub-acceptable; LangGraph stage tracking wired in Story 2.3
+- Late-subscribe race / backpressure: YAGNI for local single-operator system
+
+### Final Test Count
+
+22 tests passing (9 existing runs + 13 SSE tests).
+
 ## Change Log
 
 - 2026-07-01: Story 2.2 implemented — SSE queue registry, progress endpoint, run_service publishing, 12 tests (claude-sonnet-4-6)
+- 2026-07-01: Code review applied — CancelledError propagation fix, double-subscribe protection, 1 new test (claude-sonnet-4-6)
