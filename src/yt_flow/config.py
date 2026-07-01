@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     comfyui_url: str = "http://127.0.0.1:8188"
     comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
     comfyui_mock: bool = False
+    # Layered-asset mode (Story 1.6b): emit separate background + transparent character PNGs.
+    # Node IDs match the SaveImage nodes in the layered workflow export.
+    comfyui_layered: bool = False
+    comfyui_background_node: str = "9"
+    comfyui_character_node: str = "10"
 
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"
