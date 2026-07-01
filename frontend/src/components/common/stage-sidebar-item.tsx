@@ -4,9 +4,9 @@ import type { GateState, StageName } from "@/lib/types"
 // Gate signals carry a glyph + Korean label so state never rides on color alone
 // (accessibility floor, UX-DR17). n/a shows nothing.
 const GATE_META: Record<GateState, { glyph: string; label: string; className: string } | null> = {
-  pending: { glyph: "⏳", label: "승인 대기", className: "text-status-awaiting" },
+  pending: { glyph: "⏸", label: "승인 대기", className: "text-status-awaiting" },
   approved: { glyph: "✓", label: "승인됨", className: "text-status-approved" },
-  rejected: { glyph: "✕", label: "거부됨", className: "text-status-failed" },
+  rejected: { glyph: "✗", label: "거부됨", className: "text-status-failed" },
   "n/a": null,
 }
 
@@ -44,7 +44,9 @@ export function StageSidebarItem({
 
   const content = (
     <>
-      <span className="font-mono text-[12px]">{stage}</span>
+      {/* Stage token: mono 11px, subtle-foreground per DESIGN.md Components;
+          the active row keeps its stronger foreground for the current-stage cue. */}
+      <span className={cn("font-mono text-[11px]", !active && "text-subtle-foreground")}>{stage}</span>
       {gate && (
         <span className={cn("ml-auto inline-flex items-center gap-1 text-[11px]", gate.className)}>
           <span aria-hidden="true">{gate.glyph}</span>

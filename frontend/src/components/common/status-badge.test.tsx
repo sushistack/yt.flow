@@ -33,4 +33,10 @@ describe("StatusBadge", () => {
     rerender(<StatusBadge status="failed" />)
     expect(screen.getByText("실패")).toHaveClass("text-status-failed")
   })
+
+  it("degrades to a muted badge on an out-of-union status instead of crashing", () => {
+    // The API is a trust boundary; an unknown status must not blank the app.
+    render(<StatusBadge status={"unknown_state" as never} />)
+    expect(screen.getByText("unknown_state")).toHaveClass("text-muted-foreground")
+  })
 })

@@ -15,15 +15,19 @@ const TONE_CLASS: Record<Tone, string> = {
 
 // Operator-facing status strings are Korean; the label text is what makes the
 // state readable without relying on color (accessibility floor, UX-DR17).
-const STATUS_META: Record<RunStatus | GateState, { tone: Tone; label: string }> = {
-  running: { tone: "running", label: "실행 중" },
-  awaiting_approval: { tone: "awaiting", label: "승인 대기" },
-  complete: { tone: "approved", label: "완료" },
-  failed: { tone: "failed", label: "실패" },
-  pending: { tone: "awaiting", label: "대기" },
-  approved: { tone: "approved", label: "승인됨" },
-  rejected: { tone: "failed", label: "거부됨" },
-  "n/a": { tone: "muted", label: "해당 없음" },
+// The glyph is a decorative prefix per EXPERIENCE.md state tables (●/⏸/✓/✗)
+// and is aria-hidden so assistive tech reads only the label.
+type Meta = { tone: Tone; glyph: string; label: string }
+
+const STATUS_META: Record<RunStatus | GateState, Meta> = {
+  running: { tone: "running", glyph: "●", label: "실행 중" },
+  awaiting_approval: { tone: "awaiting", glyph: "⏸", label: "승인 대기" },
+  complete: { tone: "approved", glyph: "✓", label: "완료" },
+  failed: { tone: "failed", glyph: "✗", label: "실패" },
+  pending: { tone: "awaiting", glyph: "⏸", label: "승인 대기" },
+  approved: { tone: "approved", glyph: "✓", label: "승인됨" },
+  rejected: { tone: "failed", glyph: "✗", label: "거부됨" },
+  "n/a": { tone: "muted", glyph: "", label: "해당 없음" },
 }
 
 export type StatusBadgeProps = {
@@ -32,15 +36,22 @@ export type StatusBadgeProps = {
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const { tone, label } = STATUS_META[status]
+  // status comes from the API contract (a trust boundary); an out-of-union
+  // value degrades to a muted badge showing the raw string instead of crashing.
+  const { tone, glyph, label } = STATUS_META[status] ?? {
+    tone: "muted",
+    glyph: "",
+    label: String(status),
+  }
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-badge px-2 py-[3px] text-[11px] font-medium",
+        "inline-flex items-center gap-1 rounded-badge px-2 py-[3px] text-[11px] font-medium",
         TONE_CLASS[tone],
         className,
       )}
     >
+      {glyph && <span aria-hidden="true">{glyph}</span>}
       {label}
     </span>
   )
