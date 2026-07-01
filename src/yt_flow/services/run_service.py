@@ -326,10 +326,11 @@ async def create_ab_run(source_run_id: str, sse_registry: "SSEQueueRegistry | No
         source = session.get(Run, source_run_id)
         if source is None:
             raise ValueError(f"Source run {source_run_id} not found")
-        session.add(Run(id=new_id, scp_id=source.scp_id, status="running",
+        scp_id = source.scp_id  # read inside the session — `source` is detached once it closes
+        session.add(Run(id=new_id, scp_id=scp_id, status="running",
                         prompt_variant="B", ab_pair_id=source_run_id))
         session.commit()
-    spawn(start_run(new_id, source.scp_id, scp_text, sse_registry, prompt_variant="B"))
+    spawn(start_run(new_id, scp_id, scp_text, sse_registry, prompt_variant="B"))
     return new_id
 
 

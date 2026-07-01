@@ -14,4 +14,4 @@ For each shot, select the most appropriate angle based on:
 - Narrative tension — front for direct confrontation, back for mystery, side for observation, three_quarter for dialogue
 
 Return ONLY a JSON array (no markdown, no preamble):
-[{{"scene_num": N, "shot_id": "S...", "angle": "front"}}, ...]
+[{"scene_num": N, "shot_id": "S...", "angle": "front"}, ...]

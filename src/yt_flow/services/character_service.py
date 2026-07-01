@@ -7,6 +7,7 @@ Characters live in SQLite, not PipelineState — long-lived configuration. [AD-2
 import asyncio
 import base64
 import ipaddress
+import json
 import logging
 import mimetypes
 import re
@@ -777,13 +778,15 @@ class CharacterService:
         self,
         scp_id: str,
         scenes: list[dict],
-    ) -> dict[str, dict[str, str]] | None:
+    ) -> dict[str, dict] | None:
         """Select the best character angle per shot using LLM analysis of scene context.
 
         Analyzes all shots across scenes in a single LLM call. Shots without
         ``character_path`` are skipped. Returns a dict mapping
-        ``{shot_key: {"angle": name, "path": file_path}}``,
-        or ``None`` if no Character record exists for the SCP ID.
+        ``{shot_key: {"angle": name, "path": file_path, "fallback": bool}}``,
+        or ``None`` if no Character record exists for the SCP ID. ``fallback`` is
+        True when the angle was not a clean LLM pick (error, invalid/unavailable
+        angle, or a shot the LLM omitted) — used for honest trace metrics [AC6].
         """
         character = self.check_existing_character(scp_id)
         if character is None:
@@ -824,6 +827,11 @@ class CharacterService:
             logger.warning("select_character_angles: no angle paths set for %s", scp_id)
             return None
 
+        # Fallback angle used whenever a clean LLM pick isn't possible — prefer "front"
+        # but fall through to the first available angle so the path is always real [AC3].
+        fallback_angle = "front" if "front" in available_angles else next(iter(available_angles))
+        fallback_path = angle_fields[fallback_angle] or ""
+
         # Compile prompt
         prompt_text = self._load_angle_selection_prompt(
             scp_id=scp_id,
@@ -850,41 +858,43 @@ class CharacterService:
             raw = data["choices"][0]["message"]["content"].strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             logger.warning("select_character_angles: LLM call failed for %s: %s", scp_id, exc)
-            return self._angle_fallback(shot_catalogue)
+            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
 
         # Parse LLM response — JSON array of {scene_num, shot_id, angle}
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("select_character_angles: invalid JSON from LLM: %r", raw[:200])
-            return self._angle_fallback(shot_catalogue)
+            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
 
         if not isinstance(parsed, list):
             logger.warning("select_character_angles: expected JSON array, got %s", type(parsed).__name__)
-            return self._angle_fallback(shot_catalogue)
+            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
 
-        # Build result map: shot_key → {angle, path}
-        result: dict[str, dict[str, str]] = {}
+        # Build result map: shot_key → {angle, path, fallback}. Only catalogue shots
+        # are honored — hallucinated or malformed-id LLM entries are ignored and the
+        # affected shots get filled with the fallback angle below.
+        catalogue_keys = {f"{s['scene_num']}:{s['shot_id']}" for s in shot_catalogue}
+        result: dict[str, dict] = {}
         for entry in parsed:
             if not isinstance(entry, dict):
                 continue
             shot_key = f"{entry.get('scene_num', '?')}:{entry.get('shot_id', '?')}"
-            angle = (entry.get("angle") or "front").lower()
-            # Validate — unrecognized angle → "front"
-            if angle not in ("front", "back", "side", "three_quarter"):
-                angle = "front"
-            # Check angle asset actually exists
-            if angle not in angle_fields or not angle_fields[angle]:
-                # pick first available as fallback
-                angle = next(iter(available_angles))
-            result[shot_key] = {"angle": angle, "path": angle_fields[angle] or ""}
+            if shot_key not in catalogue_keys:
+                continue
+            raw_angle = (entry.get("angle") or "").lower()
+            angle = raw_angle if raw_angle in ("front", "back", "side", "three_quarter") else fallback_angle
+            is_fallback = angle != raw_angle
+            # Requested angle asset missing → substitute the fallback angle
+            if not angle_fields.get(angle):
+                angle = fallback_angle
+                is_fallback = True
+            result[shot_key] = {"angle": angle, "path": angle_fields[angle] or "", "fallback": is_fallback}
 
-        # Fill in any missing shots from the catalogue with "front" fallback
-        fallback_angle = "front" if "front" in available_angles else next(iter(available_angles))
-        for shot in shot_catalogue:
-            key = f"{shot['scene_num']}:{shot['shot_id']}"
+        # Fill any catalogue shots the LLM omitted with the fallback angle
+        for key in catalogue_keys:
             if key not in result:
-                result[key] = {"angle": fallback_angle, "path": angle_fields.get(fallback_angle, "")}
+                result[key] = {"angle": fallback_angle, "path": fallback_path, "fallback": True}
 
         logger.info(
             "select_character_angles: %d shots, %d angles assigned for %s",
@@ -893,9 +903,10 @@ class CharacterService:
         return result
 
     @staticmethod
-    def _angle_fallback(shot_catalogue: list[dict]) -> dict[str, dict[str, str]]:
-        """Return all-front fallback when LLM fails or returns invalid data."""
-        return {f"{s['scene_num']}:{s['shot_id']}": {"angle": "front", "path": ""} for s in shot_catalogue}
+    def _angle_fallback(shot_catalogue: list[dict], angle: str, path: str) -> dict[str, dict]:
+        """Map every catalogued shot to the fallback angle (LLM failed / invalid data)."""
+        return {f"{s['scene_num']}:{s['shot_id']}": {"angle": angle, "path": path, "fallback": True}
+                for s in shot_catalogue}
 
     @staticmethod
     def _load_angle_selection_prompt(

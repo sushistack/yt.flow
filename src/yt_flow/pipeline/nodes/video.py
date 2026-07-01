@@ -490,7 +490,6 @@ async def video_node(state: PipelineState) -> dict:
                 scp_id = state.get("scp_id", "")
                 selections = await _angle_selector(scp_id, scenes)
                 if selections:
-                    shots_analyzed = len(selections)
                     angles_selected: list[str] = []
                     fallback_used = 0
                     for scene in scenes:
@@ -500,18 +499,19 @@ async def video_node(state: PipelineState) -> dict:
                             if sel and sel.get("path"):
                                 shot["character_path"] = sel["path"]
                                 angles_selected.append(sel.get("angle", "?"))
-                                if sel.get("angle") == "front":
-                                    fallback_used += 1  # count front as fallback indicator for tracing
+                                if sel.get("fallback"):
+                                    fallback_used += 1  # true fallback, not a legit "front" pick
                             # ponytail: if no selection for this shot, leave character_path unchanged
                     angle_meta = {
-                        "shots_analyzed": shots_analyzed,
+                        "scp_id": scp_id,
+                        "shots_analyzed": len(angles_selected),
                         "angles_selected": angles_selected,
                         "fallback_used": fallback_used,
                         "latency_ms": int((time.perf_counter() - t_angle) * 1000),
                     }
                     logger.info(
                         "Angle selection: %d shots, %d angles in %dms",
-                        shots_analyzed, len(set(angles_selected)), angle_meta["latency_ms"],
+                        len(angles_selected), len(set(angles_selected)), angle_meta["latency_ms"],
                     )
             except Exception as exc:  # noqa: BLE001 — AD-10: never fail the pipeline
                 logger.warning("Angle selection failed, continuing with existing character_path: %s", exc)
