@@ -15,6 +15,10 @@ class SSEQueueRegistry:
         self._queues: dict[str, asyncio.Queue] = {}
 
     async def subscribe(self, run_id: str) -> AsyncGenerator[str, None]:
+        # ponytail: close any existing subscriber before replacing; only pop OUR queue in finally
+        old = self._queues.pop(run_id, None)
+        if old is not None:
+            old.put_nowait(_CLOSE)
         queue: asyncio.Queue = asyncio.Queue()
         self._queues[run_id] = queue
         try:
@@ -25,10 +29,9 @@ class SSEQueueRegistry:
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
                 if event["event"] == "run_failed":
                     break
-        except asyncio.CancelledError:
-            pass
         finally:
-            self._queues.pop(run_id, None)
+            if self._queues.get(run_id) is queue:
+                self._queues.pop(run_id)
 
     async def publish(self, run_id: str, event: EventData) -> None:
         queue = self._queues.get(run_id)

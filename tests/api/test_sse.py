@@ -272,3 +272,30 @@ async def test_registry_run_failed_ends_stream():
     assert not registry.has_subscriber("r1")
 
 
+async def test_registry_double_subscribe_closes_first():
+    """Second subscribe() for same run_id must close the first subscriber, not orphan it."""
+    registry = SSEQueueRegistry()
+
+    # Start gen1 and advance it to queue.get()
+    gen1 = registry.subscribe("r1")
+    task1 = asyncio.create_task(gen1.__anext__())
+    await asyncio.sleep(0)
+    assert registry.has_subscriber("r1")
+
+    # Advance gen2: body runs, sends _CLOSE to gen1's queue, registers itself, suspends
+    gen2 = registry.subscribe("r1")
+    task2 = asyncio.create_task(gen2.__anext__())
+    await asyncio.sleep(0)
+
+    # gen1 received _CLOSE → StopAsyncIteration
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(task1, timeout=0.1)
+
+    # gen2 is the active subscriber
+    assert registry.has_subscriber("r1")
+
+    task2.cancel()
+    await asyncio.gather(task2, return_exceptions=True)
+    await gen2.aclose()
+
+
