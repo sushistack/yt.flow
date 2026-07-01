@@ -771,12 +771,169 @@ class CharacterService:
         logger.info("Character finalized: %s (%s)", id, character.scp_id)
         return character
 
+    # ── LLM Angle Selection (Story 1.13) ──────────────────────────────────
 
-# ── Angle Descriptions ────────────────────────────────────────────────────────
+    async def select_character_angles(
+        self,
+        scp_id: str,
+        scenes: list[dict],
+    ) -> dict[str, str] | None:
+        """Select the best character angle per shot using LLM analysis of scene context.
 
-_ANGLE_DESCRIPTIONS: dict[str, str] = {
-    "front": "character front view, facing camera, full body",
-    "back": "character back view, seen from behind, full body",
-    "side": "character side profile view, full body",
-    "three_quarter": "character three-quarter view, 45 degree angle, full body",
-}
+        Analyzes all shots across scenes in a single LLM call. Shots without
+        ``character_path`` are skipped. Returns a dict mapping ``{shot_key: angle_name}``,
+        or ``None`` if no Character record exists for the SCP ID.
+        """
+        character = self.check_existing_character(scp_id)
+        if character is None:
+            logger.info("select_character_angles: no character for %s, skipping", scp_id)
+            return None
+
+        # Collect all shots with character_path, building a shot catalogue for the LLM
+        shot_catalogue: list[dict] = []
+        for scene in sorted(scenes, key=lambda s: s["scene_num"]):
+            for shot in scene.get("shots", []):
+                if shot.get("character_path") is None:
+                    continue  # AC5: skip non-character shots
+                shot_catalogue.append({
+                    "scene_num": scene["scene_num"],
+                    "shot_id": shot["shot_id"],
+                    "narration": scene.get("narration", ""),
+                    "camera_angle": shot.get("camera_angle") or "",
+                    "camera_movement": shot.get("camera_movement") or "",
+                })
+
+        if not shot_catalogue:
+            logger.info("select_character_angles: no shots with character_path for %s", scp_id)
+            return {}
+
+        # Build available angle list
+        available_angles: dict[str, str] = {}
+        angle_fields = {
+            "front": character.angle_front_path,
+            "back": character.angle_back_path,
+            "side": character.angle_side_path,
+            "three_quarter": character.angle_three_quarter_path,
+        }
+        for angle_name, path_val in angle_fields.items():
+            if path_val:
+                available_angles[angle_name] = _ANGLE_DESCRIPTIONS.get(angle_name, angle_name)
+
+        if not available_angles:
+            logger.warning("select_character_angles: no angle paths set for %s", scp_id)
+            return None
+
+        # Compile prompt
+        prompt_text = self._load_angle_selection_prompt(
+            scp_id=scp_id,
+            shot_catalogue=shot_catalogue,
+            available_angles=available_angles,
+        )
+
+        # Call LLM
+        s = self._settings
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                resp = await client.post(
+                    f"{s.deepseek_base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {s.deepseek_api_key}"},
+                    json={
+                        "model": s.deepseek_model,
+                        "messages": [{"role": "user", "content": prompt_text}],
+                        "max_tokens": 1024,
+                        "temperature": 0.3,
+                    },
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            raw = data["choices"][0]["message"]["content"].strip()
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+            logger.warning("select_character_angles: LLM call failed for %s: %s", scp_id, exc)
+            return self._angle_fallback(shot_catalogue)
+
+        # Parse LLM response — JSON array of {scene_num, shot_id, angle}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("select_character_angles: invalid JSON from LLM: %r", raw[:200])
+            return self._angle_fallback(shot_catalogue)
+
+        if not isinstance(parsed, list):
+            logger.warning("select_character_angles: expected JSON array, got %s", type(parsed).__name__)
+            return self._angle_fallback(shot_catalogue)
+
+        # Build result map: shot_key → angle_name
+        result: dict[str, str] = {}
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            shot_key = f"{entry.get('scene_num', '?')}:{entry.get('shot_id', '?')}"
+            angle = (entry.get("angle") or "front").lower()
+            # Validate — unrecognized angle → "front"
+            if angle not in ("front", "back", "side", "three_quarter"):
+                angle = "front"
+            # Check angle asset actually exists
+            if angle not in available_angles:
+                # pick first available as fallback
+                angle = next(iter(available_angles))
+            result[shot_key] = angle
+
+        # Fill in any missing shots from the catalogue with "front" fallback
+        for shot in shot_catalogue:
+            key = f"{shot['scene_num']}:{shot['shot_id']}"
+            if key not in result:
+                result[key] = "front" if "front" in available_angles else next(iter(available_angles))
+
+        logger.info(
+            "select_character_angles: %d shots, %d angles assigned for %s",
+            len(shot_catalogue), len(result), scp_id,
+        )
+        return result
+
+    @staticmethod
+    def _angle_fallback(shot_catalogue: list[dict]) -> dict[str, str]:
+        """Return all-front fallback when LLM fails or returns invalid data."""
+        return {f"{s['scene_num']}:{s['shot_id']}": "front" for s in shot_catalogue}
+
+    @staticmethod
+    def _load_angle_selection_prompt(
+        scp_id: str,
+        shot_catalogue: list[dict],
+        available_angles: dict[str, str],
+    ) -> str:
+        """Load the angle selection prompt, trying Langfuse first, then local file, then built-in."""
+        # 1. Try Langfuse Prompt Hub
+        try:
+            from yt_flow.services.prompt_service import get_prompt
+            return get_prompt("character-angle-selection").compile(
+                scp_id=scp_id,
+                shot_catalogue=json.dumps(shot_catalogue, indent=2),
+                available_angles=json.dumps(available_angles, indent=2),
+            )
+        except Exception:
+            pass
+
+        # 2. Try local file
+        import os
+        project_root = os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd())
+        prompt_path = Path(project_root) / "prompts" / "character" / "angle_selection.md"
+        if prompt_path.exists():
+            template = prompt_path.read_text()
+            return template.replace("{scp_id}", scp_id) \
+                           .replace("{shot_catalogue}", json.dumps(shot_catalogue, indent=2)) \
+                           .replace("{available_angles}", json.dumps(available_angles, indent=2))
+
+        # 3. Built-in fallback
+        return (
+            f"You are a film director selecting the best camera angle for each shot of an SCP Foundation video.\n\n"
+            f"SCP ID: {scp_id}\n\n"
+            f"Available character angles:\n{json.dumps(available_angles, indent=2)}\n\n"
+            f"Shot catalogue (all shots needing an angle):\n{json.dumps(shot_catalogue, indent=2)}\n\n"
+            "For each shot, select the most appropriate angle based on:\n"
+            "- The narration text — what is happening in this scene?\n"
+            "- Camera angle and movement metadata — is the shot zooming, panning, or static?\n"
+            "- Narrative tension — front for direct confrontation, back for mystery, "
+            "side for observation, three_quarter for dialogue\n\n"
+            "Return ONLY a JSON array (no markdown, no preamble):\n"
+            '[{"scene_num": N, "shot_id": "S...", "angle": "front"}, ...]\n'
+        )
