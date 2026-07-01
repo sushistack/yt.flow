@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from langfuse import Langfuse
 from yt_flow.config import Settings
 
-s = Settings()
-lf = Langfuse(public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key, host=s.langfuse_host)
-ok = lf.auth_check()
-print(f"host={s.langfuse_host} auth_check={ok}")
+if __name__ == "__main__":  # guard: importing this module must not trigger a live auth call
+    s = Settings()
+    lf = Langfuse(public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key, host=s.langfuse_host)
+    ok = lf.auth_check()
+    print(f"host={s.langfuse_host} auth_check={ok}")
