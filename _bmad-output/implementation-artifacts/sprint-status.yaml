@@ -63,6 +63,9 @@ development_status:
   1-9b-video-effects-kenburns-transitions: done  # depends on 1-9 done
   1-9c-video-character-idle-motion: done  # depends on 1-6b done + 1-9b done
   1-10-resume-restart-trace-linkage: done
+  1-11-character-domain-reference-search: ready-for-dev  # depends on 1-2, 1-4
+  1-12-multi-angle-character-generation: ready-for-dev  # depends on 1-11
+  1-13-video-llm-character-selection: ready-for-dev  # depends on 1-12, 1-9
   epic-1-retrospective: optional
 
   # ── Epic 2: HTTP API & Gate-Controlled Pipeline Execution ───────────────────
@@ -78,15 +81,16 @@ development_status:
   epic-3: in-progress
   3-1-zinc-design-tokens-shadcn-tailwind: done
   3-2-common-components: done
-  3-3-dashboard-scp-picker-dialog: done
-  3-4-run-detail-artifact-panel: done
-  3-5-gate-controls-retry-editor-sse: ready-for-dev
-  3-6-ab-comparison-accessibility: ready-for-dev
+  3-3-dashboard-scp-picker-dialog: review
+  3-4-run-detail-artifact-panel: review
+  3-5-gate-controls-retry-editor-sse: in-progress
+  3-6-ab-comparison-accessibility: review
+  3-7-character-management-ui: ready-for-dev  # depends on 1-12
   epic-3-retrospective: optional
 
   # ── Epic 4: A/B Evaluation ──────────────────────────────────────────────────
   epic-4: in-progress
-  4-1-ab-run-creation: done
-  4-2-evaluation-service: done
+  4-1-ab-run-creation: review
+  4-2-evaluation-service: review
   4-3-results-storage-api-winner: ready-for-dev
   epic-4-retrospective: optional

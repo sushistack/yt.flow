@@ -1,6 +1,10 @@
+---
+baseline_commit: 8486f5cc5843b324dab1ce3abe9727e3f55368c9
+---
+
 # Story 3.5: Gate Controls, Retry, Inline Editor & SSE Client
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created. -->
 
@@ -23,54 +27,54 @@ so that I can fully control pipeline progression from the browser.
 
 ## Tasks / Subtasks
 
-- [ ] Confirm frontend prerequisites from Stories 3.1-3.4 before editing runtime UI. (AC: 1-8)
-  - [ ] Reuse the existing React app under `frontend/`; do not create a second frontend root.
-  - [ ] Reuse shared components from Story 3.2: `StatusBadge`, `StageSidebarItem`, `Button`, spinner/loading affordance, and existing shadcn/ui styling.
-  - [ ] Reuse the Run Detail layout and artifact panel structure from Story 3.4; this story wires behavior into that surface.
-- [ ] Add or update API client functions for stage control. (AC: 2, 4, 5)
-  - [ ] Implement `approveGate(runId, stage)` and `rejectGate(runId, stage)` using `POST /runs/{id}/stages/{stage}/gate` with body `{"action":"approve"}` or `{"action":"reject"}`.
-  - [ ] Implement `retryStage(runId, stage)` using `POST /runs/{id}/stages/{stage}/retry`.
-  - [ ] Implement `patchStageArtifact(runId, stage, text)` using `PATCH /runs/{id}/stages/{stage}/artifact`; allow only `scenario` and `subtitle` in the UI.
-  - [ ] Preserve FastAPI error shape: read `detail` when present and show Korean inline error copy.
-- [ ] Implement gate controls in the artifact panel footer. (AC: 1, 2)
-  - [ ] Render gate controls only when selected stage `gate_state === "pending"`.
-  - [ ] Use Korean labels exactly: `승인`, `반려`.
-  - [ ] Disable both buttons and show spinner while the mutation is pending.
-  - [ ] On success, set local stage state to the returned/expected state label immediately, then let SSE confirmation reconcile.
-  - [ ] On failure, re-enable buttons and render an inline error below the controls.
-- [ ] Implement retry affordance in the panel header. (AC: 3, 4)
-  - [ ] Render `재시도` only for stages whose gate state is `approved`, `rejected`, or failed/error state.
-  - [ ] Show inline confirmation below the button, not a Dialog.
-  - [ ] Confirmation content must have `role="alert"` and buttons `확인` / `취소`.
-  - [ ] Auto-dismiss confirmation after 5 seconds of no action; clear the timer on unmount or when the selected stage changes.
-  - [ ] On confirm, call retry endpoint, reset panel/sidebar state to running, and wait for SSE to move it back to pending or failed.
-- [ ] Implement inline text editor for `scenario` and `subtitle`. (AC: 5, 6)
-  - [ ] Show `편집` only on `scenario` and `subtitle` stages once text artifact content exists.
-  - [ ] Replace read view with a textarea in edit mode; keep scenario prose readable and subtitle text monospace.
-  - [ ] `저장` calls PATCH and updates the read-mode content from the API response or submitted value.
-  - [ ] `취소` exits edit mode and restores the original text without saving.
-  - [ ] If text is dirty and the user selects another stage, call `window.confirm("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")`; cancel navigation when it returns `false`.
-  - [ ] Saving must not approve or advance the stage; gate approval remains a separate action.
-- [ ] Implement or harden the Run Detail SSE client. (AC: 8)
-  - [ ] Create or update a focused hook such as `useRunProgress(runId, handlers)` inside the frontend source.
-  - [ ] Open `new EventSource("/runs/{id}/progress")` only while Run Detail is mounted for that run.
-  - [ ] Register named listeners for `stage_entry`, `stage_exit`, `gate_pending`, and `run_failed`; parse JSON `event.data`.
-  - [ ] Update only local run/stage UI state; do not show toast notifications for progress.
-  - [ ] Close the EventSource in `useEffect` cleanup to avoid duplicate streams, including React Strict Mode's development setup/cleanup cycle.
-  - [ ] Treat `EventSource.onerror` as connection-state feedback; do not mark a run failed unless a `run_failed` event arrives.
-- [ ] Wire Langfuse trace link in Run Detail. (AC: 7)
-  - [ ] Use `langfuse_trace_url` from `GET /runs/{id}`.
-  - [ ] Open in a new tab with `target="_blank"` and `rel="noreferrer"`.
-  - [ ] Disable or hide the link if no trace URL exists yet.
-- [ ] Add tests. (AC: 1-8)
-  - [ ] Component tests for gate controls visibility, pending disabled state, success label, and inline API error.
-  - [ ] Component tests for retry confirmation, `role="alert"`, confirm/cancel behavior, and 5-second auto-dismiss with fake timers.
-  - [ ] Component tests for scenario/subtitle edit mode, PATCH call, cancel behavior, and dirty navigation `window.confirm`.
-  - [ ] Hook/page test for SSE event handling using a mock `EventSource`; assert `close()` is called on unmount and run id change.
-  - [ ] Accessibility checks for focusable buttons, semantic `role="alert"`, and no color-only status indication.
+- [x] Confirm frontend prerequisites from Stories 3.1-3.4 before editing runtime UI. (AC: 1-8)
+  - [x] Reuse the existing React app under `frontend/`; do not create a second frontend root.
+  - [x] Reuse shared components from Story 3.2: `StatusBadge`, `StageSidebarItem`, `Button`, spinner/loading affordance, and existing shadcn/ui styling.
+  - [x] Reuse the Run Detail layout and artifact panel structure from Story 3.4; this story wires behavior into that surface.
+- [x] Add or update API client functions for stage control. (AC: 2, 4, 5)
+  - [x] Implement `approveGate(runId, stage)` and `rejectGate(runId, stage)` using `POST /runs/{id}/stages/{stage}/gate` with body `{"action":"approve"}` or `{"action":"reject"}`.
+  - [x] Implement `retryStage(runId, stage)` using `POST /runs/{id}/stages/{stage}/retry`.
+  - [x] Implement `patchStageArtifact(runId, stage, text)` using `PATCH /runs/{id}/stages/{stage}/artifact`; allow only `scenario` and `subtitle` in the UI.
+  - [x] Preserve FastAPI error shape: read `detail` when present and show Korean inline error copy.
+- [x] Implement gate controls in the artifact panel footer. (AC: 1, 2)
+  - [x] Render gate controls only when selected stage `gate_state === "pending"`.
+  - [x] Use Korean labels exactly: `승인`, `반려`.
+  - [x] Disable both buttons and show spinner while the mutation is pending.
+  - [x] On success, set local stage state to the returned/expected state label immediately, then let SSE confirmation reconcile.
+  - [x] On failure, re-enable buttons and render an inline error below the controls.
+- [x] Implement retry affordance in the panel header. (AC: 3, 4)
+  - [x] Render `재시도` only for stages whose gate state is `approved`, `rejected`, or failed/error state.
+  - [x] Show inline confirmation below the button, not a Dialog.
+  - [x] Confirmation content must have `role="alert"` and buttons `확인` / `취소`.
+  - [x] Auto-dismiss confirmation after 5 seconds of no action; clear the timer on unmount or when the selected stage changes.
+  - [x] On confirm, call retry endpoint, reset panel/sidebar state to running, and wait for SSE to move it back to pending or failed.
+- [x] Implement inline text editor for `scenario` and `subtitle`. (AC: 5, 6)
+  - [x] Show `편집` only on `scenario` and `subtitle` stages once text artifact content exists.
+  - [x] Replace read view with a textarea in edit mode; keep scenario prose readable and subtitle text monospace.
+  - [x] `저장` calls PATCH and updates the read-mode content from the API response or submitted value.
+  - [x] `취소` exits edit mode and restores the original text without saving.
+  - [x] If text is dirty and the user selects another stage, call `window.confirm("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")`; cancel navigation when it returns `false`.
+  - [x] Saving must not approve or advance the stage; gate approval remains a separate action.
+- [x] Implement or harden the Run Detail SSE client. (AC: 8)
+  - [x] Create or update a focused hook such as `useRunProgress(runId, handlers)` inside the frontend source.
+  - [x] Open `new EventSource("/runs/{id}/progress")` only while Run Detail is mounted for that run.
+  - [x] Register named listeners for `stage_entry`, `stage_exit`, `gate_pending`, and `run_failed`; parse JSON `event.data`.
+  - [x] Update only local run/stage UI state; do not show toast notifications for progress.
+  - [x] Close the EventSource in `useEffect` cleanup to avoid duplicate streams, including React Strict Mode's development setup/cleanup cycle.
+  - [x] Treat `EventSource.onerror` as connection-state feedback; do not mark a run failed unless a `run_failed` event arrives.
+- [x] Wire Langfuse trace link in Run Detail. (AC: 7)
+  - [x] Use `langfuse_trace_url` from `GET /runs/{id}`.
+  - [x] Open in a new tab with `target="_blank"` and `rel="noreferrer"`.
+  - [x] Disable or hide the link if no trace URL exists yet.
+- [x] Add tests. (AC: 1-8)
+  - [x] Component tests for gate controls visibility, pending disabled state, success label, and inline API error.
+  - [x] Component tests for retry confirmation, `role="alert"`, confirm/cancel behavior, and 5-second auto-dismiss with fake timers.
+  - [x] Component tests for scenario/subtitle edit mode, PATCH call, cancel behavior, and dirty navigation `window.confirm`.
+  - [x] Hook/page test for SSE event handling using a mock `EventSource`; assert `close()` is called on unmount and run id change.
+  - [x] Accessibility checks for focusable buttons, semantic `role="alert"`, and no color-only status indication.
 - [ ] Verify locally. (AC: 1-8)
-  - [ ] Run frontend unit tests.
-  - [ ] Run frontend build.
+  - [x] Run frontend unit tests.
+  - [x] Run frontend build.
   - [ ] If the API stories are implemented, run FastAPI and manually exercise gate, retry, edit, SSE, and trace link flows from `/runs/{id}`.
 
 ## Dev Notes
@@ -257,10 +261,35 @@ Current repository inspection found no `frontend/` tree yet. Implement Stories 3
 
 ### Agent Model Used
 
-TBD by dev agent
+GPT-5 Codex
 
 ### Debug Log References
 
+- `npm test` - 75 frontend tests passed.
+- `npm run build` - TypeScript and Vite production build passed.
+- `uv run pytest tests/api/test_gate.py tests/api/test_stages.py tests/api/test_sse.py tests/api/test_stage_artifacts.py` - 46 related API contract tests passed.
+
 ### Completion Notes List
 
+- Reused the existing React app, Run Detail layout, ArtifactPanel, StatusBadge, and StageSidebarItem surfaces.
+- Added stage control API client functions for gate approval/rejection, retry, and text artifact patching; preserved FastAPI `detail` errors for inline Korean copy.
+- Implemented pending gate footer controls, retry header confirmation with `role="alert"` and 5-second auto-dismiss, and separate scenario/subtitle inline editing.
+- Extracted Run Detail SSE handling into `useRunProgress`, with named event listeners, cleanup on unmount/run change, local state updates, and non-authoritative connection-error handling.
+- Preserved Langfuse trace link behavior with new-tab `target="_blank"` and `rel="noreferrer"`.
+- Verified backend stage-control contract through API tests; browser manual flow is still pending because no local DB/run existed to exercise `/runs/{id}` live.
+
 ### File List
+
+- frontend/src/components/ArtifactPanel.tsx
+- frontend/src/components/ArtifactPanel.test.tsx
+- frontend/src/components/common/stage-sidebar-item.tsx
+- frontend/src/hooks/useRunProgress.ts
+- frontend/src/lib/api.ts
+- frontend/src/lib/types.ts
+- frontend/src/pages/RunAbComparisonPage.tsx
+- frontend/src/pages/RunDetail.tsx
+- frontend/src/pages/RunDetail.test.tsx
+
+### Change Log
+
+- 2026-07-01: Implemented gate controls, retry confirmation, inline artifact editor, Run Detail SSE hook wiring, and coverage for Story 3.5.

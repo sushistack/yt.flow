@@ -1,6 +1,10 @@
+---
+baseline_commit: 8486f5cc5843b324dab1ce3abe9727e3f55368c9
+---
+
 # Story 3.6: A/B Comparison View and Accessibility Floor
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -21,30 +25,30 @@ so that I can evaluate prompt variants visually and the tool meets keyboard and 
 
 ## Tasks / Subtasks
 
-- [ ] Add the A/B comparison route and navigation entry point (AC: 1)
-  - [ ] Add `/runs/:id/ab` to the React router under the existing SPA served at `/app`.
-  - [ ] Add a Run Detail entry point, preferably an A/B tab or link, without adding persistent global sidebar navigation.
-  - [ ] Load the selected run with `GET /runs/{id}` and resolve its paired run using the `ab_pair_id` contract. Treat the B-run as the row whose `ab_pair_id` points to the originating A run unless Epic 4 later backfills both directions.
-- [ ] Build the side-by-side comparison surface (AC: 1, 6)
-  - [ ] Reuse the stage artifact preview/rendering logic from Story 3.4 for `scenario`, `image`, `tts`, `subtitle`, and `video` instead of creating duplicate artifact renderers.
-  - [ ] Render two equal-width columns labeled `Variant A` and `Variant B`; preserve stage tokens in English monospace.
-  - [ ] Show LLM-as-judge axes (`atmosphere`, `narrative_coherence`, `article_fidelity`), rule-based metrics (`scene_count_match`, `subtitle_sync`, `audio_duration_variance`), and winner state from `ab_result` when present.
-  - [ ] Provide non-success states: missing pair, pair still running, pair failed, evaluation pending, no winner because both variants are below quality floor, and tie.
-- [ ] Preserve design system and component contracts from Stories 3.1-3.5 (AC: 2, 3, 6)
-  - [ ] Use existing shadcn/ui components and Zinc tokens; do not introduce a second component library or custom visual language.
-  - [ ] Use existing `StatusBadge`, `CardRow`, `StageSidebarItem`, artifact panel, retry confirmation, and SCP Picker components where they exist.
-  - [ ] Keep Korean operator microcopy short and active; do not add explanatory marketing/help text inside the app.
-- [ ] Implement and verify the accessibility floor across the whole SPA (AC: 2-6)
-  - [ ] Ensure all buttons, links, inputs, tab triggers, image lightbox controls, dialog controls, retry confirmations, and A/B controls are keyboard reachable and show visible focus rings.
-  - [ ] Ensure status and gate states use text + icon/shape + color; never rely on color alone.
-  - [ ] Ensure Run Detail keeps semantic `<nav>`, `<main>`, and `<aside>` structure, and sidebar/SCP results use `<ul>`/`<li>` where applicable.
-  - [ ] Ensure SCP Picker keeps `role="listbox"`, stable option ids, `aria-activedescendant`, keyboard up/down/Enter behavior, and `aria-label="SCP 검색"`.
-  - [ ] Ensure retry confirmation uses `role="alert"` and auto-dismiss behavior from Story 3.5 is preserved.
-- [ ] Add focused tests (AC: 1-6)
-  - [ ] Add component or route tests for A/B rendering with completed results, pending results, missing pair, failed pair, tie, and no-winner states.
-  - [ ] Add accessibility tests using Testing Library role/name queries and keyboard navigation checks.
-  - [ ] Add a Playwright smoke test for `/runs/{id}/ab` if the frontend test harness exists by this story.
-  - [ ] Add an axe-core accessibility scan in Playwright or component tests if test dependencies are already present or can be added consistently with the frontend setup.
+- [x] Add the A/B comparison route and navigation entry point (AC: 1)
+  - [x] Add `/runs/:id/ab` to the React router under the existing SPA served at `/app`.
+  - [x] Add a Run Detail entry point, preferably an A/B tab or link, without adding persistent global sidebar navigation.
+  - [x] Load the selected run with `GET /runs/{id}` and resolve its paired run using the `ab_pair_id` contract. Treat the B-run as the row whose `ab_pair_id` points to the originating A run unless Epic 4 later backfills both directions.
+- [x] Build the side-by-side comparison surface (AC: 1, 6)
+  - [x] Reuse the stage artifact preview/rendering logic from Story 3.4 for `scenario`, `image`, `tts`, `subtitle`, and `video` instead of creating duplicate artifact renderers.
+  - [x] Render two equal-width columns labeled `Variant A` and `Variant B`; preserve stage tokens in English monospace.
+  - [x] Show LLM-as-judge axes (`atmosphere`, `narrative_coherence`, `article_fidelity`), rule-based metrics (`scene_count_match`, `subtitle_sync`, `audio_duration_variance`), and winner state from `ab_result` when present.
+  - [x] Provide non-success states: missing pair, pair still running, pair failed, evaluation pending, no winner because both variants are below quality floor, and tie.
+- [x] Preserve design system and component contracts from Stories 3.1-3.5 (AC: 2, 3, 6)
+  - [x] Use existing shadcn/ui components and Zinc tokens; do not introduce a second component library or custom visual language.
+  - [x] Use existing `StatusBadge`, `CardRow`, `StageSidebarItem`, artifact panel, retry confirmation, and SCP Picker components where they exist.
+  - [x] Keep Korean operator microcopy short and active; do not add explanatory marketing/help text inside the app.
+- [x] Implement and verify the accessibility floor across the whole SPA (AC: 2-6)
+  - [x] Ensure all buttons, links, inputs, tab triggers, image lightbox controls, dialog controls, retry confirmations, and A/B controls are keyboard reachable and show visible focus rings.
+  - [x] Ensure status and gate states use text + icon/shape + color; never rely on color alone.
+  - [x] Ensure Run Detail keeps semantic `<nav>`, `<main>`, and `<aside>` structure, and sidebar/SCP results use `<ul>`/`<li>` where applicable.
+  - [x] Ensure SCP Picker keeps `role="listbox"`, stable option ids, `aria-activedescendant`, keyboard up/down/Enter behavior, and `aria-label="SCP 검색"`.
+  - [x] Ensure retry confirmation uses `role="alert"` and auto-dismiss behavior from Story 3.5 is preserved.
+- [x] Add focused tests (AC: 1-6)
+  - [x] Add component or route tests for A/B rendering with completed results, pending results, missing pair, failed pair, tie, and no-winner states.
+  - [x] Add accessibility tests using Testing Library role/name queries and keyboard navigation checks.
+  - [x] Add a Playwright smoke test for `/runs/{id}/ab` if the frontend test harness exists by this story.
+  - [x] Add an axe-core accessibility scan in Playwright or component tests if test dependencies are already present or can be added consistently with the frontend setup.
 
 ## Dev Notes
 
@@ -186,12 +190,39 @@ For accessibility implementation:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5 Codex
 
 ### Debug Log References
+
+- `npm test -- RunAbComparisonPage.test.tsx` - RED failed before page implementation, then passed after route/page implementation.
+- `npm test -- App.test.tsx RunDetail.test.tsx RunAbComparisonPage.test.tsx` - route and Run Detail entry point tests passed.
+- `npm test -- ArtifactPanel.test.tsx` - retry alert and editor guard tests passed after test timing cleanup.
+- `npm test` - full frontend suite passed: 14 files, 75 tests.
+- `npm run build` - TypeScript and Vite production build passed.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented `/runs/:id/ab` route with selected-run fetch, pair resolution through `ab_pair_id`, and B-run lookup via `GET /runs`.
+- Added side-by-side A/B comparison panes reusing the shared artifact panel for all pipeline stages, with score tables, winner/tie/no-winner rendering, and missing/running/failed/pending states.
+- Added Run Detail A/B entry point and preserved semantic `nav`/`aside`/`main` layout, focus-visible rings, Korean operator copy, and English monospace stage tokens.
+- Tightened accessibility/test coverage for status badges, stage controls, retry confirmation alert behavior, SCP Picker role/name contracts, route rendering, and A/B comparison states.
+- Playwright and axe-core harness/dependencies were not present in the frontend setup, so no new dependency was added; coverage is provided through Vitest and Testing Library role/name assertions.
 
 ### File List
+
+- `_bmad-output/implementation-artifacts/3-6-ab-comparison-accessibility.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `frontend/src/App.tsx`
+- `frontend/src/App.test.tsx`
+- `frontend/src/components/ArtifactPanel.test.tsx`
+- `frontend/src/components/common/status-badge.tsx`
+- `frontend/src/lib/types.ts`
+- `frontend/src/pages/RunAbComparisonPage.tsx`
+- `frontend/src/pages/RunAbComparisonPage.test.tsx`
+- `frontend/src/pages/RunDetail.tsx`
+- `frontend/src/pages/RunDetail.test.tsx`
+
+### Change Log
+
+- 2026-07-01: Added A/B comparison route, side-by-side comparison UI, accessibility verification updates, focused route/component tests, and marked story ready for review.
