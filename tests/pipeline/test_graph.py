@@ -128,8 +128,10 @@ async def test_gate_rejects_invalid_decision(tmp_path):
         await saver.conn.close()
 
 
-def test_stage_nodes_return_current_stage_without_mutating_input():
-    for stage in STAGES:
+def test_stub_stage_nodes_return_current_stage_without_mutating_input():
+    # video_node is async and real as of Story 1.9; only remaining stubs are tested here.
+    stub_stages = [s for s in STAGES if s != "video"]
+    for stage in stub_stages:
         state = _minimal_state(str(uuid.uuid4()))
         snapshot = dict(state)
         update = nodes.STAGE_NODES[stage](state)
