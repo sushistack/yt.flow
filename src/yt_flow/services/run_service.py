@@ -7,12 +7,14 @@ stream event — never before. [AD-1, AD-3, AD-4]
 """
 import asyncio
 import json
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException
+from langfuse import get_client
 from langgraph.graph import START
 from langgraph.types import Command
 from sqlmodel import Session
@@ -248,9 +250,43 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
     return "completed"
 
 
+@contextmanager
+def _trace_cm(run_id: str):
+    """Enclosing span so every node ``@observe`` span nests under one Langfuse trace
+    keyed by ``run_id`` (AC3). The trace id is deterministic via
+    ``create_trace_id(seed=run_id)``, so initial, resumed, and restarted executions
+    all attach to the same trace tree — no new root trace on resume (AC4).
+
+    ponytail: the seed IS the storage — no ``trace_id`` field on PipelineState or the
+    runs table; both pipeline and service recompute it from ``run_id``. Tracing is
+    non-fatal (AD-10): setup *and* span enter/exit are guarded, so a Langfuse failure
+    degrades to a no-op instead of escaping into the run's failure handler.
+    """
+    span = None
+    try:
+        client = get_client()
+        span = client.start_as_current_observation(
+            name="pipeline",
+            as_type="chain",
+            trace_context={"trace_id": client.create_trace_id(seed=run_id)},
+        )
+        span.__enter__()
+    except Exception:  # noqa: BLE001 — tracing must never break the pipeline
+        span = None
+    try:
+        yield
+    finally:
+        if span is not None:
+            try:
+                span.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001 — nor on teardown
+                pass
+
+
 async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None") -> None:
     try:
-        await _consume(run_id, stream, sse_registry)
+        with _trace_cm(run_id):
+            await _consume(run_id, stream, sse_registry)
     except Exception as exc:  # AD-4: services catches astream() failures, marks failed, fans out.
         _configs.pop(run_id, None)
         _write_run(run_id, status="failed", error=str(exc))
@@ -273,6 +309,44 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     decision = _ACTION_TO_DECISION.get(action, action)
     await _run(run_id, _graph.astream(Command(resume=decision), config, stream_mode="updates"), sse_registry)
+
+
+# ── Failure recovery: resume from checkpoint & explicit full restart (Story 1.10) ──
+
+
+async def resume_run_from_failure(run_id: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
+    """Resume a failed run from its last checkpoint without re-running completed nodes.
+
+    LangGraph replays from the latest checkpoint for this thread when invoked with a
+    ``None`` input, so a run that failed after ``scenario`` resumes at ``image`` and
+    ``scenario`` is not re-executed. [AC1, FR-7] Distinct from ``resume_run``, which
+    feeds an approve/reject decision into a pending gate interrupt.
+    """
+    config = _configs.get(run_id) or {"configurable": {"thread_id": run_id}}
+    _configs[run_id] = config
+    _write_run(run_id, status="running", error=None)
+    await _run(run_id, _graph.astream(None, config, stream_mode="updates"), sse_registry)
+
+
+async def full_restart_run(run_id: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
+    """Restart a run from ``scenario``, disregarding any existing checkpoint. [AC2, FR-8]
+
+    Explicit at the service boundary so no caller can silently get resume behavior.
+    Strategy: wipe the thread's checkpoints, then stream a fresh initial state on the
+    *same* ``run_id`` thread — the operator-facing run id stays stable and its trace
+    (deterministic from ``run_id``) stays coherent. The fresh initial state resets
+    ``scenes``, ``video_path``, per-stage artifact paths, ``error``, and ``gate_states``,
+    so no stale paths survive. ``scp_text`` is recovered from the prior checkpoint.
+    """
+    config = {"configurable": {"thread_id": run_id}}
+    snap = await _graph.aget_state(config)
+    scp_text = (snap.values or {}).get("scp_text", "")
+    ckpt = _graph.checkpointer
+    if ckpt is not None:
+        await ckpt.adelete_thread(run_id)  # drop prior successful checkpoints → START from scenario
+    _configs[run_id] = config
+    _write_run(run_id, status="running", current_stage="scenario", error=None, gate_states="{}")
+    await _run(run_id, _graph.astream(_initial_state(run_id, scp_text), config, stream_mode="updates"), sse_registry)
 
 
 # ── Stage control: retry & inline artifact edit (Story 2.4) ────────────────────
