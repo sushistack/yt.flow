@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* ── Zinc System tokens (DESIGN.md). Dark is the primary mode. ───────────── */
+:root {
+  --background: #1C1C1E;
+  --card: #2C2C2E;
+  --card-hover: #323234;
+  --border: rgba(255, 255, 255, 0.07);
+  --foreground: #F2F2F7;
+  --muted-foreground: #8E8E93;
+  --subtle-foreground: #48484A;
+  --primary: #0A84FF;
+  --primary-foreground: #FFFFFF;
+
+  /* Semantic status — independent tier, never used as decorative accent. */
+  --status-running: #FF9F0A;
+  --status-running-bg: rgba(255, 159, 10, 0.18);
+  --status-awaiting: #BF5AF2;
+  --status-awaiting-bg: rgba(191, 90, 242, 0.18);
+  --status-approved: #30D158;
+  --status-approved-bg: rgba(48, 209, 88, 0.18);
+  --status-failed: #FF453A;
+  --status-failed-bg: rgba(255, 69, 58, 0.18);
+}
+
+/* Light mode via system preference (DESIGN.md light-mode swaps). */
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #F2F2F7;
+    --card: #FFFFFF;
+    --border: rgba(0, 0, 0, 0.09);
+    --foreground: #1C1C1E;
+    --muted-foreground: #6C6C70;
+    --primary: #007AFF;
+  }
+}
+
+/* ── Tailwind v4 theme mapping: exposes tokens as utilities. ─────────────── */
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-status-running: var(--status-running);
+  --color-status-running-bg: var(--status-running-bg);
+  --color-status-awaiting: var(--status-awaiting);
+  --color-status-awaiting-bg: var(--status-awaiting-bg);
+  --color-status-approved: var(--status-approved);
+  --color-status-approved-bg: var(--status-approved-bg);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-bg: var(--status-failed-bg);
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Courier New", Consolas, Menlo, monospace;
+
+  --radius-badge: 6px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-cta: 10px;
+}
+
+/* Body: system sans, 13px/400/1.4, per approved UX spec (-0.01em). */
+body {
+  margin: 0;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
