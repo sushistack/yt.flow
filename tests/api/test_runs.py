@@ -124,6 +124,28 @@ def test_post_runs_launches_background_task(client):
         assert scp_text == "hello"
 
 
+# ── Story 3.3: POST /runs resolves scp_text server-side by scp_id ───────────
+
+def test_post_runs_resolves_scp_text_from_state(client):
+    """When the body omits scp_text, the server looks it up in app.state.scps."""
+    app.state.scps = [
+        ScpEntry(id="SCP-096", nickname="Shy Guy", object_class="Euclid", rating=4.8,
+                 scp_text="resolved article text"),
+    ]
+    with patch("yt_flow.api.routes.runs.run_service.start_run", new_callable=AsyncMock) as mock_start:
+        resp = client.post("/runs", json={"scp_id": "SCP-096"})
+        assert resp.status_code == 201
+        _, scp_text, *_ = mock_start.call_args.args
+        assert scp_text == "resolved article text"
+
+
+def test_post_runs_422_when_no_scp_text_available(client):
+    """Unknown scp_id (or entry without text) and no body text → visible 422, no run."""
+    resp = client.post("/runs", json={"scp_id": "SCP-000"})
+    assert resp.status_code == 422
+    assert "SCP-000" in resp.json()["detail"]
+
+
 # ── AC 7: GET /runs/{id} with unknown id → 404 ──────────────────────────────
 
 def test_get_run_unknown_id(client):
