@@ -62,7 +62,7 @@ development_status:
   1-9-video-node: done
   1-9b-video-effects-kenburns-transitions: done  # depends on 1-9 done
   1-9c-video-character-idle-motion: done  # depends on 1-6b done + 1-9b done
-  1-10-resume-restart-trace-linkage: ready-for-dev
+  1-10-resume-restart-trace-linkage: done
   epic-1-retrospective: optional
 
   # ── Epic 2: HTTP API & Gate-Controlled Pipeline Execution ───────────────────

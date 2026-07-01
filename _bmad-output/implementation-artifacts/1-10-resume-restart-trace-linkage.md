@@ -1,6 +1,10 @@
+---
+baseline_commit: 04634e41ebcaedeab0c5a9879219fcda2971e665
+---
+
 # Story 1.10: Resume, Restart & Trace Linkage
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created. -->
 
@@ -19,35 +23,35 @@ so that I never reprocess already-completed stages and can start clean when need
 
 ## Tasks / Subtasks
 
-- [ ] Confirm prerequisite graph and node behavior from Stories 1.4-1.9 before implementing this story. (AC: 1, 2, 3, 4)
-  - [ ] Verify `src/yt_flow/pipeline/graph.py` compiles the fixed topology: `scenario -> gate_scenario -> image -> gate_image -> tts -> gate_tts -> subtitle -> gate_subtitle -> video -> gate_video`.
-  - [ ] Verify the graph uses `AsyncSqliteSaver` from `langgraph.checkpoint.sqlite.aio`, not sync `SqliteSaver`.
-  - [ ] Verify every stage node returns `current_stage` and stage outputs through `PipelineState`, with no in-place state mutation.
+- [x] Confirm prerequisite graph and node behavior from Stories 1.4-1.9 before implementing this story. (AC: 1, 2, 3, 4)
+  - [x] Verify `src/yt_flow/pipeline/graph.py` compiles the fixed topology: `scenario -> gate_scenario -> image -> gate_image -> tts -> gate_tts -> subtitle -> gate_subtitle -> video -> gate_video`.
+  - [x] Verify the graph uses `AsyncSqliteSaver` from `langgraph.checkpoint.sqlite.aio`, not sync `SqliteSaver`.
+  - [x] Verify every stage node returns `current_stage` and stage outputs through `PipelineState`, with no in-place state mutation.
 
-- [ ] Implement or finalize resume entrypoint in `src/yt_flow/services/run_service.py`. (AC: 1, 4)
-  - [ ] Use `run_id` as the LangGraph `thread_id` in the runnable config: `{"configurable": {"thread_id": run_id}}`.
-  - [ ] On resume, do not submit a fresh initial `PipelineState`; call `graph.astream(None, config)` or the project-equivalent resume invocation so LangGraph uses the latest checkpoint for that thread.
-  - [ ] Preserve `run_id`, `prompt_variant`, `gate_states`, artifact paths, and completed stage outputs from the checkpoint.
-  - [ ] Add a focused test that fails after `scenario`, resumes, and proves `scenario_node` was not called a second time.
+- [x] Implement or finalize resume entrypoint in `src/yt_flow/services/run_service.py`. (AC: 1, 4)
+  - [x] Use `run_id` as the LangGraph `thread_id` in the runnable config: `{"configurable": {"thread_id": run_id}}`.
+  - [x] On resume, do not submit a fresh initial `PipelineState`; call `graph.astream(None, config)` or the project-equivalent resume invocation so LangGraph uses the latest checkpoint for that thread.
+  - [x] Preserve `run_id`, `prompt_variant`, `gate_states`, artifact paths, and completed stage outputs from the checkpoint.
+  - [x] Add a focused test that fails after `scenario`, resumes, and proves `scenario_node` was not called a second time.
 
-- [ ] Implement or finalize full restart entrypoint in `src/yt_flow/services/run_service.py`. (AC: 2)
-  - [ ] Full restart must be explicit in the service API, e.g. `restart_run(run_id, mode="full")` or a separate `full_restart_run(run_id)`.
-  - [ ] Full restart must not accidentally resume from the existing checkpoint.
-  - [ ] Choose one consistent strategy and document it in code/tests: either create a fresh LangGraph thread id while keeping the API `run_id`, or deliberately clear/reset the existing thread's checkpoint state before invoking from `scenario`.
-  - [ ] If using a fresh internal thread id, persist the mapping required for later API reads and trace links; do not break the invariant that the operator-facing run id remains stable.
-  - [ ] Reset stage outputs (`scenes`, `video_path`, per-stage artifact paths, `error`) and `gate_states` to the initial not-yet-approved state before re-running.
+- [x] Implement or finalize full restart entrypoint in `src/yt_flow/services/run_service.py`. (AC: 2)
+  - [x] Full restart must be explicit in the service API, e.g. `restart_run(run_id, mode="full")` or a separate `full_restart_run(run_id)`.
+  - [x] Full restart must not accidentally resume from the existing checkpoint.
+  - [x] Choose one consistent strategy and document it in code/tests: either create a fresh LangGraph thread id while keeping the API `run_id`, or deliberately clear/reset the existing thread's checkpoint state before invoking from `scenario`.
+  - [x] If using a fresh internal thread id, persist the mapping required for later API reads and trace links; do not break the invariant that the operator-facing run id remains stable. (N/A — chose same-thread wipe via `checkpointer.adelete_thread`, so run id stays the thread id; no mapping needed.)
+  - [x] Reset stage outputs (`scenes`, `video_path`, per-stage artifact paths, `error`) and `gate_states` to the initial not-yet-approved state before re-running.
 
-- [ ] Implement deterministic trace linkage across initial, resumed, and restarted execution. (AC: 3, 4)
-  - [ ] Generate or retrieve one deterministic Langfuse `trace_id` for each operator-facing `run_id`.
-  - [ ] Store the trace id where both pipeline and service code can reuse it without adding a new authoritative state source. Prefer `PipelineState` if the field already exists from earlier stories; otherwise add `trace_id: str | None` to `PipelineState` and initialize it from `run_id`.
-  - [ ] Ensure resumed nodes attach spans to the existing trace id instead of creating a new root trace.
-  - [ ] Ensure tracing failures remain non-fatal: log and continue, per AD-10.
+- [x] Implement deterministic trace linkage across initial, resumed, and restarted execution. (AC: 3, 4)
+  - [x] Generate or retrieve one deterministic Langfuse `trace_id` for each operator-facing `run_id`.
+  - [x] Store the trace id where both pipeline and service code can reuse it without adding a new authoritative state source. (Chose deterministic derivation — `create_trace_id(seed=run_id)` — so the seed is the storage; no new `PipelineState`/runs field needed, honoring AD-2.)
+  - [x] Ensure resumed nodes attach spans to the existing trace id instead of creating a new root trace.
+  - [x] Ensure tracing failures remain non-fatal: log and continue, per AD-10.
 
-- [ ] Add tests for resume, full restart, and trace continuity. (AC: 1, 2, 3, 4)
-  - [ ] Unit-test service resume behavior with spy/stub nodes and an async SQLite checkpointer.
-  - [ ] Unit-test full restart re-enters `scenario_node` even when prior checkpoints exist.
-  - [ ] Unit-test trace id generation is deterministic for `run_id` and reused on resumed nodes.
-  - [ ] Add an integration-style test that runs `scenario -> checkpoint -> forced failure -> resume -> complete` with mock node implementations.
+- [x] Add tests for resume, full restart, and trace continuity. (AC: 1, 2, 3, 4)
+  - [x] Unit-test service resume behavior with spy/stub nodes and an async SQLite checkpointer.
+  - [x] Unit-test full restart re-enters `scenario_node` even when prior checkpoints exist.
+  - [x] Unit-test trace id generation is deterministic for `run_id` and reused on resumed nodes.
+  - [x] Add an integration-style test that runs `scenario -> checkpoint -> forced failure -> resume -> complete` with mock node implementations.
 
 ## Dev Notes
 
@@ -177,10 +181,84 @@ The exact file set depends on what Stories 1.1-1.9 produce. Keep changes within 
 
 ### Agent Model Used
 
-TBD by dev agent
+claude-opus-4-8[1m]
 
 ### Debug Log References
 
+- Verified LangGraph resume semantics empirically: `astream(None, config)` after a node
+  raises resumes the failed task from the last checkpoint without re-running upstream
+  nodes (spy counter proves `scenario_calls == 1` across the failure→resume boundary).
+- Verified Langfuse 4.12 API: `Langfuse.create_trace_id(seed=...)` is a deterministic
+  static function; `start_as_current_observation(trace_context={"trace_id": ...})` roots
+  child `@observe` spans under the given trace even when the client is disabled (no creds),
+  so tests need no live Langfuse instance.
+
 ### Completion Notes List
 
+- **Resume (AC1, AC4):** Added `resume_run_from_failure(run_id)` — replays from the latest
+  checkpoint via `graph.astream(None, config)` on the `run_id` thread. Distinct from the
+  existing gate `resume_run` (which feeds an approve/reject into a pending interrupt).
+- **Full restart (AC2):** Added `full_restart_run(run_id)` — explicit at the service
+  boundary. Recovers `scp_text` from the prior checkpoint, wipes the thread via
+  `checkpointer.adelete_thread(run_id)`, then streams a fresh `_initial_state` from START.
+  Same thread id → operator-facing run id stays stable, no thread-mapping needed. Fresh
+  initial state resets `scenes`/`video_path`/artifact paths/`error`/`gate_states`, so no
+  stale paths survive. Does not conflict with AD-9 stage retry (that rewinds via
+  `update_state`; this deletes-then-restarts — different operations on the same thread).
+- **Trace linkage (AC3, AC4):** Added `_trace_cm(run_id)` and wrapped `_consume` inside
+  `_run`, so every execution path (start, gate resume, failure resume, retry, restart)
+  opens one enclosing span whose trace id is `create_trace_id(seed=run_id)`. All five node
+  `@observe` spans nest under it; resume reuses the same deterministic id → no new root
+  trace. ponytail: the seed *is* the storage — no `trace_id` field added to `PipelineState`
+  or the runs table (honors AD-2 single-source). Non-fatal per AD-10: any tracing failure
+  degrades to `nullcontext()`.
+- **Prereqs (Task 1):** Confirmed graph topology, `AsyncSqliteSaver`, and dict-returning
+  (non-mutating) nodes already satisfy the story's requirements — no changes needed there.
+- Full suite: **271 passed, 1 skipped**; `ruff check` clean.
+
 ### File List
+
+- `src/yt_flow/services/run_service.py` — added `_trace_cm`, `resume_run_from_failure`,
+  `full_restart_run`; wrapped `_run`'s `_consume` in the trace context; imports
+  `nullcontext` and `langfuse.get_client`.
+- `tests/services/test_run_service_resume.py` — new: resume-without-rerun, full-restart
+  re-enters scenario, stale-state reset, deterministic/shared trace id, trace-id determinism.
+- `_bmad-output/implementation-artifacts/1-10-resume-restart-trace-linkage.md` — story
+  tracking (frontmatter baseline_commit, task checkboxes, this record, status).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status → in-progress → review.
+
+## Change Log
+
+- 2026-07-01: Implemented resume-from-failure, explicit full restart, and deterministic
+  Langfuse trace linkage for Story 1.10. All ACs satisfied; 271 passed / 1 skipped.
+- 2026-07-01: Code review (3 parallel layers: Blind Hunter, Edge Case Hunter, Acceptance
+  Auditor). 2 findings patched, ~7 dismissed. Re-verified: 272 passed / 1 skipped, ruff clean.
+
+## Review Findings
+
+Reviewed against master (7e66c37) in an isolated worktree, since the story's authored
+changes predated stories 2.3–2.5 and were re-grafted onto current master to avoid
+silently reverting the 2.4 `_RETRY_ENTRY` retry fix and the `spawn()`/`_bg_tasks`
+GC-safety machinery (the concurrent-edit hazard flagged during 2.3–2.5).
+
+**Patched (2):**
+- **AD-10 — tracing not fully non-fatal.** `_trace_cm` guarded `get_client()`/
+  `create_trace_id()` but the returned span's `__enter__`/`__exit__` ran inside `_run`'s
+  `try`, so a Langfuse failure *on enter* would mark the run `failed`. Converted `_trace_cm`
+  to a `@contextmanager` that enters/exits the span under its own guard; added
+  `test_tracing_enter_failure_is_non_fatal`.
+- **Weak AC2-guardrail test.** `test_full_restart_resets_stale_state` claimed to verify
+  stale `scenes`/`video_path` reset but only asserted `scp_text`/`error`. Added assertions
+  that the post-restart checkpoint holds exactly one freshly-produced run.
+
+**Dismissed (~7):**
+- *Trace-id reused across full restart* — intended AC3/AC4 design (stable operator-facing
+  run identity keyed by `run_id`), not a defect.
+- *`adelete_thread(run_id)` bare arg vs config dict* — correct for `AsyncSqliteSaver`;
+  proven by `test_full_restart_reenters_scenario`.
+- *`checkpointer=None`, unguarded `snap`, resuming a nonexistent thread, no-run-in-DB,
+  concurrent-restart race, config-key drift* — defensive-against-impossible-state: the
+  graph is always compiled with `AsyncSqliteSaver`, resume/restart presuppose a persisted
+  run, `_write_run` safely early-returns when the run is absent, and the service has no
+  concurrency (single operator). YAGNI per project code philosophy.
+- *Resumed run stuck `running`* — non-issue; `_consume` writes `status="complete"`.
