@@ -2,20 +2,40 @@
 
 Story 1.9: per-scene segment render + concat → video.mp4
 Story 1.9b: Ken Burns zoompan per shot + xfade/acrossfade scene transitions
+Story 1.13: LLM-based character angle pre-selection before FFmpeg composition
 
 Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
 
 import asyncio
+import logging
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from langfuse import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
+
+logger = logging.getLogger(__name__)
+
+# ── Angle selection injection (Story 1.13) ────────────────────────────────────
+# Injected by the service layer to avoid AD-1 violation. video_node calls this
+# to pre-select character angles via LLM before FFmpeg composition runs.
+_angle_selector: Any = None
+
+
+def inject_angle_selector(fn: Any) -> None:
+    """Inject the angle selection service callable.
+
+    ``fn`` signature: ``async fn(scp_id: str, scenes: list) -> dict | None``
+    Returns ``{shot_key: {"angle": name, "path": file_path}}`` or ``None``.
+    """
+    global _angle_selector
+    _angle_selector = fn
 
 # ── Ken Burns constants ───────────────────────────────────────────────────────
 
@@ -230,30 +250,33 @@ def _record_trace(
     effects: list | None = None,
     upscale_pass: bool = True,
     character_scenes: int = 0,
+    angle_selection: dict | None = None,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
     try:
-        get_client().update_current_span(
-            metadata={
-                "run_id": run_id,
-                "scene_count": scene_count,
-                "latency_ms": latency_ms,
-                **({"output_path": output_path} if output_path else {}),
-                **({"ffmpeg_returncode": returncode} if returncode is not None else {}),
-                **({"effects": effects} if effects is not None else {}),
-                "transition": XFADE_TRANSITION,
-                "transition_duration": XFADE_DURATION,
-                "upscale_pass": upscale_pass,
-                # Character idle-motion params (Story 1.9c) — constant across scenes.
-                "character_scenes": character_scenes,
-                "character_motion": {
-                    "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
-                    "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
-                },
-                **({"error": repr(error)} if error is not None else {}),
-            }
-        )
+        metadata: dict = {
+            "run_id": run_id,
+            "scene_count": scene_count,
+            "latency_ms": latency_ms,
+            **({"output_path": output_path} if output_path else {}),
+            **({"ffmpeg_returncode": returncode} if returncode is not None else {}),
+            **({"effects": effects} if effects is not None else {}),
+            "transition": XFADE_TRANSITION,
+            "transition_duration": XFADE_DURATION,
+            "upscale_pass": upscale_pass,
+            # Character idle-motion params (Story 1.9c) — constant across scenes.
+            "character_scenes": character_scenes,
+            "character_motion": {
+                "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
+                "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
+            },
+            **({"error": repr(error)} if error is not None else {}),
+        }
+        # Story 1.13: angle selection tracing metadata
+        if angle_selection:
+            metadata["angle_selection"] = angle_selection
+        get_client().update_current_span(metadata=metadata)
     except Exception:  # noqa: BLE001
         pass
 
@@ -459,6 +482,42 @@ async def video_node(state: PipelineState) -> dict:
             raise ValueError("no scenes to render")
         _validate_scene_assets(scenes)
 
+        # ── Story 1.13: LLM angle pre-selection ───────────────────────────
+        angle_meta: dict = {}
+        if _angle_selector is not None:
+            t_angle = time.perf_counter()
+            try:
+                scp_id = state.get("scp_id", "")
+                selections = await _angle_selector(scp_id, scenes)
+                if selections:
+                    shots_analyzed = len(selections)
+                    angles_selected: list[str] = []
+                    fallback_used = 0
+                    for scene in scenes:
+                        for shot in scene.get("shots", []):
+                            key = f"{scene['scene_num']}:{shot['shot_id']}"
+                            sel = selections.get(key)
+                            if sel and sel.get("path"):
+                                shot["character_path"] = sel["path"]
+                                angles_selected.append(sel.get("angle", "?"))
+                                if sel.get("angle") == "front":
+                                    fallback_used += 1  # count front as fallback indicator for tracing
+                            # ponytail: if no selection for this shot, leave character_path unchanged
+                    angle_meta = {
+                        "shots_analyzed": shots_analyzed,
+                        "angles_selected": angles_selected,
+                        "fallback_used": fallback_used,
+                        "latency_ms": int((time.perf_counter() - t_angle) * 1000),
+                    }
+                    logger.info(
+                        "Angle selection: %d shots, %d angles in %dms",
+                        shots_analyzed, len(set(angles_selected)), angle_meta["latency_ms"],
+                    )
+            except Exception as exc:  # noqa: BLE001 — AD-10: never fail the pipeline
+                logger.warning("Angle selection failed, continuing with existing character_path: %s", exc)
+
+        # ── Story 1.9/1.9b: FFmpeg composition ────────────────────────────
+
         s = _settings()
         run_dir = Path(s.workspace_path) / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -496,6 +555,7 @@ async def video_node(state: PipelineState) -> dict:
             latency_ms=_ms(t0), output_path=str(output),
             returncode=0, effects=effects_meta, upscale_pass=True,
             character_scenes=sum(1 for *_, hc in segs_with_specs if hc),
+            angle_selection=angle_meta if angle_meta else None,
         )
         return {"current_stage": "video", "video_path": str(output)}
 
