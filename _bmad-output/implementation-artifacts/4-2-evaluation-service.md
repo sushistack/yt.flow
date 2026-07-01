@@ -1,6 +1,10 @@
+---
+baseline_commit: 8486f5cc5843b324dab1ce3abe9727e3f55368c9
+---
+
 # Story 4.2: Evaluation Service (LLM-as-Judge + Rule-Based)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed — comprehensive developer guide created -->
 
@@ -28,57 +32,57 @@ so that the comparison is automated and reproducible without manual scoring.
 
 ## Tasks / Subtasks
 
-- [ ] Implement `src/yt_flow/services/eval_service.py` — the evaluation orchestrator (AC: 1, 2, 3, 4, 5, 6, 7)
-  - [ ] Define evaluation data types as TypedDicts or dataclasses: `EvalAxisScores` (3 axes × 3 runs), `RuleBasedMetrics`, `PairwiseResult`, `EvaluationResult`
-  - [ ] Implement `evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult` as the top-level entry point
-  - [ ] Load both runs' `PipelineState` from LangGraph `AsyncSqliteSaver` checkpoints — read `scenes`, `video_path`, `scp_text` for each run_id
-  - [ ] Validate precondition: both runs must exist, have `status == "complete"`, and share the same `ab_pair_id`; raise `ValueError` with specific detail on mismatch
-  - [ ] Run LLM-as-judge scoring (3 axes × 3 runs = 9 LLM calls per run, 18 total minimum) in parallel where possible; each call must have a 30-second timeout with one retry on timeout
-  - [ ] Run rule-based evaluation (pure Python, no LLM needed) comparing both runs' structural metrics
-  - [ ] Execute pairwise comparison: A→B and B→A order, with 3rd tiebreaker if contradictory
-  - [ ] Apply quality floor check: any axis score < 2 disqualifies the run; both disqualified → `winner: null, reason: "both_below_floor"`
-  - [ ] Persist full evaluation trace to Langfuse as a span tree under a parent trace keyed by `ab_pair_id`
-  - [ ] Return `EvaluationResult` with all scores, pairwise result, rule-based metrics, and winner
+- [x] Implement `src/yt_flow/services/eval_service.py` — the evaluation orchestrator (AC: 1, 2, 3, 4, 5, 6, 7)
+  - [x] Define evaluation data types as TypedDicts or dataclasses: `EvalAxisScores` (3 axes × 3 runs), `RuleBasedMetrics`, `PairwiseResult`, `EvaluationResult`
+  - [x] Implement `evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult` as the top-level entry point
+  - [x] Load both runs' `PipelineState` from LangGraph `AsyncSqliteSaver` checkpoints — read `scenes`, `video_path`, `scp_text` for each run_id
+  - [x] Validate precondition: both runs must exist, have `status == "complete"`, and share the same `ab_pair_id`; raise `ValueError` with specific detail on mismatch
+  - [x] Run LLM-as-judge scoring (3 axes × 3 runs = 9 LLM calls per run, 18 total minimum) in parallel where possible; each call must have a 30-second timeout with one retry on timeout
+  - [x] Run rule-based evaluation (pure Python, no LLM needed) comparing both runs' structural metrics
+  - [x] Execute pairwise comparison: A→B and B→A order, with 3rd tiebreaker if contradictory
+  - [x] Apply quality floor check: any axis score < 2 disqualifies the run; both disqualified → `winner: null, reason: "both_below_floor"`
+  - [x] Persist full evaluation trace to Langfuse as a span tree under a parent trace keyed by `ab_pair_id`
+  - [x] Return `EvaluationResult` with all scores, pairwise result, rule-based metrics, and winner
 
-- [ ] Implement LLM-as-judge scoring module (AC: 1, 3, 5)
-  - [ ] Create `_judge_axis(run_scp_text: str, run_artifacts: dict, axis: str) -> list[int]` — calls DeepSeek V4 as judge 3 times per axis
-  - [ ] Each judge call must: (a) fetch the judge prompt from Langfuse Prompt Hub (prompt name: `evaluation/judge`), (b) compile with `scp_text`, `axis`, and relevant artifact content, (c) require chain-of-thought reasoning before the integer score, (d) parse the 1–5 integer from the response
-  - [ ] Axis definitions per OQ-1:
+- [x] Implement LLM-as-judge scoring module (AC: 1, 3, 5)
+  - [x] Create `_judge_axis(run_scp_text: str, run_artifacts: dict, axis: str) -> list[int]` — calls DeepSeek V4 as judge 3 times per axis
+  - [x] Each judge call must: (a) fetch the judge prompt from Langfuse Prompt Hub (prompt name: `evaluation/judge`), (b) compile with `scp_text`, `axis`, and relevant artifact content, (c) require chain-of-thought reasoning before the integer score, (d) parse the 1–5 integer from the response
+  - [x] Axis definitions per OQ-1:
     - **Atmosphere** — SCP clinical-horror register; tone, dread, clinical detachment
     - **Narrative coherence** — scene flow, entity consistency, logical progression
     - **Article fidelity** — factual accuracy to source SCP article (object class, containment procedures, key events)
-  - [ ] Handle malformed LLM responses: if parsing fails after retry, log the raw response and raise `EvalJudgeError` with the axis and attempt number
-  - [ ] Use `@observe` decorator on the per-axis judge function so each call appears as a Langfuse span
+  - [x] Handle malformed LLM responses: if parsing fails after retry, log the raw response and raise `EvalJudgeError` with the axis and attempt number
+  - [x] Use `@observe` decorator on the per-axis judge function so each call appears as a Langfuse span
 
-- [ ] Implement rule-based evaluation module (AC: 2)
-  - [ ] Create `_compute_rule_metrics(state_a: PipelineState, state_b: PipelineState) -> tuple[RuleBasedMetrics, RuleBasedMetrics]`
-  - [ ] Compute scene count match rate: `1.0 - abs(len(a.scenes) - len(b.scenes)) / max(len(a.scenes), len(b.scenes))`
-  - [ ] Compute avg subtitle sync error: for each scene with `word_timings`, average the absolute delta between each word's `end_sec` and next word's `start_sec` beyond expected gap (if aligner provides word-level timings); fall back to scene count of subtitle entries vs narration word count if timing data is sparse
-  - [ ] Compute audio duration variance: `stddev(scene.audio_duration for scene in scenes) / mean(audio_duration)` expressed as percentage per scene
-  - [ ] Return metrics as structured data; this is pure computation — no LLM, no I/O
+- [x] Implement rule-based evaluation module (AC: 2)
+  - [x] Create `_compute_rule_metrics(state_a: PipelineState, state_b: PipelineState) -> tuple[RuleBasedMetrics, RuleBasedMetrics]`
+  - [x] Compute scene count match rate: `1.0 - abs(len(a.scenes) - len(b.scenes)) / max(len(a.scenes), len(b.scenes))`
+  - [x] Compute avg subtitle sync error: for each scene with `word_timings`, average the absolute delta between each word's `end_sec` and next word's `start_sec` beyond expected gap (if aligner provides word-level timings); fall back to scene count of subtitle entries vs narration word count if timing data is sparse
+  - [x] Compute audio duration variance: `stddev(scene.audio_duration for scene in scenes) / mean(audio_duration)` expressed as percentage per scene
+  - [x] Return metrics as structured data; this is pure computation — no LLM, no I/O
 
-- [ ] Implement pairwise comparison logic (AC: 3, 4)
-  - [ ] Create `_pairwise_compare(scores_a: EvalAxisScores, scores_b: EvalAxisScores, metrics_a: RuleBasedMetrics, metrics_b: RuleBasedMetrics) -> PairwiseResult`
-  - [ ] Run A→B comparison: LLM judge sees A first, then B, picks winner or tie
-  - [ ] Run B→A comparison: LLM judge sees B first, then A (position bias mitigation)
-  - [ ] If both agree → that run wins. If both say tie → rule-based tiebreaker. If contradictory → 3rd LLM tiebreaker run
-  - [ ] Rule-based tiebreaker (OQ-6): compare (a) scene count match to expected/article count, (b) subtitle sync ≤0.5s/word, (c) audio duration variance ≤10%. Best-of-3 on these metrics wins; if still tied → `"tie"`
-  - [ ] Apply quality floor: any axis score < 2 in a run → that run cannot win; if both below floor → `winner: null, reason: "both_below_floor"`
+- [x] Implement pairwise comparison logic (AC: 3, 4)
+  - [x] Create `_pairwise_compare(scores_a: EvalAxisScores, scores_b: EvalAxisScores, metrics_a: RuleBasedMetrics, metrics_b: RuleBasedMetrics) -> PairwiseResult`
+  - [x] Run A→B comparison: LLM judge sees A first, then B, picks winner or tie
+  - [x] Run B→A comparison: LLM judge sees B first, then A (position bias mitigation)
+  - [x] If both agree → that run wins. If both say tie → rule-based tiebreaker. If contradictory → 3rd LLM tiebreaker run
+  - [x] Rule-based tiebreaker (OQ-6): compare (a) scene count match to expected/article count, (b) subtitle sync ≤0.5s/word, (c) audio duration variance ≤10%. Best-of-3 on these metrics wins; if still tied → `"tie"`
+  - [x] Apply quality floor: any axis score < 2 in a run → that run cannot win; if both below floor → `winner: null, reason: "both_below_floor"`
 
-- [ ] Implement Langfuse trace persistence (AC: 6)
-  - [ ] Create a parent trace with `name="ab-evaluation"` and `user_id=ab_pair_id`
-  - [ ] Each judge call, rule-based computation, and pairwise comparison creates a child span or generation under the parent trace
-  - [ ] Final evaluation result (winner, all scores, all metrics) stored as trace output/metadata
-  - [ ] Use `langfuse` SDK v4.x `@observe` decorator or explicit span context manager; ensure trace tree is inspectable in Langfuse UI
-  - [ ] Langfuse write failures are non-fatal to evaluation — log error and continue; the `EvaluationResult` return value is the authoritative output
+- [x] Implement Langfuse trace persistence (AC: 6)
+  - [x] Create a parent trace with `name="ab-evaluation"` and `user_id=ab_pair_id`
+  - [x] Each judge call, rule-based computation, and pairwise comparison creates a child span or generation under the parent trace
+  - [x] Final evaluation result (winner, all scores, all metrics) stored as trace output/metadata
+  - [x] Use `langfuse` SDK v4.x `@observe` decorator or explicit span context manager; ensure trace tree is inspectable in Langfuse UI
+  - [x] Langfuse write failures are non-fatal to evaluation — log error and continue; the `EvaluationResult` return value is the authoritative output
 
-- [ ] Write tests (AC: 1, 2, 3, 4, 5, 7)
-  - [ ] Unit test `_compute_rule_metrics` with known PipelineState fixtures — no LLM dependency
-  - [ ] Unit test `_pairwise_compare` with mock `EvalAxisScores` and `RuleBasedMetrics` — verify quality floor, tiebreaker, and 2/3 majority logic
-  - [ ] Unit test precondition validation: missing run_id, non-complete status, mismatched ab_pair_id
-  - [ ] Unit test `evaluate_ab` with mock LangGraph state loader + mock LLM judge — verify the orchestration flow
-  - [ ] Integration test marker or skip: real `evaluate_ab` requires completed runs in the DB; use `@pytest.mark.integration` or `YTFLOW_EVAL_LIVE_TESTS=true` env guard
-  - [ ] Verify no test requires live DeepSeek V4 or live Langfuse unless explicitly opted in
+- [x] Write tests (AC: 1, 2, 3, 4, 5, 7)
+  - [x] Unit test `_compute_rule_metrics` with known PipelineState fixtures — no LLM dependency
+  - [x] Unit test `_pairwise_compare` with mock `EvalAxisScores` and `RuleBasedMetrics` — verify quality floor, tiebreaker, and 2/3 majority logic
+  - [x] Unit test precondition validation: missing run_id, non-complete status, mismatched ab_pair_id
+  - [x] Unit test `evaluate_ab` with mock LangGraph state loader + mock LLM judge — verify the orchestration flow
+  - [x] Integration test marker or skip: real `evaluate_ab` requires completed runs in the DB; use `@pytest.mark.integration` or `YTFLOW_EVAL_LIVE_TESTS=true` env guard
+  - [x] Verify no test requires live DeepSeek V4 or live Langfuse unless explicitly opted in
 
 ## Dev Notes
 
@@ -297,10 +301,82 @@ No source code exists yet. The `src/` tree is empty. This story may be one of th
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8[1m] (BMad dev-story workflow)
 
 ### Debug Log References
 
+- `uv run pytest tests/api/test_ab_run.py tests/services/test_eval_service.py` → 46 passed
+- Full suite: `uv run pytest` → 320 passed, 1 skipped, no regressions
+- `uv run ruff check` on all Story 4.1/4.2 touched files → clean
+
 ### Completion Notes List
 
+Implemented the A/B evaluation engine per OQ-1 (3-axis judge) and OQ-6 (pairwise
++ quality floor). Deviations from the story spec, all deliberate:
+
+- **httpx, not the `openai` SDK.** The story's Library Requirements named the
+  `openai` client, but the codebase already calls DeepSeek's OpenAI-compatible
+  endpoint with `httpx` (`scenario_node`). Reused that pattern — Ponytail: no new
+  dependency for what an installed one already does.
+- **`PipelineState` / `runs` table exist.** The story's Dev Notes ("no source code
+  yet", "Epic 1 not implemented") were stale. Built against the real `PipelineState`
+  TypedDict and the real `runs` table (which already has `status` + `ab_pair_id`).
+- **Second prompt `evaluation/pairwise` added.** AC3 requires an *ordered* LLM
+  comparison (A→B vs B→A) to mitigate position bias — that needs its own prompt, not
+  the per-axis `evaluation/judge`. Both prompts live in `prompts/evaluation/` and are
+  pushed by `scripts/seed_eval_prompts.py` (they are new to yt.flow, so the yt.pipe-
+  sourced `migrate_prompts.py` can't seed them). eval_service only *fetches* them
+  from Prompt Hub — no prompt text hardcoded (FR-16).
+- **`_pairwise_compare` signature extended** with run contents + run_ids beyond the
+  scores/metrics the task listed, because the ordered LLM comparison needs the actual
+  narration text. Quality floor is applied first: a below-floor run can't win, and if
+  both are below floor no LLM comparison runs at all.
+- **Subtitle-sync SRT fallback skipped.** `_avg_subtitle_sync_error` computes the mean
+  inter-word gap from `word_timings`; when timings are absent it returns 0.0 rather
+  than re-parsing SRT files off disk — a rule metric stays pure (no I/O). Marked with a
+  `# ponytail:` comment naming the upgrade path.
+- **Langfuse trace** keyed deterministically by `ab_pair_id` via
+  `create_trace_id(seed=...)` (same pattern as `run_service._trace_cm`). langfuse v4
+  has no `update_current_trace`, so the parent span is enriched via
+  `update_current_span`. Review tightened AC6 so the span output now includes the full
+  `EvaluationResult` payload: axis scores, rule metrics, pairwise result, winner, and
+  run IDs. All trace calls are guarded — a Langfuse failure is non-fatal and the
+  returned `EvaluationResult` is authoritative (AD-10).
+- **A/B pair validation follows Story 4.1's directional link.** Variant B points at
+  source A via `ab_pair_id`; source A usually has `ab_pair_id=None`. `evaluate_ab()`
+  accepts either order where one run points at the other and uses the source run id as
+  the evaluation trace/result `ab_pair_id`.
+- **Judge parsing tightened during review.** Scores must be integer 1-5 values (or
+  stringified integers); fractional numeric values are malformed. Malformed judge
+  responses are logged and retried once before `EvalJudgeError`.
+- **Checkpoint validation tightened during review.** `_load_state()` validates
+  `scp_text`, non-empty `scenes`, per-scene narration, and `video_path` before any LLM
+  scoring begins.
+
+`YTFLOW_DEEPSEEK_JUDGE_MODEL` added to `config.py` (defaults to the content model).
+
 ### File List
+
+- `src/yt_flow/services/eval_service.py` (new) — evaluation orchestrator: data types,
+  LLM axis judge, rule-based metrics, pairwise + winner logic, Langfuse persistence
+- `src/yt_flow/config.py` (modified) — added `deepseek_judge_model`
+- `prompts/evaluation/judge.md` (new) — OQ-1 axis judge prompt (Prompt Hub source)
+- `prompts/evaluation/pairwise.md` (new) — OQ-6 pairwise comparison prompt (Prompt Hub source)
+- `scripts/seed_eval_prompts.py` (new) — pushes the two evaluation prompts to Langfuse
+- `tests/services/test_eval_service.py` (new) — 37 unit tests (no live LLM/Langfuse/DB)
+- `tests/services/fixtures/__init__.py` (new)
+- `tests/services/fixtures/eval_pipeline_states.py` (new) — deterministic A/B fixtures
+
+## Review Findings
+
+- [x] [Review][Patch] Valid Story 4.1-created A/B pairs failed `_validate_pair()` because only Variant B stores `ab_pair_id` — fixed by accepting directional source/variant linkage.
+- [x] [Review][Patch] Langfuse trace output omitted scores, metrics, and pairwise result required by AC6 — fixed by persisting the full `EvaluationResult` payload.
+- [x] [Review][Patch] Malformed judge responses were not retried/logged and fractional scores were rounded — fixed with parse-aware retry, logging, and integer-only score parsing.
+- [x] [Review][Patch] Checkpoint validation did not verify `video_path` or scene narration shape before scoring — fixed with explicit `ValueError` validation before LLM calls.
+- [x] [Review][Patch] Rule-based tiebreaker omitted the scene-count criterion and OQ-6 thresholds — fixed with best-of-3 threshold scoring for scene-count consistency, subtitle sync, and audio variance.
+
+## Change Log
+
+- 2026-07-01: Implemented Story 4.2 A/B Evaluation Service (LLM-as-judge + rule-based +
+  pairwise winner determination + Langfuse persistence). 32 tests added; full suite green.
+- 2026-07-01: Code review findings fixed; status → done.

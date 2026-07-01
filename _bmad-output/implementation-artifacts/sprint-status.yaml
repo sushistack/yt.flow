@@ -86,7 +86,7 @@ development_status:
 
   # ── Epic 4: A/B Evaluation ──────────────────────────────────────────────────
   epic-4: in-progress
-  4-1-ab-run-creation: ready-for-dev
-  4-2-evaluation-service: ready-for-dev
+  4-1-ab-run-creation: done
+  4-2-evaluation-service: done
   4-3-results-storage-api-winner: ready-for-dev
   epic-4-retrospective: optional

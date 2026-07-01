@@ -1,6 +1,10 @@
+---
+baseline_commit: 8486f5cc5843b324dab1ce3abe9727e3f55368c9
+---
+
 # Story 4.1: A/B 실행 생성
 
-Status: ready-for-dev
+Status: done
 
 <!-- Validation: validate-create-story passed 2026-07-01 -->
 
@@ -30,34 +34,34 @@ so that I can compare two prompt variants against the same SCP input.
 
 ## Tasks / Subtasks
 
-- [ ] Add `POST /runs/{id}/ab` route handler (AC: 1, 3, 4, 5, 8)
-  - [ ] Create `ab_run()` function in `src/yt_flow/api/routes/runs.py`.
-  - [ ] Accept path param `run_id: str`.
-  - [ ] Query `Run` by `id` → 404 if not found.
-  - [ ] Validate source run status is `"complete"` → 409 if not (`"running"` or `"awaiting_approval"`).
-  - [ ] Check no existing A/B pair: query `Run` where `ab_pair_id == run_id` → 409 if found.
-  - [ ] Read source run's `scp_text` (from LangGraph state via `services/`, not from `runs` table — `runs` table has no `scp_text` column per schema).
-  - [ ] Generate new UUID v4 for variant run.
-  - [ ] Insert new `Run` row: `status="running"`, `prompt_variant="B"`, `ab_pair_id={run_id}`, `scp_id` copied from source.
-  - [ ] Fire `asyncio.create_task(run_service.start_run(new_run_id))` in background.
-  - [ ] Return HTTP 201 with `RunRead` schema.
+- [x] Add `POST /runs/{id}/ab` route handler (AC: 1, 3, 4, 5, 8)
+  - [x] Create `ab_run()` function in `src/yt_flow/api/routes/runs.py`.
+  - [x] Accept path param `run_id: str`.
+  - [x] Query `Run` by `id` → 404 if not found.
+  - [x] Validate source run status is `"complete"` → 409 if not (`"running"` or `"awaiting_approval"`).
+  - [x] Check no existing A/B pair: query `Run` where `ab_pair_id == run_id` → 409 if found.
+  - [x] Read source run's `scp_text` (from LangGraph state via `services/`, not from `runs` table — `runs` table has no `scp_text` column per schema).
+  - [x] Generate new UUID v4 for variant run.
+  - [x] Insert new `Run` row: `status="running"`, `prompt_variant="B"`, `ab_pair_id={run_id}`, `scp_id` copied from source.
+  - [x] Fire `asyncio.create_task(run_service.start_run(new_run_id))` in background.
+  - [x] Return HTTP 201 with `RunRead` schema.
 
-- [ ] Add `create_ab_run()` to run_service (AC: 2, 8)
-  - [ ] Add `async def create_ab_run(source_run_id: str) -> str` to `src/yt_flow/services/run_service.py`.
-  - [ ] Read source run's `PipelineState` via `graph.aget_state(config)` to extract `scp_text`.
-  - [ ] Create new `Run` DB row with `prompt_variant="B"`, `ab_pair_id=source_run_id`.
-  - [ ] Call `start_run(new_run_id)` — reuses the existing `graph.astream()` driver.
-  - [ ] Return new `run_id`.
-  - [ ] **Critical:** do NOT create a new LangGraph thread — use `start_run()` which creates its own thread via `graph.astream()` (AD-6: independent runs, no graph-level branching).
+- [x] Add `create_ab_run()` to run_service (AC: 2, 8)
+  - [x] Add `async def create_ab_run(source_run_id: str) -> str` to `src/yt_flow/services/run_service.py`.
+  - [x] Read source run's `PipelineState` via `graph.aget_state(config)` to extract `scp_text`.
+  - [x] Create new `Run` DB row with `prompt_variant="B"`, `ab_pair_id=source_run_id`.
+  - [x] Call `start_run(new_run_id)` — reuses the existing `graph.astream()` driver.
+  - [x] Return new `run_id`.
+  - [x] **Critical:** do NOT create a new LangGraph thread — use `start_run()` which creates its own thread via `graph.astream()` (AD-6: independent runs, no graph-level branching).
 
-- [ ] Wire AB route into FastAPI router (AC: 1)
-  - [ ] Ensure `POST /runs/{id}/ab` is registered in the runs router (`src/yt_flow/api/routes/runs.py`).
-  - [ ] Import `create_ab_run` from `services/`.
+- [x] Wire AB route into FastAPI router (AC: 1)
+  - [x] Ensure `POST /runs/{id}/ab` is registered in the runs router (`src/yt_flow/api/routes/runs.py`).
+  - [x] Import `create_ab_run` from `services/`.
 
-- [ ] Add response schema fields for A/B metadata (AC: 6, 7)
-  - [ ] Ensure `RunRead` Pydantic schema includes `ab_pair_id: str | None` and `prompt_variant: str | None`.
-  - [ ] `GET /runs` response includes `ab_pair_id` so UI can group A/B pairs.
-  - [ ] `GET /runs/{id}` response includes `ab_pair_id` and `prompt_variant`.
+- [x] Add response schema fields for A/B metadata (AC: 6, 7)
+  - [x] Ensure `RunRead` Pydantic schema includes `ab_pair_id: str | None` and `prompt_variant: str | None`.
+  - [x] `GET /runs` response includes `ab_pair_id` so UI can group A/B pairs.
+  - [x] `GET /runs/{id}` response includes `ab_pair_id` and `prompt_variant`.
 
 ## Dev Notes
 
@@ -166,10 +170,39 @@ No previous Epic 4 stories. Patterns to follow from Epic 2 story 2.1:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8[1m]
 
 ### Debug Log References
 
+None — implementation passed on first green run; no HALT conditions triggered.
+
 ### Completion Notes List
 
+- `RunRead` already carried `ab_pair_id` and `prompt_variant` (added in story 2.1 schema), so Task 4 required no schema change — only verification.
+- `create_ab_run()` recovers `scp_text` from the source run's LangGraph checkpoint (`aget_state`), since the `runs` table stores only `scp_id`. Missing/empty `scp_text` → `ValueError` (→ 500), per Dev Notes edge case.
+- Variant B launches through the standard `start_run()` driver (now accepting an optional `prompt_variant`), preserving AD-6: two independent runs, no graph-level branching, linked only by `ab_pair_id`.
+- Route is thin for A/B creation and maps `run_service` exceptions to the required 404/409 response shapes; source existence/status/pair validation and insert now live in `create_ab_run()`.
+- Concurrent-request A/B pair race was fixed during review with a DB-level unique constraint on `Run.ab_pair_id`, a service-level duplicate check, and `IntegrityError` → 409-style service conflict mapping.
+- Variant B cannot be used as the source for another A/B run.
+- Tests: `tests/api/test_ab_run.py` — 404/409×3/201 route cases (incl. GET /runs linkage for AC 6) + service unit tests (state copy → prompt_variant="B", duplicate guard, missing scp_text → ValueError). Full suite: 320 passed, 1 skipped; ruff clean.
+
 ### File List
+
+- `src/yt_flow/api/routes/runs.py` (MODIFIED — added `POST /runs/{id}/ab` route)
+- `src/yt_flow/db/models.py` (MODIFIED — unique `ab_pair_id` to prevent duplicate Variant B rows)
+- `src/yt_flow/services/run_service.py` (MODIFIED — added `create_ab_run()`; threaded optional `prompt_variant` through `start_run()`/`_initial_state()`)
+- `tests/api/test_ab_run.py` (NEW — route + service tests)
+
+## Review Findings
+
+- [x] [Review][Patch] Created A/B pairs could not be evaluated by Story 4.2 because only Variant B stores `ab_pair_id` — fixed in evaluation pair validation.
+- [x] [Review][Patch] Duplicate Variant B rows could be created by concurrent A/B requests — fixed with service-side duplicate check, unique `ab_pair_id`, and `IntegrityError` conflict handling.
+- [x] [Review][Patch] Variant B could be used as the source for another A/B run — fixed with a 409 guard in `create_ab_run()`.
+- [x] [Review][Patch] A/B route performed story-specific validation directly instead of delegating to `services/` — fixed by moving A/B validation into `run_service.create_ab_run()`.
+
+## Change Log
+
+| Date       | Change                                                              |
+|------------|---------------------------------------------------------------------|
+| 2026-07-01 | Story 4.1 implemented: A/B Variant B run creation (`POST /runs/{id}/ab`). Status → review. |
+| 2026-07-01 | Code review findings fixed; status → done. |
