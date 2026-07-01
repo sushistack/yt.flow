@@ -1,18 +1,24 @@
 [project]
 name = "yt-flow"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "langfuse>=3.0",
-    "pydantic-settings>=2.0",
+    "langgraph==1.2.7",
+    "langgraph-checkpoint-sqlite==3.1.0",
+    "fastapi==0.138.2",
+    "sqlmodel==0.0.39",
+    "alembic>=1,<2",
+    "langfuse==4.12.0",
+    "pydantic-settings==2.14.2",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
+    "pytest==9.1.1",
     "pytest-asyncio>=0.24",
+    "ruff==0.15.20",
 ]
 
 [build-system]
@@ -24,3 +30,7 @@ packages = ["src/yt_flow"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
