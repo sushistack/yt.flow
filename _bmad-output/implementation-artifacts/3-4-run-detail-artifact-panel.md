@@ -1,6 +1,10 @@
+---
+baseline_commit: 8486f5cc5843b324dab1ce3abe9727e3f55368c9
+---
+
 # Story 3.4: Run Detail Layout + Artifact Panel
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -24,40 +28,48 @@ so that I can inspect generated content for any pipeline stage.
 
 ## Tasks / Subtasks
 
-- [ ] Create Run Detail route and page shell (AC: 1)
-  - [ ] Add `/runs/:id` route in the React app using the router pattern established by Story 3.3.
-  - [ ] Render persistent top nav with wordmark dashboard navigation, run crumb, run-level status badge, and Langfuse trace link when available.
-  - [ ] Use semantic `<nav>`, `<aside>`, and `<main>` and preserve focus-visible behavior from shadcn/Tailwind defaults.
-- [ ] Implement stage sidebar behavior (AC: 1, 8, 9)
-  - [ ] Reuse `StageSidebarItem` from Story 3.2; do not duplicate status color, active border, muted, or `aria-current` logic.
-  - [ ] Render stages in fixed order: `scenario`, `image`, `tts`, `subtitle`, `video`.
-  - [ ] Derive reached/clickable state from API run detail, stage artifacts, `current_stage`, and `gate_states`; not-yet-reached stages must be muted and non-interactive.
-  - [ ] Selecting a reachable stage changes the active panel and scrolls the main panel to top without pushing browser history.
-- [ ] Load run metadata and per-stage artifacts through existing Epic 2 API contracts (AC: 1-9)
-  - [ ] Fetch `GET /runs/{id}` for run status, current stage, gate states, and `langfuse_trace_url`.
-  - [ ] Fetch `GET /runs/{id}/stages/{stage}/artifacts` when a reachable stage becomes active.
-  - [ ] Treat stage artifact data as an API DTO; do not read workspace files directly from the frontend.
-  - [ ] Handle 404 for not-yet-reached stage artifacts as the muted empty state, not as a full-page error.
-- [ ] Build `ArtifactPanel` variants for all five stages (AC: 2, 3, 5, 6, 7, 8)
-  - [ ] Scenario: scrollable Korean prose, max width near 65ch, line-height 1.6.
-  - [ ] Image: 2-column image grid, stable aspect ratios, scene labels, image count label.
-  - [ ] TTS: sorted per-scene native audio controls with scene index and duration.
-  - [ ] Subtitle: monospace SRT scroll area with count label.
-  - [ ] Video: full-width native video player plus download link to `GET /runs/{id}/artifact` or the backend-provided URL.
-  - [ ] Running and not-yet-reached states use the exact Korean strings from UX where specified.
-- [ ] Implement image lightbox (AC: 3, 4)
-  - [ ] Use shadcn Dialog for fullscreen lightbox; no nested dialog patterns.
-  - [ ] Support click-to-open, left/right keyboard navigation, Esc close, and focus restoration.
-  - [ ] Keep image order stable by scene number and image index.
-- [ ] Wire SSE progress updates for sidebar state (AC: 9)
-  - [ ] Open a hidden `EventSource` to `/runs/{id}/progress` for the run detail page lifecycle.
-  - [ ] On `stage_entry`, `stage_exit`, `gate_pending`, and `run_failed`, update local run/stage state in place.
-  - [ ] Close the EventSource on unmount and avoid duplicate connections after route changes or React StrictMode re-mounts.
-- [ ] Add focused tests and visual verification (AC: 1-9)
-  - [ ] Component tests for each panel variant and not-yet-reached state.
-  - [ ] Interaction tests for stage selection and lightbox keyboard controls.
-  - [ ] SSE/EventSource mock test proving `stage_entry` changes sidebar state without reload.
-  - [ ] Build verification with the repo's frontend command, expected to be `npm run build` once Story 3.1 creates `frontend/`.
+- [x] Create Run Detail route and page shell (AC: 1)
+  - [x] Add `/runs/:id` route in the React app using the router pattern established by Story 3.3.
+  - [x] Render persistent top nav with wordmark dashboard navigation, run crumb, run-level status badge, and Langfuse trace link when available.
+  - [x] Use semantic `<nav>`, `<aside>`, and `<main>` and preserve focus-visible behavior from shadcn/Tailwind defaults.
+- [x] Implement stage sidebar behavior (AC: 1, 8, 9)
+  - [x] Reuse `StageSidebarItem` from Story 3.2; do not duplicate status color, active border, muted, or `aria-current` logic.
+  - [x] Render stages in fixed order: `scenario`, `image`, `tts`, `subtitle`, `video`.
+  - [x] Derive reached/clickable state from API run detail, stage artifacts, `current_stage`, and `gate_states`; not-yet-reached stages must be muted and non-interactive.
+  - [x] Selecting a reachable stage changes the active panel and scrolls the main panel to top without pushing browser history.
+- [x] Load run metadata and per-stage artifacts through existing Epic 2 API contracts (AC: 1-9)
+  - [x] Fetch `GET /runs/{id}` for run status, current stage, gate states, and `langfuse_trace_url`.
+  - [x] Fetch `GET /runs/{id}/stages/{stage}/artifacts` when a reachable stage becomes active.
+  - [x] Treat stage artifact data as an API DTO; do not read workspace files directly from the frontend.
+  - [x] Handle 404 for not-yet-reached stage artifacts as the muted empty state, not as a full-page error.
+- [x] Build `ArtifactPanel` variants for all five stages (AC: 2, 3, 5, 6, 7, 8)
+  - [x] Scenario: scrollable Korean prose, max width near 65ch, line-height 1.6.
+  - [x] Image: 2-column image grid, stable aspect ratios, scene labels, image count label.
+  - [x] TTS: sorted per-scene native audio controls with scene index and duration.
+  - [x] Subtitle: monospace SRT scroll area with count label.
+  - [x] Video: full-width native video player plus download link to `GET /runs/{id}/artifact` or the backend-provided URL.
+  - [x] Running and not-yet-reached states use the exact Korean strings from UX where specified.
+- [x] Implement image lightbox (AC: 3, 4)
+  - [x] Use shadcn Dialog for fullscreen lightbox; no nested dialog patterns.
+  - [x] Support click-to-open, left/right keyboard navigation, Esc close, and focus restoration.
+  - [x] Keep image order stable by scene number and image index.
+- [x] Wire SSE progress updates for sidebar state (AC: 9)
+  - [x] Open a hidden `EventSource` to `/runs/{id}/progress` for the run detail page lifecycle.
+  - [x] On `stage_entry`, `stage_exit`, `gate_pending`, and `run_failed`, update local run/stage state in place.
+  - [x] Close the EventSource on unmount and avoid duplicate connections after route changes or React StrictMode re-mounts.
+- [x] Add focused tests and visual verification (AC: 1-9)
+  - [x] Component tests for each panel variant and not-yet-reached state.
+  - [x] Interaction tests for stage selection and lightbox keyboard controls.
+  - [x] SSE/EventSource mock test proving `stage_entry` changes sidebar state without reload.
+  - [x] Build verification with the repo's frontend command, expected to be `npm run build` once Story 3.1 creates `frontend/`.
+
+### Review Findings
+
+- [x] [Review][Patch] Show non-404 artifact API failures as visible errors instead of the not-reached state [frontend/src/pages/RunDetail.tsx]
+- [x] [Review][Patch] Distinguish reachable-stage loading from not-yet-reached artifact state [frontend/src/components/ArtifactPanel.tsx]
+- [x] [Review][Patch] Harden Run Detail SSE handlers against malformed payloads and avoid `stage_exit` current-stage regression [frontend/src/pages/RunDetail.tsx]
+- [x] [Review][Patch] Make artifact file URL mapping robust for custom workspace paths [frontend/src/lib/api.ts]
+- [x] [Review][Patch] Sort image artifacts by scene number and shot id before grid/lightbox rendering [frontend/src/components/ArtifactPanel.tsx]
 
 ## Dev Notes
 
@@ -187,16 +199,54 @@ These names are guidance only. Follow the actual structure created by earlier st
 
 ### Agent Model Used
 
-TBD by dev agent.
+claude-opus-4-8[1m] (Opus 4.8, 1M context)
 
 ### Debug Log References
 
-TBD by dev agent.
+- `pytest tests/api/test_workspace_files.py` — RED (ImportError: mount_workspace_files) → GREEN after implementing the mount.
+- `npm run build` — one TS6133 (unused `stage` prop on ArtifactPanel) → removed the dead prop from component, page call, and tests.
+- Full suites at completion: frontend `vitest run` = 60 passed (13 files); backend `pytest -q` = 284 passed, 1 skipped; `npm run build` clean (tsc + vite).
 
 ### Completion Notes List
 
-TBD by dev agent.
+All 9 ACs implemented and covered by tests (component + integration + routing).
+
+**Approved scope decisions (asked before building):**
+- **Parallel with Story 3.3.** Story 3.3 (dashboard/routing/API-client) is being developed concurrently in another session. Confirmed parallel dev is intended, so 3.4 extended the 3.3 foundation instead of duplicating it: appended run-detail functions to `lib/api.ts`, upgraded `lib/navigate.ts` (the file explicitly deferred the reactive router to 3.4), and turned `App.tsx` into the route switch (3.3 had left it a thin `<Dashboard/>` root, again deferring routing to 3.4). Files renamed to PascalCase to match the 3.3 neighbours (`Dashboard.tsx`, `RunRow.tsx`).
+- **Backend `/files` mount (blocking contract gap).** `GET /runs/{id}/stages/{stage}/artifacts` returns server filesystem *paths* (`image_path`/`audio_path`/`subtitle_path`/`video_path`), not browser-loadable URLs, and no route served those bytes. AC 3/5/6/7 need real media. Added `mount_workspace_files()` → `StaticFiles` at `/files` serving `workspace/`. `fileUrl()` maps any `workspace/{run_id}/...` path to `/files/...`. StaticFiles gives traversal protection; whole-workspace mount marked `# ponytail:` as fine for a local single-operator workbench.
+
+**Real DTO shapes vs the story's speculative shapes:** used the actual `run_service.get_stage_artifacts()` output — scenario = `{scenes:[{scene_num,narration}]}` (prose = joined narrations); image = `{images:[{scene_num,shot_id,image_path}]}`; tts = `{audio:[{scene_num,audio_path,duration_sec}]}`; subtitle = `{subtitles:[{scene_num,subtitle_path}]}`; video = `{video_path}`.
+
+**Subtitle text (AC6):** the endpoint returns per-scene `.srt` *paths*, not text. The SubtitlePanel fetches each `.srt` via `/files`, concatenates, and counts cues by `-->` occurrences.
+
+**Lightbox deviation:** story suggested reusing shadcn Dialog, but no Dialog component exists (3.1/3.2 never generated one) and adding Radix is a new dependency. Hand-rolled a minimal accessible dialog (role=dialog, aria-modal, Esc, Arrow nav, focus save/restore) — marked `# ponytail:`; swap to shadcn Dialog if one is generated later.
+
+**Concurrent-edit hazard:** `frontend/src/lib/api.ts`, `frontend/src/lib/navigate.ts`, and `frontend/src/App.tsx` were edited additively while Story 3.3 is live in another session — reconcile at commit time if 3.3 touched the same files.
 
 ### File List
 
-TBD by dev agent.
+Backend:
+- `src/yt_flow/api/main.py` (modified — added `mount_workspace_files`, wired at module level)
+- `tests/api/test_workspace_files.py` (new)
+
+Frontend (shared, extended for/with Story 3.3):
+- `frontend/src/lib/api.ts` (modified — `getRun`, `getStageArtifacts`, `fileUrl`, `videoDownloadUrl`, `parseGateStates`, `STAGE_ORDER`, artifact DTO types)
+- `frontend/src/lib/navigate.ts` (modified — popstate dispatch + `usePathname`)
+- `frontend/src/App.tsx` (modified — `/runs/{id}` → RunDetail routing)
+
+Frontend (new, Story 3.4):
+- `frontend/src/pages/RunDetail.tsx`
+- `frontend/src/pages/RunDetail.test.tsx`
+- `frontend/src/components/ArtifactPanel.tsx`
+- `frontend/src/components/ArtifactPanel.test.tsx`
+- `frontend/src/components/ImageLightbox.tsx`
+- `frontend/src/components/ImageLightbox.test.tsx`
+- `frontend/src/lib/api.test.ts`
+- `frontend/src/lib/navigate.test.tsx`
+- `frontend/src/App.test.tsx`
+
+### Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-07-01 | Implemented Story 3.4: Run Detail layout + per-stage artifact panels, image lightbox, live SSE sidebar state. Added backend `/files` static mount for workspace artifacts. Status → review. |

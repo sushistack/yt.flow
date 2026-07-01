@@ -78,8 +78,8 @@ development_status:
   epic-3: in-progress
   3-1-zinc-design-tokens-shadcn-tailwind: done
   3-2-common-components: done
-  3-3-dashboard-scp-picker-dialog: ready-for-dev
-  3-4-run-detail-artifact-panel: ready-for-dev
+  3-3-dashboard-scp-picker-dialog: done
+  3-4-run-detail-artifact-panel: done
   3-5-gate-controls-retry-editor-sse: ready-for-dev
   3-6-ab-comparison-accessibility: ready-for-dev
   epic-3-retrospective: optional
