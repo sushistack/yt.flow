@@ -4,7 +4,7 @@ baseline_commit: 4683a5261d962b147ab49eb9aa70997ececa6f46
 
 # Story 1.1: Langfuse Environment Verification
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -153,3 +153,13 @@ None — clean implementation, no blockers.
 ### Change Log
 
 - 2026-07-01: Story 1.1 implemented — minimal Python package substrate, Pydantic settings with YTFLOW_ prefix, Langfuse homelab auth verified (True), 4 unit tests passing.
+
+## Review Findings
+
+Code review (2026-07-01, epic 1 story 1.1~1.2 adversarial review — Blind Hunter / Edge Case Hunter / Acceptance Auditor).
+
+- [x] [Review][Patch] Positive config test made hermetic — pass `_env_file=None` so a local `.env` cannot mask env precedence [tests/test_config.py:11] — fixed
+- [x] [Review][Patch] Missing-field assertion now inspects structured `ValidationError.errors()[].loc` instead of the formatted message string [tests/test_config.py:34] — fixed
+- [x] [Review][Patch] `check_langfuse.py` execution guarded behind `if __name__ == "__main__"` so import no longer triggers a live auth call [scripts/check_langfuse.py:16] — fixed
+
+Dismissed as noise: python-dotenv "unused" (false positive — required by pydantic-settings `providers/dotenv.py` for `env_file`), `_env_file=None` private-kwarg concern (pinned, documented approach), `sys.path.insert` redundancy (provides standalone-run robustness), monkeypatch delenv ordering (works as written).

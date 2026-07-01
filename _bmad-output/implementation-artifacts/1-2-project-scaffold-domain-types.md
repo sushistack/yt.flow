@@ -1,6 +1,6 @@
 # Story 1.2: Project Scaffold + Domain Types
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -20,33 +20,33 @@ so that every subsequent story has a consistent import path and shared type syst
 
 ## Tasks / Subtasks
 
-- [ ] Create Python package scaffold. (AC: 2, 3, 4)
-  - [ ] Create `src/yt_flow/__init__.py`.
-  - [ ] Create `src/yt_flow/domain/__init__.py` and `src/yt_flow/domain/state.py`.
-  - [ ] Create empty package markers for `pipeline`, `pipeline/nodes`, `services`, `db`, `api`, and `api/routes`.
-  - [ ] Create runtime roots `data/` and `workspace/` if absent; keep `workspace/` ignored if runtime artifacts should not be committed.
-- [ ] Define domain state types in `src/yt_flow/domain/state.py`. (AC: 2)
-  - [ ] Define `StageName = Literal["scenario", "image", "tts", "subtitle", "video"]`.
-  - [ ] Define `GateState = Literal["pending", "approved", "rejected", "n/a"]`.
-  - [ ] Define `WordTiming(TypedDict)` with `word: str`, `start_sec: float`, `end_sec: float`.
-  - [ ] Define `ShotData(TypedDict)` with `shot_id`, `sentence_indices`, `image_prompt`, `negative_prompt`, `camera_angle`, `camera_movement`, and `image_path`.
-  - [ ] Define `SceneState(TypedDict)` with `scene_num`, `narration`, `shots`, `audio_path`, `audio_duration`, `word_timings`, and `subtitle_path`.
-  - [ ] Define `PipelineState(TypedDict)` with `run_id`, `scp_text`, `scenes`, `video_path`, `current_stage`, `gate_states`, `prompt_variant`, and `error`.
-- [ ] Create or extend `pyproject.toml` for a `src` layout package. (AC: 1)
-  - [ ] Set project name to `yt-flow`, package import name to `yt_flow`, and Python requirement to Python 3.12 if not already set by Story 1.1.
-  - [ ] Preserve Story 1.1's config/Langfuse dependencies and add or correct pins to the stack in "Latest Technical Information" below.
-  - [ ] Add pytest and Ruff as dev dependencies only.
-  - [ ] Configure Ruff for Python 3.12 and the `src` package layout.
-- [ ] Add focused scaffold tests. (AC: 1, 2, 3, 4)
-  - [ ] Add `tests/domain/test_state_imports.py` proving the four exported TypedDicts import.
-  - [ ] Add assertions that required directories exist.
-  - [ ] Add a lightweight guard that `yt_flow.domain.state` imports no project layer modules other than stdlib typing helpers.
-  - [ ] Add an import smoke test that `typing.get_type_hints` works for every domain TypedDict.
-- [ ] Verify locally. (AC: 1, 2, 3)
-  - [ ] Run `uv sync`.
-  - [ ] Run `uv run pytest`.
-  - [ ] Run `uv run ruff check .`.
-  - [ ] Run `uv run python -c "from yt_flow.domain.state import PipelineState, SceneState, ShotData, WordTiming; print(PipelineState, SceneState, ShotData, WordTiming)"`.
+- [x] Create Python package scaffold. (AC: 2, 3, 4)
+  - [x] Create `src/yt_flow/__init__.py`. (already present from Story 1.1; preserved)
+  - [x] Create `src/yt_flow/domain/__init__.py` and `src/yt_flow/domain/state.py`.
+  - [x] Create empty package markers for `pipeline`, `pipeline/nodes`, `services`, `db`, `api`, and `api/routes`.
+  - [x] Create runtime roots `data/` and `workspace/` if absent; keep `workspace/` ignored if runtime artifacts should not be committed.
+- [x] Define domain state types in `src/yt_flow/domain/state.py`. (AC: 2)
+  - [x] Define `StageName = Literal["scenario", "image", "tts", "subtitle", "video"]`.
+  - [x] Define `GateState = Literal["pending", "approved", "rejected", "n/a"]`.
+  - [x] Define `WordTiming(TypedDict)` with `word: str`, `start_sec: float`, `end_sec: float`.
+  - [x] Define `ShotData(TypedDict)` with `shot_id`, `sentence_indices`, `image_prompt`, `negative_prompt`, `camera_angle`, `camera_movement`, and `image_path`.
+  - [x] Define `SceneState(TypedDict)` with `scene_num`, `narration`, `shots`, `audio_path`, `audio_duration`, `word_timings`, and `subtitle_path`.
+  - [x] Define `PipelineState(TypedDict)` with `run_id`, `scp_text`, `scenes`, `video_path`, `current_stage`, `gate_states`, `prompt_variant`, and `error`.
+- [x] Create or extend `pyproject.toml` for a `src` layout package. (AC: 1)
+  - [x] Set project name to `yt-flow`, package import name to `yt_flow`, and Python requirement to Python 3.12 if not already set by Story 1.1.
+  - [x] Preserve Story 1.1's config/Langfuse dependencies and add or correct pins to the stack in "Latest Technical Information" below.
+  - [x] Add pytest and Ruff as dev dependencies only.
+  - [x] Configure Ruff for Python 3.12 and the `src` package layout.
+- [x] Add focused scaffold tests. (AC: 1, 2, 3, 4)
+  - [x] Add `tests/domain/test_state_imports.py` proving the four exported TypedDicts import.
+  - [x] Add assertions that required directories exist.
+  - [x] Add a lightweight guard that `yt_flow.domain.state` imports no project layer modules other than stdlib typing helpers.
+  - [x] Add an import smoke test that `typing.get_type_hints` works for every domain TypedDict.
+- [x] Verify locally. (AC: 1, 2, 3)
+  - [x] Run `uv sync`. (all pins resolved, no conflict)
+  - [x] Run `uv run pytest`. (8 passed)
+  - [x] Run `uv run ruff check .`. (all checks passed)
+  - [x] Run `uv run python -c "from yt_flow.domain.state import PipelineState, SceneState, ShotData, WordTiming; print(PipelineState, SceneState, ShotData, WordTiming)"`.
 
 ## Dev Notes
 
@@ -231,16 +231,52 @@ The source reference project `/mnt/work/projects/yt.pipe` is structural context 
 
 ### Agent Model Used
 
-TBD by dev-story agent.
+claude-opus-4-8[1m] (bmad-dev-story workflow)
 
 ### Debug Log References
 
-TBD by dev-story agent.
+- `uv sync` → resolved full stack cleanly (langgraph 1.2.7, langgraph-checkpoint-sqlite 3.1.0, fastapi 0.138.2, sqlmodel 0.0.39, alembic 1.x, langfuse 4.12.0, pydantic-settings 2.14.2; dev: pytest 9.1.1, ruff 0.15.20). Env installed Python 3.12 per `<3.13` pin.
+- `uv run pytest -q` → 8 passed (Story 1.1 config: 4; scaffold: 4).
+- `uv run ruff check .` → All checks passed.
+- Import smoke → `OK PipelineState SceneState ShotData WordTiming`.
 
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- Extended Story 1.1's existing `pyproject.toml` and `src/yt_flow/__init__.py` in place rather than replacing them (per Scope Boundary / Previous Story Intelligence).
+- `domain/state.py` matches the Architecture contract exactly, using narrowed `StageName`/`GateState`/`PromptVariant` Literal aliases while preserving the same JSON shape. TypedDict (not Pydantic/dataclass) per AD-2.
+- Layer-boundary rule enforced as an executable test: AST-parses `state.py` and asserts zero `yt_flow.*` imports (AC4). Field-shape test uses `typing.get_type_hints` against exact expected field sets so future renames fail fast.
+- Env constraint (langfuse/deepseek/qwen/comfyui integration unavailable) did not affect this story: scaffold-only, no external service calls or imports at runtime/test time. Dependencies are declared for later stories but never invoked here.
+- Ponytail: empty `__init__.py` markers only — no speculative placeholder modules or interfaces. `data/.gitkeep` added so the runtime root is tracked; `workspace/` left gitignored.
 
 ### File List
 
-TBD by dev-story agent.
+- `src/yt_flow/domain/__init__.py` (new)
+- `src/yt_flow/domain/state.py` (new)
+- `src/yt_flow/pipeline/__init__.py` (new)
+- `src/yt_flow/pipeline/nodes/__init__.py` (new)
+- `src/yt_flow/services/__init__.py` (new)
+- `src/yt_flow/db/__init__.py` (new)
+- `src/yt_flow/api/__init__.py` (new)
+- `src/yt_flow/api/routes/__init__.py` (new)
+- `tests/domain/__init__.py` (new)
+- `tests/domain/test_state_imports.py` (new)
+- `data/.gitkeep` (new)
+- `pyproject.toml` (modified — added stack pins, Ruff config, Python `<3.13` bound)
+- `uv.lock` (modified — regenerated by `uv sync`)
+
+## Change Log
+
+| Date       | Change                                                                 |
+| ---------- | ---------------------------------------------------------------------- |
+| 2026-07-01 | Story 1.2 implemented: package scaffold, domain TypedDicts, dependency pins, Ruff config, scaffold tests. All ACs verified; status → review. |
+
+## Review Findings
+
+Code review (2026-07-01, epic 1 story 1.1~1.2 adversarial review — Blind Hunter / Edge Case Hunter / Acceptance Auditor).
+
+Domain TypedDict field sets verified byte-for-byte against the Architecture Domain Type Contract; layer isolation (AC4), scaffold-only constraint (AC5), and directory structure (AC3) all confirmed compliant. No patch-level defects in this story's code.
+
+- [x] [Review][Defer] Layer-boundary guard only AST-checks `domain/state.py`; AC4's `pipeline↛db` and `api↛pipeline` clauses are vacuously true (those layers are empty `__init__.py`) [tests/domain/test_state_imports.py] — deferred, no code to violate yet; extend the guard when pipeline/api gain modules
+- [x] [Review][Defer] `pytest-asyncio>=0.24` declared but `[tool.pytest.ini_options]` has no `asyncio_mode`; async tests added later would be silently collected without running under STRICT mode [pyproject.toml] — deferred until story 1.4 adds the first async (AsyncSqliteSaver) test
+
+Dismissed as noise: alembic range pin (story explicitly permits `alembic==1.*` range), `parents[1]`/`get_type_hints`/`read_text` frozen-install fragilities (speculative, dev tree only), fastapi-vs-spine version mismatch (spec-internal doc note, code matches the story's authoritative pin table), `workspace/` dir marker (gitignored empty dir — Ponytail-correct to not track).
