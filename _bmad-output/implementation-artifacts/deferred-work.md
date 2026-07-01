@@ -21,7 +21,7 @@
 - **WhisperX model reloaded on every scene** [subtitle.py:48] — `load_model` is called inside `_align_sync` each time, so model weights reload per scene. Cache on `WhisperXAligner` instance if throughput matters.
 - **Error format flat string, not structured dict** [subtitle.py:208] — `PipelineState.error` is a freeform string embedding `stage=subtitle run_id=...`. API/UI layers that need structured error fields must parse it. Revisit if story 2.4 error handling requires a structured contract.
 - **Overlapping input word_timings not pre-validated** [subtitle.py:108] — `_word_timings_to_segments` trusts TTS-provided `WordTiming.end_sec` is not overlapping. Add a pre-validate step if the TTS node ever emits overlapping timings.
-- **Empty scenes list is a valid no-op without a downstream guard** [subtitle.py:180] — `subtitle_node` succeeds with `scenes=[]`; `video_node` likely assumes ≥1 scene. Add a guard in the video integration story.
+- **Empty scenes list is a valid no-op without a downstream guard** [subtitle.py:180] — `subtitle_node` succeeds with `scenes=[]`; `video_node` likely assumes ≥1 scene. Add a guard in the video integration story. **(Resolved in story 1.9: `video_node` raises `ValueError("no scenes to render")` on empty scenes.)**
 - **run_id path traversal** [subtitle.py:176] — `Path(workspace)/run_id` is unvalidated. Internal CLI state keeps risk low; add sanitisation if `run_id` ever comes from an HTTP boundary.
 
 ## Deferred from: code review of story-1.5/1.6/1.7 (2026-07-01)
@@ -32,7 +32,7 @@
 
 ## Deferred from: code review of 1-6b-image-layered-assets (2026-07-01)
 
-- **`image_node` hardcodes `Path("workspace")` instead of `s.workspace_path`** [image.py:204] — pre-existing from Story 1.6; new layered path inherits the same root. Fix together with the Story 1.6 workspace_path cleanup whenever `YTFLOW_WORKSPACE_PATH` support is needed.
+- **`image_node` hardcodes `Path("workspace")` instead of `s.workspace_path`** [image.py:204] — pre-existing from Story 1.6; new layered path inherits the same root. Fix together with the Story 1.6 workspace_path cleanup whenever `YTFLOW_WORKSPACE_PATH` support is needed. **(Resolved 2026-07-01: now uses `Path(s.workspace_path)`, consistent with tts/subtitle/video nodes.)**
 - **`_await_outputs` returns on first node found, not all requested nodes** [comfyui_client.py:138] — assumes ComfyUI writes all outputs atomically. Spec allows background-only (AC2), so this is compliant. Add per-node wait if a future story requires guaranteeing both layers succeed.
 - **`_has_alpha` does not detect tRNS-chunk palette transparency** [image.py:113] — color_type 3 (indexed PNG) with a tRNS chunk would be rejected as opaque. ComfyUI SaveImage outputs RGBA (color_type 6), so this edge case is non-applicable in practice.
 
@@ -46,8 +46,8 @@
 
 - **Gate node cannot persist `pending` into `PipelineState`** [src/yt_flow/pipeline/gates.py] — LangGraph discards a node's return value when `interrupt()` pauses, so `pending` only reaches the runs-table projection (via `services/`), never the checkpoint. Spec-acknowledged (AD-3) and documented in `gates.py`; no functional impact. Same root cause as the story-1.4 deferral above. Resolve as an architecture reconciliation, not a mechanical fix. (Story 2.3)
 - **Artifact edit single-scene selector + scenario file path** [src/yt_flow/services/run_service.py `edit_artifact`] — edits one scene via `?scene=N` (default 1) and writes scenario to `scene_{n:03d}.txt`, both deliberate ponytail simplifications diverging from AC-4's single-`body` contract / AD-8's `scenario.txt` path. Upgrade to a scene→text map + canonical path if bulk scenario editing is needed. (Story 2.4)
-- **Retry/resume recovery after a server restart** [src/yt_flow/services/run_service.py] — the per-run `_configs` map is in-memory; after a restart `retry_stage`/`resume_run` rebuild a bare config and `astream(None)` on a cold thread has no pending interrupt to resume. Belongs to Story 1.10 (resume-restart-trace-linkage), which owns checkpoint-backed recovery. (Stories 2.3/2.4)
-- **`get_stage_artifacts` builds a throwaway graph per request** [src/yt_flow/services/run_service.py `get_stage_artifacts`] — opens a fresh read-only graph + SQLite connection each call instead of reusing the persistent injected `_graph` installed by Story 2.3's `init()`. Low severity, functionally correct (AD-7 upheld); documented with a `ponytail:` comment. Switching requires reworking the 9 tests that mock `build_graph`. Fold into the persistent-graph cleanup when convenient. (Story 2.5)
+- **Retry/resume recovery after a server restart** [src/yt_flow/services/run_service.py] — the per-run `_configs` map is in-memory; after a restart `retry_stage`/`resume_run` rebuild a bare config and `astream(None)` on a cold thread has no pending interrupt to resume. Belongs to Story 1.10 (resume-restart-trace-linkage), which owns checkpoint-backed recovery. (Stories 2.3/2.4) **(Resolved in story 1.10: every recovery path falls back to `{"configurable": {"thread_id": run_id}}` and reads the pending interrupt / last checkpoint from the on-disk `AsyncSqliteSaver`, so a cold thread after restart resumes correctly. The original "no pending interrupt on a cold thread" concern was mistaken — the interrupt is persisted in the checkpoint, not in `_configs`.)**
+- **`get_stage_artifacts` builds a throwaway graph per request** [src/yt_flow/services/run_service.py `get_stage_artifacts`] — opens a fresh read-only graph + SQLite connection each call instead of reusing the persistent injected `_graph` installed by Story 2.3's `init()`. Low severity, functionally correct (AD-7 upheld); documented with a `ponytail:` comment. Switching requires reworking the 9 tests that mock `build_graph`. Fold into the persistent-graph cleanup when convenient. (Story 2.5) **(Resolved 2026-07-01: now reuses the injected `_graph.aget_state()`; the 9 tests route through one `_mock_graph` helper, so the switch was a single-line test change.)**
 
 ## Deferred from: code review of 1-9c-video-character-idle-motion (2026-07-01)
 
@@ -56,3 +56,28 @@
 ## Deferred from: code review of stories 3-1/3-2 (2026-07-01)
 
 - **Light-mode `@media` block only swaps 6 of ~17 Zinc tokens** [frontend/src/globals.css:26-36] — `--card-hover`, `--subtle-foreground`, `--primary-foreground`, and all `--status-*` tokens fall through to their dark values under `prefers-color-scheme: light`, so hover rows, stage tokens, and the 18%-alpha status fills render with dark-tuned colors on a white surface. AC2 and DESIGN.md enumerate only the six swaps that are implemented, and dark mode is the primary target, so this is a spec-intent gap rather than an AC violation. Fixing it needs light-mode values that the design spec does not define — resolve with a design decision (candidate: the Story 3.6 accessibility/A-B polish story, or a dedicated light-mode pass). No functional impact on the primary dark surface. (Story 3.1)
+
+## Deferred: prompts/ → Langfuse Prompt Hub 이관 (2026-07-01)
+
+프롬프트는 Langfuse Prompt Hub에서 관리하기로 결정됨 (Story 1-3). 로컬 프롬프트 파일과 시드 스크립트는 Langfuse로 완전 이관 후 제거. 현재 런타임 코드는 Langfuse에서 직접 프롬프트를 가져오도록 되어 있으므로, 로컬 `prompts/` 디렉토리는 시드/레퍼런스 용도로만 존재함.
+
+### 제거 대상
+
+| 경로 | 설명 |
+|------|------|
+| `prompts/evaluation/judge.md` | LLM-as-judge 평가 프롬프트 → Langfuse `evaluation/judge` |
+| `prompts/evaluation/pairwise.md` | Pairwise 비교 프롬프트 → Langfuse `evaluation/pairwise` |
+| `prompts/character/angle_selection.md` | 캐릭터 앵글 선택 프롬프트 |
+| `prompts/character/generation.md` | 캐릭터 생성 프롬프트 |
+| `prompts/character/vision_enrichment.md` | Vision enrichment 프롬프트 |
+| `scripts/seed_eval_prompts.py` | evaluation 프롬프트 Langfuse 시드 스크립트 |
+| `scripts/migrate_prompts.py` | yt.pipe → Langfuse 마이그레이션 (Story 1-3 완료, 일회성) |
+
+### 이관 절차
+
+1. ~~모든 로컬 프롬프트가 Langfuse Prompt Hub에 최신 버전으로 존재하는지 확인~~ **부분 완료 (2026-07-02)**: `evaluation/judge`, `evaluation/pairwise`, `character-vision-enrichment`, `character-generation`, `character-angle-selection` 5개를 `langfuse.eli.kr` Prompt Hub에 production 라벨 v1으로 시드 완료. `scenario`는 로컬 소스가 없어(yt.pipe 템플릿 필요, 이 머신에 부재) **미완**.
+2. 런타임 코드가 Langfuse에서만 프롬프트를 가져오는지 확인 — **미완**: `character_service`는 Langfuse 실패 시 `prompts/` 로컬 파일 폴백이 있음. `prompts/`를 지우려면 이 폴백부터 제거해야 함.
+3. `prompts/` 디렉토리 삭제 — 1·2 완료 후.
+4. `scripts/seed_eval_prompts.py`, `scripts/migrate_prompts.py` 삭제 — 1·2 완료 후.
+
+**남은 블로커**: (a) `scenario` 프롬프트 소스 확보(yt.pipe 템플릿 접근), (b) `character_service`의 로컬-파일 폴백 제거.

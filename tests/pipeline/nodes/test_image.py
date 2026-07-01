@@ -47,6 +47,7 @@ RGBA_PNG = _make_png(6)
 
 class FakeSettings:
     def __init__(self, *, mock, workflow_path, layered=False, bg_node="9", char_node="10"):
+        self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
         self.comfyui_url = "http://comfy.test:8188"
         self.comfyui_workflow_path = workflow_path
         self.comfyui_mock = mock

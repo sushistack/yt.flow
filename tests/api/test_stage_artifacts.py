@@ -1,7 +1,7 @@
 """Tests for GET /runs/{id}/stages/{stage}/artifacts (Story 2.5 AC: 2-5).
 
-The graph is mocked — no real LangGraph DB. We patch run_service.build_graph to
-hand back a graph whose aget_state() returns a canned PipelineState.
+The graph is mocked — no real LangGraph DB. We inject a run_service._graph whose
+aget_state() returns a canned PipelineState.
 """
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -81,9 +81,7 @@ def client(monkeypatch):
 def _mock_graph(monkeypatch, values):
     graph = MagicMock()
     graph.aget_state = AsyncMock(return_value=SimpleNamespace(values=values))
-    saver = MagicMock()
-    saver.conn.close = AsyncMock()
-    monkeypatch.setattr(run_service, "build_graph", AsyncMock(return_value=(graph, saver)))
+    monkeypatch.setattr(run_service, "_graph", graph)
 
 
 # ── AC 2: per-stage artifact data read from checkpoint ──────────────────────

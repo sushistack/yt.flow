@@ -54,20 +54,13 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     Raises ``ValueError`` for an unknown stage (→ 422) and ``LookupError`` when
     the run has no checkpoint or the stage has not been reached (→ 404).
 
-    ponytail: restored verbatim during the 2.3↔2.5 parallel-branch reconciliation —
-    Story 2.5's runs.py route depends on it; 2.3's run_service rewrite dropped it.
+    Reuses the long-lived graph injected by ``init()`` (AD-7) — no per-request
+    graph/connection churn.
     """
     if stage not in _STAGES:
         raise ValueError(f"Unknown stage: {stage}")
 
-    # ponytail: build a throwaway read-only graph per request; Story 2.3 will hold
-    # a persistent graph in app.state once astream() execution is wired.
-    graph, saver = await build_graph(Settings())
-    try:
-        state = await graph.aget_state({"configurable": {"thread_id": run_id}})
-    finally:
-        await saver.conn.close()
-
+    state = await _graph.aget_state({"configurable": {"thread_id": run_id}})
     values = state.values
     if not values:
         raise LookupError("Run not found")

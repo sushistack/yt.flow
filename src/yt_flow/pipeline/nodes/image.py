@@ -202,7 +202,7 @@ async def image_node(state: PipelineState) -> dict:
     character_count = 0
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
-        out_dir = Path("workspace") / run_id / "images"
+        out_dir = Path(s.workspace_path) / run_id / "images"
         out_dir.mkdir(parents=True, exist_ok=True)
         template = None if s.comfyui_mock else _load_workflow(s.comfyui_workflow_path)
 
