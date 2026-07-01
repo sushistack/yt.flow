@@ -154,3 +154,97 @@ def test_get_run_unknown_id(client):
     resp = client.get("/runs/does-not-exist")
     assert resp.status_code == 404
     assert resp.json() == {"detail": "Run not found"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Story 4.3 — GET /runs/{id} ab_result enrichment
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SAMPLE_AB_RESULT = {
+    "axis_scores": {
+        "A": {"atmosphere": 4.0, "narrative_coherence": 3.7, "article_fidelity": 4.3},
+        "B": {"atmosphere": 3.3, "narrative_coherence": 4.0, "article_fidelity": 3.7},
+    },
+    "pairwise_winner": {"majority_winner": "A", "majority_count": 3, "total_runs": 3},
+    "rule_based_scores": {
+        "A": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.12, "audio_duration_variance": 0.08},
+        "B": {"scene_count_match_rate": 0.8, "subtitle_sync_error": 0.15, "audio_duration_variance": 0.11},
+    },
+    "winner": "A",
+    "reason": None,
+    "langfuse_eval_trace_url": "https://langfuse.example.com/trace/trace-id",
+    "evaluated_at": "2026-07-01T12:00:00.000Z",
+}
+
+
+def test_get_run_returns_ab_result_as_dict(client):
+    """GET /runs/{id} returns ab_result as a parsed dict when evaluation complete."""
+    from sqlmodel import Session
+
+    run_id = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "x"}).json()["id"]
+    # Simulate completed A/B evaluation by writing ab_result directly
+    with Session(db._engine) as session:
+        run = session.get(Run, run_id)
+        run.ab_result = json.dumps(_SAMPLE_AB_RESULT)
+        session.commit()
+
+    resp = client.get(f"/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ab_result" in body
+    assert body["ab_result"] == _SAMPLE_AB_RESULT
+    assert body["ab_result"]["winner"] == "A"
+    assert body["ab_result"]["axis_scores"]["A"]["atmosphere"] == 4.0
+
+
+def test_get_run_ab_result_null_for_non_ab_run(client):
+    """GET /runs/{id} returns ab_result: null when run is not part of A/B pair."""
+    run_id = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "x"}).json()["id"]
+    resp = client.get(f"/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ab_result"] is None
+
+
+def test_get_run_ab_result_null_when_evaluation_not_done(client):
+    """GET /runs/{id} returns ab_result: null when A/B pair exists but not evaluated."""
+    from sqlmodel import Session
+
+    run_id = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "x"}).json()["id"]
+    # Set ab_pair_id but leave ab_result as None
+    with Session(db._engine) as session:
+        run = session.get(Run, run_id)
+        run.ab_pair_id = "pair-1"
+        session.commit()
+
+    resp = client.get(f"/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ab_pair_id"] == "pair-1"
+    assert body["ab_result"] is None
+
+
+def test_list_runs_includes_ab_result(client):
+    """GET /runs returns ab_result for all runs (null or dict)."""
+    from sqlmodel import Session
+
+    # Run with ab_result
+    run_a = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "x"}).json()["id"]
+    with Session(db._engine) as session:
+        run = session.get(Run, run_a)
+        run.ab_result = json.dumps(_SAMPLE_AB_RESULT)
+        session.commit()
+
+    # Run without ab_result
+    run_b = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "y"}).json()["id"]
+
+    resp = client.get("/runs")
+    assert resp.status_code == 200
+    runs = resp.json()
+    assert len(runs) >= 2
+
+    run_a_resp = next(r for r in runs if r["id"] == run_a)
+    run_b_resp = next(r for r in runs if r["id"] == run_b)
+
+    assert run_a_resp["ab_result"] == _SAMPLE_AB_RESULT
+    assert run_b_resp["ab_result"] is None

@@ -5,6 +5,7 @@ sink, and checkpoint/run-table reads are all faked. Rule-based metrics run
 against the real PipelineState fixtures (pure functions, exact assertions).
 """
 
+import asyncio
 import json
 
 import aiosqlite
@@ -418,3 +419,219 @@ def _return(value):
     async def _coro():
         return value
     return _coro()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Story 4.3 — determine_winner() (pure function, OQ-6)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SCORES_A_CLEAR = {"atmosphere": 4.0, "narrative_coherence": 4.0, "article_fidelity": 4.0}
+_SCORES_B_CLEAR = {"atmosphere": 3.0, "narrative_coherence": 3.0, "article_fidelity": 3.0}
+_RULE_A = {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1, "audio_duration_variance": 0.05}
+_RULE_B = {"scene_count_match_rate": 0.8, "subtitle_sync_error": 0.15, "audio_duration_variance": 0.08}
+_PAIR_A = {"majority_winner": "A", "majority_count": 3, "total_runs": 3}
+
+
+def test_determine_winner_clear_a():
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR},
+        {"A": _RULE_A, "B": _RULE_B},
+        _PAIR_A,
+    )
+    assert winner == "A" and reason is None
+
+
+def test_determine_winner_pairwise_b():
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR},
+        {"A": _RULE_A, "B": _RULE_B},
+        {"majority_winner": "B", "majority_count": 2, "total_runs": 2},
+    )
+    assert winner == "B" and reason is None
+
+
+def test_determine_winner_tie_all_equal():
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR},  # same scores
+        {"A": _RULE_A, "B": _RULE_A},                    # same rule metrics
+        {"majority_winner": "tie", "majority_count": 0, "total_runs": 2},
+    )
+    assert winner == "tie" and reason is None
+
+
+def test_determine_winner_both_below_floor():
+    winner, reason = es.determine_winner(
+        {"A": {"atmosphere": 1.0, "narrative_coherence": 4.0, "article_fidelity": 4.0},
+         "B": {"atmosphere": 1.0, "narrative_coherence": 4.0, "article_fidelity": 4.0}},
+        {"A": _RULE_A, "B": _RULE_B},
+        _PAIR_A,
+    )
+    assert winner is None and reason == "both_below_floor"
+
+
+def test_determine_winner_a_below_floor_b_wins():
+    winner, reason = es.determine_winner(
+        {"A": {"atmosphere": 1.5, "narrative_coherence": 3.0, "article_fidelity": 3.0},
+         "B": _SCORES_A_CLEAR},
+        {"A": _RULE_A, "B": _RULE_B},
+        _PAIR_A,
+    )
+    assert winner == "B" and reason is None
+
+
+def test_determine_winner_b_below_floor_a_wins():
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR,
+         "B": {"atmosphere": 1.9, "narrative_coherence": 3.0, "article_fidelity": 3.0}},
+        {"A": _RULE_A, "B": _RULE_B},
+        _PAIR_A,
+    )
+    assert winner == "A" and reason is None
+
+
+def test_determine_winner_rule_tiebreak_scene_count():
+    # Pairwise tied; A has better scene_count_match_rate → A wins
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR},
+        {"A": _RULE_A, "B": _RULE_B},  # A: 1.0, B: 0.8
+        {"majority_winner": "tie", "majority_count": 0, "total_runs": 2},
+    )
+    assert winner == "A" and reason is None
+
+
+def test_determine_winner_rule_tiebreak_subtitle_sync():
+    # Same scene count; B has better subtitle sync → B wins
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR},
+        {"A": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.3, "audio_duration_variance": 0.05},
+         "B": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1, "audio_duration_variance": 0.05}},
+        {"majority_winner": "tie", "majority_count": 0, "total_runs": 2},
+    )
+    assert winner == "B" and reason is None
+
+
+def test_determine_winner_rule_tiebreak_audio_variance():
+    # Same scene count + subtitle sync; A has better audio variance → A wins
+    winner, reason = es.determine_winner(
+        {"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR},
+        {"A": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1, "audio_duration_variance": 0.02},
+         "B": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1, "audio_duration_variance": 0.08}},
+        {"majority_winner": "tie", "majority_count": 0, "total_runs": 2},
+    )
+    assert winner == "A" and reason is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Story 4.3 — store_evaluation_results() (DB + Langfuse)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_store_results_persists_ab_result_to_both_runs(_memdb, monkeypatch):
+    _seed_run("run-a")
+    _seed_run("run-b")
+    # Disable Langfuse: mock get_client to avoid real network calls
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLFClient())
+
+    llm = {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR}
+    rule = {"A": _RULE_A, "B": _RULE_B}
+    pairwise = _PAIR_A
+
+    ab_result = asyncio.run(es.store_evaluation_results(
+        "run-a", "run-b", llm, rule, pairwise,
+    ))
+
+    assert ab_result["winner"] == "A"
+    assert ab_result["axis_scores"] == llm
+    assert ab_result["rule_based_scores"] == rule
+    assert ab_result["pairwise_winner"] == pairwise
+    assert "evaluated_at" in ab_result
+
+    # Verify both runs have ab_result in DB
+    from sqlmodel import Session
+    with Session(db._engine) as session:
+        run_a = session.get(Run, "run-a")
+        run_b = session.get(Run, "run-b")
+        assert run_a is not None and run_a.ab_result is not None
+        assert run_b is not None and run_b.ab_result is not None
+        parsed_a = json.loads(run_a.ab_result)
+        parsed_b = json.loads(run_b.ab_result)
+        assert parsed_a["winner"] == "A"
+        assert parsed_b["winner"] == "A"
+
+
+def test_store_results_langfuse_failure_non_fatal(_memdb, monkeypatch):
+    _seed_run("run-a")
+    _seed_run("run-b")
+
+    class _BoomLF:
+        def create_trace_id(self, **kw):
+            raise RuntimeError("langfuse down")
+        def create_score(self, **kw):
+            raise RuntimeError("langfuse down")
+
+    monkeypatch.setattr(es, "get_client", lambda: _BoomLF())
+
+    llm = {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR}
+    rule = {"A": _RULE_A, "B": _RULE_B}
+
+    ab_result = asyncio.run(es.store_evaluation_results(
+        "run-a", "run-b", llm, rule, _PAIR_A,
+    ))
+
+    # DB write succeeded despite Langfuse failure (AD-10)
+    assert ab_result["winner"] == "A"
+    from sqlmodel import Session
+    with Session(db._engine) as session:
+        run_a = session.get(Run, "run-a")
+        assert run_a is not None and run_a.ab_result is not None
+
+
+def test_store_results_idempotent_scores(_memdb, monkeypatch):
+    _seed_run("run-a")
+    _seed_run("run-b")
+
+    created = []
+
+    class _FakeLF:
+        def create_trace_id(self, **kw):
+            return "trace-pair-1"
+        def create_score(self, **kw):
+            created.append(kw["score_id"])
+
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLF())
+
+    llm = {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR}
+    rule = {"A": _RULE_A, "B": _RULE_B}
+
+    # First call
+    asyncio.run(es.store_evaluation_results("run-a", "run-b", llm, rule, _PAIR_A))
+    first_count = len(created)
+    created.clear()
+
+    # Second call (re-evaluation) — should create scores with same ids
+    asyncio.run(es.store_evaluation_results("run-a", "run-b", llm, rule, _PAIR_A))
+    second_count = len(created)
+
+    # Same number of scores (6 axis + 1 pairwise + 6 rule-based = 13)
+    assert first_count == second_count == 13
+
+    # Verify score_ids use the idempotency pattern
+    expected_ids = {
+        f"run-a-atmosphere_A", f"run-b-atmosphere_B",
+        f"run-a-narrative_coherence_A", f"run-b-narrative_coherence_B",
+        f"run-a-article_fidelity_A", f"run-b-article_fidelity_B",
+        "run-a-pairwise_winner",
+        f"run-a-scene_count_match_rate_A", f"run-b-scene_count_match_rate_B",
+        f"run-a-subtitle_sync_error_A", f"run-b-subtitle_sync_error_B",
+        f"run-a-audio_duration_variance_A", f"run-b-audio_duration_variance_B",
+    }
+    assert set(created) == expected_ids
+
+
+# ── Fake Langfuse client for store tests ─────────────────────────────────────
+
+class _FakeLFClient:
+    def create_trace_id(self, **kw):
+        return "trace-test"
+    def create_score(self, **kw):
+        pass
