@@ -56,11 +56,12 @@ development_status:
   1-4-langgraph-asyncsqlitesaver: done
   1-5-scenario-node: done
   1-6-image-node: done
+  1-6b-image-layered-assets: done  # unblocks 1-9c character idle motion
   1-7-tts-node: done
   1-8-subtitle-node: done
   1-9-video-node: ready-for-dev
   1-9b-video-effects-kenburns-transitions: ready-for-dev  # depends on 1-9 done
-  1-9c-video-character-idle-motion: blocked  # depends on 1-6 layered-asset extension + 1-9b
+  1-9c-video-character-idle-motion: blocked  # depends on 1-6b done + 1-9b done
   1-10-resume-restart-trace-linkage: ready-for-dev
   epic-1-retrospective: optional
 
