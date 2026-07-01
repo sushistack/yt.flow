@@ -65,7 +65,7 @@ development_status:
   1-10-resume-restart-trace-linkage: done
   1-11-character-domain-reference-search: done  # depends on 1-2, 1-4
   1-12-multi-angle-character-generation: done  # depends on 1-11
-  1-13-video-llm-character-selection: in-progress  # depends on 1-12, 1-9
+  1-13-video-llm-character-selection: done  # depends on 1-12, 1-9
   epic-1-retrospective: optional
 
   # ── Epic 2: HTTP API & Gate-Controlled Pipeline Execution ───────────────────
