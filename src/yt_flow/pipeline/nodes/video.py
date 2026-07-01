@@ -75,7 +75,8 @@ def select_effect(shot: ShotData, scene_index: int) -> EffectSpec:
     - Unknown/None → rotates through _DIRECTION_POOL by scene_index (anti-monotony).
     - 'static' → near-zero 1.0→1.005 drift reusing the zoompan path.
     """
-    hint = (shot.get("camera_movement") or "").strip().lower()
+    # normalize internal/tab whitespace too so "pan  right" / "pan\tright" still match
+    hint = " ".join((shot.get("camera_movement") or "").split()).lower()
 
     if hint == "static":
         # ponytail: reuse zoompan path instead of a separate static branch
@@ -148,6 +149,21 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
+def _escape_subtitles_path(path: Path) -> str:
+    """Escape a path for the ffmpeg ``subtitles=`` filter option. [1.9b hardening]
+
+    The value is wrapped in single quotes by the caller; here we escape the
+    characters the filtergraph/option parser still treats as special inside
+    quotes: ``\\``, ``'`` and ``:`` (drive colons, run_ids with ``:``).
+    """
+    return (
+        str(path)
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace(":", "\\:")
+    )
+
+
 def _settings() -> Settings:
     # ponytail: seam so unit tests can inject fake settings without a real .env.
     return Settings()  # type: ignore[call-arg]
@@ -192,16 +208,15 @@ def _validate_scene_assets(scenes: list[SceneState]) -> None:
     """Raise before FFmpeg if required per-scene assets are missing. [AC:2]"""
     for scene in scenes:
         n = scene["scene_num"]
-        images: list[str] = []
-        for s in scene.get("shots") or []:
-            img = s.get("image_path")
-            if img:
-                images.append(img)
-        if not images:
+        # Validate only the shot _compose_scene will actually render (first with an
+        # image) — don't abort a run over an unused later shot's missing image.
+        shot = next((s for s in (scene.get("shots") or []) if s.get("image_path")), None)
+        if shot is None:
             raise ValueError(f"scene {n}: no shot has a valid image_path")
-        for img in images:
-            if not Path(img).exists():
-                raise FileNotFoundError(f"scene {n}: image_path not found: {img!r}")
+        img = shot["image_path"]
+        assert img is not None  # selected because image_path is truthy
+        if not Path(img).exists():
+            raise FileNotFoundError(f"scene {n}: image_path not found: {img!r}")
         audio = scene.get("audio_path")
         if not audio or not Path(audio).exists():
             raise FileNotFoundError(f"scene {n}: audio_path missing or not found: {audio!r}")
@@ -232,7 +247,9 @@ async def _compose_scene(
     """Render one scene to MP4 segment with Ken Burns zoompan + burned SRT. [AC:1]"""
     n = scene["scene_num"]
     shots = scene.get("shots") or []
-    shot = next(s for s in shots if s.get("image_path"))
+    shot = next((s for s in shots if s.get("image_path")), None)
+    if shot is None:  # defensive; _validate_scene_assets guarantees this upstream
+        raise ValueError(f"scene {n}: no shot has a valid image_path")
     image_path = shot["image_path"]
     audio_path: str = scene["audio_path"]  # type: ignore[assignment]
     subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
@@ -242,13 +259,10 @@ async def _compose_scene(
     spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
 
-    # Build video filter: zoompan → scale back to output dims → burn subtitles
-    vf = (
-        f"{zp_chain},"
-        f"scale={COMP_W}:{COMP_H}:force_original_aspect_ratio=decrease,"
-        f"pad={COMP_W}:{COMP_H}:(ow-iw)/2:(oh-ih)/2,"
-        f"subtitles={Path(subtitle_path).resolve()}"
-    )
+    # zoompan already emits exactly COMP_W x COMP_H (s=), so no rescale/pad needed;
+    # just burn subtitles (path escaped + single-quoted for the filtergraph).
+    sub = _escape_subtitles_path(Path(subtitle_path).resolve())
+    vf = f"{zp_chain},subtitles='{sub}'"
 
     rc, stderr = await _run_ffmpeg(
         "-y",
@@ -276,11 +290,16 @@ async def _join_with_xfade(
     """Join scenes with xfade (video) + acrossfade (audio) transitions. [AC:2]
 
     segments: list of (path, duration_seconds).
-    Offset accumulates: offset_k = Σ(dur_0..k-1) − k·XFADE_DURATION
-    This is the #1 source of xfade timing bugs; we track running_offset explicitly.
+    xfade offset is measured on the *combined* prior output, so it accumulates:
+    the transition after segment i begins at Σ(dur_0..i) − (i+1)·XFADE_DURATION,
+    which is XFADE_DURATION before the running combined length ends. This is the
+    #1 source of xfade timing bugs; we track running_offset explicitly.
     """
     n = len(segments)
     assert n >= 2
+    # ponytail: assumes each scene ≥ XFADE_DURATION (TTS narration is always multi-second).
+    # Sub-0.5s scenes would make offset negative / acrossfade underflow — add a per-pair
+    # min-duration clamp only if scenes that short ever become real.
 
     # Build video filter chain
     v_parts: list[str] = []
@@ -341,6 +360,8 @@ async def video_node(state: PipelineState) -> dict:
             raise EnvironmentError("ffmpeg not found in PATH; install ffmpeg to use video_node")
 
         scenes = sorted(state.get("scenes", []), key=lambda sc: sc["scene_num"])
+        if not scenes:  # explicit guard — don't rely on the join assert (stripped under -O)
+            raise ValueError("no scenes to render")
         _validate_scene_assets(scenes)
 
         s = _settings()
@@ -357,14 +378,8 @@ async def video_node(state: PipelineState) -> dict:
         segs = [p for p, _, _ in segs_with_specs]
 
         if len(segs) == 1:
-            segs[0].rename(output)
-        elif len(segs) == 2:
-            # Two-scene case: explicit xfade
-            await _join_with_xfade(
-                [(p, d) for p, d, _ in segs_with_specs],
-                output,
-            )
-        else:
+            segs[0].replace(output)  # replace: atomic overwrite, cross-platform
+        else:  # 2+ scenes: xfade join (label wiring handles n>=2 uniformly)
             await _join_with_xfade(
                 [(p, d) for p, d, _ in segs_with_specs],
                 output,

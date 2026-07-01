@@ -188,6 +188,12 @@ def test_select_effect_pool_wraps():
         assert spec.direction == pool[i % len(pool)]
 
 
+@pytest.mark.parametrize("hint", ["pan  right", "pan\tright", " Pan Right "])
+def test_select_effect_normalizes_internal_whitespace(hint):
+    """Internal double-space/tab hints still honor the author's intent, not the pool."""
+    assert select_effect(_shot(camera_movement=hint), 3).direction == "pan-right"
+
+
 # ── _zoompan_filter ───────────────────────────────────────────────────────────
 
 
@@ -339,6 +345,14 @@ def test_validate_subtitle_not_found(assets):
 
 def test_validate_passes_with_valid_assets(assets):
     scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    _validate_scene_assets([scene])  # should not raise
+
+
+def test_validate_ignores_unused_later_shot_missing_image(assets):
+    """Only the first image-bearing shot is rendered, so a later shot's missing
+    image must not abort the run."""
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    scene["shots"].append(_shot("/does/not/exist.png"))  # unused second shot
     _validate_scene_assets([scene])  # should not raise
 
 
@@ -497,6 +511,44 @@ async def test_video_node_ffmpeg_nonzero_exit(monkeypatch, tmp_path, assets):
     assert out["current_stage"] == "video"
     assert "stage=video" in out["error"]
     assert out.get("video_path") is None
+
+
+async def test_video_node_no_scenes_sets_error(monkeypatch, tmp_path):
+    """Zero scenes must fail explicitly (not via a stripped-under-O assert). [AC:4]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    out = await video_node(_state([]))
+
+    assert "stage=video" in out["error"]
+    assert "no scenes" in out["error"]
+    assert out.get("video_path") is None
+
+
+async def test_video_node_escapes_subtitle_path(monkeypatch, tmp_path, assets):
+    """subtitles= path with filtergraph-special chars must be escaped + quoted. [1.9b hardening]"""
+    captured_vfs: list[str] = []
+
+    async def _capture_vf(*args):
+        args_list = list(args)
+        if "-vf" in args_list:
+            captured_vfs.append(args_list[args_list.index("-vf") + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _capture_vf)
+
+    # subtitle path containing a colon and a space — both break an unescaped filtergraph
+    srt = tmp_path / "a b:c.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nx\n\n", encoding="utf-8")
+    state = _state([_scene(1, image=assets.image, audio=assets.audio, subtitle=str(srt))])
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    vf = captured_vfs[0]
+    assert "subtitles='" in vf and "\\:" in vf  # single-quoted value, colon escaped
+    assert "a b:c.srt" not in vf  # raw unescaped colon must not appear
 
 
 async def test_video_node_missing_image_sets_error(monkeypatch, tmp_path, assets):
