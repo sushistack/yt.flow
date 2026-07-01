@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from yt_flow import db
 from yt_flow.api.routes import progress, runs, scps, stages
@@ -29,8 +30,19 @@ async def lifespan(app: FastAPI):
         await saver.conn.close()
 
 
+def mount_static_spa(application: FastAPI, dist_dir: Path) -> None:
+    """Serve the built React SPA at /app when a build exists (Story 3.1 AC1).
+
+    Mounted under /app only, so API routes elsewhere are never shadowed;
+    skipped when frontend/dist is absent so the API runs without a build.
+    """
+    if dist_dir.is_dir():
+        application.mount("/app", StaticFiles(directory=dist_dir, html=True), name="spa")
+
+
 app = FastAPI(title="yt.flow API", lifespan=lifespan)
 app.include_router(runs.router)
 app.include_router(progress.router)
 app.include_router(scps.router)
 app.include_router(stages.router)
+mount_static_spa(app, Path(__file__).parents[3] / "frontend" / "dist")
