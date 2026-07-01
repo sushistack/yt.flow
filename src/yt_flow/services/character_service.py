@@ -777,11 +777,12 @@ class CharacterService:
         self,
         scp_id: str,
         scenes: list[dict],
-    ) -> dict[str, str] | None:
+    ) -> dict[str, dict[str, str]] | None:
         """Select the best character angle per shot using LLM analysis of scene context.
 
         Analyzes all shots across scenes in a single LLM call. Shots without
-        ``character_path`` are skipped. Returns a dict mapping ``{shot_key: angle_name}``,
+        ``character_path`` are skipped. Returns a dict mapping
+        ``{shot_key: {"angle": name, "path": file_path}}``,
         or ``None`` if no Character record exists for the SCP ID.
         """
         character = self.check_existing_character(scp_id)
@@ -862,8 +863,8 @@ class CharacterService:
             logger.warning("select_character_angles: expected JSON array, got %s", type(parsed).__name__)
             return self._angle_fallback(shot_catalogue)
 
-        # Build result map: shot_key → angle_name
-        result: dict[str, str] = {}
+        # Build result map: shot_key → {angle, path}
+        result: dict[str, dict[str, str]] = {}
         for entry in parsed:
             if not isinstance(entry, dict):
                 continue
@@ -873,16 +874,17 @@ class CharacterService:
             if angle not in ("front", "back", "side", "three_quarter"):
                 angle = "front"
             # Check angle asset actually exists
-            if angle not in available_angles:
+            if angle not in angle_fields or not angle_fields[angle]:
                 # pick first available as fallback
                 angle = next(iter(available_angles))
-            result[shot_key] = angle
+            result[shot_key] = {"angle": angle, "path": angle_fields[angle] or ""}
 
         # Fill in any missing shots from the catalogue with "front" fallback
+        fallback_angle = "front" if "front" in available_angles else next(iter(available_angles))
         for shot in shot_catalogue:
             key = f"{shot['scene_num']}:{shot['shot_id']}"
             if key not in result:
-                result[key] = "front" if "front" in available_angles else next(iter(available_angles))
+                result[key] = {"angle": fallback_angle, "path": angle_fields.get(fallback_angle, "")}
 
         logger.info(
             "select_character_angles: %d shots, %d angles assigned for %s",
@@ -891,9 +893,9 @@ class CharacterService:
         return result
 
     @staticmethod
-    def _angle_fallback(shot_catalogue: list[dict]) -> dict[str, str]:
+    def _angle_fallback(shot_catalogue: list[dict]) -> dict[str, dict[str, str]]:
         """Return all-front fallback when LLM fails or returns invalid data."""
-        return {f"{s['scene_num']}:{s['shot_id']}": "front" for s in shot_catalogue}
+        return {f"{s['scene_num']}:{s['shot_id']}": {"angle": "front", "path": ""} for s in shot_catalogue}
 
     @staticmethod
     def _load_angle_selection_prompt(
