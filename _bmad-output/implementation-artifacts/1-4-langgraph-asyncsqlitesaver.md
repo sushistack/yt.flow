@@ -1,6 +1,10 @@
+---
+baseline_commit: 078cbecf4b2888ded4f27a12c23ab8705d5b95f1
+---
+
 # Story 1.4: LangGraph Graph + AsyncSqliteSaver
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created. -->
 
@@ -18,38 +22,38 @@ so that checkpoint persistence and the full graph topology are confirmed before 
 
 ## Tasks / Subtasks
 
-- [ ] Verify prerequisites from earlier stories before implementation.
-  - [ ] Confirm Story 1.2 scaffold exists: `pyproject.toml`, `src/yt_flow/{domain,pipeline/nodes,services,db,api/routes}/`, and `src/yt_flow/domain/state.py`.
-  - [ ] Confirm Story 1.3 Prompt Hub migration foundation exists or explicitly defer prompt use; this story must not hardcode real stage prompts.
-  - [ ] If prerequisites are missing, create only the minimal files needed for this story while preserving the architecture paths.
-- [ ] Add or update dependency pins. (AC: 1, 3)
-  - [ ] Use Python 3.12.
-  - [ ] Include `langgraph==1.2.6` or compatible `1.2.x` if the project already pins patch ranges.
-  - [ ] Include `langgraph-checkpoint-sqlite==3.1.0` or compatible current `3.x`.
-  - [ ] Include `aiosqlite`, required for async SQLite checkpointing.
-  - [ ] Keep FastAPI/SQLModel/Langfuse versions aligned with the architecture spine if touching `pyproject.toml`.
-- [ ] Implement graph construction in `src/yt_flow/pipeline/graph.py`. (AC: 1, 2, 3)
-  - [ ] Build a `StateGraph(PipelineState)`.
-  - [ ] Add stage nodes named exactly `scenario`, `image`, `tts`, `subtitle`, `video`.
-  - [ ] Add gate nodes named exactly `gate_scenario`, `gate_image`, `gate_tts`, `gate_subtitle`, `gate_video`.
-  - [ ] Wire edges in the fixed architecture order.
-  - [ ] Compile with an `AsyncSqliteSaver` checkpointer.
-  - [ ] Expose a small factory API that service code can reuse later, such as `async def build_graph(settings: Settings) -> tuple[CompiledStateGraph, AsyncSqliteSaver]`.
-- [ ] Implement gate stubs in `src/yt_flow/pipeline/gates.py`. (AC: 2)
-  - [ ] Gate nodes must be separate from stage nodes.
-  - [ ] Use LangGraph `interrupt({"stage": stage_name})` in gate nodes.
-  - [ ] On resume, accept only `"approved"` or `"rejected"` and return a `gate_states` update for that stage.
-  - [ ] Do not write to DB, queues, or service-level state from gate nodes.
-- [ ] Implement stage stub nodes without real external calls. (AC: 2, 3)
-  - [ ] Each stub stage returns a partial `PipelineState` update with `current_stage` set to the stage literal.
-  - [ ] Preserve existing state fields; do not mutate input state in place.
-  - [ ] Do not call DeepSeek, ComfyUI, Qwen, FFmpeg, Langfuse Prompt Hub, or API/DB services in this story.
-- [ ] Add graph/checkpoint tests. (AC: 1, 2, 3)
-  - [ ] Test DB file creation with a temporary `YTFLOW_DB_PATH`.
-  - [ ] Test node names and topology via the compiled graph inspection API.
-  - [ ] Test a checkpoint is persisted after at least one stage execution using `{"configurable": {"thread_id": run_id}}`.
-  - [ ] Test `aget_tuple(config)` returns a checkpoint for the same `thread_id`.
-  - [ ] If using gate interrupts in tests, either stop before the first gate or assert interrupt behavior explicitly with a checkpointer.
+- [x] Verify prerequisites from earlier stories before implementation.
+  - [x] Confirm Story 1.2 scaffold exists: `pyproject.toml`, `src/yt_flow/{domain,pipeline/nodes,services,db,api/routes}/`, and `src/yt_flow/domain/state.py`.
+  - [x] Confirm Story 1.3 Prompt Hub migration foundation exists or explicitly defer prompt use; this story must not hardcode real stage prompts.
+  - [x] If prerequisites are missing, create only the minimal files needed for this story while preserving the architecture paths.
+- [x] Add or update dependency pins. (AC: 1, 3)
+  - [x] Use Python 3.12.
+  - [x] Include `langgraph==1.2.6` or compatible `1.2.x` if the project already pins patch ranges.
+  - [x] Include `langgraph-checkpoint-sqlite==3.1.0` or compatible current `3.x`.
+  - [x] Include `aiosqlite`, required for async SQLite checkpointing.
+  - [x] Keep FastAPI/SQLModel/Langfuse versions aligned with the architecture spine if touching `pyproject.toml`.
+- [x] Implement graph construction in `src/yt_flow/pipeline/graph.py`. (AC: 1, 2, 3)
+  - [x] Build a `StateGraph(PipelineState)`.
+  - [x] Add stage nodes named exactly `scenario`, `image`, `tts`, `subtitle`, `video`.
+  - [x] Add gate nodes named exactly `gate_scenario`, `gate_image`, `gate_tts`, `gate_subtitle`, `gate_video`.
+  - [x] Wire edges in the fixed architecture order.
+  - [x] Compile with an `AsyncSqliteSaver` checkpointer.
+  - [x] Expose a small factory API that service code can reuse later, such as `async def build_graph(settings: Settings) -> tuple[CompiledStateGraph, AsyncSqliteSaver]`.
+- [x] Implement gate stubs in `src/yt_flow/pipeline/gates.py`. (AC: 2)
+  - [x] Gate nodes must be separate from stage nodes.
+  - [x] Use LangGraph `interrupt({"stage": stage_name})` in gate nodes.
+  - [x] On resume, accept only `"approved"` or `"rejected"` and return a `gate_states` update for that stage.
+  - [x] Do not write to DB, queues, or service-level state from gate nodes.
+- [x] Implement stage stub nodes without real external calls. (AC: 2, 3)
+  - [x] Each stub stage returns a partial `PipelineState` update with `current_stage` set to the stage literal.
+  - [x] Preserve existing state fields; do not mutate input state in place.
+  - [x] Do not call DeepSeek, ComfyUI, Qwen, FFmpeg, Langfuse Prompt Hub, or API/DB services in this story.
+- [x] Add graph/checkpoint tests. (AC: 1, 2, 3)
+  - [x] Test DB file creation with a temporary `YTFLOW_DB_PATH`.
+  - [x] Test node names and topology via the compiled graph inspection API.
+  - [x] Test a checkpoint is persisted after at least one stage execution using `{"configurable": {"thread_id": run_id}}`.
+  - [x] Test `aget_tuple(config)` returns a checkpoint for the same `thread_id`.
+  - [x] If using gate interrupts in tests, either stop before the first gate or assert interrupt behavior explicitly with a checkpointer.
 
 ## Dev Notes
 
@@ -269,16 +273,51 @@ state = {
 
 ### Agent Model Used
 
-TBD by dev agent.
+claude-opus-4-8[1m] (BMAD dev-story workflow)
 
 ### Debug Log References
 
-TBD by dev agent.
+- Prerequisite check: Story 1.2 scaffold + `domain/state.py` and Story 1.3 Prompt Hub files were restored/present before dev; deps (`langgraph==1.2.7`, `langgraph-checkpoint-sqlite==3.1.0`) already pinned in `pyproject.toml`. Added `aiosqlite>=0.20` as an explicit direct dependency since `graph.py` imports it directly.
+- RED→GREEN: initial `test_gate_rejects_invalid_decision` called a gate node directly; `interrupt()` raises `RuntimeError` (get_config outside runnable context), not the validation path. Rewrote the test to drive rejection through the graph via `Command(resume=...)`, which correctly surfaces the gate's `ValueError`.
+- `ruff` flagged an unused `gates` import after that rewrite; removed it. Final: 33 passed, ruff clean.
+
+### Implementation Plan
+
+- `config.py`: added `db_path: str = "yt_flow.db"` (maps to `YTFLOW_DB_PATH` via `YTFLOW_` prefix). [AD-7]
+- `pipeline/nodes/__init__.py`: five pure stub stage nodes built from a `_stub(stage)` factory; each returns `{"current_stage": stage}` without mutating input. `STAGE_NODES` map + `STAGES` tuple exported. [AD-4]
+- `pipeline/gates.py`: five gate nodes built from a `_gate(stage)` factory; each calls `interrupt({"stage": stage})`, validates the resume decision against `("approved","rejected")`, and returns a manually-merged flat `gate_states` update. No DB/queue/service writes. [AD-3]
+- `pipeline/graph.py`: `build_state_graph()` interleaves stage+gate nodes in the fixed order and wires START→…→END; `build_graph(settings)` opens an `aiosqlite` connection, constructs `AsyncSqliteSaver`, runs `await saver.setup()`, compiles, and returns `(graph, saver)` with caller-owned connection lifetime. Imports `domain` + sibling `pipeline` only (never db/api/services). [AD-1, AD-2, AD-7]
 
 ### Completion Notes List
 
-TBD by dev agent.
+- AC1 satisfied: `build_graph` initializes `AsyncSqliteSaver` and compiles the `StateGraph` with no exception; `test_build_graph_creates_sqlite_file` proves `yt_flow.db` is created on disk (temp path, not `:memory:`); default `db_path` verified as `yt_flow.db`.
+- AC2 satisfied: all 10 nodes (`scenario`, `gate_scenario`, `image`, `gate_image`, `tts`, `gate_tts`, `subtitle`, `gate_subtitle`, `video`, `gate_video`) present, and edge order asserted by `test_graph_edges_follow_fixed_topology`.
+- AC3 (FR-36) satisfied: after the first stub stage runs and the graph pauses at `gate_scenario`, `await saver.aget_tuple(config)` returns a non-None checkpoint whose `current_stage == "scenario"`.
+- Gate resume/reject behavior covered: `approved` records into `gate_states`; invalid resume value raises `ValueError`.
+- Stub purity covered: stage nodes return only `{"current_stage": ...}` and do not mutate input state.
+- Out-of-scope items (real node logic, Prompt Hub fetches, external services, API/DB/SSE, full resume/restart, Langfuse spans) intentionally not implemented per story.
+- Test infra: added `asyncio_mode = "auto"` to `[tool.pytest.ini_options]` for async tests. Full suite: 33 passed; `ruff check src tests` clean.
 
 ### File List
 
-TBD by dev agent.
+- `src/yt_flow/config.py` (modified — added `db_path`)
+- `src/yt_flow/pipeline/nodes/__init__.py` (modified — stage stub nodes)
+- `src/yt_flow/pipeline/gates.py` (new — gate interrupt nodes)
+- `src/yt_flow/pipeline/graph.py` (new — `build_state_graph` / `build_graph`)
+- `pyproject.toml` (modified — added `aiosqlite>=0.20` dep, `asyncio_mode = "auto"`)
+- `tests/pipeline/__init__.py` (new)
+- `tests/pipeline/test_graph.py` (new — AC1/AC2/AC3 + gate resume/reject + stub purity)
+
+### Change Log
+
+- 2026-07-01: Implemented LangGraph stub graph + AsyncSqliteSaver checkpointing (Story 1.4). Added `db_path` config, stage/gate stub nodes, `build_graph` factory, and graph/checkpoint tests. Status → review.
+- 2026-07-01: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor). 1 patch applied, 2 deferred, remainder dismissed. Status → done.
+
+## Review Findings
+
+Code review 2026-07-01 (3 adversarial layers). Patches applied and verified (`uv run pytest -q` → 34 passed).
+
+- [x] [Review][Patch] `build_graph` leaked the aiosqlite connection when `saver.setup()` or `.compile()` raised (bad db_path, locked/read-only file, disk full) [src/yt_flow/pipeline/graph.py:48] — fixed: connection is now closed on any failure via `try/except BaseException: await conn.close(); raise`.
+- [x] [Review][Defer] AD-3 asks each gate node to write `{"gate_states": {stage: "pending"}}` on interrupt entry, but LangGraph discards a node's return when `interrupt()` pauses (node re-runs from the top on resume), so `pending` is never observable — empirically verified: paused `gate_states == {}`. Making `pending` observable needs a pre-gate writer (e.g. the stage node), which conflicts with AD-3's "gate is the sole writer" rule [src/yt_flow/pipeline/gates.py:17] — deferred: architecture reconciliation for the story that first consumes `gate_states`. No consumer exists in this stub. Marked with a `ponytail:` comment.
+- [x] [Review][Defer] `gate_states` is a plain dict with no LangGraph reducer; if two gates ever run concurrently (future parallel topology / `Send`), last-write-wins silently drops a decision [src/yt_flow/pipeline/gates.py:24] — deferred: current topology is strictly sequential, so no failure today. Add an `Annotated[..., merge]` reducer when parallel gates are introduced.
+- Dismissed as noise: `build_graph` caller-owned close (contract documented, tests close correctly); `gate_states` KeyError on missing key (`PipelineState` always includes it); unhashable resume value (handled — falls into ValueError); gate no-mutation test gap (gate exercised via graph tests).

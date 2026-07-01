@@ -52,8 +52,8 @@ development_status:
   epic-1: in-progress
   1-1-langfuse-env-verification: done
   1-2-project-scaffold-domain-types: done
-  1-3-prompt-hub-migration: ready-for-dev
-  1-4-langgraph-asyncsqlitesaver: ready-for-dev
+  1-3-prompt-hub-migration: done
+  1-4-langgraph-asyncsqlitesaver: done
   1-5-scenario-node: ready-for-dev
   1-6-image-node: ready-for-dev
   1-7-tts-node: ready-for-dev
