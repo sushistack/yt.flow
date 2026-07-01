@@ -1,12 +1,13 @@
-"""Stub stage nodes for Story 1.4.
+"""Stage node registry for the pipeline graph.
 
-Each stage node is a pure function of ``PipelineState`` that returns a partial
-update setting ``current_stage``. No external calls (DeepSeek, ComfyUI, Qwen,
-FFmpeg, Prompt Hub) and no DB/SSE/filesystem writes — real logic lands in
-stories 1.5–1.9. [AD-4]
+Stubs (stories 1.4) remain for scenario/image/tts/subtitle until their stories
+land. video_node is real as of Story 1.9. [AD-4]
 """
 
+from typing import Any
+
 from yt_flow.domain.state import PipelineState, StageName
+from yt_flow.pipeline.nodes.video import video_node
 
 STAGES: tuple[StageName, ...] = ("scenario", "image", "tts", "subtitle", "video")
 
@@ -24,6 +25,11 @@ scenario = _stub("scenario")
 image = _stub("image")
 tts = _stub("tts")
 subtitle = _stub("subtitle")
-video = _stub("video")
 
-STAGE_NODES = {s: globals()[s] for s in STAGES}
+STAGE_NODES: dict[StageName, Any] = {
+    "scenario": scenario,
+    "image": image,
+    "tts": tts,
+    "subtitle": subtitle,
+    "video": video_node,
+}
