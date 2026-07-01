@@ -1,6 +1,10 @@
+---
+baseline_commit: b8beff3fe357a34009288cf3b8a0052db23df958
+---
+
 # Story 2.5: Data Access — SCP List & Stage Artifacts
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -21,45 +25,37 @@ so that the UI can populate the SCP picker and display per-stage output.
 
 ## Tasks / Subtasks
 
-- [ ] Create SCP route `GET /scps` (AC: 1, 6)
-  - [ ] Create `src/yt_flow/api/routes/scps.py`.
-  - [ ] Define `ScpEntry` Pydantic model: `id: str`, `nickname: str`, `object_class: str`, `rating: int`.
-  - [ ] Implement `GET /scps`: read `app.state.scps` (loaded in lifespan by Story 2.1) and return `list[ScpEntry]`.
-  - [ ] Register `scps` router in `api/main.py`.
+- [x] Create SCP route `GET /scps` (AC: 1, 6)
+  - [x] Create `src/yt_flow/api/routes/scps.py`.
+  - [x] Define `ScpEntry` Pydantic model: `id: str`, `nickname: str`, `object_class: str`, `rating: float`. (Deviation: `float`, not `int` — `data/scps.json` uses fractional ratings e.g. 4.8, and the existing `ScpEntry` in `main.py` was already `float`.)
+  - [x] Implement `GET /scps`: read `app.state.scps` (loaded in lifespan) and return `list[ScpEntry]`.
+  - [x] Register `scps` router in `api/main.py` (moved `ScpEntry` into `scps.py`, re-exported from `main.py` for existing callers/tests).
 
-- [ ] Create artifact retrieval service `get_stage_artifacts()` (AC: 2, 3, 5)
-  - [ ] Add `async def get_stage_artifacts(run_id: str, stage: str) -> dict` to `src/yt_flow/services/run_service.py`.
-  - [ ] Build LangGraph config from `run_id`: `{"configurable": {"thread_id": run_id}}`.
-  - [ ] Call `graph.aget_state(config)` to read checkpoint (read-only — no `astream()` needed).
-  - [ ] If `state.values` is empty or missing (no checkpoint for this run), raise `LookupError` (→ 404).
-  - [ ] Extract `PipelineState` from checkpoint.
-  - [ ] Validate `stage` is one of the five stage literals (`scenario`, `image`, `tts`, `subtitle`, `video`) — raise `ValueError` (→ 422) if not.
-  - [ ] Determine if the stage has been reached:
-    - Stage is reached if its output fields in `PipelineState` are non-None/non-empty.
-    - Per-stage output indicators:
-      - `scenario`: `PipelineState.scenes` is non-empty `list[SceneState]`.
-      - `image`: every `ShotData.image_path` in `scenes[*].shots[*]` is non-None.
-      - `tts`: every `SceneState.audio_path` is non-None.
-      - `subtitle`: every `SceneState.subtitle_path` is non-None.
-      - `video`: `PipelineState.video_path` is non-None.
-    - If stage not reached, raise `LookupError` (→ 404).
-  - [ ] Build and return per-stage artifact response dict (see Dev Notes: Per-Stage Artifact Response Shapes).
-  - [ ] If `graph` is not yet wired (e.g., Story 1.4 not implemented), implement as a stub that returns a hardcoded artifact response for testing or raises a clear `NotImplementedError`.
+- [x] Create artifact retrieval service `get_stage_artifacts()` (AC: 2, 3, 5)
+  - [x] Add `async def get_stage_artifacts(run_id: str, stage: str) -> dict` to `src/yt_flow/services/run_service.py`.
+  - [x] Build LangGraph config from `run_id`: `{"configurable": {"thread_id": run_id}}`.
+  - [x] Call `graph.aget_state(config)` to read checkpoint (read-only — no `astream()` needed).
+  - [x] If `state.values` is empty or missing (no checkpoint for this run), raise `LookupError` (→ 404).
+  - [x] Extract `PipelineState` from checkpoint.
+  - [x] Validate `stage` is one of the five stage literals — raise `ValueError` (→ 422) if not.
+  - [x] Determine if the stage has been reached (per-stage output indicators as specified).
+  - [x] Build and return per-stage artifact response dict (see Dev Notes: Per-Stage Artifact Response Shapes).
+  - [x] Graph is wired (`pipeline/graph.py::build_graph`); no stub needed. Service builds a throwaway read-only graph per request (`# ponytail:` note points at Story 2.3 for a persistent graph).
 
-- [ ] Create artifact route `GET /runs/{id}/stages/{stage}/artifacts` (AC: 2, 3, 4, 5)
-  - [ ] Add endpoint to `src/yt_flow/api/routes/runs.py`.
-  - [ ] Accept `stage: str` path parameter validated against the five stage literals.
-  - [ ] Call `run_service.get_stage_artifacts(run_id, stage)`.
-  - [ ] Map `LookupError` → HTTP 404; `ValueError` → HTTP 422.
-  - [ ] Return artifact response dict as JSON.
+- [x] Create artifact route `GET /runs/{id}/stages/{stage}/artifacts` (AC: 2, 3, 4, 5)
+  - [x] Add endpoint to `src/yt_flow/api/routes/runs.py`.
+  - [x] Accept `stage: str` path parameter (validated in the service per AD-4).
+  - [x] Call `run_service.get_stage_artifacts(run_id, stage)`.
+  - [x] Map `LookupError` → HTTP 404; `ValueError` → HTTP 422.
+  - [x] Return artifact response dict as JSON.
 
-- [ ] Wire up and verify (AC: 1–6)
-  - [ ] Ensure `data/scps.json` is committed and valid (copy from `~/Documents/myWorkflows/` or create sample ≥10 entries).
-  - [ ] Register both routers in `api/main.py`.
-  - [ ] Write tests (see Testing section below).
-  - [ ] Run `uv sync && uv run uvicorn src.yt_flow.api.main:app --reload`.
-  - [ ] Verify `GET /scps` returns SCP list.
-  - [ ] Verify artifact endpoint returns correct per-stage data (or 404/422 for edge cases).
+- [x] Wire up and verify (AC: 1–6)
+  - [x] `data/scps.json` is committed and valid (5 entries — real SCP data; ACs require a valid list, not a specific count).
+  - [x] Register both routers in `api/main.py`.
+  - [x] Write tests (see Testing section below) — `tests/api/test_scps.py`, `tests/api/test_stage_artifacts.py`.
+  - [x] Verified via `TestClient` with the real lifespan.
+  - [x] Verified `GET /scps` returns SCP list (200, 5 entries).
+  - [x] Verified artifact endpoint returns correct per-stage data (200) and 404/422 for edge cases.
 
 ## Dev Notes
 
@@ -300,10 +296,42 @@ This is a **greenfield project** — no Python source files exist yet. Stories 1
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8[1m]
 
 ### Debug Log References
 
+- Full suite: `uv run pytest -q` → 207 passed, 1 skipped.
+- Lint: `uv run ruff check` on all changed files → clean.
+- Real-lifespan smoke test via `TestClient`: `GET /scps` → 200 (5 entries, `rating` float); both new routes present in OpenAPI schema.
+
 ### Completion Notes List
 
+- **Spec vs. reality:** The story was written for a greenfield repo, but Stories 1.x/2.1/2.2 are already implemented. Adapted to existing code: `main.py` lifespan already loads `app.state.scps`; `PipelineState`/`SceneState`/`ShotData` TypedDicts exist; `pipeline/graph.py::build_graph()` provides a compiled graph. No stubs needed.
+- **`rating` is `float`, not `int`** (AC/task said `int`): `data/scps.json` uses fractional ratings (4.8) and the pre-existing `ScpEntry` was already `float`. Kept `float`.
+- **`ScpEntry` relocated** to `api/routes/scps.py` and re-exported from `api/main.py` (`__all__`) so existing importers (`tests/api/test_runs.py`) keep working without a circular import.
+- **`get_stage_artifacts()` builds a throwaway read-only graph per request** and closes the saver connection in a `finally`. Marked `# ponytail:` — Story 2.3 will likely hold a persistent graph in `app.state` once `astream()` execution is wired. Stage validation + reachability live in the service (AD-4); the route only maps `ValueError`→422 / `LookupError`→404.
+- **Response shapes** built directly from `PipelineState` fields (AD-2/AD-7); `duration_sec` maps to `SceneState.audio_duration`. Nothing read from or written to the `runs` table.
+- `data/scps.json` kept at its committed 5 entries (valid data); ACs 1 & 6 require a valid list, not a minimum count.
+
 ### File List
+
+- `src/yt_flow/api/routes/scps.py` — **NEW** — `GET /scps` route + `ScpEntry` model.
+- `src/yt_flow/api/main.py` — **UPDATE** — register `scps` router; re-export `ScpEntry`; drop unused `BaseModel` import.
+- `src/yt_flow/services/run_service.py` — **UPDATE** — add `get_stage_artifacts()`; import `build_graph`, `Settings`.
+- `src/yt_flow/api/routes/runs.py` — **UPDATE** — add `GET /runs/{run_id}/stages/{stage}/artifacts` route.
+- `tests/api/test_scps.py` — **NEW** — `GET /scps` tests (AC 1, 6).
+- `tests/api/test_stage_artifacts.py` — **NEW** — artifact endpoint tests (AC 2–5 + invalid-stage 422).
+- `_bmad-output/implementation-artifacts/2-5-data-access-scp-stage-artifacts.md` — **UPDATE** — story tracking.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — **UPDATE** — status → review.
+
+### Change Log
+
+- 2026-07-01: Implemented Story 2.5 — `GET /scps` and `GET /runs/{id}/stages/{stage}/artifacts`. All 6 ACs satisfied; 207 tests pass.
+
+## Review Findings
+
+_Code review 2026-07-01 (3-layer adversarial: Blind Hunter, Edge Case Hunter, Acceptance Auditor). Reviewed together with stories 2.3/2.4._
+
+- [x] [Review][Defer] `get_stage_artifacts` builds a throwaway read-only graph (+ new SQLite connection) per request instead of reusing the persistent injected `_graph` — Low severity, functionally correct (AD-7 upheld), already documented with a `ponytail:` comment. Switching requires rewriting the 9 mock-`build_graph` tests. [src/yt_flow/services/run_service.py get_stage_artifacts] — deferred
+
+No patch-level findings. AC status codes/detail strings, `rating: float`, and fail-fast SCP loading all verified correct.

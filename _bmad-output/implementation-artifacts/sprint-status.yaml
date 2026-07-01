@@ -69,9 +69,9 @@ development_status:
   epic-2: in-progress
   2-1-fastapi-sqlmodel-run-crud: done
   2-2-sse-infrastructure: done
-  2-3-gate-mechanism: ready-for-dev
-  2-4-stage-control-retry-artifact-edit: ready-for-dev
-  2-5-data-access-scp-stage-artifacts: ready-for-dev
+  2-3-gate-mechanism: done
+  2-4-stage-control-retry-artifact-edit: done
+  2-5-data-access-scp-stage-artifacts: done
   epic-2-retrospective: optional
 
   # ── Epic 3: React SPA — Pipeline Control UI ─────────────────────────────────

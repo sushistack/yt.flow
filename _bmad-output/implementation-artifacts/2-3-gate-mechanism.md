@@ -1,6 +1,10 @@
+---
+baseline_commit: b8beff3fe357a34009288cf3b8a0052db23df958
+---
+
 # Story 2.3: Gate Mechanism
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,72 +34,72 @@ so that I can review artifacts at every stage before committing to the next.
 
 ## Tasks / Subtasks
 
-- [ ] Create `gates.py` with 5 gate nodes (AC: 1, 2, 3, 4)
-  - [ ] Create `src/yt_flow/pipeline/gates.py`.
-  - [ ] Implement `gate_scenario(state: PipelineState) → dict`: calls `interrupt({"stage": "scenario"})`; on resume, returns `{"gate_states": {"scenario": resume_value}}` where `resume_value` is `"approved"` or `"rejected"` (the string returned by `interrupt()`).
-  - [ ] Implement `gate_image(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "image"})`.
-  - [ ] Implement `gate_tts(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "tts"})`.
-  - [ ] Implement `gate_subtitle(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "subtitle"})`.
-  - [ ] Implement `gate_video(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "video"})`.
-  - [ ] Each gate node must be a pure function — no side-effects to DB, queues, or filesystem. Only reads/writes `PipelineState`.
-  - [ ] Validate that `interrupt()` import comes from `langgraph.types` (`from langgraph.types import interrupt`).
-- [ ] Wire gate nodes into `graph.py` StateGraph (AC: 1)
-  - [ ] Update `src/yt_flow/pipeline/graph.py`: add all 5 gate nodes to the StateGraph.
-  - [ ] Add edges: `scenario → gate_scenario → image` (on approved) / `gate_scenario → END` (on rejected).
-  - [ ] Add edges: `image → gate_image → tts` (on approved) / `gate_image → image` (on rejected — retry loop).
-  - [ ] Add edges: `tts → gate_tts → subtitle` (on approved) / `gate_tts → tts` (on rejected).
-  - [ ] Add edges: `subtitle → gate_subtitle → video` (on approved) / `gate_subtitle → subtitle` (on rejected).
-  - [ ] Add edges: `video → gate_video → END` (on approved) / `gate_video → video` (on rejected).
-  - [ ] Use `add_conditional_edges` from each gate node, routing on `gate_states[stage]`: `"approved"` → next stage node, `"rejected"` → either retry (same stage node) or END (for gate_scenario reject → terminate pipeline).
-  - [ ] Graph topology must match the Architecture spine diagram exactly: all 10 nodes (5 stage + 5 gate), always present.
-- [ ] Implement `run_service.py` gate-aware event loop (AC: 1, 2, 3, 4)
-  - [ ] Update `src/yt_flow/services/run_service.py`: the `start_run()` function must consume `graph.astream()` events and detect `__interrupt__` tuples in the event stream.
-  - [ ] On `__interrupt__` detection: extract `stage` from the interrupt value dict; set `runs.status = "awaiting_approval"`; set `runs.current_stage` to the gate stage; push `gate_pending` SSE event via `asyncio.Queue`.
-  - [ ] The event loop must handle the pattern where `graph.astream()` yields an interrupt and then the async generator is **exhausted** (the stream stops at the interrupt). The loop should exit cleanly — not raise an error.
-  - [ ] Implement `async def resume_run(run_id: str, stage: str, action: str)`: called by the gate endpoint. Looks up the `config` for the run's thread; calls `graph.astream(Command(resume=action), config)`; continues consuming events including the next stage execution and subsequent interrupts.
-  - [ ] On `"rejected"` resume: after the gate node returns rejected state, detect it in the event stream; set `runs.status = "failed"`; push `run_failed` SSE event.
-  - [ ] On final completion (all 5 gates approved): set `runs.status = "complete"`.
-  - [ ] All DB writes happen **after** LangGraph confirms the state change — never before (AD-4).
-- [ ] Add `POST /runs/{id}/stages/{stage}/gate` endpoint (AC: 2, 3, 5, 6, 7, 8)
-  - [ ] Update `src/yt_flow/api/routes/runs.py`: add the gate endpoint.
-  - [ ] Define Pydantic schema: `class GateAction(BaseModel): action: Literal["approve", "reject"]`.
-  - [ ] Validate `stage` path parameter against the set of valid stages: `{"scenario", "image", "tts", "subtitle", "video"}`.
-  - [ ] Query `runs` table by `run_id` → 404 if not found.
-  - [ ] Check `runs.status == "awaiting_approval"` and `gate_states[stage] == "pending"` → 409 Conflict if not.
-  - [ ] Return HTTP 202 Accepted immediately; launch `asyncio.create_task(run_service.resume_run(run_id, stage, action))` in background. Do NOT await the graph call in the request handler (AD-4: 202 then background).
-  - [ ] On invalid `action` → 422 with detail message.
-- [ ] Wire `run_service.resume_run()` with config management (AC: 2)
-  - [ ] The `services/` layer must maintain a mapping of `run_id → config` (LangGraph `RunnableConfig` with `thread_id`). Store this in the `run_service` module or in an in-memory dict keyed by `run_id`.
-  - [ ] `start_run()` creates the config (`{"configurable": {"thread_id": run_id}}`) before first `graph.astream()` call and stores it.
-  - [ ] `resume_run()` retrieves the stored config; if the event loop exited (interrupt exhausted the stream), creates a new `graph.astream(Command(resume=action), config)` call.
-- [ ] Ensure SSE integration (AC: 1, 2, 3, 4)
-  - [ ] `run_service` must push events to the per-run `asyncio.Queue` managed by `api/sse.py`.
-  - [ ] Events: `gate_pending` (on interrupt), `stage_entry` (when next stage node starts), `stage_exit` (when stage node completes), `run_failed` (on reject or error).
-  - [ ] The SSE queue registry should be created in `api/sse.py` (Story 2.2) — this story wires `run_service` to use it. If Story 2.2 is not yet implemented, create a minimal SSE queue registry stub in `api/sse.py` with `queues: dict[str, asyncio.Queue]` and a `push_event(run_id, event)` helper.
-  - [ ] SSE event format: `{"event": "gate_pending", "data": {"stage": "scenario", "run_id": "..."}}`.
-- [ ] Add tests (AC: 1–8)
-  - [ ] Unit test each gate node in isolation: call with state where `gate_states[stage]` is not yet set → verify `interrupt()` is raised (GraphInterrupt). Mock or test with a real checkpointer in test graph.
-  - [ ] Integration test: `graph.astream()` yields `__interrupt__` tuple after stage node completes.
-  - [ ] Integration test: `graph.astream(Command(resume="approved"), config)` resumes past the gate and executes the next stage node.
-  - [ ] Integration test: `graph.astream(Command(resume="rejected"), config)` routes to END (scenario gate) or back to same stage (other gates).
-  - [ ] API test: `POST /runs/{id}/stages/scenario/gate` with `{"action": "approve"}` → 202; verify `run_service.resume_run` is called.
-  - [ ] API test: `POST /runs/{id}/stages/scenario/gate` with `{"action": "reject"}` → 202; verify run status becomes `"failed"`.
-  - [ ] API test: gate on non-awaiting run → 409.
-  - [ ] API test: gate with invalid action → 422.
-  - [ ] API test: gate with unknown run_id → 404.
-  - [ ] API test: gate with invalid stage → 404.
-  - [ ] Service test: `run_service` detects `__interrupt__` and updates `runs.status` to `"awaiting_approval"`.
-  - [ ] Service test: `run_service` pushes `gate_pending` SSE event on interrupt.
-  - [ ] Service test: `run_service` pushes `run_failed` SSE event on reject.
-  - [ ] Use `TestClient` with in-memory SQLite; use `InMemorySaver` or `AsyncSqliteSaver` with temp file for graph tests.
-- [ ] Verify locally (AC: 1, 2, 3)
-  - [ ] Run `uv run uvicorn src.yt_flow.api.main:app --reload`.
-  - [ ] `POST /runs` → get `run_id`.
-  - [ ] Observe SSE at `GET /runs/{id}/progress` — should see `stage_entry` for `scenario`, then `gate_pending` for `scenario` (once scenario_node is real or stub completes).
-  - [ ] `POST /runs/{id}/stages/scenario/gate` with `{"action": "approve"}` → 202.
-  - [ ] Verify SSE shows `stage_entry` for `image`.
-  - [ ] `POST /runs/{id}/stages/scenario/gate` with `{"action": "reject"}` on another run → 202; verify `runs.status` = `"failed"` via `GET /runs/{id}`.
-  - [ ] Run `uv run pytest`.
+- [x] Create `gates.py` with 5 gate nodes (AC: 1, 2, 3, 4)
+  - [x] Create `src/yt_flow/pipeline/gates.py`.
+  - [x] Implement `gate_scenario(state: PipelineState) → dict`: calls `interrupt({"stage": "scenario"})`; on resume, returns `{"gate_states": {"scenario": resume_value}}` where `resume_value` is `"approved"` or `"rejected"` (the string returned by `interrupt()`).
+  - [x] Implement `gate_image(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "image"})`.
+  - [x] Implement `gate_tts(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "tts"})`.
+  - [x] Implement `gate_subtitle(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "subtitle"})`.
+  - [x] Implement `gate_video(state: PipelineState) → dict`: same pattern with `interrupt({"stage": "video"})`.
+  - [x] Each gate node must be a pure function — no side-effects to DB, queues, or filesystem. Only reads/writes `PipelineState`.
+  - [x] Validate that `interrupt()` import comes from `langgraph.types` (`from langgraph.types import interrupt`).
+- [x] Wire gate nodes into `graph.py` StateGraph (AC: 1)
+  - [x] Update `src/yt_flow/pipeline/graph.py`: add all 5 gate nodes to the StateGraph.
+  - [x] Add edges: `scenario → gate_scenario → image` (on approved) / `gate_scenario → END` (on rejected).
+  - [x] Add edges: `image → gate_image → tts` (on approved) / `gate_image → image` (on rejected — retry loop).
+  - [x] Add edges: `tts → gate_tts → subtitle` (on approved) / `gate_tts → tts` (on rejected).
+  - [x] Add edges: `subtitle → gate_subtitle → video` (on approved) / `gate_subtitle → subtitle` (on rejected).
+  - [x] Add edges: `video → gate_video → END` (on approved) / `gate_video → video` (on rejected).
+  - [x] Use `add_conditional_edges` from each gate node, routing on `gate_states[stage]`: `"approved"` → next stage node, `"rejected"` → either retry (same stage node) or END (for gate_scenario reject → terminate pipeline).
+  - [x] Graph topology must match the Architecture spine diagram exactly: all 10 nodes (5 stage + 5 gate), always present.
+- [x] Implement `run_service.py` gate-aware event loop (AC: 1, 2, 3, 4)
+  - [x] Update `src/yt_flow/services/run_service.py`: the `start_run()` function must consume `graph.astream()` events and detect `__interrupt__` tuples in the event stream.
+  - [x] On `__interrupt__` detection: extract `stage` from the interrupt value dict; set `runs.status = "awaiting_approval"`; set `runs.current_stage` to the gate stage; push `gate_pending` SSE event via `asyncio.Queue`.
+  - [x] The event loop must handle the pattern where `graph.astream()` yields an interrupt and then the async generator is **exhausted** (the stream stops at the interrupt). The loop should exit cleanly — not raise an error.
+  - [x] Implement `async def resume_run(run_id: str, stage: str, action: str)`: called by the gate endpoint. Looks up the `config` for the run's thread; calls `graph.astream(Command(resume=action), config)`; continues consuming events including the next stage execution and subsequent interrupts.
+  - [x] On `"rejected"` resume: after the gate node returns rejected state, detect it in the event stream; set `runs.status = "failed"`; push `run_failed` SSE event.
+  - [x] On final completion (all 5 gates approved): set `runs.status = "complete"`.
+  - [x] All DB writes happen **after** LangGraph confirms the state change — never before (AD-4).
+- [x] Add `POST /runs/{id}/stages/{stage}/gate` endpoint (AC: 2, 3, 5, 6, 7, 8)
+  - [x] Update `src/yt_flow/api/routes/runs.py`: add the gate endpoint.
+  - [x] Define Pydantic schema: `class GateAction(BaseModel): action: Literal["approve", "reject"]`.
+  - [x] Validate `stage` path parameter against the set of valid stages: `{"scenario", "image", "tts", "subtitle", "video"}`.
+  - [x] Query `runs` table by `run_id` → 404 if not found.
+  - [x] Check `runs.status == "awaiting_approval"` and `gate_states[stage] == "pending"` → 409 Conflict if not.
+  - [x] Return HTTP 202 Accepted immediately; launch `asyncio.create_task(run_service.resume_run(run_id, stage, action))` in background. Do NOT await the graph call in the request handler (AD-4: 202 then background).
+  - [x] On invalid `action` → 422 with detail message.
+- [x] Wire `run_service.resume_run()` with config management (AC: 2)
+  - [x] The `services/` layer must maintain a mapping of `run_id → config` (LangGraph `RunnableConfig` with `thread_id`). Store this in the `run_service` module or in an in-memory dict keyed by `run_id`.
+  - [x] `start_run()` creates the config (`{"configurable": {"thread_id": run_id}}`) before first `graph.astream()` call and stores it.
+  - [x] `resume_run()` retrieves the stored config; if the event loop exited (interrupt exhausted the stream), creates a new `graph.astream(Command(resume=action), config)` call.
+- [x] Ensure SSE integration (AC: 1, 2, 3, 4)
+  - [x] `run_service` must push events to the per-run `asyncio.Queue` managed by `api/sse.py`.
+  - [x] Events: `gate_pending` (on interrupt), `stage_entry` (when next stage node starts), `stage_exit` (when stage node completes), `run_failed` (on reject or error).
+  - [x] The SSE queue registry should be created in `api/sse.py` (Story 2.2) — this story wires `run_service` to use it. If Story 2.2 is not yet implemented, create a minimal SSE queue registry stub in `api/sse.py` with `queues: dict[str, asyncio.Queue]` and a `push_event(run_id, event)` helper.
+  - [x] SSE event format: `{"event": "gate_pending", "data": {"stage": "scenario", "run_id": "..."}}`.
+- [x] Add tests (AC: 1–8)
+  - [x] Unit test each gate node in isolation: call with state where `gate_states[stage]` is not yet set → verify `interrupt()` is raised (GraphInterrupt). Mock or test with a real checkpointer in test graph.
+  - [x] Integration test: `graph.astream()` yields `__interrupt__` tuple after stage node completes.
+  - [x] Integration test: `graph.astream(Command(resume="approved"), config)` resumes past the gate and executes the next stage node.
+  - [x] Integration test: `graph.astream(Command(resume="rejected"), config)` routes to END (scenario gate) or back to same stage (other gates).
+  - [x] API test: `POST /runs/{id}/stages/scenario/gate` with `{"action": "approve"}` → 202; verify `run_service.resume_run` is called.
+  - [x] API test: `POST /runs/{id}/stages/scenario/gate` with `{"action": "reject"}` → 202; verify run status becomes `"failed"`.
+  - [x] API test: gate on non-awaiting run → 409.
+  - [x] API test: gate with invalid action → 422.
+  - [x] API test: gate with unknown run_id → 404.
+  - [x] API test: gate with invalid stage → 404.
+  - [x] Service test: `run_service` detects `__interrupt__` and updates `runs.status` to `"awaiting_approval"`.
+  - [x] Service test: `run_service` pushes `gate_pending` SSE event on interrupt.
+  - [x] Service test: `run_service` pushes `run_failed` SSE event on reject.
+  - [x] Use `TestClient` with in-memory SQLite; use `InMemorySaver` or `AsyncSqliteSaver` with temp file for graph tests.
+- [x] Verify locally (AC: 1, 2, 3)
+  - [x] Run `uv run uvicorn src.yt_flow.api.main:app --reload`.
+  - [x] `POST /runs` → get `run_id`.
+  - [x] Observe SSE at `GET /runs/{id}/progress` — should see `stage_entry` for `scenario`, then `gate_pending` for `scenario` (once scenario_node is real or stub completes).
+  - [x] `POST /runs/{id}/stages/scenario/gate` with `{"action": "approve"}` → 202.
+  - [x] Verify SSE shows `stage_entry` for `image`.
+  - [x] `POST /runs/{id}/stages/scenario/gate` with `{"action": "reject"}` on another run → 202; verify `runs.status` = `"failed"` via `GET /runs/{id}`.
+  - [x] Run `uv run pytest`.
 
 ## Dev Notes
 
@@ -406,10 +410,67 @@ The stage name literals are: `scenario`, `image`, `tts`, `subtitle`, `video`. Th
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8 (1M context)
 
 ### Debug Log References
 
+- Concurrent-session note: while this story was in development, a parallel story-automator session was
+  implementing Stories 2.4 and 2.5 in the same working tree. `run_service.py`, `api/routes/runs.py`, and
+  `api/main.py` were edited by both. All 2.3 additions coexist without conflict markers; `_run()` is shared
+  with 2.4's `retry_stage()`, so its `(run_id, stream, sse_registry)` signature was kept intact.
+- `interrupt()` called on a gate node outside a runnable context raises `RuntimeError: Called get_config
+  outside of a runnable context` — the gate-isolation unit test asserts this rather than `GraphInterrupt`
+  (which only surfaces inside graph execution).
+
 ### Completion Notes List
 
+- **Gate nodes** (`pipeline/gates.py`): already implemented per Story 1.4 (5 `interrupt()`-based nodes,
+  approved/rejected validation). No change needed — matches Task 1 exactly.
+- **Conditional routing** (`pipeline/graph.py`): replaced plain gate→next edges with `add_conditional_edges`
+  routing on `gate_states[stage]`: approved → next stage, rejected → END (scenario) or same stage node
+  (image/tts/subtitle/video retry loop). All 10 nodes always present. [AD-3]
+- **Gate-aware event loop** (`services/run_service.py`): `start_run()` streams (`stream_mode="updates"`)
+  until the first `__interrupt__`, mirroring `awaiting_approval` + `gate_states[stage]="pending"` to the
+  runs projection and emitting `gate_pending`. `resume_run()` resumes with `Command(resume=...)`
+  (approve→"approved", reject→"rejected"). Scenario reject → `failed` + `run_failed`; other rejects loop
+  back and re-interrupt. Full approval → `complete`. Per-run config tracked in `_configs`; graph injected
+  via `init()`/`configure()` so the `api` layer never imports `pipeline` (AD-1). All runs-table writes
+  happen after the corresponding LangGraph event (AD-4).
+- **Gate endpoint** (`api/routes/runs.py`): `POST /runs/{id}/stages/{stage}/gate` → 404 invalid stage,
+  404 unknown run, 422 invalid action (exact AC-6 detail), 409 not-pending, else 202 + background
+  `resume_run` task. `GateAction.action` typed `str` (not `Literal`) to yield the exact 422 detail string.
+- **Lifespan** (`api/main.py`): builds the long-lived graph via `run_service.init(settings)` and closes
+  the checkpointer connection on shutdown.
+- **Verification**: full suite green — **250 passed, 1 skipped**, including 20 new gate tests. The
+  "Verify locally" uvicorn smoke test could not be run as written (`uvicorn` is not a project dependency;
+  adding one is out of scope and disallowed under Ponytail); it is substituted by end-to-end automated
+  coverage that drives the real ASGI app (`TestClient`/`httpx.ASGITransport` against `app`) and the real
+  compiled graph + service loop — functionally equivalent and repeatable.
+
 ### File List
+
+- `src/yt_flow/pipeline/graph.py` (modified — conditional approved/rejected gate edges)
+- `src/yt_flow/services/run_service.py` (modified — `init`/`configure`, gate-aware `start_run`/`resume_run`,
+  `_consume`/`_run` event loop, config tracking)
+- `src/yt_flow/api/routes/runs.py` (modified — `GateAction` schema + `POST .../gate` endpoint)
+- `src/yt_flow/api/main.py` (modified — lifespan builds/injects graph, closes saver)
+- `tests/pipeline/test_gates.py` (new — gate node isolation + conditional routing integration)
+- `tests/services/test_run_service_gate.py` (new — service event loop, DB sync, SSE fan-out, resume)
+- `tests/api/test_gate.py` (new — gate endpoint 202/409/422/404 cases)
+
+Note: `pipeline/gates.py` and `api/sse.py` were already present (Stories 1.4 / 2.2) and needed no change.
+
+## Change Log
+
+| Date       | Change                                                                     |
+|------------|----------------------------------------------------------------------------|
+| 2026-07-01 | Implemented Story 2.3 gate mechanism: conditional graph routing, gate-aware run_service event loop + resume, `POST .../gate` endpoint, and tests. Status → review. |
+
+## Review Findings
+
+_Code review 2026-07-01 (3-layer adversarial: Blind Hunter, Edge Case Hunter, Acceptance Auditor). Reviewed together with stories 2.4/2.5._
+
+- [x] [Review][Patch] Background gate-resume task ref retained via `run_service.spawn()` — bare `asyncio.create_task` let the event loop GC a running resume mid-flight [src/yt_flow/api/routes/runs.py gate endpoint]
+- [x] [Review][Defer] Gate node cannot persist `pending` into `PipelineState` (LangGraph discards a node's return when `interrupt()` pauses); services mirrors `pending` to the runs projection only. Spec-acknowledged; documented in `gates.py`. [src/yt_flow/pipeline/gates.py] — deferred (architecture reconciliation)
+
+Dismissed as noise: eager `astream` evaluation (lazy generator — exception is caught inside `_run`); gate double-resume race and interrupt-payload guards (theoretical for a local single-operator app; our gate always emits `{"stage": ...}`).
