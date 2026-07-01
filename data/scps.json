@@ -1,0 +1,32 @@
+[
+  {
+    "id": "SCP-096",
+    "nickname": "The Shy Guy",
+    "object_class": "Euclid",
+    "rating": 4.8
+  },
+  {
+    "id": "SCP-173",
+    "nickname": "The Sculpture",
+    "object_class": "Euclid",
+    "rating": 4.9
+  },
+  {
+    "id": "SCP-049",
+    "nickname": "Plague Doctor",
+    "object_class": "Euclid",
+    "rating": 4.7
+  },
+  {
+    "id": "SCP-682",
+    "nickname": "Hard-to-Destroy Reptile",
+    "object_class": "Keter",
+    "rating": 4.9
+  },
+  {
+    "id": "SCP-999",
+    "nickname": "The Tickle Monster",
+    "object_class": "Safe",
+    "rating": 4.6
+  }
+]

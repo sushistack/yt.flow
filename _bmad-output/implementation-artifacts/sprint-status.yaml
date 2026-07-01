@@ -59,15 +59,15 @@ development_status:
   1-6b-image-layered-assets: done  # unblocks 1-9c character idle motion
   1-7-tts-node: done
   1-8-subtitle-node: done
-  1-9-video-node: ready-for-dev
-  1-9b-video-effects-kenburns-transitions: ready-for-dev  # depends on 1-9 done
+  1-9-video-node: review
+  1-9b-video-effects-kenburns-transitions: in-progress  # depends on 1-9 done
   1-9c-video-character-idle-motion: blocked  # depends on 1-6b done + 1-9b done
   1-10-resume-restart-trace-linkage: ready-for-dev
   epic-1-retrospective: optional
 
   # ── Epic 2: HTTP API & Gate-Controlled Pipeline Execution ───────────────────
   epic-2: in-progress
-  2-1-fastapi-sqlmodel-run-crud: ready-for-dev
+  2-1-fastapi-sqlmodel-run-crud: review
   2-2-sse-infrastructure: ready-for-dev
   2-3-gate-mechanism: ready-for-dev
   2-4-stage-control-retry-artifact-edit: ready-for-dev
