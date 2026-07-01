@@ -117,6 +117,8 @@ def _parse_scenes(raw: str) -> list[SceneState]:
                 camera_angle=_opt_text(raw_shot.get("camera_angle")),
                 camera_movement=_opt_text(raw_shot.get("camera_movement")),
                 image_path=None,
+                background_path=None,
+                character_path=None,
             ))
 
         # scene_num is assigned positionally (idx+1), not taken from the LLM: this

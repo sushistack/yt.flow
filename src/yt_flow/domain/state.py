@@ -28,7 +28,9 @@ class ShotData(TypedDict):
     negative_prompt: str
     camera_angle: str | None
     camera_movement: str | None
-    image_path: str | None
+    image_path: str | None       # composed/preview; backward-compatible with 1.9/1.9b
+    background_path: str | None  # layered mode: opaque background layer
+    character_path: str | None   # layered mode: transparent character PNG; None = background-only
 
 
 class SceneState(TypedDict):

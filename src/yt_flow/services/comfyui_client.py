@@ -36,6 +36,30 @@ async def submit_and_fetch(
         return await _download(client, image_ref)
 
 
+async def submit_and_fetch_outputs(
+    base_url: str,
+    workflow: dict,
+    output_node_ids: list[str],
+    *,
+    poll_interval: float = 1.0,
+    max_polls: int = 180,
+) -> dict[str, bytes]:
+    """Run one workflow and return bytes keyed by output node ID.
+
+    Polls until at least one of ``output_node_ids`` has output (ComfyUI writes
+    all outputs atomically when the prompt completes), then downloads whatever
+    is available. Missing node IDs are absent from the returned dict — callers
+    decide if an absent output is an error or background-only mode.
+    """
+    async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
+        prompt_id = await _submit(client, workflow)
+        node_refs = await _await_outputs(client, prompt_id, output_node_ids, poll_interval, max_polls)
+        result = {}
+        for node_id, ref in node_refs.items():
+            result[node_id] = await _download(client, ref)
+        return result
+
+
 def _error_detail(resp: httpx.Response) -> str:
     try:
         data = resp.json()
@@ -81,6 +105,38 @@ async def _await_image(client: httpx.AsyncClient, prompt_id: str, interval: floa
                 images = out.get("images")
                 if images:
                     return images[0]  # {"filename", "subfolder", "type"}
+        await asyncio.sleep(interval)
+    raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
+
+
+async def _await_outputs(
+    client: httpx.AsyncClient,
+    prompt_id: str,
+    node_ids: list[str],
+    interval: float,
+    max_polls: int,
+) -> dict[str, dict]:
+    """Poll history until any of node_ids has output; return {node_id: image_ref}.
+
+    ComfyUI writes all outputs atomically, so once any requested node appears the
+    rest are also available. Missing node IDs simply won't be in the returned dict.
+    """
+    for _ in range(max_polls):
+        try:
+            resp = await client.get(f"/history/{prompt_id}")
+            resp.raise_for_status()
+            entry = resp.json().get(prompt_id)
+        except httpx.HTTPError:
+            entry = None  # transient; retry within budget
+        if entry:
+            outputs = entry.get("outputs", {})
+            found = {
+                nid: outputs[nid]["images"][0]
+                for nid in node_ids
+                if nid in outputs and outputs[nid].get("images")
+            }
+            if found:
+                return found
         await asyncio.sleep(interval)
     raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
 
