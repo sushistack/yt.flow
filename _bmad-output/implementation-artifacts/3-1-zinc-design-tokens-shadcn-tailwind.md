@@ -1,6 +1,10 @@
+---
+baseline_commit: 04634e41ebcaedeab0c5a9879219fcda2971e665
+---
+
 # Story 3.1: Zinc Design Tokens + shadcn/ui + Tailwind
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -19,30 +23,30 @@ so that all subsequent UI components use a consistent, spec-compliant visual fou
 
 ## Tasks / Subtasks
 
-- [ ] Bootstrap `frontend/` as a Vite React 18 TypeScript SPA. (AC: 1)
-  - [ ] Create `frontend/package.json`, Vite config, TypeScript config, `index.html`, and `src/` entry files.
-  - [ ] Pin React to latest React 18 patch (`18.3.1`) instead of upgrading to React 19, because architecture explicitly requires React 18.x.
-  - [ ] Configure build output to `frontend/dist/`.
-- [ ] Install and configure Tailwind CSS and shadcn/ui for Vite. (AC: 1, 2, 3, 4)
-  - [ ] Use Tailwind v4 Vite integration (`tailwindcss` + `@tailwindcss/vite`) unless dependency conflicts force the official shadcn fallback path.
-  - [ ] Add shadcn `components.json`, `@/` alias, `src/lib/utils.ts`, and baseline styles in `src/globals.css`.
-  - [ ] Keep shadcn defaults for unlisted components; only apply the yt.flow brand-layer token delta.
-- [ ] Implement Zinc System CSS variables and Tailwind mappings. (AC: 2, 3, 4)
-  - [ ] Define dark-first CSS variables for ground, surfaces, border, foreground, muted foreground, subtle foreground, primary, and primary foreground.
-  - [ ] Add `@media (prefers-color-scheme: light)` swaps for light background, card, border, foreground, muted foreground, and primary.
-  - [ ] Define semantic status foreground/background variables and ensure they are not used as decorative accent tokens.
-  - [ ] Configure `font-sans` and `font-mono` so SCP IDs and stage tokens can use the required monospace stack in later stories.
-- [ ] Add a minimal foundation screen only for build and visual smoke testing. (AC: 1, 2, 3, 4)
-  - [ ] Render a small app shell using Korean UI copy and technical stage tokens in monospace.
-  - [ ] Avoid implementing Dashboard, SCP Picker, Run Detail, gate controls, retry, editor, SSE, or A/B UI in this story; those belong to stories 3.2-3.6.
-- [ ] Serve `frontend/dist/` from FastAPI at `/app`. (AC: 1)
-  - [ ] If Epic 2 / Story 2.1 API files exist, update `src/yt_flow/api/main.py` to mount the static build at `/app`.
-  - [ ] If the FastAPI app file does not exist yet, create the static-mount implementation in the architecture-approved location and avoid importing pipeline code directly.
-  - [ ] Ensure SPA fallback behavior does not break API routes.
-- [ ] Verify the foundation. (AC: 1, 2, 3, 4)
-  - [ ] Run `npm install` and `npm run build` from `frontend/`.
-  - [ ] Inspect generated CSS/source for required token values.
-  - [ ] If FastAPI exists, start the app and verify `/app` serves the built SPA.
+- [x] Bootstrap `frontend/` as a Vite React 18 TypeScript SPA. (AC: 1)
+  - [x] Create `frontend/package.json`, Vite config, TypeScript config, `index.html`, and `src/` entry files.
+  - [x] Pin React to latest React 18 patch (`18.3.1`) instead of upgrading to React 19, because architecture explicitly requires React 18.x.
+  - [x] Configure build output to `frontend/dist/`.
+- [x] Install and configure Tailwind CSS and shadcn/ui for Vite. (AC: 1, 2, 3, 4)
+  - [x] Use Tailwind v4 Vite integration (`tailwindcss` + `@tailwindcss/vite`) unless dependency conflicts force the official shadcn fallback path.
+  - [x] Add shadcn `components.json`, `@/` alias, `src/lib/utils.ts`, and baseline styles in `src/globals.css`.
+  - [x] Keep shadcn defaults for unlisted components; only apply the yt.flow brand-layer token delta.
+- [x] Implement Zinc System CSS variables and Tailwind mappings. (AC: 2, 3, 4)
+  - [x] Define dark-first CSS variables for ground, surfaces, border, foreground, muted foreground, subtle foreground, primary, and primary foreground.
+  - [x] Add `@media (prefers-color-scheme: light)` swaps for light background, card, border, foreground, muted foreground, and primary.
+  - [x] Define semantic status foreground/background variables and ensure they are not used as decorative accent tokens.
+  - [x] Configure `font-sans` and `font-mono` so SCP IDs and stage tokens can use the required monospace stack in later stories.
+- [x] Add a minimal foundation screen only for build and visual smoke testing. (AC: 1, 2, 3, 4)
+  - [x] Render a small app shell using Korean UI copy and technical stage tokens in monospace.
+  - [x] Avoid implementing Dashboard, SCP Picker, Run Detail, gate controls, retry, editor, SSE, or A/B UI in this story; those belong to stories 3.2-3.6.
+- [x] Serve `frontend/dist/` from FastAPI at `/app`. (AC: 1)
+  - [x] If Epic 2 / Story 2.1 API files exist, update `src/yt_flow/api/main.py` to mount the static build at `/app`.
+  - [x] If the FastAPI app file does not exist yet, create the static-mount implementation in the architecture-approved location and avoid importing pipeline code directly.
+  - [x] Ensure SPA fallback behavior does not break API routes.
+- [x] Verify the foundation. (AC: 1, 2, 3, 4)
+  - [x] Run `npm install` and `npm run build` from `frontend/`.
+  - [x] Inspect generated CSS/source for required token values.
+  - [x] If FastAPI exists, start the app and verify `/app` serves the built SPA.
 
 ## Dev Notes
 
@@ -135,12 +139,51 @@ There is no committed frontend implementation pattern to reuse yet; follow the a
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8[1m]
 
 ### Debug Log References
 
+- `cd frontend && npm run build` → success; `dist/index.html` + `dist/assets/*` emitted (vite 8.1.2).
+- Built-CSS token grep: all AC2/AC3 hex values present; status `-bg` rgba(...,0.18) values losslessly minified to hex8 (`#ff9f0a2e`, `0x2E/255 ≈ 0.18`) — source `globals.css` retains exact rgba forms (the AC-mandated inspection target).
+- `pytest -q` → 266 passed, 1 skipped (no regressions). New `tests/api/test_static_spa.py` → 2 passed.
+- Live check: `GET /app/` → 200 serving built `index.html`; `GET /app/assets/<hash>.js` → 200 (base `/app/` gives correct asset URLs); `/scps` API route unshadowed.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- Bootstrapped `frontend/` as a hand-written Vite + React 18.3.1 + TypeScript SPA (React pinned to 18.x per architecture; Vite/plugin-react resolved 8.x/6.x).
+- Tailwind v4 CSS-first integration via `@tailwindcss/vite` + `@import "tailwindcss"`; no `tailwind.config.js` needed. shadcn plumbing added (`components.json`, `@/` alias, `src/lib/utils.ts` `cn`) so stories 3.2–3.6 can `npx shadcn add` cleanly — no shadcn components implemented here.
+- Zinc tokens in `src/globals.css`: dark-first `:root`, light swaps under `@media (prefers-color-scheme: light)`, semantic status tier as a separate group (not accent), sans/mono stacks and radius tokens mapped into Tailwind via `@theme inline`.
+- Body set to `system-ui` 13px/400/1.4, `-0.01em` (approved UX spec preserved over the generic no-letter-spacing instruction, per Dev Notes).
+- `App.tsx` is a minimal foundation smoke screen only (Korean copy, mono SCP ID + stage tokens, 4 status badges, primary CTA). No Dashboard/SCP Picker/Run Detail/gate/retry/editor/SSE/A/B UI.
+- FastAPI `/app` static mount via `mount_static_spa()` in `src/yt_flow/api/main.py`; guarded on `dist` existence so the API still boots without a build, and scoped to `/app` so API routes are never shadowed (AD-1 respected: api does not import pipeline).
 
 ### File List
+
+- `frontend/package.json` (new)
+- `frontend/index.html` (new)
+- `frontend/vite.config.ts` (new)
+- `frontend/tsconfig.json` (new)
+- `frontend/tsconfig.app.json` (new)
+- `frontend/tsconfig.node.json` (new)
+- `frontend/components.json` (new)
+- `frontend/.gitignore` (new)
+- `frontend/src/main.tsx` (new)
+- `frontend/src/App.tsx` (new)
+- `frontend/src/globals.css` (new)
+- `frontend/src/lib/utils.ts` (new)
+- `frontend/src/vite-env.d.ts` (new)
+- `src/yt_flow/api/main.py` (modified — added `mount_static_spa()` + `/app` mount)
+- `tests/api/test_static_spa.py` (new)
+
+### Review Findings (2026-07-01)
+
+Reviewed jointly with Story 3.2 (Blind Hunter + Edge Case Hunter + Acceptance Auditor). All AC2/AC3 exact hex/rgba token values, AC4 typography, and the AC1 `/app` static mount verified compliant.
+
+- [x] [Review][Defer] Light-mode `@media` block omits `--card-hover`, `--subtle-foreground`, `--primary-foreground`, and the `--status-*` swaps, so those fall through to dark values on a light OS [frontend/src/globals.css:26-36] — deferred: DESIGN.md/AC2 enumerate only the six swaps that ARE implemented and dark mode is the primary target; correct light-mode values for the remaining tokens are not in the design spec, so fixing needs a design decision. Tracked in `deferred-work.md`.
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-07-01 | Implemented Story 3.1: bootstrapped Vite/React 18/Tailwind v4/shadcn frontend foundation, Zinc design tokens in globals.css, and FastAPI `/app` static SPA mount. All ACs verified; 266 tests + 2 new pass. Status → review. |
+| 2026-07-01 | Code review (joint with 3.2): no AC violations. One light-mode token-swap gap deferred (spec-intent, dark is primary). Status → done. |

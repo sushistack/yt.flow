@@ -52,3 +52,7 @@
 ## Deferred from: code review of 1-9c-video-character-idle-motion (2026-07-01)
 
 - **Later shots' `character_path` silently dropped + unvalidated** [video.py `_compose_scene` / `_validate_scene_assets`] — only the first image-bearing shot per scene is rendered, so a `character_path` on shots[1:] never appears and is never validated. Same root cause as the 1.9b "per-scene vs per-shot motion" deferral (single-segment-per-scene timing model); 1.9c widens the blast radius because character presence is now a per-shot field. Resolve together with the per-shot timing-model decision.
+
+## Deferred from: code review of stories 3-1/3-2 (2026-07-01)
+
+- **Light-mode `@media` block only swaps 6 of ~17 Zinc tokens** [frontend/src/globals.css:26-36] — `--card-hover`, `--subtle-foreground`, `--primary-foreground`, and all `--status-*` tokens fall through to their dark values under `prefers-color-scheme: light`, so hover rows, stage tokens, and the 18%-alpha status fills render with dark-tuned colors on a white surface. AC2 and DESIGN.md enumerate only the six swaps that are implemented, and dark mode is the primary target, so this is a spec-intent gap rather than an AC violation. Fixing it needs light-mode values that the design spec does not define — resolve with a design decision (candidate: the Story 3.6 accessibility/A-B polish story, or a dedicated light-mode pass). No functional impact on the primary dark surface. (Story 3.1)

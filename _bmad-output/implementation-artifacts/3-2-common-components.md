@@ -1,6 +1,10 @@
+---
+baseline_commit: 04634e41ebcaedeab0c5a9879219fcda2971e665
+---
+
 # Story 3.2: Common Components (StatusBadge, CardRow, StageSidebarItem)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -20,46 +24,46 @@ so that every screen renders consistently without per-screen duplication.
 
 ## Tasks / Subtasks
 
-- [ ] Confirm Story 3.1 frontend foundation is present before implementation (AC: 1-5)
-  - [ ] Verify `frontend/` exists with React 18, TypeScript, Vite, Tailwind, shadcn/ui, `components.json`, and global Zinc tokens.
-  - [ ] If `frontend/` is still absent, implement Story 3.1 first or keep this story blocked; do not create a second competing frontend setup from this story.
-- [ ] Define shared UI contracts and types (AC: 1-5)
-  - [ ] Create or extend `frontend/src/lib/types.ts` with shared literals: `RunStatus`, `GateState`, and `StageName`.
-  - [ ] Use exact stage literals: `scenario`, `image`, `tts`, `subtitle`, `video`.
-  - [ ] Use exact run statuses expected by the API/UI: `running`, `awaiting_approval`, `complete`, `failed`.
-  - [ ] Use exact gate states: `pending`, `approved`, `rejected`, `n/a`.
-- [ ] Implement `StatusBadge` (AC: 1)
-  - [ ] Create `frontend/src/components/common/status-badge.tsx`.
-  - [ ] Map statuses to Korean labels: `running` -> `실행 중`, `awaiting_approval` -> `승인 대기`, `complete` -> `완료`, `failed` -> `실패`.
-  - [ ] Include a visible status glyph or text prefix in addition to color; color alone is not sufficient.
-  - [ ] Apply token-backed classes for foreground/background pairs: running amber, awaiting purple, complete/approved green, failed red.
-  - [ ] Use 11px/500 text, 6px radius, and `3px 8px` padding.
-- [ ] Implement `CardRow` (AC: 2)
-  - [ ] Create `frontend/src/components/common/card-row.tsx`.
-  - [ ] Render a row-like interactive container that can be used as a full-row dashboard navigation target.
-  - [ ] Use card background, card-hover on hover, and hairline bottom border from design tokens.
-  - [ ] Support `asChild` or a typed wrapper pattern if shadcn/Radix composition is already present; otherwise expose a simple `button`/`div` variant without introducing new dependencies.
-  - [ ] Do not embed nested action buttons inside this component; dashboard row actions belong to later Story 3.3.
-- [ ] Implement `StageSidebarItem` (AC: 3, 4, 5)
-  - [ ] Create `frontend/src/components/common/stage-sidebar-item.tsx`.
-  - [ ] Render semantic list-item-friendly content for use inside a future `<ul>/<li>` sidebar.
-  - [ ] Display the stage token in English monospace.
-  - [ ] Active state: 2px primary blue left border, card background, `aria-current="true"`.
-  - [ ] Pending gate state: 2px awaiting purple left border and visible pending text/icon.
-  - [ ] Approved/rejected states: visible text/icon and semantic color pairing, without using color as the only signal.
-  - [ ] Not-yet-reached state: muted styling, `aria-disabled="true"`, and no click handler.
-- [ ] Export common components from a stable barrel (AC: 1-5)
-  - [ ] Create or update `frontend/src/components/common/index.ts`.
-  - [ ] Export component props types where useful for later dashboard/run-detail stories.
-- [ ] Add component tests and accessibility checks (AC: 1-5)
-  - [ ] Use the frontend test setup established by Story 3.1; if absent, add Vitest + React Testing Library in the frontend package only.
-  - [ ] Test `StatusBadge` label, class/token mapping, and non-color status text.
-  - [ ] Test `CardRow` hover class and border class.
-  - [ ] Test `StageSidebarItem` active `aria-current`, pending visual/text state, and disabled/not-clickable behavior.
-  - [ ] Prefer assertions on roles, text, attributes, and stable class names; avoid fragile pixel snapshot tests.
-- [ ] Verify locally (AC: 1-5)
-  - [ ] Run `npm run build` from `frontend/`.
-  - [ ] Run the frontend test command from Story 3.1, typically `npm test` or `npm run test`.
+- [x] Confirm Story 3.1 frontend foundation is present before implementation (AC: 1-5)
+  - [x] Verify `frontend/` exists with React 18, TypeScript, Vite, Tailwind, shadcn/ui, `components.json`, and global Zinc tokens.
+  - [x] If `frontend/` is still absent, implement Story 3.1 first or keep this story blocked; do not create a second competing frontend setup from this story.
+- [x] Define shared UI contracts and types (AC: 1-5)
+  - [x] Create or extend `frontend/src/lib/types.ts` with shared literals: `RunStatus`, `GateState`, and `StageName`.
+  - [x] Use exact stage literals: `scenario`, `image`, `tts`, `subtitle`, `video`.
+  - [x] Use exact run statuses expected by the API/UI: `running`, `awaiting_approval`, `complete`, `failed`.
+  - [x] Use exact gate states: `pending`, `approved`, `rejected`, `n/a`.
+- [x] Implement `StatusBadge` (AC: 1)
+  - [x] Create `frontend/src/components/common/status-badge.tsx`.
+  - [x] Map statuses to Korean labels: `running` -> `실행 중`, `awaiting_approval` -> `승인 대기`, `complete` -> `완료`, `failed` -> `실패`.
+  - [x] Include a visible status glyph or text prefix in addition to color; color alone is not sufficient.
+  - [x] Apply token-backed classes for foreground/background pairs: running amber, awaiting purple, complete/approved green, failed red.
+  - [x] Use 11px/500 text, 6px radius, and `3px 8px` padding.
+- [x] Implement `CardRow` (AC: 2)
+  - [x] Create `frontend/src/components/common/card-row.tsx`.
+  - [x] Render a row-like interactive container that can be used as a full-row dashboard navigation target.
+  - [x] Use card background, card-hover on hover, and hairline bottom border from design tokens.
+  - [x] Support `asChild` or a typed wrapper pattern if shadcn/Radix composition is already present; otherwise expose a simple `button`/`div` variant without introducing new dependencies.
+  - [x] Do not embed nested action buttons inside this component; dashboard row actions belong to later Story 3.3.
+- [x] Implement `StageSidebarItem` (AC: 3, 4, 5)
+  - [x] Create `frontend/src/components/common/stage-sidebar-item.tsx`.
+  - [x] Render semantic list-item-friendly content for use inside a future `<ul>/<li>` sidebar.
+  - [x] Display the stage token in English monospace.
+  - [x] Active state: 2px primary blue left border, card background, `aria-current="true"`.
+  - [x] Pending gate state: 2px awaiting purple left border and visible pending text/icon.
+  - [x] Approved/rejected states: visible text/icon and semantic color pairing, without using color as the only signal.
+  - [x] Not-yet-reached state: muted styling, `aria-disabled="true"`, and no click handler.
+- [x] Export common components from a stable barrel (AC: 1-5)
+  - [x] Create or update `frontend/src/components/common/index.ts`.
+  - [x] Export component props types where useful for later dashboard/run-detail stories.
+- [x] Add component tests and accessibility checks (AC: 1-5)
+  - [x] Use the frontend test setup established by Story 3.1; if absent, add Vitest + React Testing Library in the frontend package only.
+  - [x] Test `StatusBadge` label, class/token mapping, and non-color status text.
+  - [x] Test `CardRow` hover class and border class.
+  - [x] Test `StageSidebarItem` active `aria-current`, pending visual/text state, and disabled/not-clickable behavior.
+  - [x] Prefer assertions on roles, text, attributes, and stable class names; avoid fragile pixel snapshot tests.
+- [x] Verify locally (AC: 1-5)
+  - [x] Run `npm run build` from `frontend/`.
+  - [x] Run the frontend test command from Story 3.1, typically `npm test` or `npm run test`.
 
 ## Dev Notes
 
@@ -176,12 +180,54 @@ Detected variance at story creation: `frontend/` is absent. This is expected onl
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8 (1M context)
 
 ### Debug Log References
 
+- Vitest first run failed with `ReferenceError: React is not defined` — `@vitejs/plugin-react` did not apply the automatic JSX runtime under the Vitest transform. Fixed by setting `esbuild.jsx: "automatic"` in `vite.config.ts`.
+- `npm run build` failed when the Vitest `test` block lived in `vite.config.ts` (`'test' does not exist in type 'UserConfigExport'`, plus a Vite 8 / vitest bundled-Vite type clash). Fixed by moving the test config into a separate `vitest.config.ts` that `mergeConfig`s `vite.config.ts`, so `tsc -b` never type-checks the test block.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- Built the three Epic 3 shared primitives against the existing Story 3.1 foundation (Tailwind v4 tokens, `cn()` helper, `@/` alias) — no parallel frontend setup created.
+- `StatusBadge`: token-backed fg/bg pairs, 11px/500, 6px radius, `3px 8px` padding; Korean label text is the non-color status signal (AC1, UX-DR17). Accepts `RunStatus | GateState`.
+- `CardRow`: full-row target, `bg-card` → `hover:bg-card-hover`, hairline `border-b border-border`; renders a focusable `<button>` when `onClick` is given, else a plain `<div>`; no nested actions (AC2).
+- `StageSidebarItem`: English monospace stage token; active → 2px `border-l-primary` + `aria-current="true"`; pending gate → 2px `border-l-status-awaiting` + glyph/Korean label; approved/rejected show glyph + semantic color; unreached → muted, `aria-disabled="true"`, non-clickable `<div>` (AC3, AC4, AC5).
+- Class strings are written literally per variant because Tailwind v4 only emits utilities it finds in source; verified all token utilities (`text-status-*`, `bg-status-*-bg`, `border-l-primary`, `border-l-status-awaiting`, `hover:bg-card-hover`, `border-border`, `rounded-badge`) are present in the built CSS.
+- Test infra added to the frontend package only (story-authorized): Vitest + React Testing Library + jsdom + jest-dom, `test-setup.ts`, `vitest.config.ts`, and a `test` npm script.
+- Ponytail: used unicode glyphs (`⏳`/`✓`/`✕`) for gate indicators instead of adding `lucide-react`; `n/a` shows no indicator.
+- Verification: `npm run build` ✓; `npm test` → 14/14 passing across 3 files.
 
 ### File List
+
+- frontend/src/lib/types.ts (new)
+- frontend/src/components/common/status-badge.tsx (new)
+- frontend/src/components/common/card-row.tsx (new)
+- frontend/src/components/common/stage-sidebar-item.tsx (new)
+- frontend/src/components/common/index.ts (new)
+- frontend/src/components/common/status-badge.test.tsx (new)
+- frontend/src/components/common/card-row.test.tsx (new)
+- frontend/src/components/common/stage-sidebar-item.test.tsx (new)
+- frontend/src/test-setup.ts (new)
+- frontend/vitest.config.ts (new)
+- frontend/vite.config.ts (modified — esbuild jsx automatic)
+- frontend/tsconfig.app.json (modified — exclude test files from build)
+- frontend/package.json (modified — `test` script + Vitest/RTL dev deps)
+- frontend/package-lock.json (modified)
+
+### Review Findings (2026-07-01)
+
+Reviewed jointly with Story 3.1. All ACs (badge sizing/tokens, CardRow hover/border, StageSidebarItem borders, `aria-current`, non-clickable unreached) verified compliant. Patches applied in commit `21edce6`.
+
+- [x] [Review][Patch] Gate glyphs & badge prefixes deviated from EXPERIENCE.md state tables [frontend/src/components/common/status-badge.tsx, stage-sidebar-item.tsx] — fixed: pending `⏸` (was `⏳`), rejected `✗` (was `✕`); StatusBadge now renders the `●`/`⏸`/`✓`/`✗` prefixes (aria-hidden); pending label aligned to "승인 대기".
+- [x] [Review][Patch] StatusBadge crashed on an out-of-union status/gate value (destructuring `undefined`) [frontend/src/components/common/status-badge.tsx:34] — fixed: falls back to a muted badge showing the raw string; the API is a trust boundary and TS types are erased at runtime.
+- [x] [Review][Patch] Stage token rendered 12px with inherited color; DESIGN.md Components requires mono 11px/subtle-foreground [frontend/src/components/common/stage-sidebar-item.tsx:47] — fixed: 11px + `text-subtle-foreground` (active row keeps `foreground` for the current-stage cue).
+
+Dismissed as noise: `parents[3]` dist path (local-only tool, never pip-installed), SPA deep-link 404 (no client router until 3.3+, deferred conceptually), `index.html` existence check (YAGNI), active+unreached precedence (contradictory input — active implies reached), CardRow disabled-without-onClick, test-assert style, tsconfig test type-check gap (intentional per Vite 8 clash).
+
+## Change Log
+
+| Date       | Change                                                                 |
+| ---------- | ---------------------------------------------------------------------- |
+| 2026-07-01 | Implemented StatusBadge, CardRow, StageSidebarItem + shared types, barrel, and Vitest/RTL test infra. Status → review. |
+| 2026-07-01 | Code review (joint with 3.1): 3 patches applied (gate glyphs/prefixes, out-of-union badge fallback, stage-token spec), 7 dismissed. 15/15 frontend tests pass. Status → done. |
