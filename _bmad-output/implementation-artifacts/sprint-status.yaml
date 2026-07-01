@@ -81,8 +81,8 @@ development_status:
   epic-3: in-progress
   3-1-zinc-design-tokens-shadcn-tailwind: done
   3-2-common-components: done
-  3-3-dashboard-scp-picker-dialog: review
-  3-4-run-detail-artifact-panel: review
+  3-3-dashboard-scp-picker-dialog: done
+  3-4-run-detail-artifact-panel: done
   3-5-gate-controls-retry-editor-sse: done
   3-6-ab-comparison-accessibility: done
   3-7-character-management-ui: ready-for-dev  # depends on 1-12
@@ -90,7 +90,7 @@ development_status:
 
   # ── Epic 4: A/B Evaluation ──────────────────────────────────────────────────
   epic-4: in-progress
-  4-1-ab-run-creation: review
-  4-2-evaluation-service: review
+  4-1-ab-run-creation: done
+  4-2-evaluation-service: done
   4-3-results-storage-api-winner: ready-for-dev
   epic-4-retrospective: optional
