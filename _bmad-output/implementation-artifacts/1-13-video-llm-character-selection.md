@@ -1,6 +1,10 @@
+---
+baseline_commit: 68deceb3320e7fcc85e47ecdde40b3a17be964d1
+---
+
 # Story 1.13: Video Node LLM-Based Character Angle Selection
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
