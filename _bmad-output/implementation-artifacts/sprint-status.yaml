@@ -63,8 +63,8 @@ development_status:
   1-9b-video-effects-kenburns-transitions: done  # depends on 1-9 done
   1-9c-video-character-idle-motion: done  # depends on 1-6b done + 1-9b done
   1-10-resume-restart-trace-linkage: done
-  1-11-character-domain-reference-search: review  # depends on 1-2, 1-4
-  1-12-multi-angle-character-generation: review  # depends on 1-11
+  1-11-character-domain-reference-search: done  # depends on 1-2, 1-4
+  1-12-multi-angle-character-generation: done  # depends on 1-11
   1-13-video-llm-character-selection: ready-for-dev  # depends on 1-12, 1-9
   epic-1-retrospective: optional
 
