@@ -18,6 +18,7 @@ from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.video import (
     XFADE_DURATION,
     EffectSpec,
+    _character_scale_filter,
     _join_with_xfade,
     _overlay_filter,
     _validate_scene_assets,
@@ -729,6 +730,20 @@ def test_overlay_filter_eval_frame_not_init():
     assert "eval=init" not in f
 
 
+def test_character_scale_filter_downscale_only_within_motion_box():
+    """Character is capped to COMP minus sway/bob amplitude, downscale-only, AR-preserved.
+
+    The box guarantees the centered overlay's full sine excursion stays on-frame:
+    max width COMP_W-2*SWAY_AMPLITUDE ⇒ min centre offset ≥ SWAY_AMPLITUDE. [review:1.9c]
+    """
+    f = _character_scale_filter()
+    assert "scale=" in f
+    assert "force_original_aspect_ratio=decrease" in f   # never distort
+    assert "min(iw" in f and "min(ih" in f               # never upscale a small cutout
+    assert str(video.COMP_W - 2 * video.SWAY_AMPLITUDE) in f
+    assert str(video.COMP_H - 2 * video.BOB_AMPLITUDE) in f
+
+
 async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, assets):
     """A shot with character_path renders via filter_complex overlay + eval=frame. [AC:1,2]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
@@ -748,6 +763,8 @@ async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, a
     assert "overlay=" in fc         # character composited on top
     assert "eval=frame" in fc       # motion animates per-frame
     assert "subtitles=" in fc       # subtitles burned last
+    assert "scale=" in fc           # character normalized to motion-safe box
+    assert "[char]" in fc           # scaled character feeds the overlay
 
 
 async def test_video_node_character_maps_output_and_audio(monkeypatch, tmp_path, assets):
@@ -888,7 +905,11 @@ async def test_character_overlay_filtergraph_renders(tmp_path):
 
     spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
     zp = _zoompan_filter(spec, duration=1.0)
-    fc = f"[0:v]{zp}[bg];[bg][1:v]{_overlay_filter()}[out]"
+    fc = (
+        f"[0:v]{zp}[bg];"
+        f"[1:v]{_character_scale_filter()}[char];"
+        f"[bg][char]{_overlay_filter()}[out]"
+    )
 
     out = tmp_path / "ov.mp4"
     rc, stderr = await _run_ffmpeg(

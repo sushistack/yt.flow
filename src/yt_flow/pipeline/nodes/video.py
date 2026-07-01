@@ -43,6 +43,13 @@ SWAY_FREQ = 0.8       # rad/s
 BOB_AMPLITUDE = 8     # px, y-axis breathing/bob
 BOB_FREQ = 1.2        # rad/s
 
+# Motion-safe character box: shrink an oversized character to leave room for the
+# full sway/bob excursion, so idle motion can never push it off-frame and a
+# mis-sized ComfyUI asset (character bytes are written raw, never scaled upstream)
+# can't overflow. Sized so the centered overlay + max sine offset stays on-frame.
+CHAR_MAX_W = COMP_W - 2 * SWAY_AMPLITUDE
+CHAR_MAX_H = COMP_H - 2 * BOB_AMPLITUDE
+
 
 # ── EffectSpec dataclass ──────────────────────────────────────────────────────
 
@@ -169,6 +176,21 @@ def _overlay_filter() -> str:
     x = f"(main_w-overlay_w)/2 + sin(t*{SWAY_FREQ})*{SWAY_AMPLITUDE}"
     y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ})*{BOB_AMPLITUDE}"
     return f"overlay=x='{x}':y='{y}':eval=frame"
+
+
+def _character_scale_filter() -> str:
+    """Cap an oversized character to the motion-safe box before overlay. [review:1.9c]
+
+    Downscale-only (``min(iw,…)`` guards against upscaling a small cutout) and
+    aspect-preserving (``force_original_aspect_ratio=decrease``). The character is
+    never resized upstream, so without this an asset larger than the frame clips or
+    overflows; capping to COMP minus the sway/bob amplitude also keeps the centered
+    overlay's full sine excursion on-frame.
+    """
+    return (
+        rf"scale=w='min(iw\,{CHAR_MAX_W})':h='min(ih\,{CHAR_MAX_H})'"
+        ":force_original_aspect_ratio=decrease"
+    )
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -324,7 +346,8 @@ async def _compose_scene(
         # subtitles on top. Two looped image inputs (0=bg, 1=char) + audio (2).
         filter_complex = (
             f"[0:v]{zp_chain}[bg];"
-            f"[bg][1:v]{_overlay_filter()}[ov];"
+            f"[1:v]{_character_scale_filter()}[char];"
+            f"[bg][char]{_overlay_filter()}[ov];"
             f"[ov]subtitles='{sub}'[out]"
         )
         rc, stderr = await _run_ffmpeg(
