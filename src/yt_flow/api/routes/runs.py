@@ -14,11 +14,19 @@ from yt_flow.services import run_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+_VALID_STAGES = {"scenario", "image", "tts", "subtitle", "video"}
+
 
 class RunCreate(BaseModel):
     scp_id: str
     scp_text: str
     extra: dict | None = None  # reserved, ignored in v1 (FR-24)
+
+
+class GateAction(BaseModel):
+    # ponytail: `action` typed as str (not Literal) so an invalid value yields the exact
+    # AC-6 detail message below, not Pydantic's default 422 validation-error list.
+    action: str
 
 
 class RunRead(BaseModel):
@@ -64,6 +72,36 @@ def get_run(run_id: str, session: Session = Depends(get_session)):
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return RunRead.model_validate(run, from_attributes=True)
+
+
+@router.post("/{run_id}/stages/{stage}/gate", status_code=202)
+async def gate(run_id: str, stage: str, body: GateAction, request: Request,
+               session: Session = Depends(get_session)):
+    """Approve/reject a paused gate; kicks off the LangGraph resume in the background (AD-4)."""
+    if stage not in _VALID_STAGES:
+        raise HTTPException(status_code=404, detail=f"Stage '{stage}' not found")
+    run = session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(status_code=422, detail="action must be 'approve' or 'reject'")
+    gate_states = json.loads(run.gate_states) if run.gate_states else {}
+    if run.status != "awaiting_approval" or gate_states.get(stage) != "pending":
+        raise HTTPException(status_code=409, detail=f"Gate not pending for stage '{stage}'")
+    registry = getattr(request.app.state, "sse_registry", None)
+    asyncio.create_task(run_service.resume_run(run_id, stage, body.action, registry))
+    return {"status": "accepted", "run_id": run_id, "stage": stage, "action": body.action}
+
+
+@router.get("/{run_id}/stages/{stage}/artifacts")
+async def get_stage_artifacts(run_id: str, stage: str):
+    # ponytail: stage validation + reachability live in the service (AD-4); route just maps errors
+    try:
+        return await run_service.get_stage_artifacts(run_id, stage)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Unknown stage: {stage}")
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{run_id}/artifact")

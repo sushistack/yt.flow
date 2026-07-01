@@ -15,27 +15,45 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from yt_flow.config import Settings
-from yt_flow.domain.state import PipelineState
+from yt_flow.domain.state import PipelineState, StageName
 from yt_flow.pipeline import gates, nodes
 from yt_flow.pipeline.nodes import STAGES
 
 
+# Gate routing after resume (AD-3): approved advances to the next stage; rejected
+# terminates at the scenario gate, else loops back to the same stage node (retry).
+_APPROVE_TARGET: dict[str, str] = dict(zip(STAGES, STAGES[1:])) | {STAGES[-1]: END}
+_REJECT_TARGET: dict[str, str] = {STAGES[0]: END} | {s: s for s in STAGES[1:]}
+
+
+def _route_after_gate(stage: StageName):
+    def route(state: PipelineState) -> str:
+        # gate node writes gate_states[stage] before this runs; map to a path-map key.
+        return state["gate_states"].get(stage, "rejected")
+
+    return route
+
+
 def build_state_graph() -> StateGraph:
-    """Build the uncompiled StateGraph with the fixed stage/gate topology."""
+    """Build the uncompiled StateGraph with the fixed stage/gate topology.
+
+    Each stage flows into its gate; the gate's conditional edges route on the
+    resumed decision — ``approved`` → next stage, ``rejected`` → END (scenario)
+    or the same stage node (retry loop). All 10 nodes are always present. [AD-3]
+    """
     graph = StateGraph(PipelineState)
-
-    # Interleave stage and gate nodes: scenario, gate_scenario, image, gate_image, ...
-    sequence: list[str] = []
     for stage in STAGES:
-        gate = f"gate_{stage}"
         graph.add_node(stage, nodes.STAGE_NODES[stage])
-        graph.add_node(gate, gates.GATE_NODES[gate])
-        sequence += [stage, gate]
+        graph.add_node(f"gate_{stage}", gates.GATE_NODES[f"gate_{stage}"])
 
-    graph.add_edge(START, sequence[0])
-    for src, dst in zip(sequence, sequence[1:]):
-        graph.add_edge(src, dst)
-    graph.add_edge(sequence[-1], END)
+    graph.add_edge(START, STAGES[0])
+    for stage in STAGES:
+        graph.add_edge(stage, f"gate_{stage}")
+        graph.add_conditional_edges(
+            f"gate_{stage}",
+            _route_after_gate(stage),
+            {"approved": _APPROVE_TARGET[stage], "rejected": _REJECT_TARGET[stage]},
+        )
     return graph
 
 
