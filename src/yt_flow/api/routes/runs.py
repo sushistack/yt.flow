@@ -59,6 +59,20 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     return RunRead.model_validate(run, from_attributes=True)
 
 
+@router.post("/{run_id}/ab", status_code=201, response_model=RunRead)
+async def ab_run(run_id: str, request: Request, session: Session = Depends(get_session)):
+    """Create Variant B: a second independent run for A/B comparison (FR-27, AD-6)."""
+    registry = getattr(request.app.state, "sse_registry", None)
+    try:
+        new_id = await run_service.create_ab_run(run_id, registry)
+    except run_service.ABRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+    except run_service.ABRunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    session.expire_all()  # the row was inserted on a separate service session
+    return RunRead.model_validate(session.get(Run, new_id), from_attributes=True)
+
+
 @router.get("", response_model=list[RunRead])
 def list_runs(session: Session = Depends(get_session)):
     runs = session.exec(select(Run).order_by(Run.started_at.desc())).all()  # type: ignore[attr-defined]

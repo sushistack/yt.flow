@@ -7,6 +7,7 @@ stream event — never before. [AD-1, AD-3, AD-4]
 """
 import asyncio
 import json
+import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -17,7 +18,8 @@ from fastapi import HTTPException
 from langfuse import get_client
 from langgraph.graph import START
 from langgraph.types import Command
-from sqlmodel import Session
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
 
 from yt_flow import db
 from yt_flow.config import Settings
@@ -143,6 +145,14 @@ def spawn(coro) -> "asyncio.Task":
     return task
 
 
+class ABRunNotFoundError(ValueError):
+    """The source run for Variant B creation does not exist."""
+
+
+class ABRunConflictError(ValueError):
+    """The source run cannot accept another Variant B run."""
+
+
 def configure(graph: Any) -> None:
     """Inject a pre-built compiled pipeline graph (used by tests)."""
     global _graph
@@ -190,7 +200,7 @@ def _mirror_gate_state(run_id: str, stage: str, value: str) -> None:
         session.commit()
 
 
-def _initial_state(run_id: str, scp_text: str) -> PipelineState:
+def _initial_state(run_id: str, scp_text: str, prompt_variant: Any = None) -> PipelineState:
     return {
         "run_id": run_id,
         "scp_text": scp_text,
@@ -198,7 +208,7 @@ def _initial_state(run_id: str, scp_text: str) -> PipelineState:
         "video_path": None,
         "current_stage": "scenario",
         "gate_states": {},
-        "prompt_variant": None,
+        "prompt_variant": prompt_variant,
         "error": None,
     }
 
@@ -293,11 +303,53 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
         await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": "unknown", "error": str(exc)})
 
 
-async def start_run(run_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
-    """Kick off the pipeline: stream until the first gate interrupt (or terminal state)."""
+async def start_run(run_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
+                    prompt_variant: Any = None) -> None:
+    """Kick off the pipeline: stream until the first gate interrupt (or terminal state).
+
+    ``prompt_variant`` seeds the run's PipelineState — ``"B"`` for an A/B Variant B run
+    (Story 4.1), ``None`` for a standard run.
+    """
     config = {"configurable": {"thread_id": run_id}}
     _configs[run_id] = config
-    await _run(run_id, _graph.astream(_initial_state(run_id, scp_text), config, stream_mode="updates"), sse_registry)
+    await _run(run_id, _graph.astream(_initial_state(run_id, scp_text, prompt_variant), config,
+                                      stream_mode="updates"), sse_registry)
+
+
+async def create_ab_run(source_run_id: str, sse_registry: "SSEQueueRegistry | None" = None) -> str:
+    """Create Variant B: a second independent run sharing the source's SCP input (AD-6).
+
+    The runs table stores only ``scp_id``, so the full ``scp_text`` is recovered from the
+    source run's LangGraph checkpoint. Inserts a linked ``Run`` row (``prompt_variant="B"``,
+    ``ab_pair_id=source_run_id``) and launches it through the standard ``start_run`` driver —
+    no graph-level branching. The source run's existence/completeness is validated by the
+    route before this is called. Returns the new run id.
+    """
+    new_id = str(uuid.uuid4())
+    with Session(db._engine) as session:
+        source = session.get(Run, source_run_id)
+        if source is None:
+            raise ABRunNotFoundError("Run not found")
+        if source.status != "complete":
+            raise ABRunConflictError("Cannot create A/B run: source run is not complete")
+        if source.ab_pair_id is not None or source.prompt_variant == "B":
+            raise ABRunConflictError("Cannot create A/B run from a variant run")
+        if session.exec(select(Run).where(Run.ab_pair_id == source_run_id)).first() is not None:
+            raise ABRunConflictError("A/B pair already exists for this run")
+    snap = await _graph.aget_state({"configurable": {"thread_id": source_run_id}})
+    scp_text = (snap.values or {}).get("scp_text")
+    if not scp_text:
+        raise ValueError(f"Source run {source_run_id} has no scp_text in its checkpoint")
+    with Session(db._engine) as session:
+        try:
+            session.add(Run(id=new_id, scp_id=source.scp_id, status="running",
+                            prompt_variant="B", ab_pair_id=source_run_id))
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise ABRunConflictError("A/B pair already exists for this run") from exc
+    spawn(start_run(new_id, scp_text, sse_registry, prompt_variant="B"))
+    return new_id
 
 
 async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
