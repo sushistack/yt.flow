@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
     deepseek_max_tokens: int = 8192
+    # A/B evaluation judge (Story 4.2). Same OpenAI-compatible endpoint; the model is
+    # config-pinned so the judge can be swapped independently of the content generator.
+    deepseek_judge_model: str = "deepseek-v4-flash"
 
     # ComfyUI image generation (Story 1.6). Reachability is checked at image_node
     # entry, not app startup. In mock mode the HTTP client is never instantiated.
