@@ -95,6 +95,7 @@ class CharacterCandidate(TypedDict):
 
 class PipelineState(TypedDict):
     run_id: str
+    scp_id: str
     scp_text: str
     scenes: list[SceneState]
     video_path: str | None

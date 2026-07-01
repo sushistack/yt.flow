@@ -191,9 +191,10 @@ def _mirror_gate_state(run_id: str, stage: str, value: str) -> None:
         session.commit()
 
 
-def _initial_state(run_id: str, scp_text: str, prompt_variant: Any = None) -> PipelineState:
+def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any = None) -> PipelineState:
     return {
         "run_id": run_id,
+        "scp_id": scp_id,
         "scp_text": scp_text,
         "scenes": [],
         "video_path": None,
@@ -294,7 +295,7 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
         await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": "unknown", "error": str(exc)})
 
 
-async def start_run(run_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
+async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
                     prompt_variant: Any = None) -> None:
     """Kick off the pipeline: stream until the first gate interrupt (or terminal state).
 
@@ -303,7 +304,7 @@ async def start_run(run_id: str, scp_text: str, sse_registry: "SSEQueueRegistry 
     """
     config = {"configurable": {"thread_id": run_id}}
     _configs[run_id] = config
-    await _run(run_id, _graph.astream(_initial_state(run_id, scp_text, prompt_variant), config,
+    await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text, prompt_variant), config,
                                       stream_mode="updates"), sse_registry)
 
 
@@ -328,7 +329,7 @@ async def create_ab_run(source_run_id: str, sse_registry: "SSEQueueRegistry | No
         session.add(Run(id=new_id, scp_id=source.scp_id, status="running",
                         prompt_variant="B", ab_pair_id=source_run_id))
         session.commit()
-    spawn(start_run(new_id, scp_text, sse_registry, prompt_variant="B"))
+    spawn(start_run(new_id, source.scp_id, scp_text, sse_registry, prompt_variant="B"))
     return new_id
 
 
@@ -368,17 +369,25 @@ async def full_restart_run(run_id: str, sse_registry: "SSEQueueRegistry | None" 
     *same* ``run_id`` thread — the operator-facing run id stays stable and its trace
     (deterministic from ``run_id``) stays coherent. The fresh initial state resets
     ``scenes``, ``video_path``, per-stage artifact paths, ``error``, and ``gate_states``,
-    so no stale paths survive. ``scp_text`` is recovered from the prior checkpoint.
+    so no stale paths survive. ``scp_id`` and ``scp_text`` are recovered from the prior
+    checkpoint (preferred) or fall back to the runs table.
     """
     config = {"configurable": {"thread_id": run_id}}
     snap = await _graph.aget_state(config)
+    scp_id = (snap.values or {}).get("scp_id", "")
     scp_text = (snap.values or {}).get("scp_text", "")
+    # Fall back to runs table if checkpoint lacks scp_id (pre-1.13 checkpoints)
+    if not scp_id:
+        with Session(db._engine) as session:
+            run = session.get(Run, run_id)
+            if run is not None:
+                scp_id = run.scp_id
     ckpt = _graph.checkpointer
     if ckpt is not None:
         await ckpt.adelete_thread(run_id)  # drop prior successful checkpoints → START from scenario
     _configs[run_id] = config
     _write_run(run_id, status="running", current_stage="scenario", error=None, gate_states="{}")
-    await _run(run_id, _graph.astream(_initial_state(run_id, scp_text), config, stream_mode="updates"), sse_registry)
+    await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text), config, stream_mode="updates"), sse_registry)
 
 
 # ── Stage control: retry & inline artifact edit (Story 2.4) ────────────────────

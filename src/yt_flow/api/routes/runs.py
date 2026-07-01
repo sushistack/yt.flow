@@ -64,7 +64,7 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     session.commit()
     session.refresh(run)
     registry = getattr(request.app.state, "sse_registry", None)
-    run_service.spawn(run_service.start_run(run.id, scp_text, registry))
+    run_service.spawn(run_service.start_run(run.id, body.scp_id, scp_text, registry))
     return RunRead.model_validate(run, from_attributes=True)
 
 
