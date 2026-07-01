@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { StatusBadge } from "./status-badge"
+import "@testing-library/jest-dom/vitest"
 
 describe("StatusBadge", () => {
   it("renders running with amber token classes and 11px/500 sizing (AC1)", () => {

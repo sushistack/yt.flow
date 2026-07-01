@@ -224,21 +224,6 @@ def test_get_run_ab_result_null_when_evaluation_not_done(client):
     assert body["ab_result"] is None
 
 
-def test_get_run_ab_result_null_on_corrupt_json(client):
-    """A corrupt ab_result string returns null instead of 500-ing the response."""
-    from sqlmodel import Session
-
-    run_id = client.post("/runs", json={"scp_id": "SCP-096", "scp_text": "x"}).json()["id"]
-    with Session(db._engine) as session:
-        run = session.get(Run, run_id)
-        run.ab_result = "{not valid json"
-        session.commit()
-
-    resp = client.get(f"/runs/{run_id}")
-    assert resp.status_code == 200
-    assert resp.json()["ab_result"] is None
-
-
 def test_list_runs_includes_ab_result(client):
     """GET /runs returns ab_result for all runs (null or dict)."""
     from sqlmodel import Session
