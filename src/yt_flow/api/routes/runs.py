@@ -37,7 +37,7 @@ class RunRead(BaseModel):
 
 
 @router.post("", status_code=201, response_model=RunRead)
-async def create_run(body: RunCreate, session: Session = Depends(get_session)):
+async def create_run(body: RunCreate, request: Request, session: Session = Depends(get_session)):
     run = Run(
         id=str(uuid.uuid4()),
         scp_id=body.scp_id,
@@ -47,7 +47,8 @@ async def create_run(body: RunCreate, session: Session = Depends(get_session)):
     session.add(run)
     session.commit()
     session.refresh(run)
-    asyncio.create_task(run_service.start_run(run.id, body.scp_text))
+    registry = getattr(request.app.state, "sse_registry", None)
+    asyncio.create_task(run_service.start_run(run.id, body.scp_text, registry))
     return RunRead.model_validate(run, from_attributes=True)
 
 

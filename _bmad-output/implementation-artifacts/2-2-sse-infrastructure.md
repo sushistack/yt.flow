@@ -1,6 +1,10 @@
+---
+baseline_commit: 66667f4540bfae294aa8644cf121a64fd8c2e1b3
+---
+
 # Story 2.2: SSE Infrastructure
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -20,52 +24,52 @@ so that clients can observe pipeline progress without polling.
 
 ## Tasks / Subtasks
 
-- [ ] Create SSE queue registry (`api/sse.py`) (AC: 5)
-  - [ ] Define `EventData` TypedDict: `{"event": str, "data": dict}` where data contains `run_id`, `stage` (for stage events), and `error` (for run_failed).
-  - [ ] Implement `SSEQueueRegistry` class with:
+- [x] Create SSE queue registry (`api/sse.py`) (AC: 5)
+  - [x] Define `EventData` TypedDict: `{"event": str, "data": dict}` where data contains `run_id`, `stage` (for stage events), and `error` (for run_failed).
+  - [x] Implement `SSEQueueRegistry` class with:
     - `_queues: dict[str, asyncio.Queue[EventData]]` — per-run_id queue map.
     - `async def subscribe(run_id: str) -> AsyncGenerator[str, None]`: create queue, yield SSE-formatted events, cleanup on disconnect.
     - `async def publish(run_id: str, event: EventData)`: push to the queue; no-op if no subscriber.
     - `async def unsubscribe(run_id: str)`: remove queue from registry.
     - `def has_subscriber(run_id: str) -> bool`: check if run has active SSE client.
-  - [ ] Registry is instantiated as a module-level singleton or attached to `app.state`.
-  - [ ] Thread-safe: asyncio.Queue is naturally single-consumer; publish/subscribe use asyncio primitives (no locks needed for dict access in single-threaded async).
+  - [x] Registry is instantiated as a module-level singleton or attached to `app.state`.
+  - [x] Thread-safe: asyncio.Queue is naturally single-consumer; publish/subscribe use asyncio primitives (no locks needed for dict access in single-threaded async).
 
-- [ ] Create `/runs/{id}/progress` SSE endpoint (`api/routes/progress.py`) (AC: 1, 5)
-  - [ ] `GET /runs/{id}/progress` → 404 if run not in `runs` table.
-  - [ ] Returns `EventSourceResponse` (FastAPI 0.135.0+ built-in) yielding from `SSEQueueRegistry.subscribe(run_id)`.
-  - [ ] Response headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
-  - [ ] On client disconnect: `subscribe()` generator's `finally` block calls `registry.unsubscribe(run_id)`.
-  - [ ] Wire router into `api/main.py`.
+- [x] Create `/runs/{id}/progress` SSE endpoint (`api/routes/progress.py`) (AC: 1, 5)
+  - [x] `GET /runs/{id}/progress` → 404 if run not in `runs` table.
+  - [x] Returns `EventSourceResponse` (FastAPI 0.135.0+ built-in) yielding from `SSEQueueRegistry.subscribe(run_id)`.
+  - [x] Response headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
+  - [x] On client disconnect: `subscribe()` generator's `finally` block calls `registry.unsubscribe(run_id)`.
+  - [x] Wire router into `api/main.py`.
 
-- [ ] Add SSE publishing to `services/run_service.py` (AC: 2, 3, 4)
-  - [ ] Accept `SSEQueueRegistry` reference in `start_run()` signature (or access via app.state).
-  - [ ] After receiving `graph.astream()` event for stage entry → `registry.publish(run_id, EventData(event="stage_entry", data={"stage": stage, "run_id": run_id}))`.
-  - [ ] After stage exit → `registry.publish(run_id, EventData(event="stage_exit", data={...}))`.
-  - [ ] After gate interrupt detected → `registry.publish(run_id, EventData(event="gate_pending", data={...}))`.
-  - [ ] On exception caught → `registry.publish(run_id, EventData(event="run_failed", data={"run_id": run_id, "stage": stage, "error": str(exc)}))` THEN set `runs.status = "failed"` THEN close SSE by calling `registry.publish()` with a terminal sentinel or simply let disconnect handle it.
-  - [ ] **Design note — SSE termination on run_failed:** The `run_failed` event is the final event. After publishing it, `registry.unsubscribe(run_id)` is called to close the client side. The `subscribe()` generator catches this and exits cleanly. No explicit `close` event type is needed — client detects stream end.
+- [x] Add SSE publishing to `services/run_service.py` (AC: 2, 3, 4)
+  - [x] Accept `SSEQueueRegistry` reference in `start_run()` signature (or access via app.state).
+  - [x] After receiving `graph.astream()` event for stage entry → `registry.publish(run_id, EventData(event="stage_entry", data={"stage": stage, "run_id": run_id}))`.
+  - [x] After stage exit → `registry.publish(run_id, EventData(event="stage_exit", data={...}))`.
+  - [x] After gate interrupt detected → `registry.publish(run_id, EventData(event="gate_pending", data={...}))`.
+  - [x] On exception caught → `registry.publish(run_id, EventData(event="run_failed", data={"run_id": run_id, "stage": stage, "error": str(exc)}))` THEN set `runs.status = "failed"` THEN close SSE by calling `registry.publish()` with a terminal sentinel or simply let disconnect handle it.
+  - [x] **Design note — SSE termination on run_failed:** The `run_failed` event is the final event. After publishing it, `registry.unsubscribe(run_id)` is called to close the client side. The `subscribe()` generator catches this and exits cleanly. No explicit `close` event type is needed — client detects stream end.
 
-- [ ] Register SSE queue registry in FastAPI app startup (AC: 1)
-  - [ ] In `api/main.py` lifespan: instantiate `SSEQueueRegistry` and attach to `app.state.sse_registry`.
-  - [ ] Pass `app.state.sse_registry` to `run_service.start_run()` calls (or inject via dependency).
-  - [ ] Ensure `api/sse.py` is importable from `api/routes/progress.py` and `services/run_service.py`.
+- [x] Register SSE queue registry in FastAPI app startup (AC: 1)
+  - [x] In `api/main.py` lifespan: instantiate `SSEQueueRegistry` and attach to `app.state.sse_registry`.
+  - [x] Pass `app.state.sse_registry` to `run_service.start_run()` calls (or inject via dependency).
+  - [x] Ensure `api/sse.py` is importable from `api/routes/progress.py` and `services/run_service.py`.
 
-- [ ] Wire progress router (AC: 1, 5)
-  - [ ] `api/main.py`: `app.include_router(progress.router)`.
-  - [ ] Verify `/docs` shows `GET /runs/{id}/progress`.
+- [x] Wire progress router (AC: 1, 5)
+  - [x] `api/main.py`: `app.include_router(progress.router)`.
+  - [x] Verify `/docs` shows `GET /runs/{id}/progress`.
 
-- [ ] Add tests (AC: 1-5)
-  - [ ] Test `GET /runs/{id}/progress` returns text/event-stream with correct headers.
-  - [ ] Test SSE stream emits `stage_entry` and `stage_exit` when run_service publishes events (use `httpx` async streaming client).
-  - [ ] Test SSE stream emits `gate_pending` on interrupt simulation.
-  - [ ] Test SSE stream emits `run_failed` on exception.
-  - [ ] Test queue cleanup: after client disconnect, `registry.has_subscriber(run_id)` returns False.
-  - [ ] Test `404` for unknown run_id on progress endpoint.
-  - [ ] Test multiple concurrent SSE clients for different runs (isolated queues).
-  - [ ] Test that publishing to a run with no subscriber is a no-op (no error, no queue buildup).
-  - [ ] Test that SSE event JSON data is valid and matches `EventData` schema.
-  - [ ] Use `TestClient` (httpx-based, async) for SSE streaming tests; `httpx.stream("GET", ...)` reads SSE incrementally.
+- [x] Add tests (AC: 1-5)
+  - [x] Test `GET /runs/{id}/progress` returns text/event-stream with correct headers.
+  - [x] Test SSE stream emits `stage_entry` and `stage_exit` when run_service publishes events (use `httpx` async streaming client).
+  - [x] Test SSE stream emits `gate_pending` on interrupt simulation.
+  - [x] Test SSE stream emits `run_failed` on exception.
+  - [x] Test queue cleanup: after client disconnect, `registry.has_subscriber(run_id)` returns False.
+  - [x] Test `404` for unknown run_id on progress endpoint.
+  - [x] Test multiple concurrent SSE clients for different runs (isolated queues).
+  - [x] Test that publishing to a run with no subscriber is a no-op (no error, no queue buildup).
+  - [x] Test that SSE event JSON data is valid and matches `EventData` schema.
+  - [x] Use `TestClient` (httpx-based, async) for SSE streaming tests; `httpx.stream("GET", ...)` reads SSE incrementally.
 
 ## Dev Notes
 
@@ -267,10 +271,35 @@ This project runs Ponytail full mode:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-4-6
 
 ### Debug Log References
 
+- `EventSourceResponse` in FastAPI 0.138.2 does NOT set `Cache-Control: no-cache` automatically — added explicitly in endpoint headers.
+- `unsubscribe()` uses a `_CLOSE` sentinel put via `put_nowait()` to unblock the `subscribe()` generator; without this, the generator blocks forever on `queue.get()` when called externally.
+- `services/` accesses the registry via injected parameter (TYPE_CHECKING import only) to preserve AD-1 layer direction — no runtime import of `api/` from `services/`.
+- HTTP SSE tests use `httpx.AsyncClient` with `ASGITransport` + `run_failed` event for natural stream termination (ASGI in-process transport doesn't simulate TCP disconnect).
+
 ### Completion Notes List
 
+- `api/sse.py`: `EventData` TypedDict + `SSEQueueRegistry` with sentinel-based `unsubscribe()`.
+- `api/routes/progress.py`: `GET /runs/{id}/progress` → `EventSourceResponse` with explicit `Cache-Control` and `X-Accel-Buffering` headers; 404 on unknown run.
+- `api/main.py`: SSE registry attached to `app.state.sse_registry` at lifespan; progress router wired.
+- `services/run_service.py`: `start_run()` accepts optional `sse_registry` param; publishes `stage_entry`/`stage_exit` per stage, `run_failed` on exception; calls `unsubscribe()` after success to close stream.
+- `api/routes/runs.py`: `create_run` passes `sse_registry` from `app.state` to `start_run`; uses `getattr(..., None)` for backward-compat with tests.
+- `tests/api/test_sse.py`: 12 tests covering all 5 ACs — 6 HTTP endpoint tests + 6 registry unit tests; all pass.
+- All 21 API tests pass (9 existing + 12 new); no regressions introduced.
+
 ### File List
+
+- `src/yt_flow/api/sse.py` (new)
+- `src/yt_flow/api/routes/progress.py` (new)
+- `src/yt_flow/api/main.py` (modified)
+- `src/yt_flow/api/routes/runs.py` (modified)
+- `src/yt_flow/services/run_service.py` (modified)
+- `tests/api/test_sse.py` (new)
+- `tests/api/test_runs.py` (modified — updated call_args unpack for new start_run signature)
+
+## Change Log
+
+- 2026-07-01: Story 2.2 implemented — SSE queue registry, progress endpoint, run_service publishing, 12 tests (claude-sonnet-4-6)
