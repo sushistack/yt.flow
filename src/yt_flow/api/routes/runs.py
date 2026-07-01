@@ -18,7 +18,7 @@ _VALID_STAGES = {"scenario", "image", "tts", "subtitle", "video"}
 
 class RunCreate(BaseModel):
     scp_id: str
-    scp_text: str
+    scp_text: str | None = None
     extra: dict | None = None  # reserved, ignored in v1 (FR-24)
 
 
@@ -45,6 +45,15 @@ class RunRead(BaseModel):
 
 @router.post("", status_code=201, response_model=RunRead)
 async def create_run(body: RunCreate, request: Request, session: Session = Depends(get_session)):
+    scp_text = body.scp_text
+    if scp_text is None:
+        scp_text = next(
+            (s.scp_text for s in request.app.state.scps if s.id == body.scp_id),
+            None,
+        )
+    if not scp_text:
+        raise HTTPException(status_code=422, detail=f"No scp_text available for {body.scp_id}")
+
     run = Run(
         id=str(uuid.uuid4()),
         scp_id=body.scp_id,
@@ -55,7 +64,7 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     session.commit()
     session.refresh(run)
     registry = getattr(request.app.state, "sse_registry", None)
-    run_service.spawn(run_service.start_run(run.id, body.scp_text, registry))
+    run_service.spawn(run_service.start_run(run.id, scp_text, registry))
     return RunRead.model_validate(run, from_attributes=True)
 
 

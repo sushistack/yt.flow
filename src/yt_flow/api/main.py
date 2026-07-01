@@ -40,9 +40,22 @@ def mount_static_spa(application: FastAPI, dist_dir: Path) -> None:
         application.mount("/app", StaticFiles(directory=dist_dir, html=True), name="spa")
 
 
+def mount_workspace_files(application: FastAPI, workspace_dir: Path) -> None:
+    """Serve run artifacts (scene images, audio, subtitles, video) at /files (Story 3.4).
+
+    Stage artifacts are stored under workspace/{run_id}/...; the Run Detail UI loads
+    them by URL instead of reading the filesystem. StaticFiles blocks path traversal.
+    # ponytail: whole-workspace mount is fine for a local single-operator workbench;
+    # add per-run auth if this ever serves multiple users.
+    """
+    workspace_dir.mkdir(parents=True, exist_ok=True)  # may be empty before the first run
+    application.mount("/files", StaticFiles(directory=workspace_dir), name="files")
+
+
 app = FastAPI(title="yt.flow API", lifespan=lifespan)
 app.include_router(runs.router)
 app.include_router(progress.router)
 app.include_router(scps.router)
 app.include_router(stages.router)
 mount_static_spa(app, Path(__file__).parents[3] / "frontend" / "dist")
+mount_workspace_files(app, Path(Settings().workspace_path).resolve())

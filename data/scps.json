@@ -3,30 +3,35 @@
     "id": "SCP-096",
     "nickname": "The Shy Guy",
     "object_class": "Euclid",
-    "rating": 4.8
+    "rating": 4.8,
+    "scp_text": "SCP-096 is a humanoid creature measuring approximately 2.38 meters in height. It is normally extremely docile, sitting in its containment chamber with its face buried in its hands. However, when any person views SCP-096's face — whether directly, through a photograph, video, or even a crude drawing — the subject enters a state of extreme distress. SCP-096 will then cover its face, scream, and sprint toward the individual who viewed it, regardless of distance, killing them and consuming the body in its entirety. No survivor of a face-viewing incident has ever been documented. Special containment procedures require that no visual recording device be pointed at SCP-096's containment cell, and its cell contains no cameras."
   },
   {
     "id": "SCP-173",
     "nickname": "The Sculpture",
     "object_class": "Euclid",
-    "rating": 4.9
+    "rating": 4.9,
+    "scp_text": "SCP-173 is a sculpture of unknown origin, constructed from concrete and rebar with traces of Krylon brand spray paint. It is animate and extremely hostile, but can only move when it is not within a direct line of sight. It must not be allowed to leave its containment. Personnel entering the containment chamber must maintain eye contact with SCP-173 at all times and alert one another before blinking. SCP-173 attacks by snapping the neck at the base of the skull or by strangulation. In the event of an attack, personnel are to observe Class 4 hazardous object containment procedures. The reddish-brown staining on the floor of the chamber is a combination of feces and blood of unknown origin."
   },
   {
     "id": "SCP-049",
     "nickname": "Plague Doctor",
     "object_class": "Euclid",
-    "rating": 4.7
+    "rating": 4.7,
+    "scp_text": "SCP-049 is a humanoid entity roughly 1.9 meters in height that bears the appearance of a medieval plague doctor, wearing a hooded black robe and a ceramic mask that appears fused to the being's head. SCP-049 is generally cooperative and capable of speech, expressing a belief that it is a doctor seeking a cure for a 'Great Pestilence' that only it can perceive. Physical contact with its bare hands causes death in living humans within moments. Following a subject's death, SCP-049 will often perform a surgical procedure on the corpse, reanimating it as an instance of SCP-049-2. It is to be contained in a standard secure humanoid containment cell and permitted controlled access to research materials at the discretion of Site Command."
   },
   {
     "id": "SCP-682",
     "nickname": "Hard-to-Destroy Reptile",
     "object_class": "Keter",
-    "rating": 4.9
+    "rating": 4.9,
+    "scp_text": "SCP-682 is a large, vaguely reptilian creature of unknown origin capable of extreme intelligence and displaying an intense hatred for all life. It has demonstrated the ability to adapt physiologically to nearly any form of attack or environment, regenerating damaged tissue at an accelerated rate and modifying its body to overcome obstacles. SCP-682 has repeatedly stated its desire to destroy all life. It must be destroyed as soon as possible using whatever means available, though all attempts to date have failed. SCP-682 is to be contained in a chamber filled with hydrochloric acid at all times; should containment be breached, all personnel are to converge on its position and re-establish containment by any means."
   },
   {
     "id": "SCP-999",
     "nickname": "The Tickle Monster",
     "object_class": "Safe",
-    "rating": 4.6
+    "rating": 4.6,
+    "scp_text": "SCP-999 is a large, amorphous, gelatinous mass of translucent orange slime weighing roughly 54 kilograms, with a consistency similar to that of peanut butter. SCP-999 is extremely friendly and playful, seeking physical contact and interaction with any living being. Contact with SCP-999's body produces a euphoric, calming effect in humans and animals, effectively counteracting depression, anxiety, and other negative emotional states. SCP-999 leaves behind a residue that smells of whatever the observer finds most pleasant. Due to its harmless and beneficial nature, SCP-999 is permitted to roam freely throughout its containment site and has shown a marked positive effect on personnel morale."
   }
 ]
