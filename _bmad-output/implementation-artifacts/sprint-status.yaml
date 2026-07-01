@@ -67,7 +67,7 @@ development_status:
 
   # ── Epic 2: HTTP API & Gate-Controlled Pipeline Execution ───────────────────
   epic-2: in-progress
-  2-1-fastapi-sqlmodel-run-crud: review
+  2-1-fastapi-sqlmodel-run-crud: done
   2-2-sse-infrastructure: ready-for-dev
   2-3-gate-mechanism: ready-for-dev
   2-4-stage-control-retry-artifact-edit: ready-for-dev

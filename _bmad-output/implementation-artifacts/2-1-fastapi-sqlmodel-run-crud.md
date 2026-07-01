@@ -4,7 +4,7 @@ baseline_commit: 58bc3ef124e7dde4a23c6d075204368028834e60
 
 # Story 2.1: FastAPI + SQLModel + Basic Run CRUD
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -266,6 +266,20 @@ claude-sonnet-4-6 (2026-07-01)
 - `tests/api/conftest.py` (new)
 - `tests/api/test_runs.py` (new)
 
+### Review Findings
+
+- [x] [Review][Patch] Engine not disposed on re-init; `_engine is None` crashes with cryptic error [db/__init__.py:7]
+- [x] [Review][Patch] `for session in get_session()` in async context leaks session on early return [services/run_service.py:17]
+- [x] [Review][Patch] Background task exception silently swallowed; run stays `running` forever on error [services/run_service.py:12]
+- [x] [Review][Patch] `datetime.utcnow()` deprecated (Python 3.12); produces naive datetime [db/models.py:17, run_service.py:23, test_runs.py:81]
+- [x] [Review][Patch] `Path("data/scps.json")` CWD-relative — crashes startup outside project root [api/main.py:25]
+- [x] [Review][Patch] `workspace_path` stored as relative string — breaks if CWD changes post-startup [api/main.py:24]
+- [x] [Review][Patch] `ws.exists()` returns True for directories — `FileResponse` raises IsADirectoryError [api/routes/runs.py:77]
+- [x] [Review][Defer] `updated_at` not updated on all write paths — deferred; future stories add shared update helper
+- [x] [Review][Defer] No pagination in `GET /runs` — deferred; YAGNI for local single-operator app
+- [x] [Review][Defer] Timestamps stored as `str` — ISO format sorts correctly; deferred until multi-format writes arise
+
 ### Change Log
 
 - 2026-07-01: Story 2.1 implemented — FastAPI app scaffold, SQLModel Run table, CRUD endpoints, run_service stub, 9 tests passing. (claude-sonnet-4-6)
+- 2026-07-01: Code review patches applied — session cleanup, exception handling, datetime deprecation, path resolution, file-vs-dir check. 9/9 tests pass. (claude-sonnet-4-6)
