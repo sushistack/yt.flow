@@ -1,6 +1,10 @@
+---
+baseline_commit: 512b25a0b91b9272fa8d1b61cdb1003c6e447077
+---
+
 # Story 1.11: Character Domain + DuckDuckGo Reference Image Search
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -58,60 +62,55 @@ so that character definitions are persisted in SQLite and reference images are d
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Character Domain TypedDict (AC: 1, 6)
-  - [ ] Add `Character` TypedDict to `src/yt_flow/domain/state.py`
-  - [ ] Add `ReferenceImage` TypedDict
-  - [ ] Add `SearchResult` TypedDict
-  - [ ] Define `AngleName = Literal["front", "back", "side", "three_quarter"]`
+- [x] Task 1: Character Domain TypedDict (AC: 1, 6)
+  - [x] Add `Character` TypedDict to `src/yt_flow/domain/state.py`
+  - [x] Add `ReferenceImage` TypedDict
+  - [x] Add `SearchResult` TypedDict
+  - [x] Define `AngleName = Literal["front", "back", "side", "three_quarter"]`
 
-- [ ] Task 2: Character SQLModel + DB Table (AC: 1, 6)
-  - [ ] Add `Character` SQLModel to `src/yt_flow/db/models.py` with table=True
-  - [ ] Add `ReferenceImage` SQLModel with table=True
-  - [ ] Verify `db.init()` creates both tables via `SQLModel.metadata.create_all`
-  - [ ] Fields: `id` (UUID v4 PK), `scp_id` (indexed), `canonical_name`, `aliases` (JSON), angle paths, `created_at`, `updated_at`
+- [x] Task 2: Character SQLModel + DB Table (AC: 1, 6)
+  - [x] Add `Character` SQLModel to `src/yt_flow/db/models.py` with table=True
+  - [x] Add `ReferenceImage` SQLModel with table=True
+  - [x] Verify `db.init()` creates both tables via `SQLModel.metadata.create_all`
+  - [x] Fields: `id` (UUID v4 PK), `scp_id` (indexed), `canonical_name`, `aliases` (JSON), angle paths, `created_at`, `updated_at`
 
-- [ ] Task 3: DuckDuckGo Image Search Plugin (AC: 3)
-  - [ ] Create `src/yt_flow/services/image_search.py` with `ImageSearch` protocol/ABC
-  - [ ] Implement `DuckDuckGoImageSearch` class
-  - [ ] VQD token acquisition (POST to duckduckgo.com, extract from response)
-  - [ ] Image search request (GET duckduckgo.com/i.js with vqd token)
-  - [ ] Parse JSON response into `SearchResult` objects
-  - [ ] User-Agent header (Chrome 131 Linux)
-  - [ ] 30-second HTTP timeout
+- [x] Task 3: DuckDuckGo Image Search Plugin (AC: 3)
+  - [x] Create `src/yt_flow/services/image_search.py` with `ImageSearch` protocol/ABC
+  - [x] Implement `DuckDuckGoImageSearch` class
+  - [x] VQD token acquisition (POST to duckduckgo.com, extract from response)
+  - [x] Image search request (GET duckduckgo.com/i.js with vqd token)
+  - [x] Parse JSON response into `SearchResult` objects
+  - [x] User-Agent header (Chrome 131 Linux)
+  - [x] 30-second HTTP timeout
 
-- [ ] Task 4: CharacterService (AC: 2, 4, 5)
-  - [ ] Create `src/yt_flow/services/character_service.py`
-  - [ ] `create_character(scp_id, canonical_name, aliases)` with validation
-  - [ ] `get_character(id)`, `list_characters(scp_id)`, `list_all_characters()`
-  - [ ] `update_character(id, **fields)` -- partial update
-  - [ ] `delete_character(id)`
-  - [ ] `check_existing_character(scp_id)` -> first character or None
-  - [ ] `search_references(scp_id, workspace_path, max_results=10)`:
-    - Call `DuckDuckGoImageSearch.search(query=f"{scp_id} SCP")`
-    - Download each image with safety checks (content-type, size, SSRF)
-    - Save to `workspace/{scp_id}/references/ref_N.ext`
-    - Persist `ReferenceImage` records to DB
-    - Return deduplicated: if references already exist in DB, skip search
-  - [ ] `research_references(scp_id, workspace_path)` -- clear existing, fresh search
-  - [ ] Private `_download_reference_image(url, refs_dir, num)` with safety checks
+- [x] Task 4: CharacterService (AC: 2, 4, 5)
+  - [x] Create `src/yt_flow/services/character_service.py`
+  - [x] `create_character(scp_id, canonical_name, aliases)` with validation
+  - [x] `get_character(id)`, `list_characters(scp_id)`, `list_all_characters()`
+  - [x] `update_character(id, **fields)` -- partial update
+  - [x] `delete_character(id)`
+  - [x] `check_existing_character(scp_id)` -> first character or None
+  - [x] `search_references(scp_id, workspace_path, max_results=10)` with safety checks + dedup
+  - [x] `research_references(scp_id, workspace_path)` -- clear existing, fresh search
+  - [x] Private `_download_reference_image(url, refs_dir, num)` with safety checks
 
-- [ ] Task 5: Config Integration (AC: 3)
-  - [ ] Add `image_search_provider: str = "duckduckgo"` to `Settings`
+- [x] Task 5: Config Integration (AC: 3)
+  - [x] Add `image_search_provider: str = "duckduckgo"` to `Settings`
 
-- [ ] Task 6: Validation + Error Handling (AC: 5)
-  - [ ] `ValidationError` exception with `field` and `message` attributes
-  - [ ] Validate on create: non-empty `scp_id`, non-empty `canonical_name`
-  - [ ] Validate aliases: no empty strings in list
+- [x] Task 6: Validation + Error Handling (AC: 5)
+  - [x] `ValidationError` exception with `field` and `message` attributes
+  - [x] Validate on create: non-empty `scp_id`, non-empty `canonical_name`
+  - [x] Validate aliases: no empty strings in list
 
-- [ ] Task 7: Tests (AC: 1-6)
-  - [ ] Unit test `Character` TypedDict + SQLModel table creation
-  - [ ] Unit test `CharacterService` CRUD with in-memory SQLite
-  - [ ] Unit test `CharacterService` validation errors
-  - [ ] Unit test `DuckDuckGoImageSearch` with mocked HTTP responses
-  - [ ] Unit test `search_references` with mocked search + download
-  - [ ] Unit test SSRF protection (private IP rejection)
-  - [ ] Unit test incremental build (existing refs -> skip search)
-  - [ ] Layer-boundary test: `services/` does not import `api/`, `pipeline/` does not import `db/`
+- [x] Task 7: Tests (AC: 1-6)
+  - [x] Unit test `Character` TypedDict + SQLModel table creation
+  - [x] Unit test `CharacterService` CRUD with in-memory SQLite
+  - [x] Unit test `CharacterService` validation errors
+  - [x] Unit test `DuckDuckGoImageSearch` with mocked HTTP responses
+  - [x] Unit test `search_references` with mocked search + download
+  - [x] Unit test SSRF protection (private IP rejection)
+  - [x] Unit test incremental build (existing refs -> skip search)
+  - [x] Layer-boundary test: `services/` does not import `api/`, `pipeline/` does not import `db/`
 
 ## Dev Notes
 
@@ -177,16 +176,37 @@ tests/
 
 ### Agent Model Used
 
-_To be filled by dev agent_
+DeepSeek V4 Pro (GitHub Copilot)
 
 ### Debug Log References
 
-_To be filled by dev agent_
+- All 355 tests pass (37 new + 318 existing), 0 regressions
+- DB table creation verified: `characters`, `reference_images` created by `db.init()`
+- VQD regex: `vqd=([0-9a-f-]+)` matches real DuckDuckGo response format
 
 ### Completion Notes List
 
-_To be filled by dev agent_
+- **Task 1**: Added `Character`, `ReferenceImage`, `SearchResult` TypedDicts and `AngleName` Literal to `domain/state.py`
+- **Task 2**: Added `Character` and `ReferenceImage` SQLModel tables to `db/models.py` with UUID v4 PKs, `scp_id` index, JSON `aliases` column, multi-angle fields
+- **Task 3**: Created `services/image_search.py` with `ImageSearch` ABC protocol + `DuckDuckGoImageSearch` implementation using VQD token flow, httpx with 30s timeout, Chrome 131 UA
+- **Task 4**: Created `services/character_service.py` with full CRUD, `search_references` (dedup + safety checks), `research_references` (fresh search), `_download_reference_image` with content-type/size/SSRF guards
+- **Task 5**: Added `image_search_provider: str = "duckduckgo"` to `Settings` in `config.py`
+- **Task 6**: Created `domain/exceptions.py` with `ValidationError(field, message)` class
+- **Task 7**: 37 new tests across 3 files covering TypedDicts, SQLModel tables, CRUD, validation, SSRF, image search mocking, deduplication, and layer-boundary compliance
 
 ### File List
 
-_To be filled by dev agent_
+- `src/yt_flow/domain/state.py` — MODIFIED: added `AngleName`, `SearchResult`, `ReferenceImage`, `Character` TypedDicts
+- `src/yt_flow/domain/exceptions.py` — NEW: `ValidationError` exception
+- `src/yt_flow/db/models.py` — MODIFIED: added `Character`, `ReferenceImage` SQLModel tables
+- `src/yt_flow/services/image_search.py` — NEW: `ImageSearch` ABC + `DuckDuckGoImageSearch`
+- `src/yt_flow/services/character_service.py` — NEW: `CharacterService` CRUD + reference image search
+- `src/yt_flow/config.py` — MODIFIED: added `image_search_provider` field
+- `tests/domain/test_character_types.py` — NEW: TypedDict + SQLModel table tests
+- `tests/domain/test_state_imports.py` — MODIFIED: added new types to expected fields
+- `tests/services/test_image_search.py` — NEW: DuckDuckGo search with mocked HTTP
+- `tests/services/test_character_service.py` — NEW: CRUD, validation, SSRF, layer-boundary tests
+
+## Change Log
+
+- 2026-07-01: Story implemented. Character domain model, DuckDuckGo image search, CharacterService CRUD, SSRF protection, 37 new tests (0 regressions).
