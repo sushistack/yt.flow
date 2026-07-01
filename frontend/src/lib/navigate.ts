@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react"
 // ponytail: History-API navigation, no router lib. Two routes (dashboard, run
 // detail) don't justify a dependency. pushState doesn't fire popstate, so we
 // dispatch it ourselves to notify usePathname subscribers (Story 3.4 upgrade).
+// Vite base is "/app/" so all navigation stays under that prefix.
 export function navigate(path: string): void {
   const nextPath = withCurrentBase(path)
   if (nextPath === window.location.pathname) return

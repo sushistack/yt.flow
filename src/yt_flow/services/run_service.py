@@ -18,8 +18,7 @@ from fastapi import HTTPException
 from langfuse import get_client
 from langgraph.graph import START
 from langgraph.types import Command
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from yt_flow import db
 from yt_flow.config import Settings
@@ -143,14 +142,6 @@ def spawn(coro) -> "asyncio.Task":
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return task
-
-
-class ABRunNotFoundError(ValueError):
-    """The source run for Variant B creation does not exist."""
-
-
-class ABRunConflictError(ValueError):
-    """The source run cannot accept another Variant B run."""
 
 
 def configure(graph: Any) -> None:
@@ -325,29 +316,18 @@ async def create_ab_run(source_run_id: str, sse_registry: "SSEQueueRegistry | No
     no graph-level branching. The source run's existence/completeness is validated by the
     route before this is called. Returns the new run id.
     """
-    new_id = str(uuid.uuid4())
-    with Session(db._engine) as session:
-        source = session.get(Run, source_run_id)
-        if source is None:
-            raise ABRunNotFoundError("Run not found")
-        if source.status != "complete":
-            raise ABRunConflictError("Cannot create A/B run: source run is not complete")
-        if source.ab_pair_id is not None or source.prompt_variant == "B":
-            raise ABRunConflictError("Cannot create A/B run from a variant run")
-        if session.exec(select(Run).where(Run.ab_pair_id == source_run_id)).first() is not None:
-            raise ABRunConflictError("A/B pair already exists for this run")
     snap = await _graph.aget_state({"configurable": {"thread_id": source_run_id}})
     scp_text = (snap.values or {}).get("scp_text")
     if not scp_text:
         raise ValueError(f"Source run {source_run_id} has no scp_text in its checkpoint")
+    new_id = str(uuid.uuid4())
     with Session(db._engine) as session:
-        try:
-            session.add(Run(id=new_id, scp_id=source.scp_id, status="running",
-                            prompt_variant="B", ab_pair_id=source_run_id))
-            session.commit()
-        except IntegrityError as exc:
-            session.rollback()
-            raise ABRunConflictError("A/B pair already exists for this run") from exc
+        source = session.get(Run, source_run_id)
+        if source is None:
+            raise ValueError(f"Source run {source_run_id} not found")
+        session.add(Run(id=new_id, scp_id=source.scp_id, status="running",
+                        prompt_variant="B", ab_pair_id=source_run_id))
+        session.commit()
     spawn(start_run(new_id, scp_text, sse_registry, prompt_variant="B"))
     return new_id
 

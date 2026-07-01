@@ -7,6 +7,7 @@ const GATE_META: Record<GateState, { glyph: string; label: string; className: st
   pending: { glyph: "⏸", label: "승인 대기", className: "text-status-awaiting" },
   approved: { glyph: "✓", label: "승인됨", className: "text-status-approved" },
   rejected: { glyph: "✗", label: "거부됨", className: "text-status-failed" },
+  failed: { glyph: "✗", label: "실패", className: "text-status-failed" },
   "n/a": null,
 }
 

@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import type { Run, StageName } from "@/lib/types"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { GateState, Run, StageName } from "@/lib/types"
 import {
-  ApiError,
   getRun,
   getStageArtifacts,
   parseGateStates,
@@ -12,8 +11,9 @@ import {
 } from "@/lib/api"
 import { navigate } from "@/lib/navigate"
 import { StatusBadge, StageSidebarItem } from "@/components/common"
-import { ArtifactPanel, sortImagesByScene } from "@/components/ArtifactPanel"
+import { ArtifactPanel } from "@/components/ArtifactPanel"
 import { ImageLightbox } from "@/components/ImageLightbox"
+import { useRunProgress } from "@/hooks/useRunProgress"
 
 // Run Detail: two-column layout (240px stage sidebar + artifact panel), live
 // sidebar state from SSE, per-stage artifact preview. Read-only surface —
@@ -22,10 +22,9 @@ export function RunDetail({ runId }: { runId: string }) {
   const [run, setRun] = useState<Run | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<StageName>("scenario")
-  const [artifacts, setArtifacts] = useState<StageArtifacts | null | undefined>(undefined)
-  const [artifactError, setArtifactError] = useState<string | null>(null)
-  const [liveReachedStages, setLiveReachedStages] = useState<Set<StageName>>(() => new Set())
+  const [artifacts, setArtifacts] = useState<StageArtifacts | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [hasDirtyEdit, setHasDirtyEdit] = useState(false)
   const mainRef = useRef<HTMLElement>(null)
 
   // Fetch run metadata; default the selected stage to the furthest one reached.
@@ -36,7 +35,6 @@ export function RunDetail({ runId }: { runId: string }) {
         if (!alive) return
         setRun(r)
         setSelected(r.current_stage ?? "scenario")
-        setLiveReachedStages(new Set(reachedStagesFromRun(r)))
       })
       .catch((e) => alive && setError(String(e)))
     return () => {
@@ -47,92 +45,77 @@ export function RunDetail({ runId }: { runId: string }) {
   const gateStates = parseGateStates(run?.gate_states ?? null)
   const curIdx = run?.current_stage ? STAGE_ORDER.indexOf(run.current_stage) : -1
   const reachedIdx = run?.status === "complete" ? STAGE_ORDER.length - 1 : curIdx
-  const reachedFromRun = new Set(run ? reachedStagesFromRun(run) : [])
-  const isReached = (stage: StageName) =>
-    reachedFromRun.has(stage) || liveReachedStages.has(stage) || gateStates[stage] === "pending"
+  const isReached = (stage: StageName) => STAGE_ORDER.indexOf(stage) <= reachedIdx
 
   // Load artifacts for the selected stage once it is reachable (404 → null empty state).
   useEffect(() => {
     if (!run) return
     if (!isReached(selected)) {
       setArtifacts(null)
-      setArtifactError(null)
       return
     }
     let alive = true
-    setArtifacts(undefined)
-    setArtifactError(null)
+    setArtifacts(null)
     getStageArtifacts(runId, selected)
-      .then((a) => {
-        if (alive) setArtifacts(a)
-      })
-      .catch((e) => {
-        if (!alive) return
-        setArtifacts(null)
-        setArtifactError(e instanceof ApiError ? e.message : String(e))
-      })
+      .then((a) => alive && setArtifacts(a))
+      .catch(() => alive && setArtifacts(null))
     return () => {
       alive = false
     }
     // reachedIdx captures run status/current_stage changes that flip reachability.
-  }, [runId, selected, run, reachedIdx, liveReachedStages])
+  }, [runId, selected, run, reachedIdx])
 
-  // Live progress: mutate run state in place, never reload (AC9).
-  useEffect(() => {
-    const es = new EventSource(`/runs/${runId}/progress`)
-    const readStage = (event: MessageEvent): StageName | null => {
-      try {
-        const stage = JSON.parse(event.data).stage
-        return isStageName(stage) ? stage : null
-      } catch {
-        return null
-      }
-    }
-    const markReached = (stage: StageName) =>
-      setLiveReachedStages((prev) => new Set([...prev, stage]))
-    const advance = (stage: StageName) => {
-      markReached(stage)
-      setRun((r) => (r ? { ...r, status: "running", current_stage: stage } : r))
-    }
-    es.addEventListener("stage_entry", (e) => {
-      const stage = readStage(e)
-      if (stage) advance(stage)
+  const setStageGateState = useCallback((stage: StageName, gateState: GateState) => {
+    setRun((r) => {
+      if (!r) return r
+      const gs = { ...parseGateStates(r.gate_states), [stage]: gateState }
+      return { ...r, gate_states: gs, status: gateState === "pending" ? "awaiting_approval" : r.status }
     })
-    es.addEventListener("stage_exit", (e) => {
-      const stage = readStage(e)
-      if (stage) markReached(stage)
+  }, [])
+
+  const markStageRunning = useCallback((stage: StageName) => {
+    setRun((r) => {
+      if (!r) return r
+      const gs = { ...parseGateStates(r.gate_states), [stage]: "n/a" as GateState }
+      return { ...r, status: "running", current_stage: stage, gate_states: gs }
     })
-    es.addEventListener("gate_pending", (e) => {
-      const stage = readStage(e)
-      if (!stage) return
-      markReached(stage)
-      setRun((r) => {
-        if (!r) return r
-        const gs = { ...parseGateStates(r.gate_states), [stage]: "pending" }
-        return { ...r, status: "awaiting_approval", gate_states: JSON.stringify(gs) }
-      })
-    })
-    es.addEventListener("run_failed", (e) => {
-      let err = "알 수 없는 오류"
-      try {
-        err = JSON.parse(e.data).error ?? err
-      } catch {
-        // ignore malformed payload; keep a visible generic failure state.
-      }
-      setRun((r) => (r ? { ...r, status: "failed", error: err } : r))
-    })
-    return () => es.close()
-  }, [runId])
+    setArtifacts(null)
+  }, [])
+
+  const progressHandlers = useMemo(
+    () => ({
+      onStageEntry: ({ stage }: { stage?: StageName }) => {
+        if (stage) markStageRunning(stage)
+      },
+      onStageExit: ({ stage }: { stage?: StageName }) => {
+        if (stage) setRun((r) => (r ? { ...r, status: "running", current_stage: stage } : r))
+      },
+      onGatePending: ({ stage }: { stage?: StageName }) => {
+        if (stage) setStageGateState(stage, "pending")
+      },
+      onRunFailed: ({ error: err }: { error?: string }) => {
+        setRun((r) => (r ? { ...r, status: "failed", error: err } : r))
+      },
+      onConnectionError: () => {
+        // EventSource auto-retries; only run_failed is authoritative failure.
+      },
+    }),
+    [markStageRunning, setStageGateState],
+  )
+
+  useRunProgress(runId, progressHandlers)
 
   function selectStage(stage: StageName) {
+    if (hasDirtyEdit && !window.confirm("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")) return
+    setHasDirtyEdit(false)
     setSelected(stage)
-    mainRef.current?.scrollTo(0, 0)
+    mainRef.current?.scrollTo?.(0, 0)
   }
 
   if (error) return <p className="p-8 text-status-failed">런을 불러올 수 없습니다: {error}</p>
   if (!run) return <p className="p-8 text-muted-foreground">불러오는 중…</p>
 
-  const images = artifacts?.stage === "image" ? sortImagesByScene((artifacts as ImageArtifacts).images) : []
+  const images = artifacts?.stage === "image" ? (artifacts as ImageArtifacts).images : []
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -147,16 +130,24 @@ export function RunDetail({ runId }: { runId: string }) {
         <span className="text-subtle-foreground">/</span>
         <span className="font-mono text-[12px] font-bold text-foreground">{run.scp_id}</span>
         <StatusBadge status={run.status} />
+        <span className="ml-auto" />
         {run.langfuse_trace_url && (
           <a
             href={run.langfuse_trace_url}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto text-[12px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="text-[12px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             Langfuse 트레이스 ↗
           </a>
         )}
+        <button
+          type="button"
+          onClick={() => navigate(`/runs/${run.id}/ab`)}
+          className="rounded-md px-3 py-1.5 text-[12px] text-primary hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          A/B 비교
+        </button>
       </nav>
 
       <div className="flex flex-1">
@@ -177,13 +168,16 @@ export function RunDetail({ runId }: { runId: string }) {
         </aside>
 
         <main ref={mainRef} className="flex-1 overflow-auto p-6">
-          {artifactError ? (
-            <p role="alert" className="text-status-failed">
-              아티팩트를 불러올 수 없습니다: {artifactError}
-            </p>
-          ) : (
-            <ArtifactPanel runId={runId} data={artifacts} onOpenImage={setLightboxIndex} />
-          )}
+          <ArtifactPanel
+            runId={runId}
+            stage={selected}
+            data={artifacts}
+            gateState={gateStates[selected] ?? "n/a"}
+            onOpenImage={setLightboxIndex}
+            onGateStateChange={setStageGateState}
+            onRetryStart={markStageRunning}
+            onDirtyChange={setHasDirtyEdit}
+          />
         </main>
       </div>
 
@@ -200,15 +194,4 @@ export function RunDetail({ runId }: { runId: string }) {
       )}
     </div>
   )
-}
-
-function isStageName(value: unknown): value is StageName {
-  return typeof value === "string" && STAGE_ORDER.includes(value as StageName)
-}
-
-function reachedStagesFromRun(run: Run): StageName[] {
-  if (run.status === "complete") return STAGE_ORDER
-  if (!run.current_stage) return []
-  const index = STAGE_ORDER.indexOf(run.current_stage)
-  return index < 0 ? [] : STAGE_ORDER.slice(0, index + 1)
 }

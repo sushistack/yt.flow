@@ -18,7 +18,7 @@ _VALID_STAGES = {"scenario", "image", "tts", "subtitle", "video"}
 
 class RunCreate(BaseModel):
     scp_id: str
-    scp_text: str | None = None
+    scp_text: str | None = None  # optional: resolved from app.state.scps by scp_id when omitted
     extra: dict | None = None  # reserved, ignored in v1 (FR-24)
 
 
@@ -45,15 +45,15 @@ class RunRead(BaseModel):
 
 @router.post("", status_code=201, response_model=RunRead)
 async def create_run(body: RunCreate, request: Request, session: Session = Depends(get_session)):
+    # Resolve the article text server-side by scp_id when the caller omits it, so the
+    # picker only needs to send scp_id (frontend never carries the full text).
     scp_text = body.scp_text
     if scp_text is None:
         scp_text = next(
-            (s.scp_text for s in request.app.state.scps if s.id == body.scp_id),
-            None,
+            (s.scp_text for s in request.app.state.scps if s.id == body.scp_id), None
         )
     if not scp_text:
         raise HTTPException(status_code=422, detail=f"No scp_text available for {body.scp_id}")
-
     run = Run(
         id=str(uuid.uuid4()),
         scp_id=body.scp_id,
@@ -71,13 +71,15 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
 @router.post("/{run_id}/ab", status_code=201, response_model=RunRead)
 async def ab_run(run_id: str, request: Request, session: Session = Depends(get_session)):
     """Create Variant B: a second independent run for A/B comparison (FR-27, AD-6)."""
+    source = session.get(Run, run_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if source.status != "complete":
+        raise HTTPException(status_code=409, detail="Cannot create A/B run: source run is not complete")
+    if session.exec(select(Run).where(Run.ab_pair_id == run_id)).first() is not None:
+        raise HTTPException(status_code=409, detail="A/B pair already exists for this run")
     registry = getattr(request.app.state, "sse_registry", None)
-    try:
-        new_id = await run_service.create_ab_run(run_id, registry)
-    except run_service.ABRunNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Run not found") from exc
-    except run_service.ABRunConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    new_id = await run_service.create_ab_run(run_id, registry)
     session.expire_all()  # the row was inserted on a separate service session
     return RunRead.model_validate(session.get(Run, new_id), from_attributes=True)
 

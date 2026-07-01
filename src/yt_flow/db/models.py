@@ -10,7 +10,7 @@ class Run(SQLModel, table=True):
     current_stage: str | None = None
     gate_states: str | None = None  # JSON blob: {"scenario": "approved", ...}
     prompt_variant: str | None = None
-    ab_pair_id: str | None = Field(default=None, unique=True)
+    ab_pair_id: str | None = None
     error: str | None = None
     extra: str | None = None  # JSON blob for reserved extra: dict
     langfuse_trace_url: str | None = None

@@ -5,6 +5,16 @@ import type { GateState, Run, ScpEntry, StageName } from "@/lib/types"
 // no base URL is needed (Architecture: HTTP-only, no direct file/db access).
 export class ApiError extends Error {}
 
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: unknown }
+    if (typeof body.detail === "string" && body.detail.trim()) return body.detail
+  } catch {
+    // Fall through to Korean fallback below.
+  }
+  return fallback
+}
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -16,8 +26,11 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     // Network failure / server down — distinct from an HTTP error status.
     throw new ApiError("서버에 연결할 수 없습니다")
   }
-  if (!res.ok) throw new ApiError(`${init?.method ?? "GET"} ${path} → ${res.status}`)
-  return res.json() as Promise<T>
+  if (!res.ok) throw new ApiError(await errorMessage(res, "요청을 처리할 수 없습니다"))
+  if (res.status === 204) return undefined as T
+  if (typeof res.text !== "function") return res.json() as Promise<T>
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const getRuns = () => json<Run[]>("/runs")
@@ -77,28 +90,46 @@ export async function getStageArtifacts(id: string, stage: StageName): Promise<S
   return res.json() as Promise<StageArtifacts>
 }
 
-// Artifact paths point somewhere under the workspace mount. Keep the browser URL
-// rooted at the run directory, even when the backend returns an absolute path
-// whose workspace folder has a custom name.
+// Artifact paths are workspace/{run_id}/...; the /files static mount serves them.
 export function fileUrl(serverPath: string): string {
-  const normalized = serverPath.replaceAll("\\", "/").replace(/^\.?\//, "")
-  if (normalized.startsWith("workspace/")) return `/files/${normalized.slice("workspace/".length)}`
-  const marker = normalized.match(/(?:^|\/)([^/]+)\/(images|audio|subs|subtitles|video|output)\//)
-  if (marker?.index != null) return `/files/${normalized.slice(marker.index).replace(/^\//, "")}`
-  const runFile = normalized.match(/(?:^|\/)([^/]+)\/(?:output\.mp4|video\.mp4)$/)
-  if (runFile?.index != null) return `/files/${normalized.slice(runFile.index).replace(/^\//, "")}`
-  const workspaceIdx = normalized.lastIndexOf("/workspace/")
-  if (workspaceIdx >= 0) return `/files/${normalized.slice(workspaceIdx + "/workspace/".length)}`
-  return `/files/${normalized.replace(/^.*\//, "")}`
+  const parts = serverPath.split(/workspace[\\/]/)
+  return "/files/" + parts[parts.length - 1].replace(/^[\\/]+/, "")
 }
 
 export const videoDownloadUrl = (id: string) => `/runs/${id}/artifact`
 
-export function parseGateStates(raw: string | null): Partial<Record<StageName, GateState>> {
+export function parseGateStates(
+  raw: string | Partial<Record<StageName, GateState>> | null,
+): Partial<Record<StageName, GateState>> {
   if (!raw) return {}
+  if (typeof raw === "object") return raw
   try {
     return JSON.parse(raw)
   } catch {
     return {}
   }
 }
+
+export type GateActionResponse = Partial<Run> | { gate_state?: GateState; state?: GateState }
+export type ArtifactPatchResponse = StageArtifacts | { text?: string; content?: string }
+
+export const approveGate = (id: string, stage: StageName) =>
+  json<GateActionResponse>(`/runs/${id}/stages/${stage}/gate`, {
+    method: "POST",
+    body: JSON.stringify({ action: "approve" }),
+  })
+
+export const rejectGate = (id: string, stage: StageName) =>
+  json<GateActionResponse>(`/runs/${id}/stages/${stage}/gate`, {
+    method: "POST",
+    body: JSON.stringify({ action: "reject" }),
+  })
+
+export const retryStage = (id: string, stage: StageName) =>
+  json<Partial<Run>>(`/runs/${id}/stages/${stage}/retry`, { method: "POST" })
+
+export const patchStageArtifact = (id: string, stage: StageName, text: string) =>
+  json<ArtifactPatchResponse>(`/runs/${id}/stages/${stage}/artifact`, {
+    method: "PATCH",
+    body: JSON.stringify({ body: text }),
+  })

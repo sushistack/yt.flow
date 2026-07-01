@@ -3,9 +3,20 @@
 
 export type RunStatus = "running" | "awaiting_approval" | "complete" | "failed"
 
-export type GateState = "pending" | "approved" | "rejected" | "n/a"
+export type GateState = "pending" | "approved" | "rejected" | "n/a" | "failed"
 
 export type StageName = "scenario" | "image" | "tts" | "subtitle" | "video"
+
+export type AbVariant = "A" | "B"
+
+export type AbResult = {
+  winner: AbVariant | "tie" | null
+  reason?: string
+  llm_scores?: Partial<Record<AbVariant, Partial<Record<"atmosphere" | "narrative_coherence" | "article_fidelity", number>>>>
+  rule_scores?: Partial<
+    Record<AbVariant, Partial<Record<"scene_count_match" | "subtitle_sync" | "audio_duration_variance", number>>>
+  >
+}
 
 // Mirrors RunRead from the Epic 2 API (src/yt_flow/api/routes/runs.py).
 export type Run = {
@@ -13,9 +24,10 @@ export type Run = {
   scp_id: string
   status: RunStatus
   current_stage: StageName | null
-  gate_states: string | null
+  gate_states: string | Partial<Record<StageName, GateState>> | null
   prompt_variant?: string | null
   ab_pair_id?: string | null
+  ab_result?: AbResult | null
   error?: string | null
   started_at: string
   updated_at: string

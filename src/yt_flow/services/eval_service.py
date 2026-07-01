@@ -15,10 +15,8 @@ Judge/pairwise prompts live in Langfuse Prompt Hub (``evaluation/judge``,
 
 import asyncio
 import json
-import logging
-import re
 import statistics
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 import httpx
 from langfuse import get_client, observe
@@ -33,7 +31,6 @@ QUALITY_FLOOR = 2.0         # OQ-6: any axis average < 2 disqualifies a run
 JUDGE_TIMEOUT_SEC = 30.0    # AC5: per-call timeout, retry-once on timeout
 JUDGE_PROMPT = "evaluation/judge"
 PAIRWISE_PROMPT = "evaluation/pairwise"
-_LOG = logging.getLogger(__name__)
 
 
 class EvalJudgeError(RuntimeError):
@@ -128,32 +125,12 @@ def _parse_score(raw: str, axis: str) -> int:
         # bool is an int subclass; reject it so True/False can't pose as a score.
         if isinstance(score, bool):
             raise TypeError
-        if isinstance(score, int):
-            parsed = score
-        elif isinstance(score, str) and re.fullmatch(r"[1-5]", score.strip()):
-            parsed = int(score)
-        else:
-            raise TypeError
+        score = int(round(float(score)))  # tolerate "4" / 4.0 from the model
     except (ValueError, TypeError, KeyError) as exc:
         raise EvalJudgeError(f"axis={axis}: unparseable judge response: {raw!r}") from exc
-    if not 1 <= parsed <= 5:
-        raise EvalJudgeError(f"axis={axis}: score {parsed} outside 1–5")
-    return parsed
-
-
-async def _judge_score_once(rendered: str, axis: str, s: Settings) -> int:
-    """Call the judge and parse one score, retrying once on malformed JSON/score."""
-    last_error: EvalJudgeError | None = None
-    for attempt in range(2):
-        raw = await _post_chat(rendered, s.deepseek_judge_model, s)
-        try:
-            return _parse_score(raw, axis)
-        except EvalJudgeError as exc:
-            last_error = exc
-            _LOG.warning("Malformed judge response axis=%s attempt=%s raw=%r", axis, attempt + 1, raw)
-            if attempt == 1:
-                raise
-    raise last_error or EvalJudgeError(f"axis={axis}: unparseable judge response")
+    if not 1 <= score <= 5:
+        raise EvalJudgeError(f"axis={axis}: score {score} outside 1–5")
+    return score
 
 
 @observe(name="judge-axis")
@@ -162,10 +139,10 @@ async def _judge_axis(scp_text: str, artifact_text: str, axis: str, s: Settings)
     rendered = get_prompt(JUDGE_PROMPT).compile(
         scp_text=scp_text, artifact_content=artifact_text, axis=axis,
     )
-    scores = await asyncio.gather(
-        *(_judge_score_once(rendered, axis, s) for _ in range(REPS_PER_AXIS))
+    raws = await asyncio.gather(
+        *(_post_chat(rendered, s.deepseek_judge_model, s) for _ in range(REPS_PER_AXIS))
     )
-    return list(scores)
+    return [_parse_score(raw, axis) for raw in raws]
 
 
 async def _score_run(scp_text: str, artifact_text: str, s: Settings) -> AxisScores:
@@ -256,25 +233,20 @@ async def _pairwise_once(scp_text: str, first: str, second: str, s: Settings) ->
 
 
 def _rule_tiebreak(metrics_a: RuleBasedMetrics, metrics_b: RuleBasedMetrics) -> str:
-    """OQ-6 rule-based tiebreaker: best-of-3 pass/fail criteria.
+    """OQ-6 rule-based tiebreaker: lower subtitle sync error and lower audio
+    variance each score a point; best total wins, else "tie".
 
-    The current evaluation inputs do not expose the article's expected scene count,
-    so scene-count quality is judged by pair-consistency: a perfect match gives both
-    variants that vote, otherwise neither receives it. Subtitle sync and audio
-    variance use the OQ-6 thresholds directly.
+    ponytail: scene_count_match_rate is symmetric across the pair, so it can't
+    separate A from B — the tiebreaker turns on the two per-run metrics only.
     """
     pa = pb = 0
-    if metrics_a.scene_count_match_rate >= 1.0:
+    if metrics_a.avg_subtitle_sync_error < metrics_b.avg_subtitle_sync_error:
         pa += 1
-    if metrics_b.scene_count_match_rate >= 1.0:
+    elif metrics_b.avg_subtitle_sync_error < metrics_a.avg_subtitle_sync_error:
         pb += 1
-    if metrics_a.avg_subtitle_sync_error <= 0.5:
+    if metrics_a.audio_duration_variance_pct < metrics_b.audio_duration_variance_pct:
         pa += 1
-    if metrics_b.avg_subtitle_sync_error <= 0.5:
-        pb += 1
-    if metrics_a.audio_duration_variance_pct <= 10.0:
-        pa += 1
-    if metrics_b.audio_duration_variance_pct <= 10.0:
+    elif metrics_b.audio_duration_variance_pct < metrics_a.audio_duration_variance_pct:
         pb += 1
     return "A" if pa > pb else "B" if pb > pa else "tie"
 
@@ -341,15 +313,8 @@ async def _load_state(run_id: str, db_path: str) -> PipelineState:
     scenes = values.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise ValueError(f"run {run_id}: checkpoint has no 'scenes' — run incomplete or malformed")
-    for idx, scene in enumerate(scenes):
-        if not isinstance(scene, dict):
-            raise ValueError(f"run {run_id}: checkpoint scene {idx} is malformed")
-        if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
-            raise ValueError(f"run {run_id}: checkpoint scene {idx} has no narration")
     if not isinstance(values.get("scp_text"), str) or not values["scp_text"].strip():
         raise ValueError(f"run {run_id}: checkpoint 'scp_text' missing or empty")
-    if not isinstance(values.get("video_path"), str) or not values["video_path"].strip():
-        raise ValueError(f"run {run_id}: checkpoint 'video_path' missing or empty")
     return values  # type: ignore[return-value]
 
 
@@ -368,28 +333,18 @@ def _load_run_meta(run_id: str) -> "tuple[str, str | None]":
 
 
 def _validate_pair(run_a_id: str, run_b_id: str) -> str:
-    """Check both runs exist, are complete, and are linked as an A/B pair.
-
-    Story 4.1 stores the link directionally: Variant B has ``ab_pair_id`` pointing
-    at the source/origin run, while the source run itself usually has ``None``.
-    Accept that canonical shape, and also tolerate a future shared-pair-id shape.
-    Returns the canonical pair id.
-    """
+    """Check both runs exist, are complete, and share an ab_pair_id. Returns the pair id."""
     status_a, pair_a = _load_run_meta(run_a_id)
     status_b, pair_b = _load_run_meta(run_b_id)
     for rid, status in ((run_a_id, status_a), (run_b_id, status_b)):
         if status != "complete":
             raise ValueError(f"run {rid}: status is {status!r}, must be 'complete' to evaluate")
-    if pair_b == run_a_id:
-        return run_a_id
-    if pair_a == run_b_id:
-        return run_b_id
-    if pair_a and pair_a == pair_b:
-        return pair_a
-    raise ValueError(
-        f"runs are not a valid A/B pair: {run_a_id} ab_pair_id={pair_a!r}, "
-        f"{run_b_id} ab_pair_id={pair_b!r}"
-    )
+    if not pair_a or pair_a != pair_b:
+        raise ValueError(
+            f"runs are not a valid A/B pair: {run_a_id} ab_pair_id={pair_a!r}, "
+            f"{run_b_id} ab_pair_id={pair_b!r}"
+        )
+    return pair_a
 
 
 # ── Langfuse persistence (AC6, non-fatal per AD-10) ─────────────────────────
@@ -434,14 +389,13 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
             metrics_a, metrics_b, run_a_id, run_b_id, s,
         )
         winner, winner_run_id, reason = _resolve_winner(pairwise, run_a_id, run_b_id)
-        result = EvaluationResult(
+        trace_url = _finish_trace(span, ab_pair_id, winner, reason)
+        return EvaluationResult(
             ab_pair_id=ab_pair_id, run_a_id=run_a_id, run_b_id=run_b_id,
             scores_a=scores_a, scores_b=scores_b, metrics_a=metrics_a, metrics_b=metrics_b,
             pairwise=pairwise, winner=winner, winner_run_id=winner_run_id,
-            reason=reason, langfuse_trace_url=None,
+            reason=reason, langfuse_trace_url=trace_url,
         )
-        result.langfuse_trace_url = _finish_trace(span, result)
-        return result
     finally:
         _exit_trace(span)
 
@@ -477,22 +431,16 @@ def _enter_trace(ab_pair_id: str):
         return None
 
 
-def _finish_trace(span, result: EvaluationResult) -> str | None:
+def _finish_trace(span, ab_pair_id: str, winner: str | None, reason: str | None) -> str | None:
     if span is None:
         return None
     try:
         client = get_client()
         # The parent span IS the trace root; enrich it (langfuse v4 has no
         # update_current_trace). ab_pair_id already keys the trace via the id seed.
-        payload = asdict(result)
         client.update_current_span(
-            output=payload,
-            metadata={
-                "ab_pair_id": result.ab_pair_id,
-                "run_a_id": result.run_a_id,
-                "run_b_id": result.run_b_id,
-                "winner": result.winner,
-            },
+            output={"winner": winner, "reason": reason},
+            metadata={"ab_pair_id": ab_pair_id},
         )
         return _trace_url(client)
     except Exception:  # noqa: BLE001
