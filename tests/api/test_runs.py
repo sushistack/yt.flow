@@ -120,7 +120,7 @@ def test_post_runs_launches_background_task(client):
         assert resp.status_code == 201
         # AsyncMock.__call__ is tracked at coroutine-creation time (before task executes)
         mock_start.assert_called_once()
-        _, scp_text = mock_start.call_args.args
+        _, scp_text, *_ = mock_start.call_args.args
         assert scp_text == "hello"
 
 

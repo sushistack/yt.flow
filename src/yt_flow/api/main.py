@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from yt_flow import db
 from yt_flow.api.routes import runs
+from yt_flow.api.routes import progress
+from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
 
 
@@ -22,6 +24,7 @@ async def lifespan(app: FastAPI):
     settings = Settings()
     db.init(f"sqlite:///{settings.db_path}")
     app.state.workspace_path = str(Path(settings.workspace_path).resolve())
+    app.state.sse_registry = SSEQueueRegistry()
     scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]
     yield
@@ -29,3 +32,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="yt.flow API", lifespan=lifespan)
 app.include_router(runs.router)
+app.include_router(progress.router)
