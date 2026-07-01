@@ -415,6 +415,7 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
                 "B": _rule_metrics_to_dict(metrics_b),
             },
             pairwise_result=_pairwise_to_dict(pairwise),
+            ab_pair_id=ab_pair_id,
             trace_url=trace_url,
         )
 
@@ -505,21 +506,13 @@ def determine_winner(
 # ── Story 4.3: Result storage (DB + Langfuse, AD-10 non-fatal) ──────────────
 
 
-def _build_trace_id(ab_pair_id: str) -> str | None:
-    """Recreate the deterministic Langfuse trace id from ab_pair_id."""
-    try:
-        client = get_client()
-        return client.create_trace_id(seed=ab_pair_id)
-    except Exception:  # noqa: BLE001
-        return None
-
-
 async def store_evaluation_results(
     run_a_id: str,
     run_b_id: str,
     llm_judge_scores: dict,
     rule_based_scores: dict,
     pairwise_result: dict,
+    ab_pair_id: str | None = None,
     trace_url: str | None = None,
 ) -> dict:
     """Persist A/B evaluation results to DB (both runs) and Langfuse (scores).
@@ -559,6 +552,9 @@ async def store_evaluation_results(
     # ── Langfuse score ingestion (non-fatal, AD-10) ─────────────────────────
     try:
         langfuse = get_client()
+        # Same deterministic id used to open the eval trace in evaluate_ab
+        # (create_trace_id(seed=ab_pair_id)); every score attaches to that trace.
+        eval_trace_id = langfuse.create_trace_id(seed=ab_pair_id) if ab_pair_id else None
 
         # Per-axis scores (6 total: 3 axes × 2 variants)
         for variant in ("A", "B"):
@@ -568,18 +564,18 @@ async def store_evaluation_results(
                 langfuse.create_score(
                     name=f"{axis}_{variant}",
                     value=value,
-                    trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+                    trace_id=eval_trace_id,
                     data_type="NUMERIC",
                     score_id=f"{variant_run_id}-{axis}_{variant}",
                     comment=f"3-run average for {axis} (variant {variant})",
                 )
 
-        # Pairwise winner as CATEGORICAL score
-        majority = pairwise_result.get("majority_winner", "tie")
+        # Pairwise winner as CATEGORICAL score ("tie" when no decisive winner)
+        majority = pairwise_result.get("majority_winner") or "tie"
         langfuse.create_score(
             name="pairwise_winner",
             value=majority,
-            trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+            trace_id=eval_trace_id,
             data_type="CATEGORICAL",
             score_id=f"{run_a_id}-pairwise_winner",
         )
@@ -592,7 +588,7 @@ async def store_evaluation_results(
                 langfuse.create_score(
                     name=f"{metric}_{variant}",
                     value=value,
-                    trace_id=trace_url.rsplit("/", 1)[-1] if trace_url else _build_trace_id(pairwise_result.get("ab_pair_id", "")),
+                    trace_id=eval_trace_id,
                     data_type="NUMERIC",
                     score_id=f"{variant_run_id}-{metric}_{variant}",
                 )
@@ -617,6 +613,7 @@ def _rule_metrics_to_dict(metrics: RuleBasedMetrics) -> dict:
     return {
         "scene_count_match_rate": metrics.scene_count_match_rate,
         "subtitle_sync_error": metrics.avg_subtitle_sync_error,
+        # pct → proportion (0–1) to match the ab_result schema (spec 4.3)
         "audio_duration_variance": metrics.audio_duration_variance_pct / 100.0,
     }
 
@@ -634,11 +631,10 @@ def _pairwise_to_dict(pairwise: PairwiseResult) -> dict:
     # Determine majority_count and total_runs
     total_runs = len(runs)
     final = pairwise.final_winner
+    # True count of comparison runs that agree with the final winner (0 when the
+    # winner came from the floor/tiebreaker path with no recorded comparisons).
     if final and final != "tie":
-        # Count how many runs agree with the final winner
         majority_count = sum(1 for r in runs if r["winner"] == final)
-        if majority_count < 2:
-            majority_count = max(majority_count, 1)
     else:
         majority_count = 0
 

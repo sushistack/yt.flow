@@ -628,6 +628,37 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
     assert set(created) == expected_ids
 
 
+def test_store_results_categorical_tie_and_trace_seed(_memdb, monkeypatch):
+    """No decisive pairwise winner → pairwise score value is 'tie' (never None),
+    and scores are attached to the trace seeded from ab_pair_id."""
+    _seed_run("run-a")
+    _seed_run("run-b")
+
+    scores = {}
+    seeds = []
+
+    class _CaptureLF:
+        def create_trace_id(self, *, seed=None):
+            seeds.append(seed)
+            return f"trace-{seed}"
+        def create_score(self, **kw):
+            scores[kw["name"]] = (kw["value"], kw.get("trace_id"))
+
+    monkeypatch.setattr(es, "get_client", lambda: _CaptureLF())
+
+    llm = {"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR}
+    rule = {"A": _RULE_A, "B": _RULE_A}
+    pairwise = {"majority_winner": None, "majority_count": 0, "total_runs": 2}
+
+    asyncio.run(es.store_evaluation_results(
+        "run-a", "run-b", llm, rule, pairwise, ab_pair_id="pair-1",
+    ))
+
+    assert scores["pairwise_winner"][0] == "tie"          # not None
+    assert seeds == ["pair-1"]                             # seeded from ab_pair_id
+    assert scores["atmosphere_A"][1] == "trace-pair-1"     # attached to that trace
+
+
 # ── Fake Langfuse client for store tests ─────────────────────────────────────
 
 class _FakeLFClient:

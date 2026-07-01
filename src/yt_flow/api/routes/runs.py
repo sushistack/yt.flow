@@ -51,7 +51,11 @@ class RunRead(BaseModel):
             return None
         if isinstance(v, dict):
             return v
-        return json.loads(v)
+        try:
+            return json.loads(v)
+        except (json.JSONDecodeError, TypeError):
+            # A corrupt row must not 500 the whole (list) response — treat as absent.
+            return None
 
 
 @router.post("", status_code=201, response_model=RunRead)
