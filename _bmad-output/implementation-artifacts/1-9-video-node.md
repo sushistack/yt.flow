@@ -1,6 +1,10 @@
+---
+baseline_commit: 9ddfc9feb256d08d8c79776ad5fe5a5da25eff0d
+---
+
 # Story 1.9: video_node
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created. -->
 
@@ -18,27 +22,27 @@ so that the pipeline produces a deliverable video file.
 
 ## Tasks / Subtasks
 
-- [ ] Implement the pure pipeline node in `src/yt_flow/pipeline/nodes/video.py`. (AC: 1, 2, 3)
-  - [ ] Validate every scene has at least one shot image path, an audio path, and a subtitle path before invoking FFmpeg.
-  - [ ] Resolve output under `YTFLOW_WORKSPACE_PATH` defaulting to `./workspace`, specifically `workspace/{run_id}/video.mp4` or an equivalent deterministic `.mp4` path under the run directory.
-  - [ ] Return a replacement-style `PipelineState` update containing `current_stage="video"` and `video_path=<mp4 path>`; do not mutate state in place.
-- [ ] Add FFmpeg composition service/helper code only where it avoids bloating the node. (AC: 1, 2)
-  - [ ] Prefer a small helper such as `src/yt_flow/services/ffmpeg.py` only if command construction, probing, or error normalization becomes non-trivial.
-  - [ ] Invoke FFmpeg through `asyncio.create_subprocess_exec` or `subprocess.run` from a pure node-safe helper; capture stdout/stderr for error reporting.
-  - [ ] Build commands with argument lists, not shell strings.
-- [ ] Preserve graph and state contracts. (AC: 1, 2)
-  - [ ] Ensure `src/yt_flow/pipeline/graph.py` already routes `subtitle -> gate_subtitle -> video -> gate_video`; if graph scaffolding exists, update only the `video` binding from stub to real node.
-  - [ ] Do not import from `db/`, `api/`, or SSE modules in the node.
-  - [ ] Keep artifact paths only in `PipelineState`; do not add scenes/artifacts tables.
-- [ ] Add observability for the video stage. (AC: 3)
-  - [ ] Decorate or wrap the node with Langfuse instrumentation so the observation/span name is exactly `"video"`.
-  - [ ] Record latency and useful metadata: `run_id`, scene count, input asset counts, output path, FFmpeg return code.
-  - [ ] Treat Langfuse failures as non-fatal; log and continue according to AD-10.
-- [ ] Add tests and fixtures. (AC: 1, 2, 3)
-  - [ ] Unit test successful composition with tiny fixture assets or a mocked FFmpeg runner.
-  - [ ] Unit test missing FFmpeg / non-zero exit code produces `PipelineState.error` with `stage="video"` and `run_id`.
-  - [ ] Unit test missing required input assets fails before FFmpeg and does not write `video_path`.
-  - [ ] If real FFmpeg is available in CI/dev, add an integration test marked/skippable when `ffmpeg` is absent.
+- [x] Implement the pure pipeline node in `src/yt_flow/pipeline/nodes/video.py`. (AC: 1, 2, 3)
+  - [x] Validate every scene has at least one shot image path, an audio path, and a subtitle path before invoking FFmpeg.
+  - [x] Resolve output under `YTFLOW_WORKSPACE_PATH` defaulting to `./workspace`, specifically `workspace/{run_id}/video.mp4` or an equivalent deterministic `.mp4` path under the run directory.
+  - [x] Return a replacement-style `PipelineState` update containing `current_stage="video"` and `video_path=<mp4 path>`; do not mutate state in place.
+- [x] Add FFmpeg composition service/helper code only where it avoids bloating the node. (AC: 1, 2)
+  - [x] Prefer a small helper such as `src/yt_flow/services/ffmpeg.py` only if command construction, probing, or error normalization becomes non-trivial.
+  - [x] Invoke FFmpeg through `asyncio.create_subprocess_exec` or `subprocess.run` from a pure node-safe helper; capture stdout/stderr for error reporting.
+  - [x] Build commands with argument lists, not shell strings.
+- [x] Preserve graph and state contracts. (AC: 1, 2)
+  - [x] Ensure `src/yt_flow/pipeline/graph.py` already routes `subtitle -> gate_subtitle -> video -> gate_video`; if graph scaffolding exists, update only the `video` binding from stub to real node.
+  - [x] Do not import from `db/`, `api/`, or SSE modules in the node.
+  - [x] Keep artifact paths only in `PipelineState`; do not add scenes/artifacts tables.
+- [x] Add observability for the video stage. (AC: 3)
+  - [x] Decorate or wrap the node with Langfuse instrumentation so the observation/span name is exactly `"video"`.
+  - [x] Record latency and useful metadata: `run_id`, scene count, input asset counts, output path, FFmpeg return code.
+  - [x] Treat Langfuse failures as non-fatal; log and continue according to AD-10.
+- [x] Add tests and fixtures. (AC: 1, 2, 3)
+  - [x] Unit test successful composition with tiny fixture assets or a mocked FFmpeg runner.
+  - [x] Unit test missing FFmpeg / non-zero exit code produces `PipelineState.error` with `stage="video"` and `run_id`.
+  - [x] Unit test missing required input assets fails before FFmpeg and does not write `video_path`.
+  - [x] If real FFmpeg is available in CI/dev, add an integration test marked/skippable when `ffmpeg` is absent.
 
 ## Dev Notes
 
@@ -143,10 +147,37 @@ This story does not implement UI or API endpoints, but it must produce state tha
 
 ### Agent Model Used
 
-TBD by dev agent
+claude-sonnet-4-6
 
 ### Debug Log References
 
+- Fixed `nodes/__init__.py` naming collision: importing `video_node as video` shadowed the `video` submodule, causing `AttributeError` in tests. Fixed by importing as `video_node` and referencing it explicitly in `STAGE_NODES`.
+- Pyright type narrowing for `str | None` in list comprehension: replaced comprehension with explicit loop in `_validate_scene_assets` so Pyright correctly infers `list[str]`.
+
 ### Completion Notes List
 
+- Implemented `video_node` in `src/yt_flow/pipeline/nodes/video.py` following the subtitle_node pattern exactly.
+- FFmpeg composition: per-scene segments via `_compose_scene` (image loop + audio + burned SRT subtitles), then single-segment rename or multi-segment concat via `_concat_segments` (concat demuxer).
+- FFmpeg invoked via `asyncio.create_subprocess_exec` with argument lists, never shell strings. [AC:1, AD-1]
+- Pre-flight asset validation via `_validate_scene_assets` runs before FFmpeg, fails fast with `stage=video` error. [AC:2]
+- `@observe(name="video")` + `_record_trace` with latency, run_id, scene_count, output_path, returncode. [AC:3]
+- Langfuse failures non-fatal (bare except in `_record_trace`). [AD-10]
+- Input state never mutated; returns replacement-style partial update. [AD-4]
+- No imports from `db/`, `api/`, or `services/` in the node. [AD-1]
+- Updated `nodes/__init__.py` to wire real `video_node` into `STAGE_NODES["video"]` (Story 1.9 task: update stub binding).
+- Updated `tests/pipeline/test_graph.py` stub test to exclude `video` (now real/async).
+- 25 unit tests pass; 1 integration test (real FFmpeg, skippable) added.
+- Full test suite: 130 passed, 1 skipped (Qwen TTS smoke test), 0 failures.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/video.py` (new)
+- `src/yt_flow/pipeline/nodes/__init__.py` (modified — wired real video_node)
+- `tests/pipeline/nodes/test_video.py` (new)
+- `tests/pipeline/test_graph.py` (modified — updated stub test to exclude video)
+- `_bmad-output/implementation-artifacts/1-9-video-node.md` (modified — story tracking)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — in-progress → review)
+
+## Change Log
+
+- 2026-07-01: Story 1.9 implemented — video_node with FFmpeg composition, observability, full test coverage (claude-sonnet-4-6)
