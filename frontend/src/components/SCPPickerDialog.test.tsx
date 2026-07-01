@@ -90,16 +90,19 @@ describe("SCPPickerDialog", () => {
   })
 
   it("filters by numeric ID after the 200ms debounce", async () => {
+    vi.useFakeTimers()
     mockScps(THREE)
     render(<SCPPickerDialog open onClose={() => {}} onCreated={() => {}} />)
     // flush the getScps promise
-    await waitFor(() => expect(screen.queryAllByRole("option").length).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(screen.queryAllByRole("option").length).toBeGreaterThan(0))
     const input = screen.getByRole("combobox", { name: "SCP 검색" })
     fireEvent.change(input, { target: { value: "096" } })
-    await waitFor(() => {
+    vi.advanceTimersByTime(200)
+    await vi.waitFor(() => {
       const ids = screen.getAllByRole("option").map((o) => o.id)
       expect(ids).toEqual(["scp-opt-SCP-096"])
     })
+    vi.useRealTimers()
   })
 
   it("virtualizes a 2000-item list (rendered options far below full count)", async () => {

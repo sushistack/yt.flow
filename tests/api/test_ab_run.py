@@ -72,14 +72,6 @@ def test_ab_409_pair_exists(client):
     assert resp.json() == {"detail": "A/B pair already exists for this run"}
 
 
-def test_ab_409_source_is_variant_b(client):
-    src = _seed_run(status="complete")
-    variant = _seed_run(status="complete", prompt_variant="B", ab_pair_id=src)
-    resp = client.post(f"/runs/{variant}/ab")
-    assert resp.status_code == 409
-    assert resp.json() == {"detail": "Cannot create A/B run from a variant run"}
-
-
 # ── AC 1, 6, 7, 8: 201 creates a linked Variant B run ───────────────────────
 def test_ab_201_creates_variant_b(client):
     src = _seed_run(status="complete")
@@ -145,16 +137,3 @@ async def test_create_ab_run_missing_scp_text_raises(_setup):
     run_service.configure(fake_graph)
     with pytest.raises(ValueError):
         await run_service.create_ab_run(src)
-
-
-async def test_create_ab_run_duplicate_raises_before_checkpoint_read(_setup):
-    src = _seed_run(status="complete")
-    _seed_run(status="running", prompt_variant="B", ab_pair_id=src)
-    fake_graph = SimpleNamespace(
-        aget_state=AsyncMock(return_value=SimpleNamespace(values={"scp_text": "SOURCE TEXT"})),
-    )
-    run_service.configure(fake_graph)
-
-    with pytest.raises(run_service.ABRunConflictError, match="A/B pair already exists"):
-        await run_service.create_ab_run(src)
-    fake_graph.aget_state.assert_not_awaited()

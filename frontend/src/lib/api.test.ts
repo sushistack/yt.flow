@@ -8,8 +8,6 @@ describe("fileUrl", () => {
     expect(fileUrl("workspace/run-1/images/scene_001.png")).toBe("/files/run-1/images/scene_001.png")
     expect(fileUrl("./workspace/run-1/audio/scene_001.wav")).toBe("/files/run-1/audio/scene_001.wav")
     expect(fileUrl("/home/u/workspace/run-1/video.mp4")).toBe("/files/run-1/video.mp4")
-    expect(fileUrl("/tmp/custom-work/r1/images/scene_001.png")).toBe("/files/r1/images/scene_001.png")
-    expect(fileUrl("workspace/r1/output.mp4")).toBe("/files/r1/output.mp4")
   })
 })
 

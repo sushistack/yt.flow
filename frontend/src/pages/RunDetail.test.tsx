@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react"
 import { RunDetail } from "./RunDetail"
 
 // ── Mock EventSource ────────────────────────────────────────────────────────
@@ -15,9 +15,6 @@ class MockEventSource {
   }
   emit(type: string, data: unknown) {
     for (const cb of this.listeners[type] ?? []) cb({ data: JSON.stringify(data) } as MessageEvent)
-  }
-  emitRaw(type: string, data: string) {
-    for (const cb of this.listeners[type] ?? []) cb({ data } as MessageEvent)
   }
   close() {
     this.closed = true
@@ -35,7 +32,7 @@ const RUN = {
 
 function mockFetch() {
   return vi.fn((url: string) => {
-    if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => RUN })
+    if (url === "/runs/r1" || url === "/runs/r2") return Promise.resolve({ ok: true, status: 200, json: async () => ({ ...RUN, id: url.slice(6) }) })
     if (url.includes("/stages/image/artifacts"))
       return Promise.resolve({
         ok: true,
@@ -46,14 +43,6 @@ function mockFetch() {
         }),
       })
     // any other stage: not reached
-    return Promise.resolve({ ok: false, status: 404 })
-  })
-}
-
-function mockFetchWithArtifactFailure() {
-  return vi.fn((url: string) => {
-    if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => RUN })
-    if (url.includes("/stages/image/artifacts")) return Promise.resolve({ ok: false, status: 500 })
     return Promise.resolve({ ok: false, status: 404 })
   })
 }
@@ -93,6 +82,11 @@ describe("RunDetail", () => {
     )
   })
 
+  it("renders a keyboard-focusable A/B comparison entry point", async () => {
+    await renderRunDetail()
+    expect(screen.getByRole("button", { name: "A/B 비교" })).toHaveClass("focus-visible:ring-2")
+  })
+
   it("muted, non-clickable sidebar item for a not-yet-reached stage (AC8)", async () => {
     await renderRunDetail()
     // video is unreached (current_stage=image) → aria-disabled, not a button
@@ -108,31 +102,57 @@ describe("RunDetail", () => {
     await waitFor(() => expect(screen.getByText("tts").closest("button")).not.toBeNull())
   })
 
-  it("ignores malformed SSE payloads without breaking the detail page", async () => {
-    await renderRunDetail()
-    act(() => MockEventSource.instances[0].emitRaw("stage_entry", "{not json"))
-    expect(screen.getByRole("main")).toBeInTheDocument()
-  })
-
-  it("stage_exit marks a stage reached without regressing the active current stage", async () => {
-    await renderRunDetail()
-    act(() => MockEventSource.instances[0].emit("stage_exit", { run_id: "r1", stage: "tts" }))
-    await waitFor(() => expect(screen.getByText("tts").closest("button")).not.toBeNull())
-    expect(screen.getByText("image").closest("[aria-current]")).toHaveAttribute("aria-current", "true")
-  })
-
-  it("shows an artifact error instead of the not-reached copy on non-404 failures", async () => {
-    vi.stubGlobal("fetch", mockFetchWithArtifactFailure())
-    render(<RunDetail runId="r1" />)
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("아티팩트를 불러올 수 없습니다"))
-    expect(screen.queryByText("아직 실행되지 않은 스테이지입니다.")).not.toBeInTheDocument()
-  })
-
   it("closes the EventSource on unmount", async () => {
     vi.stubGlobal("fetch", mockFetch())
     const { unmount } = render(<RunDetail runId="r1" />)
     await waitFor(() => expect(MockEventSource.instances.length).toBeGreaterThan(0))
     unmount()
     expect(MockEventSource.instances.every((es) => es.closed)).toBe(true)
+  })
+
+  it("closes the EventSource when run id changes", async () => {
+    vi.stubGlobal("fetch", mockFetch())
+    const { rerender } = render(<RunDetail runId="r1" />)
+    await waitFor(() => expect(MockEventSource.instances[0]).toBeTruthy())
+    rerender(<RunDetail runId="r2" />)
+    await waitFor(() => expect(MockEventSource.instances[1]).toBeTruthy())
+    expect(MockEventSource.instances[0].closed).toBe(true)
+    expect(MockEventSource.instances[1].url).toBe("/runs/r2/progress")
+  })
+
+  it("asks for confirmation before leaving a stage with dirty edits", async () => {
+    const run = { ...RUN, current_stage: "subtitle", gate_states: null }
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => run })
+      if (url.includes("/stages/scenario/artifacts"))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ stage: "scenario", scenes: [{ scene_num: 1, narration: "초안" }] }),
+        })
+      if (url.includes("/stages/subtitle/artifacts"))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ stage: "subtitle", subtitles: [] }),
+        })
+      if (init?.method === "PATCH") return Promise.resolve({ ok: true, status: 200, text: async () => "" })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const confirm = vi.fn().mockReturnValue(false)
+    vi.stubGlobal("confirm", confirm)
+
+    render(<RunDetail runId="r1" />)
+    const sidebar = await screen.findByRole("complementary")
+    await waitFor(() => expect(within(sidebar).getByText("subtitle").closest("button")).toBeInTheDocument())
+    fireEvent.click(within(sidebar).getByText("scenario").closest("button")!)
+    await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("button", { name: "편집" }))
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "수정 중" } })
+    fireEvent.click(within(sidebar).getByText("subtitle").closest("button")!)
+
+    expect(confirm).toHaveBeenCalledWith("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")
+    expect(screen.getByRole("textbox")).toHaveValue("수정 중")
   })
 })

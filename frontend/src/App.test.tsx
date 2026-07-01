@@ -12,10 +12,19 @@ class StubEventSource {
 const RUN = {
   id: "r1",
   scp_id: "SCP-096",
-  status: "running",
-  current_stage: "scenario",
+  status: "complete",
+  current_stage: "video",
   gate_states: null,
+  prompt_variant: "A",
+  ab_pair_id: null,
   langfuse_trace_url: null,
+}
+
+const PAIR = {
+  ...RUN,
+  id: "r2",
+  prompt_variant: "B",
+  ab_pair_id: "r1",
 }
 
 beforeEach(() => {
@@ -24,6 +33,7 @@ beforeEach(() => {
     "fetch",
     vi.fn((url: string) => {
       if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => RUN })
+      if (url === "/runs") return Promise.resolve({ ok: true, status: 200, json: async () => [RUN, PAIR] })
       if (url.includes("/stages/scenario/artifacts"))
         return Promise.resolve({
           ok: true,
@@ -43,5 +53,13 @@ describe("App routing", () => {
     await waitFor(() => expect(screen.getByRole("main")).toBeInTheDocument())
     expect(screen.getByRole("complementary")).toBeInTheDocument() // stage sidebar
     expect(screen.getByText("SCP-096")).toBeInTheDocument()
+  })
+
+  it("renders A/B Comparison at /runs/{id}/ab", async () => {
+    navigate("/runs/r1/ab")
+    render(<App />)
+    expect(await screen.findByRole("heading", { name: "A/B 비교" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Variant A" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Variant B" })).toBeInTheDocument()
   })
 })
