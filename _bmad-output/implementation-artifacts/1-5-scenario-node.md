@@ -1,6 +1,10 @@
+---
+baseline_commit: 6600b0476884a1025b8ad2a0389c9d2c6e73abb1
+---
+
 # Story 1.5: scenario_node (LLM-Director)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created. -->
 
@@ -21,33 +25,33 @@ so that downstream nodes receive typed `SceneState` objects with N:M sentence-to
 
 ## Tasks / Subtasks
 
-- [ ] Implement `src/yt_flow/pipeline/nodes/scenario.py` as a pure async node. (AC: 1, 5)
-  - [ ] Accept and return `PipelineState`-compatible dict updates; do not mutate the incoming state in place.
-  - [ ] Read `run_id`, `scp_text`, and optional `prompt_variant` from state.
-  - [ ] Return only changed fields: `scenes`, `current_stage`, and `error` as needed.
-- [ ] Fetch and render the `scenario` prompt from Langfuse Prompt Hub at runtime. (AC: 1, 3)
-  - [ ] Use the prompt migrated in Story 1.3; do not hardcode pipeline prompt text in source.
-  - [ ] Compile with `scp_text` and any prompt variables established by Story 1.3.
-  - [ ] If A/B labels already exist, map `prompt_variant` to Langfuse labels in the smallest established project pattern; otherwise leave variant behavior for Epic 4.
-- [ ] Call DeepSeek through the OpenAI-compatible client using config-pinned model settings. (AC: 1, 3, 4)
-  - [ ] Read API key/base URL/model name from `Settings` with `YTFLOW_` prefix; do not hardcode model identifiers.
-  - [ ] Prefer `response_format={"type": "json_object"}` and ensure the rendered prompt explicitly instructs the model to output JSON.
-  - [ ] Set a reasonable `max_tokens` from config or prompt config to avoid truncated JSON.
-- [ ] Parse and validate the LLM response into the existing domain TypedDict shape. (AC: 1, 2, 4, 6)
-  - [ ] Produce `SceneState` with `scene_num`, `narration`, `shots`, `audio_path=None`, `audio_duration=None`, `word_timings=[]`, and `subtitle_path=None`.
-  - [ ] Produce `ShotData` with `shot_id`, `sentence_indices`, `image_prompt`, `negative_prompt`, `camera_angle`, `camera_movement`, and `image_path=None`.
-  - [ ] Validate scene numbering, non-empty narration, non-empty shots, non-empty prompt strings, and non-empty integer `sentence_indices`.
-  - [ ] Reject out-of-range sentence indices relative to the narration sentence list, unless an established earlier story intentionally defines a different indexing source.
-- [ ] Add Langfuse observability around the node and generation call. (AC: 3, 4)
-  - [ ] Decorate the stage node with `@observe(name="scenario")` or the established project wrapper.
-  - [ ] Capture rendered prompt, raw response text, model name, latency, usage/token counts, and prompt metadata/version when available.
-  - [ ] Treat Langfuse transport failures as non-fatal per AD-10; the pipeline should log and continue if only tracing fails.
-- [ ] Add focused tests. (AC: 1-6)
-  - [ ] Unit test successful parse into `PipelineState.scenes` using mocked Langfuse prompt fetch and mocked DeepSeek response.
-  - [ ] Unit test malformed JSON sets `error` and does not emit partial scenes as successful output.
-  - [ ] Unit test empty scenes/shots/prompts and bad `sentence_indices` fail validation.
-  - [ ] Unit test node purity: input state object is not mutated.
-  - [ ] Unit test Prompt Hub/runtime prompt fetch is used; no hardcoded scenario prompt path is required by the node.
+- [x] Implement `src/yt_flow/pipeline/nodes/scenario.py` as a pure async node. (AC: 1, 5)
+  - [x] Accept and return `PipelineState`-compatible dict updates; do not mutate the incoming state in place.
+  - [x] Read `run_id`, `scp_text`, and optional `prompt_variant` from state.
+  - [x] Return only changed fields: `scenes`, `current_stage`, and `error` as needed.
+- [x] Fetch and render the `scenario` prompt from Langfuse Prompt Hub at runtime. (AC: 1, 3)
+  - [x] Use the prompt migrated in Story 1.3; do not hardcode pipeline prompt text in source.
+  - [x] Compile with `scp_text` and any prompt variables established by Story 1.3.
+  - [x] If A/B labels already exist, map `prompt_variant` to Langfuse labels in the smallest established project pattern; otherwise leave variant behavior for Epic 4. → No A/B labels exist (migration uses only `production`); variant mapping deferred to Epic 4 (ponytail comment in source).
+- [x] Call DeepSeek through the OpenAI-compatible client using config-pinned model settings. (AC: 1, 3, 4)
+  - [x] Read API key/base URL/model name from `Settings` with `YTFLOW_` prefix; do not hardcode model identifiers.
+  - [x] Prefer `response_format={"type": "json_object"}` and ensure the rendered prompt explicitly instructs the model to output JSON.
+  - [x] Set a reasonable `max_tokens` from config or prompt config to avoid truncated JSON.
+- [x] Parse and validate the LLM response into the existing domain TypedDict shape. (AC: 1, 2, 4, 6)
+  - [x] Produce `SceneState` with `scene_num`, `narration`, `shots`, `audio_path=None`, `audio_duration=None`, `word_timings=[]`, and `subtitle_path=None`.
+  - [x] Produce `ShotData` with `shot_id`, `sentence_indices`, `image_prompt`, `negative_prompt`, `camera_angle`, `camera_movement`, and `image_path=None`.
+  - [x] Validate scene numbering, non-empty narration, non-empty shots, non-empty prompt strings, and non-empty integer `sentence_indices`.
+  - [x] Reject out-of-range sentence indices relative to the narration sentence list, unless an established earlier story intentionally defines a different indexing source.
+- [x] Add Langfuse observability around the node and generation call. (AC: 3, 4)
+  - [x] Decorate the stage node with `@observe(name="scenario")` or the established project wrapper.
+  - [x] Capture rendered prompt, raw response text, model name, latency, usage/token counts, and prompt metadata/version when available.
+  - [x] Treat Langfuse transport failures as non-fatal per AD-10; the pipeline should log and continue if only tracing fails.
+- [x] Add focused tests. (AC: 1-6)
+  - [x] Unit test successful parse into `PipelineState.scenes` using mocked Langfuse prompt fetch and mocked DeepSeek response.
+  - [x] Unit test malformed JSON sets `error` and does not emit partial scenes as successful output.
+  - [x] Unit test empty scenes/shots/prompts and bad `sentence_indices` fail validation.
+  - [x] Unit test node purity: input state object is not mutated.
+  - [x] Unit test Prompt Hub/runtime prompt fetch is used; no hardcoded scenario prompt path is required by the node.
 
 ## Dev Notes
 
@@ -200,10 +204,62 @@ Implementation may omit storing `sentences` in `PipelineState`; it is a validati
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8 (1M context)
 
 ### Debug Log References
 
+- Started on a working tree that changed mid-session: the parallel `review/story-1.3-1.4`
+  worktree fast-forward-merged into `master` (HEAD `078cbec` → `6600b04`) while prerequisite
+  files were being read. Re-verified all dependencies against the settled HEAD before coding.
+  `baseline_commit` pinned to `6600b04`.
+- `nodes/__init__.py` (Story 1.4) binds a stub attribute `scenario`, which shadows the new
+  `scenario.py` submodule under `from ... import scenario`. Tests import the submodule via
+  `import yt_flow.pipeline.nodes.scenario as sc` to resolve the module unambiguously.
+
 ### Completion Notes List
 
+- Implemented `scenario_node` as a pure async node: reads `run_id`/`scp_text`, fetches the
+  `scenario` prompt from Langfuse Prompt Hub, calls DeepSeek V4 (JSON mode) via the
+  already-installed `httpx` (no new `openai` dependency — ponytail rung 4), parses/validates
+  into `list[SceneState]`, and returns only `scenes` + `current_stage`, or `current_stage` +
+  `error` on any failure. Never calls `interrupt()` (AC5).
+- Validation rejects: non-`scenes` payloads, empty scenes/shots, empty prompt strings, non-int
+  / negative / out-of-range `sentence_indices` (0-based, bounded by the scene's optional
+  `sentences` list), and truncated responses (`finish_reason=length`). All surface as
+  `PipelineState.error` with `stage=scenario` + `run_id` context; no partial scenes emitted.
+- Observability: `@observe(name="scenario")` span + best-effort `_record_trace` enriching the
+  span with rendered prompt, raw response, model, latency_ms, and token usage. Trace failures
+  are swallowed (AD-10, non-fatal). Verified via a monkeypatched trace sink.
+- Config: added defaulted `deepseek_*` fields to `Settings` (`YTFLOW_` prefix). Defaults keep
+  `Settings()` constructible for existing tests/tooling; the node guards a missing API key at
+  call time. Existing `test_config.py` still passes.
+- **Deferred (intentional):** the real node is NOT wired into `STAGE_NODES`/the graph yet.
+  Story 1.4's graph tests assert stub behaviour (`{"current_stage": stage}` for every stage and
+  a graph run with no external calls); rewiring now would regress the just-merged 1.4 suite.
+  Graph integration + 1.4 test updates belong to a follow-up integration step. The node is
+  fully unit-tested in isolation, satisfying all ACs.
+- Tests: 17 new unit tests (all mocked, no live DeepSeek/Langfuse). Full suite 51 passed;
+  `ruff check .` clean. No regressions to Stories 1.1–1.4.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/scenario.py` (new)
+- `src/yt_flow/config.py` (modified — added `deepseek_*` settings)
+- `tests/pipeline/nodes/__init__.py` (new)
+- `tests/pipeline/nodes/test_scenario.py` (new)
+
+## Change Log
+
+- 2026-07-01: Implemented `scenario_node` (LLM-Director) with DeepSeek V4 JSON-mode call via
+  httpx, Prompt Hub fetch, TypedDict validation, and Langfuse `scenario` span. Graph wiring
+  deferred to protect the merged Story 1.4 stub-graph tests. Status → review.
+- 2026-07-01: Code review complete (3 review layers). Patches applied, status → done.
+
+## Review Findings (code review 2026-07-01)
+
+- [x] [Review][Patch] `scene_num` now assigned positionally (`idx+1`), never taken from the LLM — guarantees unique/ordered numbers so downstream `scene_{n:03d}` file naming can't silently overwrite [scenario.py]
+- [x] [Review][Patch] `camera_angle`/`camera_movement` normalized to `str | None` (`_opt_text`) so a non-str LLM value can't violate the `ShotData` contract [scenario.py]
+- [x] [Review][Patch] `_settings()` moved inside `try` so a config/env `ValidationError` surfaces as `PipelineState.error` instead of being raised past the node [scenario.py]
+- [x] [Review][Defer] Real node not wired into graph `STAGE_NODES` (deliberate, no AC requires it) — see `deferred-work.md`
+- [x] [Review][Defer] `sentence_indices` bounds unenforceable when `sentences` omitted (spec-permitted) — see `deferred-work.md`
+- Dismissed as noise: `prompt_variant` task-checkbox accuracy (Epic 4 deferral is documented); per-call httpx client / no retry (LOW, optional).
