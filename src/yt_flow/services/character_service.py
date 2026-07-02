@@ -52,6 +52,7 @@ _ANGLE_DESCRIPTIONS: dict[str, str] = {
     "three_quarter": "character three-quarter view, 45 degree angle, full body",
 }
 _CANONICAL_ANGLES = list(_ANGLE_DESCRIPTIONS.keys())  # ["front", "back", "side", "three_quarter"]
+CANONICAL_ANGLES = _CANONICAL_ANGLES  # public alias for API-layer validation
 
 # Fields that can be updated via update_character — guards against injection
 _UPDATE_ALLOWLIST = frozenset({
@@ -214,13 +215,18 @@ class CharacterService:
         ).all()
         for ref in refs:
             self._session.delete(ref)
-        # Cascade-delete candidates (nullable FK — set NULL for surviving records)
+        # Cascade-delete candidates. Regression: this used to only null the FK
+        # ("orphan" the row) instead of deleting it, but list_candidates() and
+        # the /{id} detail route both look candidates up by the scp_id *string*,
+        # not character_id — so a deleted character's stale (possibly "ready")
+        # candidates would get silently "adopted" by any future character
+        # created for the same scp_id, making it appear fully generated
+        # without ever running generation.
         candidates = self._session.exec(
             select(CandidateModel).where(CandidateModel.character_id == id)
         ).all()
         for candidate in candidates:
-            candidate.character_id = None
-            self._session.add(candidate)
+            self._session.delete(candidate)
         self._session.delete(model)
         self._session.commit()
         logger.info("Character deleted: id=%s (cleaned %d refs, %d candidates)", id, len(refs), len(candidates))
@@ -631,7 +637,13 @@ class CharacterService:
         scp_id: str,
         angles: list[str] | None = None,
     ) -> list[CandidateModel]:
-        """Create pending candidate records for each angle. Returns the list of candidates."""
+        """Create pending candidate records for each angle. Returns the list of candidates.
+
+        Deletes any existing candidate row(s) for the same (scp_id, angle) first —
+        the table has no real unique constraint (see db/models.py), so calling this
+        twice for the same angle (e.g. a regenerate-on-failure retry) would otherwise
+        leave ambiguous duplicate rows behind.
+        """
         if angles is None:
             angles = ["front", "back", "side", "three_quarter"]
 
@@ -639,6 +651,14 @@ class CharacterService:
         candidates: list[CandidateModel] = []
 
         for angle in angles:
+            for stale in self._session.exec(
+                select(CandidateModel).where(
+                    CandidateModel.scp_id == scp_id,
+                    CandidateModel.angle == angle,
+                )
+            ).all():
+                self._session.delete(stale)
+
             candidate = CandidateModel(
                 character_id=character.id if character else None,
                 scp_id=scp_id,

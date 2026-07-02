@@ -223,6 +223,48 @@ def test_generate_candidates_trigger(client):
     assert "candidates" in body
 
 
+def test_generate_candidates_scoped_to_single_angle(client):
+    """?angle=front regenerates only that angle, not all 4 (regenerate-on-failure UI)."""
+    char = _create_char(client, "SCP-096", "Shy Guy")
+    char_id = char["id"]
+    with Session(db._engine) as session:
+        session.add(ReferenceImage(id="ref-1", character_id=char_id, url="https://example.com/i.png", local_path="/tmp/i.png"))
+        session.commit()
+
+    resp = client.post(f"/api/characters/{char_id}/generate?angle=front")
+    assert resp.status_code == 202, resp.text
+    assert [c["angle"] for c in resp.json()["candidates"]] == ["front"]
+
+
+def test_generate_candidates_invalid_angle_rejected(client):
+    char = _create_char(client, "SCP-096", "Shy Guy")
+    resp = client.post(f"/api/characters/{char['id']}/generate?angle=bogus")
+    assert resp.status_code == 422
+
+
+def test_generate_candidates_regenerate_does_not_duplicate_rows(client):
+    """Calling generate twice for the same angle must not leave duplicate candidate rows.
+
+    Regression: create_candidate_batch used to unconditionally INSERT with no
+    check for an existing (scp_id, angle) row — the table has no real unique
+    constraint (see db/models.py's __table_args__ comment), so a second
+    "재시도" (regenerate) call would create an ambiguous duplicate instead of
+    replacing the failed candidate.
+    """
+    char = _create_char(client, "SCP-096", "Shy Guy")
+    char_id = char["id"]
+    with Session(db._engine) as session:
+        session.add(ReferenceImage(id="ref-1", character_id=char_id, url="https://example.com/i.png", local_path="/tmp/i.png"))
+        session.commit()
+
+    client.post(f"/api/characters/{char_id}/generate?angle=front")
+    client.post(f"/api/characters/{char_id}/generate?angle=front")
+
+    resp = client.get(f"/api/characters/{char_id}/candidates?angle=front")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
 # ── AC 4: GET /api/characters/{id}/candidates — list candidates ──────────────
 
 def test_list_candidates_empty(client):

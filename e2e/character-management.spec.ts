@@ -1,15 +1,18 @@
 import { test, expect } from './support/fixtures/merged-fixtures';
 
 // SYS-E2E-003 — character management journey: character list → new character
-// → reference image search → multi-angle candidate generation → finalize →
-// angle gallery. Drives the real FastAPI app with all 7 external seams
-// stubbed (scripts/run_e2e_stub_server.py): the 5 pipeline seams plus
-// DuckDuckGo image search + its download step (Story 1.11's real network
-// calls are unstubbed by default — see run_e2e_stub_server.py's
-// apply_stub_profile for why those two extra seams exist).
+// (via the shared SCP Picker) → reference image search → multi-angle
+// candidate generation → finalize → angle gallery. Drives the real FastAPI
+// app with all 7 external seams stubbed (scripts/run_e2e_stub_server.py):
+// the 5 pipeline seams plus DuckDuckGo image search + its download step
+// (Story 1.11's real network calls are unstubbed by default — see
+// run_e2e_stub_server.py's apply_stub_profile for why those two extra
+// seams exist).
 //
 // Related stories: 3.7 (Character Management UI), 1.11 (Character Domain +
 // Reference Search), 1.12 (Multi-Angle Character Generation).
+
+const SCP_ID = 'SCP-096';
 
 function referencePanel(page) {
   return page.getByRole('region', { name: '참조 이미지' });
@@ -24,7 +27,24 @@ function angleStatus(page, label: string) {
 }
 
 test.describe('@P0 SYS-E2E-003 character list → create → search refs → generate → finalize → gallery', () => {
-  test('creates SCP-3007 and generates all 4 angle candidates to completion', async ({ page }) => {
+  let charId: string | undefined;
+
+  // Character.scp_id has a real unique DB constraint (unlike runs, which
+  // tolerate repeat SCP-096 rows) — self-heal against a prior crashed run
+  // leaving a stale row behind, rather than assuming a clean dev db.
+  test.beforeEach(async ({ apiRequest }) => {
+    charId = undefined;
+    const { body: existing } = await apiRequest({ method: 'GET', path: `/api/characters?scp_id=${SCP_ID}` });
+    for (const c of existing) {
+      await apiRequest({ method: 'DELETE', path: `/api/characters/${c.id}` });
+    }
+  });
+
+  test.afterEach(async ({ apiRequest }) => {
+    if (charId) await apiRequest({ method: 'DELETE', path: `/api/characters/${charId}` });
+  });
+
+  test('creates SCP-096 and generates all 4 angle candidates to completion', async ({ page }) => {
     // ── Character List (Story 3.7 AC1) ──────────────────────────────────────
     // Load the dashboard first, then navigate client-side — a fresh server GET
     // to /app/characters 404s (StaticFiles html=True has no SPA history-
@@ -40,15 +60,23 @@ test.describe('@P0 SYS-E2E-003 character list → create → search refs → gen
     const dialog = page.getByRole('dialog', { name: '새 캐릭터' });
     await expect(dialog).toBeVisible();
 
-    const scpId = `SCP-3007-${Date.now()}`;
-    await dialog.getByLabel('SCP ID').fill(scpId);
+    // SCP ID opens the shared SCP Picker (Story 3.3) on focus (Story 3.7
+    // AC6) — the dialog auto-focuses this field on open, so the picker is
+    // already visible here rather than needing an explicit click.
+    const picker = page.getByRole('dialog', { name: '새 캐릭터 — SCP 선택' });
+    await expect(picker).toBeVisible();
+    await picker.getByRole('combobox', { name: 'SCP 검색' }).fill('096');
+    await picker.getByRole('option').filter({ hasText: SCP_ID }).click();
+    await expect(picker).toBeHidden();
+    await expect(dialog.getByLabel('SCP ID')).toHaveValue(SCP_ID);
+
     await dialog.getByLabel('이름').fill('작은 재앙');
 
     const [createResponse] = await Promise.all([
       page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/characters')),
       dialog.getByRole('button', { name: '생성' }).click(),
     ]);
-    const charId = (await createResponse.json()).id as string;
+    charId = (await createResponse.json()).id as string;
     await expect(dialog).toBeHidden();
 
     // Navigate straight to the detail route rather than relying on list
@@ -57,7 +85,7 @@ test.describe('@P0 SYS-E2E-003 character list → create → search refs → gen
       window.history.pushState({}, '', `/app/characters/${id}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, charId);
-    await expect(page.getByText(scpId, { exact: true })).toBeVisible();
+    await expect(page.getByText(SCP_ID, { exact: true })).toBeVisible();
 
     // ── Reference Image Search (Story 1.11 AC3/AC4) ─────────────────────────
     const refs = referencePanel(page);

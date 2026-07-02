@@ -9,10 +9,22 @@ const ROW_HEIGHT = 52 // px; matches .picker-row density in the mockup
 type Props = {
   open: boolean
   onClose: () => void
-  onCreated: (run: Run) => void
+  onCreated?: (run: Run) => void
+  // When provided, selecting an SCP just returns it (no run is created) —
+  // reused by CharacterFormDialog (Story 3.7 AC6) to pick an SCP ID.
+  onSelect?: (scp: ScpEntry) => void
+  title?: string
+  confirmLabel?: string
 }
 
-export function SCPPickerDialog({ open, onClose, onCreated }: Props) {
+export function SCPPickerDialog({
+  open,
+  onClose,
+  onCreated,
+  onSelect,
+  title = "새 실행 — SCP 선택",
+  confirmLabel = "실행 시작",
+}: Props) {
   const [scps, setScps] = useState<ScpEntry[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
@@ -72,13 +84,18 @@ export function SCPPickerDialog({ open, onClose, onCreated }: Props) {
 
   const confirm = async (scp: ScpEntry | undefined) => {
     if (!scp || submitting) return
+    if (onSelect) {
+      onSelect(scp)
+      onClose()
+      return
+    }
     // Send scp_id only; the server resolves scp_text by id (POST /runs). If a run
     // can't be created (e.g. no text for that id → 422), the error surfaces inline.
     setSubmitting(true)
     setSubmitError(null)
     try {
       const run = await createRun({ scp_id: scp.id })
-      onCreated(run)
+      onCreated?.(run)
       onClose()
     } catch (e) {
       // Keep the dialog open, surface the error inline near the list (AC6).
@@ -113,12 +130,12 @@ export function SCPPickerDialog({ open, onClose, onCreated }: Props) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="새 실행 — SCP 선택"
+        aria-label={title}
         className="w-[520px] max-w-full overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border p-5 pb-3.5">
-          <h2 className="mb-3 text-[15px] font-semibold text-foreground">새 실행 — SCP 선택</h2>
+          <h2 className="mb-3 text-[15px] font-semibold text-foreground">{title}</h2>
           <input
             ref={inputRef}
             type="text"
@@ -210,7 +227,7 @@ export function SCPPickerDialog({ open, onClose, onCreated }: Props) {
             onClick={() => confirm(filtered[active])}
             className="rounded-md bg-primary px-4 py-1.5 text-[13px] font-semibold text-primary-foreground disabled:opacity-50"
           >
-            실행 시작
+            {confirmLabel}
           </button>
         </div>
       </div>

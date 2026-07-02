@@ -150,6 +150,35 @@ class TestCharacterCRUD:
         with pytest.raises(LookupError, match="not found"):
             service.delete_character("no-such-id")
 
+    def test_delete_cascades_candidates_not_just_orphans_them(self, session):
+        """Regression: a deleted character's candidates must not survive to be
+        "adopted" by a future character created for the same scp_id.
+
+        delete_character() used to only null a candidate's character_id FK
+        instead of deleting the row. list_candidates() (used by both the
+        detail GET and the polling GET) filters by scp_id alone, not
+        character_id — so those orphaned rows, including a stale "ready"
+        status, would resurface as soon as anyone created a new character for
+        the same scp_id, making it look fully generated without any real
+        generation happening.
+        """
+        from yt_flow.services.character_service import CANONICAL_ANGLES
+
+        svc = CharacterService(session)
+        c = svc.create_character("SCP-096", "Shy Guy")
+        candidates = svc.create_candidate_batch("SCP-096")
+        for cand in candidates:
+            svc.update_candidate_status(cand.id, "ready", image_path="/tmp/x.png")
+
+        svc.delete_character(c.id)
+
+        assert svc.list_candidates("SCP-096") == []
+
+        # A new character for the same scp_id must start with zero candidates.
+        c2 = svc.create_character("SCP-096", "Shy Guy Returns")
+        assert svc.list_candidates(c2.scp_id) == []
+        assert len(CANONICAL_ANGLES) == 4  # sanity: the 4 angles this test relies on
+
     def test_delete_cascades_reference_images(self, service, session):
         c = service.create_character("SCP-096", "Shy Guy")
         ref = ReferenceImageModel(character_id=c.id, url="http://x.com/a.jpg", local_path="/tmp/a.jpg")

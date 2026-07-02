@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ApiError, createCharacter, updateCharacter } from "@/lib/api"
 import type { Character } from "@/lib/types"
+import { SCPPickerDialog } from "@/components/SCPPickerDialog"
 
 type Props = {
   open: boolean
@@ -17,6 +18,7 @@ export function CharacterFormDialog({ open, onClose, onCreated, initial }: Props
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const isEdit = !!initial
 
@@ -35,6 +37,7 @@ export function CharacterFormDialog({ open, onClose, onCreated, initial }: Props
     }
     setError(null)
     setValidationErrors({})
+    setPickerOpen(false)
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [open, initial])
 
@@ -114,6 +117,7 @@ export function CharacterFormDialog({ open, onClose, onCreated, initial }: Props
               type="text"
               value={scpId}
               onChange={(e) => setScpId(e.target.value)}
+              onFocus={() => { if (!isEdit) setPickerOpen(true) }}
               disabled={isEdit}
               placeholder="예: SCP-096"
               className={`w-full rounded border ${validationErrors.scpId ? "border-status-failed" : "border-border"} bg-background px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50`}
@@ -208,6 +212,14 @@ export function CharacterFormDialog({ open, onClose, onCreated, initial }: Props
           </button>
         </div>
       </div>
+
+      <SCPPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(scp) => setScpId(scp.id)}
+        title="새 캐릭터 — SCP 선택"
+        confirmLabel="선택"
+      />
     </div>
   )
 }

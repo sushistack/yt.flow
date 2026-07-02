@@ -20,6 +20,7 @@ const ANGLE_LABELS: Record<string, string> = {
 export function CandidatePanel({ charId, candidates, onCandidatesRefresh, hasReferences }: Props) {
   const [generating, setGenerating] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+  const [regeneratingAngle, setRegeneratingAngle] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleGenerate = async () => {
@@ -33,6 +34,19 @@ export function CandidatePanel({ charId, candidates, onCandidatesRefresh, hasRef
       setError(e instanceof ApiError ? e.message : "생성 시작에 실패했습니다.")
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleRegenerate = async (angle: string) => {
+    setRegeneratingAngle(angle)
+    setError(null)
+    try {
+      await generateCandidates(charId, angle)
+      onCandidatesRefresh()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "재시도에 실패했습니다.")
+    } finally {
+      setRegeneratingAngle(null)
     }
   }
 
@@ -133,6 +147,14 @@ export function CandidatePanel({ charId, candidates, onCandidatesRefresh, hasRef
                       <span className="flex flex-col items-center gap-1.5 text-[12px] text-status-failed">
                         <span className="text-[20px]">⚠</span>
                         실패
+                        <button
+                          type="button"
+                          onClick={() => handleRegenerate(angle)}
+                          disabled={regeneratingAngle === angle}
+                          className="rounded border border-status-failed/30 px-2 py-0.5 text-[11px] text-status-failed hover:bg-status-failed-bg disabled:opacity-50 transition-colors"
+                        >
+                          {regeneratingAngle === angle ? "재시도 중…" : "재시도"}
+                        </button>
                       </span>
                     ) : (
                       <span className="text-[12px] text-muted-foreground">

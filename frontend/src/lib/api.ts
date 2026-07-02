@@ -166,8 +166,8 @@ export const searchCharacterRefs = (id: string) =>
 export const getCharacterRefs = (id: string) =>
   json<ReferenceImage[]>(`/api/characters/${id}/references`)
 
-export const generateCandidates = (id: string) =>
-  json<CandidateBatchResponse>(`/api/characters/${id}/generate`, { method: "POST" })
+export const generateCandidates = (id: string, angle?: string) =>
+  json<CandidateBatchResponse>(`/api/characters/${id}/generate${angle ? `?angle=${encodeURIComponent(angle)}` : ""}`, { method: "POST" })
 
 export const getCharacterCandidates = (id: string, angle?: string) =>
   json<CharacterCandidate[]>(`/api/characters/${id}/candidates${angle ? `?angle=${encodeURIComponent(angle)}` : ""}`)

@@ -16,7 +16,7 @@ from yt_flow.db import get_session, get_engine
 from yt_flow.db.models import Character as CharacterModel
 from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
-from yt_flow.services.character_service import CharacterService
+from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService
 from yt_flow.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -282,11 +282,13 @@ async def generate_candidates(
     id: str,
     request: Request,
     session: Session = Depends(get_session),
+    angle: str | None = None,
 ):
     """Trigger multi-angle character generation (AC4).
 
-    Creates pending candidates for all 4 angles, then fires async generation
-    in a background task with a fresh DB session per operation. Poll
+    Creates pending candidates for all 4 angles (or just ``angle``, to
+    regenerate a single failed one), then fires async generation in a
+    background task with a fresh DB session per operation. Poll
     GET /{id}/candidates for progress (3s interval).
     """
     svc = _svc(request, session)
@@ -294,8 +296,11 @@ async def generate_candidates(
     if model is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    # Create pending candidate batch
-    candidates = svc.create_candidate_batch(model.scp_id)
+    if angle is not None and angle not in CANONICAL_ANGLES:
+        raise HTTPException(status_code=422, detail=f"Invalid angle: {angle!r}. Must be one of {CANONICAL_ANGLES}")
+
+    # Create pending candidate batch (all 4 angles, or just the one to regenerate)
+    candidates = svc.create_candidate_batch(model.scp_id, angles=[angle] if angle else None)
 
     # Require at least one reference image for i2i generation
     refs = svc.get_reference_images(id)
