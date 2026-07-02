@@ -1,0 +1,86 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-07-02",
+  "repo": "yt.flow",
+  "collection_mode": "contract_static",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "source_sha": "dfd35cd",
+  "target": { "type": "release", "id": null, "label": "yt.flow system-level pre-release trace (Epics 1-4, all stories done)" },
+  "decision_mode": "deterministic",
+  "evaluator": "Jay",
+  "confidence": "high",
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/test-artifacts/test-design/test-design-qa.md",
+      "_bmad-output/test-artifacts/test-design/test-design-architecture.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "coverage": {
+    "inventory": { "covered": 16, "total": 20, "pct": 80 },
+    "priority_breakdown": {
+      "P0": { "total": 6, "covered": 6, "pct": 100 },
+      "P1": { "total": 8, "covered": 8, "pct": 100 },
+      "P2": { "total": 4, "covered": 2, "pct": 50 },
+      "P3": { "total": 2, "covered": 0, "pct": 0 }
+    }
+  },
+  "tests": {
+    "files": 51,
+    "cases": "245+ (spot-counted, not exhaustively enumerated; +15 added during remediation)",
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 1,
+    "low_open": 0
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "not_applicable",
+    "error_path_status": "present",
+    "ui_journey_status": "not_applicable",
+    "ui_state_status": "not_applicable"
+  },
+  "blockers": [],
+  "recommendations": [
+    { "priority": "MEDIUM", "action": "Rescope SYS-INT-012 with Dev/Architecture — adopt Alembic (then write the roundtrip test) or formally drop the requirement, since create_all() is the current migration strategy and no Alembic tooling exists to test", "requirements": ["SYS-INT-012"] },
+    { "priority": "LOW", "action": "Adopt @pytest.mark.p0-p3 tagging so Exit Criteria can be enforced via pytest -m instead of manual bucketing against this matrix", "requirements": [] },
+    { "priority": "LOW", "action": "Consider whether the duplicate SYS-INT-004 coverage across test_runs.py and test_stages.py should be consolidated — kept as-is for now since test_stages.py's version additionally proves the checkpoint is untouched", "requirements": ["SYS-INT-004"] }
+  ],
+  "critical_findings_fixed_during_this_trace": [
+    "pipeline/nodes/__init__.py wired Story 1.4 stub functions (no-ops) instead of the real, already-implemented, already-unit-tested scenario/image/tts/subtitle nodes — every real run would produce zero scenes and fail at the video stage. Fixed by wiring the real node functions into STAGE_NODES.",
+    "GET /runs/{id}/artifact (video download, FR-26) looked for output.mp4 but video_node (and every other consumer) has always used video.mp4 — every completed run's download 404'd unconditionally. Fixed the filename.",
+    "run_service.py's generic exception handler hardcoded stage='unknown' for every node failure, violating FR-13. Fixed by parsing LangGraph's PEP 678 exception note to surface the real failing node.",
+    "run_service.py's _trace_cm() swallowed Langfuse span setup/teardown exceptions with zero logging, violating AD-10's 'log the error and continue' requirement. Added logger.warning calls.",
+    "tests/api/test_workspace_files.py claimed [verify-existing] path-traversal coverage (SYS-INT-009, R-006 security) that did not exist — zero negative-path tests were present. Added 4 traversal/symlink/absolute-path tests (all pass — Starlette's StaticFiles already blocks them by construction).",
+    "stub_profile test fixture was missing a 5th seam (Langfuse Prompt Hub fetch in scenario_node) — the 'offline' B-2 stub-profile smoke test was never actually offline for this path, silently producing zero scenes via AD-10's error-swallowing. Added fake_get_prompt seam."
+  ],
+  "gate_status": "PASS",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "100%",
+    "p1_status": "MET",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "80%",
+    "overall_status": "MET"
+  },
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability-matrix.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  }
+}

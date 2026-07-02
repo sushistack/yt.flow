@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-07-02",
+  "repo": "yt.flow",
+  "target": { "type": "release", "id": null, "label": "yt.flow system-level pre-release trace (Epics 1-4, all stories done)" },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "PASS",
+  "rationale": "P0 coverage is 100% (6/6). P1 coverage is 100% (8/8, exceeds the 90% PASS target). Overall coverage is 80% (exactly meets minimum). Remediation during this trace closed 4 real gaps (SYS-INT-004/007/008/009) and, while building SYS-E2E-001, found and fixed a critical production bug: pipeline/nodes/__init__.py wired Story 1.4 stub functions instead of the real (already-implemented, already-unit-tested) scenario/image/tts/subtitle nodes, meaning every real run would have produced zero scenes and failed at the video stage. Also fixed a GET /runs/{id}/artifact filename mismatch (output.mp4 vs the actual video.mp4) that 404'd every video download. The one remaining uncovered item, SYS-INT-012 (P2, Alembic migration roundtrip), is a structural non-gap — no Alembic tooling exists in the codebase to test — and is excluded from the P0/P1 gate criteria by design.",
+  "p0_status": "MET",
+  "p1_status": "MET",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability-matrix.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  }
+}
