@@ -1,4 +1,5 @@
-import { test, expect, type Page } from './support/fixtures/merged-fixtures';
+import { test, expect } from './support/fixtures/merged-fixtures';
+import { stageSidebarButton, artifactSection, approveStage, createRun } from './support/helpers';
 
 // SYS-E2E-002 (P0) — the baseline journey: dashboard → create run → approve
 // gate → artifact panel per stage type. Drives the real FastAPI app with all
@@ -9,66 +10,14 @@ import { test, expect, type Page } from './support/fixtures/merged-fixtures';
 // Related stories: 3.3 (Dashboard + SCP Picker), 3.4 (Run Detail + Artifact
 // Panel), 3.5 (Gate Controls + Retry + SSE).
 
-function stageSidebarButton(page: Page, stage: string) {
-  return page.locator('aside').getByRole('button', { name: new RegExp(`^${stage}`) });
-}
-
-function artifactSection(page: Page, stage: string) {
-  return page.getByRole('region', { name: `${stage} artifact` });
-}
-
-// Selects the stage in the sidebar (if not already selected), waits for its
-// gate to go pending (SSE `gate_pending`), approves it, and waits for the
-// gate controls to disappear — the visible proof the approval round-tripped.
-async function approveStage(page: Page, stage: string) {
-  await stageSidebarButton(page, stage).click();
-  const section = artifactSection(page, stage);
-  await expect(section.getByRole('heading', { name: stage })).toBeVisible();
-
-  const approve = section.getByRole('button', { name: '승인' });
-  await expect(approve).toBeVisible({ timeout: 15000 });
-  await approve.click();
-  await expect(approve).toBeHidden();
-}
-
 test.describe('@P0 SYS-E2E-002 dashboard → create run → approve gate → artifact panel', () => {
   test('runs SCP-096 through all 5 stages to completion', async ({ page, apiRequest }) => {
-    await page.goto('/app/');
-
-    // ── Dashboard → SCP Picker → create run (Story 3.3) ────────────────────
-    // Top nav CTA — the empty-state CTA (same label) only renders when the run
-    // list is empty, so scope to the nav to stay strict-mode safe either way.
-    await page.getByRole('navigation').getByRole('button', { name: '+ 새 실행' }).click();
-
-    const dialog = page.getByRole('dialog', { name: '새 실행 — SCP 선택' });
-    await expect(dialog).toBeVisible();
-
-    const search = page.getByRole('combobox', { name: 'SCP 검색' });
-    await expect(search).toBeFocused();
-    await search.fill('096');
-
-    const option = page.getByRole('option').filter({ hasText: 'SCP-096' });
-    await expect(option).toBeVisible();
-    // Capture the created run's id from the response so the later completion
-    // check is unambiguous even if other SCP-096 runs exist in the (gitignored,
+    // Capture the created run's id so the completion check at the end is
+    // unambiguous even if other SCP-096 runs exist in the (gitignored,
     // locally-accumulating) dev db.
-    const [response] = await Promise.all([
-      page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/runs')),
-      option.click(),
-    ]);
-    const runId = (await response.json()).id as string;
-
-    await expect(dialog).toBeHidden();
-
-    // New run row appears on the dashboard (Story 3.3, AC6) — click it to open
-    // Run Detail. (Direct navigation to /app/runs/{id} 404s: the FastAPI static
-    // mount has no SPA history-fallback for nested paths, only for /app/ itself
-    // — a separate real gap, noted here rather than worked around.)
-    await page.getByRole('main').getByRole('button', { name: /SCP-096/ }).first().click();
+    const runId = await createRun(page, '096', 'SCP-096');
 
     // ── Run Detail (Story 3.4) ──────────────────────────────────────────────
-    await expect(page.getByText('SCP-096', { exact: true })).toBeVisible();
-
     // scenario: text artifact, live via SSE stage_entry/gate_pending (Story 3.5).
     await stageSidebarButton(page, 'scenario').click();
     await expect(artifactSection(page, 'scenario').getByRole('button', { name: '편집' })).toBeVisible();

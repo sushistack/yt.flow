@@ -26,9 +26,18 @@ which reliably deadlocked into "database is locked" within 1-2 gate approvals.
 Fixed alongside this script (WAL + busy_timeout, and asyncio.to_thread around the
 blocking writes) since the stub server can't demonstrate anything without it —
 see the two E2E runs in the review notes.
+
+``tests/stubs/fakes.py``'s ComfyUI fake does zero I/O, so a stage retry (B-1
+concurrency guard) can complete faster than two sequential real HTTP round-trips
+from Playwright — the ``run.status == "running"`` window is unobservable over
+real HTTP even though it exists. Only this script adds a small artificial delay
+to the image seam so that window is wide enough for a Playwright test to land a
+probe request inside it; ``tests/stubs/fakes.py`` itself is untouched, so pytest
+(in-process, no such race) stays fast.
 """
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -36,6 +45,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))  # repo root, for `tests.stubs.fakes`
 
 from tests.stubs import fakes  # noqa: E402
+
+# E2E-only: widens the run.status=="running" window past a real HTTP round-trip.
+_CONCURRENCY_PROBE_DELAY_SEC = 0.5
+
+
+async def _delayed_submit_and_fetch(*args, **kwargs):
+    await asyncio.sleep(_CONCURRENCY_PROBE_DELAY_SEC)
+    return await fakes.fake_submit_and_fetch(*args, **kwargs)
+
+
+async def _delayed_submit_and_fetch_outputs(*args, **kwargs):
+    await asyncio.sleep(_CONCURRENCY_PROBE_DELAY_SEC)
+    return await fakes.fake_submit_and_fetch_outputs(*args, **kwargs)
 
 
 def apply_stub_profile() -> None:
@@ -48,8 +70,8 @@ def apply_stub_profile() -> None:
     scenario.get_prompt = fakes.fake_get_prompt
     scenario._call_deepseek = fakes.deepseek_from_cassette()
     tts._synthesize = fakes.fake_synthesize
-    comfyui_client.submit_and_fetch = fakes.fake_submit_and_fetch
-    comfyui_client.submit_and_fetch_outputs = fakes.fake_submit_and_fetch_outputs
+    comfyui_client.submit_and_fetch = _delayed_submit_and_fetch
+    comfyui_client.submit_and_fetch_outputs = _delayed_submit_and_fetch_outputs
     video._run_ffmpeg = fakes.fake_run_ffmpeg
 
 

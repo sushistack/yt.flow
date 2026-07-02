@@ -12,7 +12,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Every spec drives one shared, single-process stub server (webServer below) —
+  // two full 5-stage pipeline runs executing concurrently contend for the same
+  // SQLite file and in-process LangGraph state and reliably time out each other's
+  // requests (confirmed: default worker count intermittently fails both journey
+  // specs). Serialize everywhere, not just CI.
+  workers: 1,
   reporter: [
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['junit', { outputFile: 'test-results/results.xml' }],
