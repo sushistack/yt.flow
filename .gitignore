@@ -12,8 +12,15 @@ dist/
 htmlcov/
 
 # project artifacts
-yt_flow.db
+yt_flow.db*
 workspace/
+
+# node (root — e2e/)
+node_modules/
+
+# playwright
+/test-results/
+/playwright-report/
 
 # bmad
 _bmad

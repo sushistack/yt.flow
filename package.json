@@ -1,0 +1,13 @@
+{
+  "name": "yt-flow-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@seontechnologies/playwright-utils": "^4.4.0"
+  }
+}
