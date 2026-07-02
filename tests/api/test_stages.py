@@ -267,3 +267,37 @@ def test_retry_image_cascade_clears_paths(client):
     assert values["scenes"][0]["audio_path"] is None
     assert values["scenes"][0]["subtitle_path"] is None
     assert values["video_path"] is None
+
+
+# ── B-1: concurrency guard — retry/edit rejected while run is live (R-009, SYS-INT-004) ──
+
+
+def test_retry_while_running_returns_409_and_leaves_checkpoint_untouched(client):
+    _seed(status="running", gate_states={"scenario": "approved"})
+    g = _graph({"scenes": [_scene()], "gate_states": {"scenario": "approved"}})
+    resp = client.post("/runs/r1/stages/scenario/retry")
+    assert resp.status_code == 409
+    assert "running" in resp.json()["detail"]
+    assert g.updates == []  # no aupdate_state call — checkpoint untouched
+    assert g.astream_calls == []  # no re-execution spawned
+    with Session(db._engine) as session:
+        run = session.get(Run, "r1")
+    assert run.status == "running"  # DB row untouched
+
+
+def test_edit_while_running_returns_409_and_leaves_checkpoint_untouched(client, tmp_path):
+    _seed(status="running")
+    g = _graph({"scenes": [_scene(narration="old")]})
+    resp = client.patch("/runs/r1/stages/scenario/artifact", json={"body": "new text"})
+    assert resp.status_code == 409
+    assert "running" in resp.json()["detail"]
+    assert g.updates == []  # no aupdate_state call — checkpoint untouched
+    assert not (tmp_path / "r1" / "scenario" / "scene_001.txt").exists()  # no file write
+
+
+@pytest.mark.parametrize("status", ["awaiting_approval", "failed", "complete"])
+def test_edit_allowed_when_run_settled(client, status):
+    _seed(status=status)
+    _graph({"scenes": [_scene(narration="old")]})
+    resp = client.patch("/runs/r1/stages/scenario/artifact", json={"body": "new text"})
+    assert resp.status_code == 200
