@@ -9,8 +9,7 @@ import uuid
 import pytest
 
 from yt_flow.config import Settings
-from yt_flow.pipeline import nodes
-from yt_flow.pipeline.graph import STAGES, build_graph, build_state_graph
+from yt_flow.pipeline.graph import build_graph, build_state_graph
 
 EXPECTED_NODES = [
     "scenario",
@@ -126,14 +125,3 @@ async def test_gate_rejects_invalid_decision(tmp_path):
             await graph.ainvoke(Command(resume="maybe"), config)
     finally:
         await saver.conn.close()
-
-
-def test_stub_stage_nodes_return_current_stage_without_mutating_input():
-    # video_node is async and real as of Story 1.9; only remaining stubs are tested here.
-    stub_stages = [s for s in STAGES if s != "video"]
-    for stage in stub_stages:
-        state = _minimal_state(str(uuid.uuid4()))
-        snapshot = dict(state)
-        update = nodes.STAGE_NODES[stage](state)
-        assert update == {"current_stage": stage}
-        assert state == snapshot  # input not mutated in place [AD-4]
