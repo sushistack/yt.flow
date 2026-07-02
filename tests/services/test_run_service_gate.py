@@ -165,3 +165,91 @@ async def test_astream_failure_marks_failed(env, monkeypatch):
     assert run.status == "failed"
     assert run.error == "kaboom"
     assert _kinds(reg, "run_failed")
+
+
+async def test_node_failure_surfaces_failing_stage_in_trace_payload(env, monkeypatch):
+    # SYS-INT-008 / FR-13: a failed node's stage (not just its exception) must be
+    # surfaced — LangGraph attaches "During task with name '<node>'" as an exception
+    # note (PEP 678); _stage_from_exception parses it instead of hardcoding "unknown".
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)  # pauses at gate_scenario
+    reg.events.clear()
+
+    exc = ValueError("image node exploded")
+    exc.add_note("During task with name 'image' and id 'deadbeef'")
+
+    async def _boom(*args, **kwargs):
+        raise exc
+        yield  # unreachable — makes this an async generator
+
+    monkeypatch.setattr(run_service._graph, "astream", _boom)
+    await run_service.resume_run(run_id, "scenario", "approve", reg)
+
+    run = _load(run_id)
+    assert run.status == "failed"
+    assert run.error == "image node exploded"
+    assert run.current_stage == "image"  # not "unknown" — the actual failing node
+    [event] = _kinds(reg, "run_failed")
+    assert event["data"]["stage"] == "image"
+    assert event["data"]["error"] == "image node exploded"
+
+
+def test_stage_from_exception_falls_back_to_unknown_without_notes():
+    assert run_service._stage_from_exception(RuntimeError("no notes here")) == "unknown"
+
+
+# ── SYS-INT-007 / AD-10: Langfuse client raises → stage completes, error logged ──
+
+
+class _RaisingClient:
+    """Stands in for get_client() when the real Langfuse client can't reach the server."""
+
+    def start_as_current_observation(self, *a, **k):
+        raise ConnectionError("langfuse host unreachable")
+
+    def create_trace_id(self, *, seed=None):
+        return seed or ""
+
+
+async def test_trace_setup_failure_is_non_fatal_and_logged(env, monkeypatch, caplog):
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    monkeypatch.setattr(run_service, "get_client", lambda: _RaisingClient())
+
+    with caplog.at_level("WARNING", logger="yt_flow.services.run_service"):
+        await run_service.start_run(run_id, "SCP-096", "t", reg)
+
+    run = _load(run_id)
+    assert run.status == "awaiting_approval"  # pipeline unaffected by the tracing failure
+    assert any("Langfuse" in r.message for r in caplog.records)  # AD-10: error is logged
+
+
+async def test_trace_teardown_failure_is_non_fatal_and_logged(env, monkeypatch, caplog):
+    class _RaisingExitSpan:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            raise ConnectionError("flush failed")
+
+    class _RaisingExitClient:
+        def start_as_current_observation(self, *a, **k):
+            return _RaisingExitSpan()
+
+        def create_trace_id(self, *, seed=None):
+            return seed or ""
+
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    monkeypatch.setattr(run_service, "get_client", lambda: _RaisingExitClient())
+
+    with caplog.at_level("WARNING", logger="yt_flow.services.run_service"):
+        await run_service.start_run(run_id, "SCP-096", "t", reg)
+
+    run = _load(run_id)
+    assert run.status == "awaiting_approval"  # pipeline unaffected by the tracing failure
+    assert any("Langfuse" in r.message for r in caplog.records)  # AD-10: error is logged

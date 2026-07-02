@@ -7,6 +7,8 @@ stream event — never before. [AD-1, AD-3, AD-4]
 """
 import asyncio
 import json
+import logging
+import re
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -30,6 +32,8 @@ if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
     from yt_flow.api.sse import SSEQueueRegistry
+
+logger = logging.getLogger(__name__)
 
 _STAGES = ("scenario", "image", "tts", "subtitle", "video")
 _ACTION_TO_DECISION = {"approve": "approved", "reject": "rejected"}
@@ -203,6 +207,18 @@ def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any 
 
 _Event = Literal["stage_entry", "stage_exit", "gate_pending", "run_failed"]
 
+# LangGraph attaches `During task with name '<node>' and id '<uuid>'` as an exception
+# note (PEP 678) when a node raises inside astream(). This is the only place the
+# failing node's identity survives past the generic astream() exception (FR-13).
+_TASK_NAME_RE = re.compile(r"During task with name '([^']+)'")
+
+
+def _stage_from_exception(exc: BaseException) -> str:
+    for note in getattr(exc, "__notes__", None) or ():
+        if m := _TASK_NAME_RE.search(note):
+            return m.group(1)
+    return "unknown"
+
 
 async def _publish(sse_registry: "SSEQueueRegistry | None", run_id: str, event: _Event, data: dict) -> None:
     if sse_registry is not None:
@@ -271,6 +287,7 @@ def _trace_cm(run_id: str):
         span.__enter__()
     except Exception:  # noqa: BLE001 — tracing must never break the pipeline
         span = None
+        logger.warning("Langfuse span start failed for run %s — tracing disabled for this run", run_id, exc_info=True)
     try:
         yield
     finally:
@@ -278,7 +295,7 @@ def _trace_cm(run_id: str):
             try:
                 span.__exit__(None, None, None)
             except Exception:  # noqa: BLE001 — nor on teardown
-                pass
+                logger.warning("Langfuse span teardown failed for run %s", run_id, exc_info=True)
 
 
 async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None") -> None:
@@ -286,9 +303,10 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
         with _trace_cm(run_id):
             await _consume(run_id, stream, sse_registry)
     except Exception as exc:  # AD-4: services catches astream() failures, marks failed, fans out.
+        stage = _stage_from_exception(exc)  # FR-13: surface which node actually failed
         _configs.pop(run_id, None)
-        _write_run(run_id, status="failed", error=str(exc))
-        await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": "unknown", "error": str(exc)})
+        _write_run(run_id, status="failed", error=str(exc), current_stage=stage)
+        await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": stage, "error": str(exc)})
 
 
 async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
