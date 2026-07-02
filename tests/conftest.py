@@ -23,17 +23,24 @@ from tests.stubs import fakes
 
 @pytest.fixture
 def stub_profile(monkeypatch):
-    """Wire the four external seams to offline fakes (zero network/subprocess).
+    """Wire the five external seams to offline fakes (zero network/subprocess).
 
-    Patches: DeepSeek (`scenario._call_deepseek`), Qwen TTS (`tts._synthesize`),
-    ComfyUI (`comfyui_client.submit_and_fetch*`), and ffmpeg (`video._run_ffmpeg`).
-    Yields the fakes module so a test can inspect the tiny artifacts it emits.
+    Patches: Langfuse Prompt Hub (`scenario.get_prompt`), DeepSeek (`scenario._call_deepseek`),
+    Qwen TTS (`tts._synthesize`), ComfyUI (`comfyui_client.submit_and_fetch*`), and ffmpeg
+    (`video._run_ffmpeg`). Yields the fakes module so a test can inspect the tiny artifacts
+    it emits.
+
+    ponytail: get_prompt was missing from the original four-seam B-2 design — scenario_node
+    calls it before ever reaching the (already-stubbed) DeepSeek call, so any test driving the
+    real scenario_node without a reachable Langfuse Prompt Hub failed silently into
+    PipelineState.error (AD-10 swallows it) with zero scenes, never a loud test failure.
     """
     import yt_flow.pipeline.nodes.scenario as scenario
     import yt_flow.pipeline.nodes.tts as tts
     import yt_flow.pipeline.nodes.video as video
     import yt_flow.services.comfyui_client as comfyui_client
 
+    monkeypatch.setattr(scenario, "get_prompt", fakes.fake_get_prompt)
     monkeypatch.setattr(scenario, "_call_deepseek", fakes.deepseek_from_cassette())
     monkeypatch.setattr(tts, "_synthesize", fakes.fake_synthesize)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)

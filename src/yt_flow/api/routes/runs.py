@@ -151,7 +151,7 @@ def get_artifact(run_id: str, request: Request, session: Session = Depends(get_s
     if run.status != "complete":
         raise HTTPException(status_code=404, detail="Artifact not available")
     # ponytail: workspace_path stored in app.state at startup to avoid re-constructing Settings
-    ws = Path(request.app.state.workspace_path) / run_id / "output.mp4"
+    ws = Path(request.app.state.workspace_path) / run_id / "video.mp4"
     if not ws.is_file():
         raise HTTPException(status_code=404, detail="Artifact file not found")
     return FileResponse(

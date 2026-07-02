@@ -63,3 +63,15 @@ def deepseek_from_cassette(name: str = "deepseek_scenario.json"):
         return choice["message"]["content"], data.get("usage", {}), choice.get("finish_reason")
 
     return fake
+
+
+# ── scenario.get_prompt (Langfuse Prompt Hub) ───────────────────────────────
+class _FakePrompt:
+    """Stands in for the Langfuse SDK's prompt object — only `.compile()` is used."""
+
+    def compile(self, **variables: object) -> str:
+        return "fake rendered prompt"
+
+
+def fake_get_prompt(name: str, *, label: str | None = None) -> _FakePrompt:
+    return _FakePrompt()
