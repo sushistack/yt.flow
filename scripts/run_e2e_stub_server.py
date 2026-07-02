@@ -61,11 +61,19 @@ async def _delayed_submit_and_fetch_outputs(*args, **kwargs):
 
 
 def apply_stub_profile() -> None:
-    """Same 5 seams as tests/conftest.py::stub_profile, applied without pytest."""
+    """Same 5 seams as tests/conftest.py::stub_profile, applied without pytest.
+
+    Plus 2 more seams for the character management flow (Story 1.11/3.7):
+    DuckDuckGo image search and its download step both do real HTTP otherwise —
+    unlike the 5 pipeline seams, pytest never covers this path with non-empty
+    results (see deferred-work.md), so there's no existing fixture to mirror.
+    """
     import yt_flow.pipeline.nodes.scenario as scenario
     import yt_flow.pipeline.nodes.tts as tts
     import yt_flow.pipeline.nodes.video as video
+    import yt_flow.services.character_service as character_service
     import yt_flow.services.comfyui_client as comfyui_client
+    import yt_flow.services.image_search as image_search
 
     scenario.get_prompt = fakes.fake_get_prompt
     scenario._call_deepseek = fakes.deepseek_from_cassette()
@@ -73,6 +81,8 @@ def apply_stub_profile() -> None:
     comfyui_client.submit_and_fetch = _delayed_submit_and_fetch
     comfyui_client.submit_and_fetch_outputs = _delayed_submit_and_fetch_outputs
     video._run_ffmpeg = fakes.fake_run_ffmpeg
+    image_search.DuckDuckGoImageSearch.search = fakes.fake_image_search
+    character_service.CharacterService._download_reference_image = fakes.fake_download_reference_image
 
 
 if __name__ == "__main__":

@@ -232,6 +232,36 @@ class TestReferenceImageSearch:
         from yt_flow.services.character_service import _DOWNLOAD_TIMEOUT
         assert _DOWNLOAD_TIMEOUT == 30.0
 
+    @pytest.mark.asyncio
+    async def test_search_references_downloads_and_persists_results(self, session, monkeypatch, tmp_path):
+        """Regression: non-empty search results must actually download and persist.
+
+        ``SearchResult`` is a TypedDict (a plain dict at runtime); a prior bug
+        accessed ``result.url`` instead of ``result["url"]``, raising
+        AttributeError on every real result — silently swallowed by the
+        surrounding except/continue, so 0 references were ever downloaded.
+        The other tests in this class only cover the empty-results and
+        dedup-existing-refs branches, neither of which reaches that line.
+        """
+        svc = CharacterService(
+            session,
+            image_search=_FakeImageSearch([
+                {"url": "https://example.com/a.png", "thumbnail_url": "https://example.com/a_t.png", "title": "a"},
+                {"url": "https://example.com/b.png", "thumbnail_url": "https://example.com/b_t.png", "title": "b"},
+            ]),
+        )
+        svc.create_character("SCP-096", "Shy Guy")
+
+        async def fake_download(self, url, refs_dir, num):
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            (refs_dir / f"ref_{num}.png").write_bytes(b"\x89PNG")
+            return "png"
+
+        monkeypatch.setattr(CharacterService, "_download_reference_image", fake_download)
+
+        result = await svc.search_references("SCP-096", tmp_path, max_results=10)
+        assert [r.url for r in result] == ["https://example.com/a.png", "https://example.com/b.png"]
+
 
 # ── Layer-boundary test ──────────────────────────────────────────────────────
 

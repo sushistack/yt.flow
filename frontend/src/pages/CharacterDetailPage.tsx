@@ -53,6 +53,9 @@ export function CharacterDetailPage({ charId }: Props) {
 
   const handleCandidatesRefresh = () => {
     getCharacterCandidates(charId).then(setCandidates).catch(() => {})
+    // Finalize also updates the character's angle_*_path fields — without this
+    // the angle gallery above stays stale until the next full page load.
+    void load()
   }
 
   const handleSaveDescriptor = async () => {

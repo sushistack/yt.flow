@@ -86,6 +86,13 @@
 
 - **첫 full burn-in 수동 실행** — `.github/workflows/test.yml`의 `burn-in-full` job(전체 스위트 10회 반복)을 Actions 탭에서 `workflow_dispatch`로 1회 실행해 flaky 베이스라인을 확인할 것. 이후에는 주간 cron(일요일 02:00 UTC)이 자동 수행하므로 급하지 않음. 실행: `gh workflow run test.yml` 또는 GitHub Actions UI.
 
+## Deferred from: QA E2E test generation, character management journey (2026-07-03)
+
+- **`CharacterFormDialog` has no SCP Picker integration** [frontend/src/components/characters/CharacterFormDialog.tsx] — Story 3.7's AC6 and its task checklist both claim the "New Character" dialog opens the Story 3.3 SCP Picker on SCP-ID-field focus, but the component only renders a plain text `<input>`. Spec/shipped-code drift, not something caught by this session's E2E test (it just fills the field directly). Needs either a Dev follow-up to wire the picker in, or a doc correction to 3.7 if the plain-text field was an intentional simplification.
+- **No "재시도"(regenerate) control for a failed angle candidate** [frontend/src/components/characters/CandidatePanel.tsx] — AC4 specifies a per-angle regenerate button when a candidate's status is `failed`; the shipped component only shows a static "⚠ 실패" indicator with no retry action. Not exercised by the E2E test (the stubbed ComfyUI fake never fails). Add the control (and a Playwright probe mirroring the gate-reject-retry-edit-concurrency spec's `재시도` pattern) if AC4's regenerate-on-failure requirement is still wanted.
+
+(Three other bugs found in the same session — `character_service.py`'s `result.url`/TypedDict crash, the missing `select_candidate` call after a candidate goes `ready`, and `CharacterDetailPage`'s stale angle gallery after finalize — were fixed in-session rather than deferred; see `_bmad-output/implementation-artifacts/tests/test-summary.md`.)
+
 ## Deferred from: B-1/B-3 dev-dependencies review (2026-07-02)
 
 - **`fake_run_ffmpeg`가 출력 경로를 `args[-1]`로 가정** ([tests/stubs/fakes.py](tests/stubs/fakes.py)) — 현재 `video._run_ffmpeg` 호출 규약에서는 출력이 마지막 인자라 스모크 테스트가 통과하지만, ffmpeg 호출 규약이 바뀌면(옵션이 출력 뒤에 붙는 등) 페이크가 엉뚱한 파일에 쓰고도 `(0, "")`을 반환해 조용히 잘못될 수 있음. QA가 SYS-E2E-001용으로 이 seam을 확장할 때 출력 경로를 위치가 아니라 명시적으로 파싱하도록 강화할 것. (테스트 전용, 저위험)

@@ -302,7 +302,7 @@ class CharacterService:
         records: list[ReferenceImageModel] = []
         for i, result in enumerate(results, start=1):
             try:
-                ext = await self._download_reference_image(result.url, refs_dir, i)
+                ext = await self._download_reference_image(result["url"], refs_dir, i)
             except Exception as exc:
                 logger.warning("Skipping reference image %d: %s", i, exc)
                 continue

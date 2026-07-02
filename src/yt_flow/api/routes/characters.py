@@ -323,6 +323,10 @@ async def generate_candidates(
                     )
                     if saved_paths:
                         svc_gen.update_candidate_status(candidate_id, "ready", image_path=saved_paths[0])
+                        # Only one candidate is ever generated per angle (no regenerate/
+                        # multi-candidate UI exists yet), so auto-select it — otherwise
+                        # angle_*_path never populates and finalize_character always 409s.
+                        svc_gen.select_candidate(scp_id=scp_id, candidate_num=1, angle=angle)
                     else:
                         svc_gen.update_candidate_status(candidate_id, "failed", image_path=None)
                 except Exception:
