@@ -189,7 +189,9 @@ def _memdb():
     db._engine = None
 
 
-def _seed_run(run_id, status="complete", ab_pair_id="pair-1"):
+def _seed_run(run_id, status="complete", ab_pair_id=None):
+    # Real shape (Story 4.1 create_ab_run): A's ab_pair_id stays None, B's points
+    # at A's id. Callers that need a valid pair pass ab_pair_id="run-a" for run-b.
     with Session(db._engine) as session:
         session.add(Run(id=run_id, scp_id="SCP-173", status=status, ab_pair_id=ab_pair_id))
         session.commit()
@@ -197,8 +199,8 @@ def _seed_run(run_id, status="complete", ab_pair_id="pair-1"):
 
 def test_validate_pair_ok(_memdb):
     _seed_run("run-a")
-    _seed_run("run-b")
-    assert es._validate_pair("run-a", "run-b") == "pair-1"
+    _seed_run("run-b", ab_pair_id="run-a")
+    assert es._validate_pair("run-a", "run-b") == "run-a"
 
 
 def test_validate_pair_missing_run(_memdb):
@@ -209,20 +211,20 @@ def test_validate_pair_missing_run(_memdb):
 
 def test_validate_pair_not_complete(_memdb):
     _seed_run("run-a")
-    _seed_run("run-b", status="running")
+    _seed_run("run-b", status="running", ab_pair_id="run-a")
     with pytest.raises(ValueError, match="run-b: status is 'running'"):
         es._validate_pair("run-a", "run-b")
 
 
 def test_validate_pair_mismatched_ab_id(_memdb):
-    _seed_run("run-a", ab_pair_id="pair-1")
-    _seed_run("run-b", ab_pair_id="pair-2")
+    _seed_run("run-a")
+    _seed_run("run-b", ab_pair_id="some-other-run")
     with pytest.raises(ValueError, match="not a valid A/B pair"):
         es._validate_pair("run-a", "run-b")
 
 
 def test_validate_pair_null_ab_id(_memdb):
-    _seed_run("run-a", ab_pair_id=None)
+    _seed_run("run-a")
     _seed_run("run-b", ab_pair_id=None)
     with pytest.raises(ValueError, match="not a valid A/B pair"):
         es._validate_pair("run-a", "run-b")
@@ -333,7 +335,7 @@ def _no_trace(monkeypatch):
 
 async def test_evaluate_ab_end_to_end(monkeypatch, _memdb, _no_trace):
     _seed_run("run-a")
-    _seed_run("run-b")
+    _seed_run("run-b", ab_pair_id="run-a")
     monkeypatch.setattr(es, "_load_state",
                         lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
     # A scores 4 everywhere, B scores 3 → A above floor, B above floor; A wins pairwise.
@@ -341,7 +343,7 @@ async def test_evaluate_ab_end_to_end(monkeypatch, _memdb, _no_trace):
           winner_fn=lambda first, second: "first" if _is_a(first) else "second")
 
     res = await es.evaluate_ab("run-a", "run-b")
-    assert res.ab_pair_id == "pair-1"
+    assert res.ab_pair_id == "run-a"
     assert res.scores_a.total == pytest.approx(12.0)   # 4×3 axes
     assert res.scores_b.total == pytest.approx(9.0)
     assert res.winner == "A" and res.winner_run_id == "run-a"
@@ -350,7 +352,7 @@ async def test_evaluate_ab_end_to_end(monkeypatch, _memdb, _no_trace):
 
 async def test_evaluate_ab_both_below_floor(monkeypatch, _memdb, _no_trace):
     _seed_run("run-a")
-    _seed_run("run-b")
+    _seed_run("run-b", ab_pair_id="run-a")
     monkeypatch.setattr(es, "_load_state",
                         lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
     _wire(monkeypatch, score_fn=lambda c, a: 1, winner_fn=lambda f, s: "tie")
@@ -362,7 +364,7 @@ async def test_evaluate_ab_both_below_floor(monkeypatch, _memdb, _no_trace):
 
 async def test_evaluate_ab_validates_before_scoring(monkeypatch, _memdb, _no_trace):
     _seed_run("run-a", status="running")
-    _seed_run("run-b")
+    _seed_run("run-b", ab_pair_id="run-a")
     called = {"scored": False}
 
     def boom(*a, **k):
@@ -380,7 +382,7 @@ async def test_evaluate_ab_validates_before_scoring(monkeypatch, _memdb, _no_tra
 
 async def test_evaluate_ab_langfuse_failure_non_fatal(monkeypatch, _memdb):
     _seed_run("run-a")
-    _seed_run("run-b")
+    _seed_run("run-b", ab_pair_id="run-a")
     monkeypatch.setattr(es, "_load_state",
                         lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
     _wire(monkeypatch, score_fn=lambda c, a: 4, winner_fn=lambda f, s: "first")

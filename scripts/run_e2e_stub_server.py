@@ -9,7 +9,8 @@ boots uvicorn. The patch happens from outside, before the ASGI app ever runs —
 no new stub flag or branch added to ``src/yt_flow/``.
 
 NEVER use this for production. E2E/local testing only — zero real network or
-subprocess calls (DeepSeek/Qwen/ComfyUI/ffmpeg all stubbed).
+subprocess calls (DeepSeek/Qwen/ComfyUI/ffmpeg all stubbed; the A/B evaluation
+judge has no stub seam, so its API key is force-cleared below instead).
 
 Usage:
     uv run python scripts/run_e2e_stub_server.py             # http://127.0.0.1:8000
@@ -38,6 +39,7 @@ probe request inside it; ``tests/stubs/fakes.py`` itself is untouched, so pytest
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -90,6 +92,15 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
+
+    # eval_service.evaluate_ab() (Story 4.2/4.3) is not stubbed above — its DeepSeek
+    # judge calls go through raw httpx, not a seam fakes.py can monkeypatch cleanly.
+    # A real YTFLOW_DEEPSEEK_API_KEY in .env would otherwise make the A/B-completion
+    # trigger (run_service._trigger_ab_eval_if_variant_b) hit the live API during
+    # Playwright runs. Env vars win over .env in pydantic-settings, so this override
+    # forces the same "no key configured" RuntimeError the trigger already treats as
+    # non-fatal (AD-10) — deterministic, zero network, matches this script's promise.
+    os.environ["YTFLOW_DEEPSEEK_API_KEY"] = ""
 
     apply_stub_profile()
 

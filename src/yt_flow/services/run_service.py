@@ -27,6 +27,7 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
+from yt_flow.services import eval_service
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -269,8 +270,38 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
         _configs.pop(run_id, None)
         return "failed"
     await asyncio.to_thread(_write_run, run_id, status="complete")
+    await _trigger_ab_eval_if_variant_b(run_id)
     _configs.pop(run_id, None)
     return "completed"
+
+
+def _get_run_ab_fields(run_id: str) -> "tuple[str | None, str | None]":
+    with Session(db._engine) as session:
+        run = session.get(Run, run_id)
+        return (run.prompt_variant, run.ab_pair_id) if run is not None else (None, None)
+
+
+async def _trigger_ab_eval_if_variant_b(run_id: str) -> None:
+    """Fire ``evaluate_ab()`` once a Variant B run completes (Story 4.2/4.3 wiring).
+
+    Variant B is the second half of an A/B pair (``ab_pair_id`` = source run's id,
+    Story 4.1's ``create_ab_run``), so its completion is the moment the pair is
+    whole. Fire-and-forget via ``spawn`` — evaluation can take up to 5 minutes
+    (AC5) and must not block ``_consume``. Failures (e.g. no API key) are logged
+    and swallowed so the run's own ``status="complete"`` is never affected (AD-10).
+    """
+    variant, pair_id = await asyncio.to_thread(_get_run_ab_fields, run_id)
+    if variant != "B" or not pair_id:
+        return
+    spawn(_run_ab_eval(pair_id, run_id))
+
+
+async def _run_ab_eval(source_run_id: str, completed_run_id: str) -> None:
+    try:
+        await eval_service.evaluate_ab(source_run_id, completed_run_id)
+    except Exception:
+        logger.warning("A/B evaluation failed for pair (%s, %s)",
+                        source_run_id, completed_run_id, exc_info=True)
 
 
 @contextmanager

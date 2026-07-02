@@ -5,6 +5,7 @@ Uses a real compiled graph (AsyncSqliteSaver on a temp file) + in-memory SQLMode
 runs table. A fake SSE registry records fan-out without needing a live subscriber.
 """
 
+import asyncio
 import json
 import uuid
 
@@ -35,9 +36,11 @@ def _stages(reg: _FakeRegistry, name: str) -> list[str]:
     return [e["data"]["stage"] for e in _kinds(reg, name)]
 
 
-def _seed(run_id: str, status: str = "running") -> None:
+def _seed(run_id: str, status: str = "running", prompt_variant: str | None = None,
+          ab_pair_id: str | None = None) -> None:
     with Session(db._engine) as session:
-        session.add(Run(id=run_id, scp_id="SCP-096", status=status))
+        session.add(Run(id=run_id, scp_id="SCP-096", status=status,
+                         prompt_variant=prompt_variant, ab_pair_id=ab_pair_id))
         session.commit()
 
 
@@ -146,6 +149,71 @@ async def test_full_approval_completes(env):
     assert run.status == "complete"                  # AC4: reaches END → complete
     assert "video" in _stages(reg, "stage_exit")     # AC4: stage_exit for video
     assert run_id not in run_service._configs
+
+
+# ── A/B eval trigger on Variant B completion (eval-ab-trigger-wiring) ──────────
+
+
+async def test_regular_run_completion_does_not_trigger_ab_eval(env, monkeypatch):
+    called = {"count": 0}
+
+    async def boom(*a, **k):
+        called["count"] += 1
+        raise AssertionError("evaluate_ab must not run for a non-A/B run")
+
+    monkeypatch.setattr(run_service.eval_service, "evaluate_ab", boom)
+    run_id = str(uuid.uuid4())
+    _seed(run_id)  # prompt_variant=None, ab_pair_id=None — plain run
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    for stage in ("scenario", "image", "tts", "subtitle", "video"):
+        await run_service.resume_run(run_id, stage, "approve", reg)
+    await asyncio.gather(*run_service._bg_tasks)
+
+    assert _load(run_id).status == "complete"
+    assert called["count"] == 0
+
+
+async def test_variant_b_completion_triggers_ab_eval(env, monkeypatch):
+    calls = []
+
+    async def fake_evaluate_ab(run_a_id, run_b_id):
+        calls.append((run_a_id, run_b_id))
+
+    monkeypatch.setattr(run_service.eval_service, "evaluate_ab", fake_evaluate_ab)
+    source_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    _seed(source_id, status="complete")
+    _seed(run_id, prompt_variant="B", ab_pair_id=source_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    for stage in ("scenario", "image", "tts", "subtitle", "video"):
+        await run_service.resume_run(run_id, stage, "approve", reg)
+    await asyncio.gather(*run_service._bg_tasks)
+
+    assert _load(run_id).status == "complete"
+    assert calls == [(source_id, run_id)]
+
+
+async def test_ab_eval_failure_does_not_affect_run_status(env, monkeypatch, caplog):
+    async def boom(run_a_id, run_b_id):
+        raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
+
+    monkeypatch.setattr(run_service.eval_service, "evaluate_ab", boom)
+    source_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    _seed(source_id, status="complete")
+    _seed(run_id, prompt_variant="B", ab_pair_id=source_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+
+    with caplog.at_level("WARNING", logger="yt_flow.services.run_service"):
+        for stage in ("scenario", "image", "tts", "subtitle", "video"):
+            await run_service.resume_run(run_id, stage, "approve", reg)
+        await asyncio.gather(*run_service._bg_tasks)
+
+    assert _load(run_id).status == "complete"        # AD-10: eval failure is non-fatal
+    assert any("A/B evaluation failed" in r.message for r in caplog.records)
 
 
 async def test_astream_failure_marks_failed(env, monkeypatch):

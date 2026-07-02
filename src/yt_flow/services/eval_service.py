@@ -341,18 +341,24 @@ def _load_run_meta(run_id: str) -> "tuple[str, str | None]":
 
 
 def _validate_pair(run_a_id: str, run_b_id: str) -> str:
-    """Check both runs exist, are complete, and share an ab_pair_id. Returns the pair id."""
+    """Check both runs exist, are complete, and B points back to A. Returns the pair id.
+
+    Story 4.1's data model (``create_ab_run``): the B run stores
+    ``ab_pair_id=<A run's id>``; A's own ``ab_pair_id`` stays ``None``. So a valid
+    pair is "B.ab_pair_id == A.id", not "both runs share one id". The pair id is
+    A's own id, since that's what B's ab_pair_id already points to.
+    """
     status_a, pair_a = _load_run_meta(run_a_id)
     status_b, pair_b = _load_run_meta(run_b_id)
     for rid, status in ((run_a_id, status_a), (run_b_id, status_b)):
         if status != "complete":
             raise ValueError(f"run {rid}: status is {status!r}, must be 'complete' to evaluate")
-    if not pair_a or pair_a != pair_b:
+    if pair_b != run_a_id:
         raise ValueError(
             f"runs are not a valid A/B pair: {run_a_id} ab_pair_id={pair_a!r}, "
-            f"{run_b_id} ab_pair_id={pair_b!r}"
+            f"{run_b_id} ab_pair_id={pair_b!r}, expected {run_b_id} ab_pair_id={run_a_id!r}"
         )
-    return pair_a
+    return run_a_id
 
 
 # ── Langfuse persistence (AC6, non-fatal per AD-10) ─────────────────────────
