@@ -248,3 +248,50 @@ def test_list_runs_includes_ab_result(client):
 
     assert run_a_resp["ab_result"] == _SAMPLE_AB_RESULT
     assert run_b_resp["ab_result"] is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# B-1 — strict run.status guard on retry / edit-artifact (R-009 concurrency)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _seed_run(status: str, gate: str = "approved") -> str:
+    """Insert a run row with the given status; return its id."""
+    run_id = f"run-{status}"
+    with Session(db._engine) as session:
+        session.add(Run(id=run_id, scp_id="SCP-096", status=status,
+                        gate_states=json.dumps({"scenario": gate})))
+        session.commit()
+    return run_id
+
+
+@pytest.mark.parametrize("status", ["running", "pending"])
+def test_retry_while_in_progress_returns_409(client, status):
+    """Retry against a live run → 409, detail names the current status, no mutation."""
+    run_id = _seed_run(status)
+    resp = client.post(f"/runs/{run_id}/stages/scenario/retry")
+    assert resp.status_code == 409
+    assert status in resp.json()["detail"]
+
+
+@pytest.mark.parametrize("status", ["running", "pending"])
+def test_edit_artifact_while_in_progress_returns_409(client, status):
+    """PATCH artifact against a live run → 409 before any file write / aupdate_state."""
+    run_id = _seed_run(status)
+    resp = client.patch(f"/runs/{run_id}/stages/scenario/artifact", json={"body": "new text"})
+    assert resp.status_code == 409
+    assert status in resp.json()["detail"]
+
+
+def test_retry_settled_status_passes_run_guard(client):
+    """A settled ('failed') run is NOT blocked by the B-1 run-status guard.
+
+    We seed a non-retryable gate ('pending') so the request stops at the *later*
+    gate-state guard instead. The 409 detail therefore names the gate state, not
+    'must be settled' — proving the run-status guard let the settled run through.
+    """
+    run_id = _seed_run("failed", gate="pending")
+    resp = client.post(f"/runs/{run_id}/stages/scenario/retry")
+    assert resp.status_code == 409
+    assert "must be settled" not in resp.json()["detail"]
+    assert "gate state" in resp.json()["detail"]

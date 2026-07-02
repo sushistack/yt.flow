@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-cassette-scenario",
+  "object": "chat.completion",
+  "model": "deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"scenes\": [{\"scene_num\": 1, \"narration\": \"The statue stands in the containment chamber.\", \"sentences\": [\"The statue stands in the containment chamber.\"], \"shots\": [{\"shot_id\": \"S001\", \"sentence_indices\": [0], \"image_prompt\": \"a weathered concrete statue in a dim containment chamber, cinematic\", \"negative_prompt\": \"blurry, text, watermark\", \"camera_angle\": \"wide\", \"camera_movement\": \"static\"}]}]}"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 120,
+    "completion_tokens": 90,
+    "total_tokens": 210
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "output": {
+    "audio": {
+      "url": "https://dashscope-cassette.invalid/audio/cassette.wav",
+      "expires_at": 0
+    }
+  },
+  "usage": {},
+  "request_id": "cassette-qwen-tts"
+}

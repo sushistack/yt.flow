@@ -85,3 +85,8 @@
 ## Deferred from: CI pipeline setup (2026-07-02)
 
 - **첫 full burn-in 수동 실행** — `.github/workflows/test.yml`의 `burn-in-full` job(전체 스위트 10회 반복)을 Actions 탭에서 `workflow_dispatch`로 1회 실행해 flaky 베이스라인을 확인할 것. 이후에는 주간 cron(일요일 02:00 UTC)이 자동 수행하므로 급하지 않음. 실행: `gh workflow run test.yml` 또는 GitHub Actions UI.
+
+## Deferred from: B-1/B-3 dev-dependencies review (2026-07-02)
+
+- **`fake_run_ffmpeg`가 출력 경로를 `args[-1]`로 가정** ([tests/stubs/fakes.py](tests/stubs/fakes.py)) — 현재 `video._run_ffmpeg` 호출 규약에서는 출력이 마지막 인자라 스모크 테스트가 통과하지만, ffmpeg 호출 규약이 바뀌면(옵션이 출력 뒤에 붙는 등) 페이크가 엉뚱한 파일에 쓰고도 `(0, "")`을 반환해 조용히 잘못될 수 있음. QA가 SYS-E2E-001용으로 이 seam을 확장할 때 출력 경로를 위치가 아니라 명시적으로 파싱하도록 강화할 것. (테스트 전용, 저위험)
+- **langfuse enable 플래그는 import 시점에 1회 바인딩됨** ([src/yt_flow/observability.py](src/yt_flow/observability.py)) — 프로세스 단위 config 플래그로는 정상 동작(런타임 토글 불필요). 테스트 스위트는 이제 `tests/conftest.py`에서 기본 OFF로 설정해 오프라인/무소음이지만, 향후 실제 `@observe` 경로를 테스트로 검증하려면 per-test env override가 아니라 하위 프로세스/재import가 필요함을 유의. (설계상 수용, 참고용)

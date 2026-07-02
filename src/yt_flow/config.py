@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     langfuse_host: str
     langfuse_public_key: str
     langfuse_secret_key: str
+    # B-3: when false, @observe/get_client no-op (see observability.py). Does NOT
+    # disable Prompt Hub fetching. env YTFLOW_LANGFUSE_ENABLED.
+    langfuse_enabled: bool = True
 
     # Single SQLite file shared by LangGraph checkpoints and future SQLModel tables. [AD-7]
     db_path: str = "yt_flow.db"

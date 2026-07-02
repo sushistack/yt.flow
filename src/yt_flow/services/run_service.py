@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException
-from langfuse import get_client
+from yt_flow.observability import get_client
 from langgraph.graph import START
 from langgraph.types import Command
 from sqlmodel import Session
@@ -34,6 +34,9 @@ if TYPE_CHECKING:
 _STAGES = ("scenario", "image", "tts", "subtitle", "video")
 _ACTION_TO_DECISION = {"approve": "approved", "reject": "rejected"}
 _RETRYABLE = frozenset({"approved", "rejected", "failed"})  # AC1 — retry preconditions
+# B-1: retry/edit may mutate the checkpoint only from a settled run status; a live
+# ("running"/"pending") run's checkpoint must not be touched (R-009 concurrency guard).
+_MUTABLE_STATES = frozenset({"awaiting_approval", "failed", "complete"})
 _EDITABLE = ("scenario", "subtitle")  # AD-8 — only these stages carry editable text
 # Retry entry point (AD-9): to actually RE-RUN a stage node, aupdate_state must attribute
 # the update to the stage's *predecessor* (START, else the prior gate). Using as_node=stage
@@ -425,6 +428,11 @@ async def retry_stage(run_id: str, stage: str, sse_registry: "SSEQueueRegistry |
         run = session.get(Run, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        if run.status not in _MUTABLE_STATES:  # B-1: don't touch a live run's checkpoint
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot retry: run status is {run.status!r} (must be settled, not in progress)",
+            )
         gate_states = json.loads(run.gate_states) if run.gate_states else {}
     current = gate_states.get(stage)
     if current not in _RETRYABLE:
@@ -464,8 +472,14 @@ async def edit_artifact(run_id: str, stage: str, body: str, scene_num: int = 1) 
             detail="Artifact editing is only supported for scenario and subtitle stages",
         )
     with Session(db._engine) as session:
-        if session.get(Run, run_id) is None:
+        run = session.get(Run, run_id)
+        if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        if run.status not in _MUTABLE_STATES:  # B-1: no file write / aupdate_state on a live run
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot edit artifact: run status is {run.status!r} (must be settled, not in progress)",
+            )
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     snap = await _graph.aget_state(config)
     scenes = deepcopy((snap.values or {}).get("scenes") or [])

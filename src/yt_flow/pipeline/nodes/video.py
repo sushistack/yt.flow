@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from langfuse import get_client, observe
+from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
