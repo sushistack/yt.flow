@@ -29,7 +29,10 @@ export default defineConfig({
   timeout: 60000,
   expect: { timeout: 10000 },
   webServer: {
-    command: 'uv run uvicorn yt_flow.api.main:app --host 127.0.0.1 --port ' + PORT,
+    // Stub-profile server (scripts/run_e2e_stub_server.py), not the real app —
+    // SYS-E2E-002 scenarios drive real gate/pipeline flows and must not hit
+    // DeepSeek/Qwen/ComfyUI/ffmpeg for real. See that script's docstring.
+    command: 'uv run python scripts/run_e2e_stub_server.py --port ' + PORT,
     url: `${BASE_URL}/app/`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

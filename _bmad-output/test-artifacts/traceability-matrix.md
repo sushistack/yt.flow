@@ -84,7 +84,7 @@ Discovery method: matched each of the 20 Test IDs in `test-design-qa.md` against
 | SYS-COMP-001 | COMP | `frontend/src/pages/RunDetail.test.tsx` | ~10+ | verify-existing | ✅ Confirmed — SSE reconnect (run-id change closes old stream), gate control aria-disabled per stage, EventSource cleanup on unmount |
 | SYS-INT-010 | INT | `test_stage_artifacts.py` | (shared w/ SYS-INT-003) | verify-existing | ✅ Confirmed — reads state from LangGraph checkpoint not DB |
 | SYS-INT-011 | INT | `test_scps.py` (2), `test_ab_run.py` (6) | 8 | verify-existing | ✅ Confirmed — `ab_pair_id`/variant-B linkage tested in `test_ab_run.py`; `test_scps.py` is thin (2 tests) but covers the documented scope |
-| SYS-E2E-002 | E2E | — | 0 | optional | Not built — explicitly optional per doc ("only if UI regressions recur"); no action needed |
+| SYS-E2E-002 | E2E | `e2e/dashboard-run-gate-artifacts.spec.ts` | 1 | built | ✅ Built (2026-07-02, `bmad-qa-generate-e2e-tests`) — Playwright journey against the stub-profile server: dashboard → SCP search/select → create run → SSE-observed gate_pending per stage → approve all 5 gates → per-stage artifact panel (text/images/audio/subtitle/video) → completion verified via `GET /runs/{id}`. Found and documented (not fixed, out of scope for this skill) two real gaps: no SSE event for the run→`complete` transition, and no SPA history-fallback for direct navigation to `/app/runs/{id}`. |
 | **SYS-INT-012** | INT | — | 0 | gap | ⚠️ **Deeper than a test gap.** `src/yt_flow/db/__init__.py` uses `SQLModel.metadata.create_all(_engine)` — there is **no Alembic setup in this project at all** (no `alembic/` dir, no `alembic.ini`; `alembic` only present as a transitive venv dependency). "Alembic migration roundtrip" cannot be tested because the migration tooling doesn't exist yet. This is a scoping question for Dev/Architecture, not a QA backlog item. |
 | SYS-OPS-001 | manual | — | — | runbook, P3 | Manual runbook, not automatable — no gap by definition |
 | SYS-OPS-002 | manual | — | — | runbook, P3 | Manual runbook, not automatable — no gap by definition |
@@ -127,7 +127,7 @@ Discovery method: matched each of the 20 Test IDs in `test-design-qa.md` against
 | SYS-COMP-001 | P1 | R-008 (4) | COMP | **FULL** | `RunDetail.test.tsx` |
 | SYS-INT-010 | P2 | — | INT | **FULL** | `test_stage_artifacts.py` |
 | SYS-INT-011 | P2 | — | INT | **FULL** | `test_scps.py`, `test_ab_run.py` |
-| SYS-E2E-002 | P2 | R-005 | E2E | N/A | Explicitly optional in scope — build only if UI regressions recur |
+| SYS-E2E-002 | P2 | R-005 | E2E | **FULL** | `e2e/dashboard-run-gate-artifacts.spec.ts` (built 2026-07-02) |
 | SYS-INT-012 | P2 | — | INT | **NONE (blocked)** | Not a test-authoring gap — no Alembic migration tooling exists in the codebase to test |
 | SYS-OPS-001 | P3 | R-004 | manual | N/A | Runbook, not automated by design |
 | SYS-OPS-002 | P3 | R-005 | manual | N/A | Runbook, not automated by design |
@@ -157,11 +157,11 @@ Applying "P0/P1 items must have coverage" and "items are not happy-path-only whe
 |---|---|---|---|---|---|---|
 | P0 | 6 | 4 | 1 (SYS-E2E-001) | 1 (SYS-INT-004) | 0 | **67%** |
 | P1 | 8 | 5 | 0 | 3 (SYS-INT-007/008/009) | 0 | **63%** |
-| P2 | 4 | 2 | 0 | 1 (SYS-INT-012) | 1 (SYS-E2E-002) | 50%* |
+| P2 | 4 | 3 | 0 | 1 (SYS-INT-012) | 0 | **75%** |
 | P3 | 2 | 0 | 0 | 0 | 2 (manual runbooks) | 0%* |
-| **Total** | **20** | **11** | **1** | **5** | **3** | **55%** overall |
+| **Total** | **20** | **12** | **1** | **5** | **2** | **60%** overall |
 
-\* P2/P3 percentages are misleading in isolation — 3 of the 5 "uncovered" slots in P2/P3 are N/A by explicit design (optional E2E-002, manual runbooks OPS-001/002), not real gaps. Real, actionable gap count is **5** (1×P0, 3×P1, 1×P2).
+\* P3 percentage is misleading in isolation — both "uncovered" slots are N/A by explicit design (manual runbooks OPS-001/002), not real gaps. Real, actionable gap count is **5** (1×P0, 3×P1, 1×P2). SYS-E2E-002 moved from N/A to FULL on 2026-07-02 (`bmad-qa-generate-e2e-tests` built it); stats above reflect that.
 
 ### Gap Analysis (ranked by risk score, matches `probability-impact.md` MITIGATE/BLOCK thresholds)
 
