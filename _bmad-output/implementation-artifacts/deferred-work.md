@@ -81,3 +81,7 @@
 4. `scripts/seed_eval_prompts.py`, `scripts/migrate_prompts.py` 삭제 — 1·2 완료 후.
 
 **남은 블로커**: (a) `scenario` 프롬프트 소스 확보(yt.pipe 템플릿 접근), (b) `character_service`의 로컬-파일 폴백 제거.
+
+## Deferred from: CI pipeline setup (2026-07-02)
+
+- **첫 full burn-in 수동 실행** — `.github/workflows/test.yml`의 `burn-in-full` job(전체 스위트 10회 반복)을 Actions 탭에서 `workflow_dispatch`로 1회 실행해 flaky 베이스라인을 확인할 것. 이후에는 주간 cron(일요일 02:00 UTC)이 자동 수행하므로 급하지 않음. 실행: `gh workflow run test.yml` 또는 GitHub Actions UI.
