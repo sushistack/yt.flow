@@ -90,7 +90,13 @@ jobs:
         run: uv sync --frozen
 
       - name: Run pytest
-        run: uv run pytest -q --junitxml=test-results/pytest-junit.xml
+        run: |
+          uv run pytest -q --junitxml=test-results/pytest-junit.xml \
+            --cov=yt_flow --cov-report=term-missing --cov-report=xml:test-results/coverage.xml
+
+      - name: Coverage summary
+        if: always()
+        run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload test results
         if: always()
