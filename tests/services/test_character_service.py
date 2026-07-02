@@ -6,7 +6,6 @@ import pytest
 from sqlmodel import Session, select
 
 from yt_flow import db
-from yt_flow.db.models import Character as CharacterModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.services.character_service import (

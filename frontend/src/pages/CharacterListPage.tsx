@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ApiError, createCharacter, deleteCharacter, getCharacters } from "@/lib/api"
+import { ApiError, deleteCharacter, getCharacters } from "@/lib/api"
 import { navigate } from "@/lib/navigate"
 import type { Character } from "@/lib/types"
 import { CardRow } from "@/components/common/card-row"

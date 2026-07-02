@@ -13,7 +13,6 @@ import pytest
 from sqlmodel import Session
 
 from yt_flow import db
-from yt_flow.db.models import Character as CharacterModel
 from yt_flow.services.character_service import CharacterService
 
 
@@ -128,7 +127,7 @@ class TestAngleSelectionNoCharacter:
     @pytest.mark.asyncio
     async def test_character_exists_no_angle_paths_returns_none(self, service):
         # Create character with no angle paths set
-        c = service.create_character("SCP-096", "Shy Guy")
+        service.create_character("SCP-096", "Shy Guy")
         # All angle_*_path are None by default
         scenes = [_scene(1)]
         result = await service.select_character_angles("SCP-096", scenes)

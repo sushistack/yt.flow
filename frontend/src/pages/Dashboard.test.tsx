@@ -17,7 +17,7 @@ function mockFetch(handler: (url: string) => { ok: boolean; body?: unknown } | "
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const r = handler(url)
     if (r === "network-error") throw new TypeError("failed to fetch")
-    return { ok: r.ok, status: r.ok ? 200 : 500, json: async () => r.body } as Response
+    return { ok: r.ok, status: r.ok ? 200 : 500, json: async () => r.body, text: async () => JSON.stringify(await r.body) } as Response
   }))
 }
 

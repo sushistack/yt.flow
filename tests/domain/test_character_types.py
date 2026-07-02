@@ -4,7 +4,6 @@ AC: 1, 6
 
 from typing import get_type_hints
 
-import pytest
 
 import yt_flow.domain.state as state
 from yt_flow import db

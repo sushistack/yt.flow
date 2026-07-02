@@ -12,7 +12,6 @@ import logging
 import mimetypes
 import re
 from pathlib import Path
-from typing import override
 from urllib.parse import urlparse
 
 import httpx
@@ -22,7 +21,6 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Character as CharacterModel
 from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
-from yt_flow.domain.state import ReferenceImage, SearchResult
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch
 

@@ -1,6 +1,6 @@
 """Tests for /api/characters endpoints (Story 3.7 AC: 1-5)."""
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +9,7 @@ from sqlmodel import Session
 from yt_flow import db
 from yt_flow.api.main import ScpEntry, app
 from yt_flow.api.routes.characters import router
-from yt_flow.db.models import Character, CharacterCandidate, ReferenceImage
+from yt_flow.db.models import Character, ReferenceImage
 
 _SAMPLE_SCPS = [ScpEntry(id="SCP-096", nickname="Shy Guy", object_class="Euclid", rating=4.8)]
 

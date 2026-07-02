@@ -15,7 +15,6 @@ from sqlmodel import Session
 
 from yt_flow import db
 from yt_flow.config import Settings
-from yt_flow.db.models import Character as CharacterModel
 from yt_flow.services.character_service import CharacterService
 from yt_flow.services.character_image_provider import (
     ComfyUICharacterProvider,
@@ -418,7 +417,7 @@ class TestCandidateSelection:
     def test_select_candidate_not_ready_raises(self, service):
         """Raises ValueError if candidate is not ready."""
         service.create_character("SCP-096", "Shy Guy")
-        candidates = service.create_candidate_batch("SCP-096")
+        service.create_candidate_batch("SCP-096")
         # Not updated to ready
 
         with pytest.raises(ValueError, match="not ready"):
@@ -481,7 +480,7 @@ def asyncio_run(coro):
     """Synchronous wrapper for running async tests."""
     import asyncio
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
     # Already in event loop — use a tiny helper

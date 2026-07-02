@@ -305,7 +305,6 @@ async def generate_candidates(
     ref_path = refs[0].local_path
     scp_id = model.scp_id
     candidate_ids = [(c.id, c.angle) for c in candidates]
-    workspace = _workspace_path(request)
 
     # Fire-and-forget async generation with per-candidate fresh sessions
     async def _generate_all():
@@ -326,7 +325,7 @@ async def generate_candidates(
                         svc_gen.update_candidate_status(candidate_id, "ready", image_path=saved_paths[0])
                     else:
                         svc_gen.update_candidate_status(candidate_id, "failed", image_path=None)
-                except Exception as exc:
+                except Exception:
                     logger.exception("Candidate generation failed for %s angle=%s", id, angle)
                     try:
                         with Session(get_engine()) as fail_session:

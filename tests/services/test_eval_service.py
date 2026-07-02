@@ -617,13 +617,13 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
 
     # Verify score_ids use the idempotency pattern
     expected_ids = {
-        f"run-a-atmosphere_A", f"run-b-atmosphere_B",
-        f"run-a-narrative_coherence_A", f"run-b-narrative_coherence_B",
-        f"run-a-article_fidelity_A", f"run-b-article_fidelity_B",
+        "run-a-atmosphere_A", "run-b-atmosphere_B",
+        "run-a-narrative_coherence_A", "run-b-narrative_coherence_B",
+        "run-a-article_fidelity_A", "run-b-article_fidelity_B",
         "run-a-pairwise_winner",
-        f"run-a-scene_count_match_rate_A", f"run-b-scene_count_match_rate_B",
-        f"run-a-subtitle_sync_error_A", f"run-b-subtitle_sync_error_B",
-        f"run-a-audio_duration_variance_A", f"run-b-audio_duration_variance_B",
+        "run-a-scene_count_match_rate_A", "run-b-scene_count_match_rate_B",
+        "run-a-subtitle_sync_error_A", "run-b-subtitle_sync_error_B",
+        "run-a-audio_duration_variance_A", "run-b-audio_duration_variance_B",
     }
     assert set(created) == expected_ids
 

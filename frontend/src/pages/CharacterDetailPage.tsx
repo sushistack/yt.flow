@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ApiError, deleteCharacter, getCharacter, getCharacterCandidates, getCharacterRefs, updateCharacter } from "@/lib/api"
+import { ApiError, deleteCharacter, getCharacter, getCharacterCandidates, updateCharacter } from "@/lib/api"
 import { navigate } from "@/lib/navigate"
 import type { CharacterDetail, CharacterCandidate, ReferenceImage } from "@/lib/types"
 import { AngleGallery } from "@/components/characters/AngleGallery"

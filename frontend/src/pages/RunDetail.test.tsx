@@ -32,7 +32,7 @@ const RUN = {
 
 function mockFetch() {
   return vi.fn((url: string) => {
-    if (url === "/runs/r1" || url === "/runs/r2") return Promise.resolve({ ok: true, status: 200, json: async () => ({ ...RUN, id: url.slice(6) }) })
+    if (url === "/runs/r1" || url === "/runs/r2") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify({ ...RUN, id: url.slice(6) }) })
     if (url.includes("/stages/image/artifacts"))
       return Promise.resolve({
         ok: true,
@@ -123,7 +123,7 @@ describe("RunDetail", () => {
   it("asks for confirmation before leaving a stage with dirty edits", async () => {
     const run = { ...RUN, current_stage: "subtitle", gate_states: null }
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => run })
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
       if (url.includes("/stages/scenario/artifacts"))
         return Promise.resolve({
           ok: true,

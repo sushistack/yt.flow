@@ -421,7 +421,6 @@ def test_no_db_api_service_imports():
             f"subtitle module must not depend on {name}"
         )
     # Check source imports directly
-    import importlib
     source = Path(mod.__file__).read_text()
     for forbidden in ("from yt_flow.db", "from yt_flow.api", "from yt_flow.services",
                       "import yt_flow.db", "import yt_flow.api", "import yt_flow.services"):

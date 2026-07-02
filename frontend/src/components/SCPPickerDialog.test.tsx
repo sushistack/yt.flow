@@ -40,12 +40,12 @@ function mockScps(list: ScpEntry[]) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === "/scps") return { ok: true, status: 200, json: async () => list } as Response
+      if (url === "/scps") return { ok: true, status: 200, text: async () => JSON.stringify(list) } as unknown as Response
       if (url === "/runs" && init?.method === "POST")
         return {
           ok: true,
           status: 201,
-          json: async () => ({
+          text: async () => JSON.stringify({
             id: "new-run",
             scp_id: JSON.parse(String(init.body)).scp_id,
             status: "running",
@@ -54,7 +54,7 @@ function mockScps(list: ScpEntry[]) {
             started_at: "2026-07-01T12:00:00Z",
             updated_at: "2026-07-01T12:00:00Z",
           }),
-        } as Response
+        } as unknown as Response
       throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`)
     }),
   )
@@ -132,7 +132,7 @@ describe("SCPPickerDialog", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
-        if (url === "/scps") return { ok: true, status: 200, json: async () => THREE } as Response
+        if (url === "/scps") return { ok: true, status: 200, text: async () => JSON.stringify(THREE) } as unknown as Response
         return { ok: false, status: 500, json: async () => ({}) } as Response
       }),
     )
@@ -152,9 +152,9 @@ describe("SCPPickerDialog", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
-        if (url === "/scps") return { ok: true, status: 200, json: async () => summaryOnly } as Response
+        if (url === "/scps") return { ok: true, status: 200, text: async () => JSON.stringify(summaryOnly) } as unknown as Response
         postBody = JSON.parse(String(init?.body))
-        return { ok: true, status: 201, json: async () => ({ id: "r", scp_id: "SCP-999" }) } as Response
+        return { ok: true, status: 201, text: async () => JSON.stringify({ id: "r", scp_id: "SCP-999" }) } as unknown as Response
       }),
     )
     const onCreated = vi.fn()

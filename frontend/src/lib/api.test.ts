@@ -40,7 +40,7 @@ describe("getStageArtifacts", () => {
 describe("getRun", () => {
   it("fetches run detail from /runs/{id}", async () => {
     const run = { id: "r1", scp_id: "SCP-096", status: "running", current_stage: "image" }
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => run })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify(run) })
     vi.stubGlobal("fetch", fetchMock)
     expect(await getRun("r1")).toEqual(run)
     expect(fetchMock.mock.calls[0][0]).toBe("/runs/r1")

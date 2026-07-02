@@ -46,10 +46,10 @@ function mockFetch({ run = runA, runs = [runA, runB], artifacts = {} }: FetchMap
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
-      if (url === `/runs/${run.id}`) return Promise.resolve({ ok: true, status: 200, json: async () => run })
-      if (url === "/runs/run-a") return Promise.resolve({ ok: true, status: 200, json: async () => runA })
-      if (url === "/runs/run-b") return Promise.resolve({ ok: true, status: 200, json: async () => runB })
-      if (url === "/runs") return Promise.resolve({ ok: true, status: 200, json: async () => runs })
+      if (url === `/runs/${run.id}`) return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
+      if (url === "/runs/run-a") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(runA) })
+      if (url === "/runs/run-b") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(runB) })
+      if (url === "/runs") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(runs) })
       const hit = artifacts[url]
       if (hit) return Promise.resolve({ ok: true, status: 200, json: async () => hit })
       return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })

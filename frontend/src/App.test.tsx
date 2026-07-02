@@ -32,8 +32,8 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
-      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, json: async () => RUN })
-      if (url === "/runs") return Promise.resolve({ ok: true, status: 200, json: async () => [RUN, PAIR] })
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(RUN) })
+      if (url === "/runs") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify([RUN, PAIR]) })
       if (url.includes("/stages/scenario/artifacts"))
         return Promise.resolve({
           ok: true,
