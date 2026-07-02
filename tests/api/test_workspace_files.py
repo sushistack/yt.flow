@@ -46,3 +46,57 @@ def test_creates_workspace_dir_when_absent(tmp_path):
     app = FastAPI()
     mount_workspace_files(app, ws)
     assert ws.is_dir()
+
+
+# ── SYS-INT-009: path-traversal negatives (R-006) ─────────────────────────────
+# StaticFiles is expected to block these by construction (lookup_path rejects
+# absolute paths and checks os.path.commonpath after resolving symlinks); these
+# tests prove that guarantee instead of assuming it.
+
+
+def test_dotdot_traversal_outside_workspace_is_404(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET")
+
+    app = FastAPI()
+    mount_workspace_files(app, ws)
+    resp = TestClient(app).get("/files/run-1/../../secret.txt")
+    assert resp.status_code == 404
+
+
+def test_encoded_dotdot_traversal_is_404(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET")
+
+    app = FastAPI()
+    mount_workspace_files(app, ws)
+    # %2e%2e survives client-side URL normalization, unlike a literal ".."
+    resp = TestClient(app).get("/files/%2e%2e/secret.txt")
+    assert resp.status_code == 404
+
+
+def test_encoded_absolute_path_is_404(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+
+    app = FastAPI()
+    mount_workspace_files(app, ws)
+    resp = TestClient(app).get("/files/%2fetc%2fpasswd")
+    assert resp.status_code == 404
+
+
+def test_symlink_escape_is_404(tmp_path):
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET")
+    (ws / "evil_link.txt").symlink_to(secret)
+
+    app = FastAPI()
+    mount_workspace_files(app, ws)
+    resp = TestClient(app).get("/files/evil_link.txt")
+    assert resp.status_code == 404
