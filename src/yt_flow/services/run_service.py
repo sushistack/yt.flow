@@ -230,36 +230,45 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
 
     Returns ``"awaiting"`` (paused at a gate), ``"failed"`` (scenario gate rejected
     → END), or ``"completed"`` (stream reached END after final approval).
+
+    ``_write_run``/``_mirror_gate_state`` run via ``asyncio.to_thread``: they're
+    synchronous sqlite3 writes to the same file the checkpointer's async connection
+    writes to (AD-7); calling them inline blocked the event loop while holding the
+    write lock, starving the checkpointer's writes into "database is locked" (found
+    running the real app end-to-end — pytest's decoupled test DBs never hit this).
+    Every ``_write_run`` call that precedes/follows an ``astream()`` invocation
+    (here, plus ``resume_run_from_failure``, ``full_restart_run``, ``retry_stage``)
+    needs the same wrapping — an unwrapped one anywhere still blocks the loop.
     """
     terminal_failed = False
     async for event in stream:  # stream_mode="updates": {node: update} | {"__interrupt__": (...)}
         if "__interrupt__" in event:
             stage = event["__interrupt__"][0].value["stage"]
-            _write_run(run_id, status="awaiting_approval", current_stage=stage)
-            _mirror_gate_state(run_id, stage, "pending")
+            await asyncio.to_thread(_write_run, run_id, status="awaiting_approval", current_stage=stage)
+            await asyncio.to_thread(_mirror_gate_state, run_id, stage, "pending")
             await _publish(sse_registry, run_id, "gate_pending", {"run_id": run_id, "stage": stage})
             return "awaiting"
         for node, update in event.items():
             if node in _STAGES:
-                _write_run(run_id, status="running", current_stage=node)
+                await asyncio.to_thread(_write_run, run_id, status="running", current_stage=node)
                 await _publish(sse_registry, run_id, "stage_entry", {"run_id": run_id, "stage": node})
                 await _publish(sse_registry, run_id, "stage_exit", {"run_id": run_id, "stage": node})
             elif node.startswith("gate_"):
                 stage = node[len("gate_"):]
                 decision = (update or {}).get("gate_states", {}).get(stage)
                 if decision:
-                    _mirror_gate_state(run_id, stage, decision)
+                    await asyncio.to_thread(_mirror_gate_state, run_id, stage, decision)
                     # Only the scenario gate routes to END on reject → terminal failure.
                     # Other gates loop back to their stage node and re-interrupt (retry).
                     if decision == "rejected" and stage == "scenario":
-                        _write_run(run_id, status="failed", error="rejected at scenario gate")
+                        await asyncio.to_thread(_write_run, run_id, status="failed", error="rejected at scenario gate")
                         await _publish(sse_registry, run_id, "run_failed",
                                        {"run_id": run_id, "stage": stage, "error": "rejected at scenario gate"})
                         terminal_failed = True
     if terminal_failed:
         _configs.pop(run_id, None)
         return "failed"
-    _write_run(run_id, status="complete")
+    await asyncio.to_thread(_write_run, run_id, status="complete")
     _configs.pop(run_id, None)
     return "completed"
 
@@ -305,7 +314,7 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
     except Exception as exc:  # AD-4: services catches astream() failures, marks failed, fans out.
         stage = _stage_from_exception(exc)  # FR-13: surface which node actually failed
         _configs.pop(run_id, None)
-        _write_run(run_id, status="failed", error=str(exc), current_stage=stage)
+        await asyncio.to_thread(_write_run, run_id, status="failed", error=str(exc), current_stage=stage)
         await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": stage, "error": str(exc)})
 
 
@@ -372,7 +381,7 @@ async def resume_run_from_failure(run_id: str, sse_registry: "SSEQueueRegistry |
     """
     config = _configs.get(run_id) or {"configurable": {"thread_id": run_id}}
     _configs[run_id] = config
-    _write_run(run_id, status="running", error=None)
+    await asyncio.to_thread(_write_run, run_id, status="running", error=None)
     await _run(run_id, _graph.astream(None, config, stream_mode="updates"), sse_registry)
 
 
@@ -401,7 +410,8 @@ async def full_restart_run(run_id: str, sse_registry: "SSEQueueRegistry | None" 
     if ckpt is not None:
         await ckpt.adelete_thread(run_id)  # drop prior successful checkpoints → START from scenario
     _configs[run_id] = config
-    _write_run(run_id, status="running", current_stage="scenario", error=None, gate_states="{}")
+    await asyncio.to_thread(_write_run, run_id, status="running", current_stage="scenario",
+                             error=None, gate_states="{}")
     await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text), config, stream_mode="updates"), sse_registry)
 
 
@@ -467,8 +477,8 @@ async def retry_stage(run_id: str, stage: str, sse_registry: "SSEQueueRegistry |
     # Attribute the update to the stage's predecessor so astream(None) re-runs the stage
     # node itself, not just its gate (AD-9). See _RETRY_ENTRY.
     await _graph.aupdate_state(config, update, as_node=_RETRY_ENTRY[stage])
-    _write_run(run_id, status="running", current_stage=stage, error=None,
-               gate_states=json.dumps(_reset_gates(gate_states, stage)))
+    await asyncio.to_thread(_write_run, run_id, status="running", current_stage=stage, error=None,
+                             gate_states=json.dumps(_reset_gates(gate_states, stage)))
     await _publish(sse_registry, run_id, "stage_entry", {"run_id": run_id, "stage": stage})
     _configs[run_id] = config
     spawn(_run(run_id, _graph.astream(None, config, stream_mode="updates"), sse_registry))

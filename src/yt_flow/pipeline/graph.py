@@ -63,8 +63,9 @@ async def build_graph(settings: Settings) -> tuple[CompiledStateGraph, AsyncSqli
     Returns the compiled graph and the saver. The caller owns the saver's SQLite
     connection lifetime and must ``await saver.conn.close()`` when done.
     """
-    conn = await aiosqlite.connect(settings.db_path)
+    conn = await aiosqlite.connect(settings.db_path, timeout=30)
     try:
+        await conn.execute("PRAGMA journal_mode=WAL")
         saver = AsyncSqliteSaver(conn)
         await saver.setup()  # create checkpoint tables before first invocation
         graph = build_state_graph().compile(checkpointer=saver)

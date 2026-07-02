@@ -16,7 +16,14 @@ def init(db_url: str) -> None:
             poolclass=StaticPool,
         )
     else:
-        _engine = create_engine(db_url, connect_args={"check_same_thread": False})
+        # ponytail: WAL + busy_timeout — this file is shared with LangGraph's
+        # AsyncSqliteSaver (pipeline/graph.py) on the same path; the default
+        # rollback-journal mode's exclusive write lock collides under real
+        # concurrent writes (surfaced by running the real app end-to-end, not
+        # by pytest's decoupled test DBs).
+        _engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 30})
+        with _engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL")
     SQLModel.metadata.create_all(_engine)
 
 
