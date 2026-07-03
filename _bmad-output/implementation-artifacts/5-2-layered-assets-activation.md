@@ -1,6 +1,8 @@
-# Story 5.2: 레이어드 에셋 실전 가동 — 투명 캐릭터 + 배경 분리 워크플로우
+# Story 5.2: Layered Assets Activation
 
-Status: draft
+Status: ready-for-dev
+
+<!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created -->
 
 ## Story
 
@@ -8,35 +10,160 @@ As Jay,
 I want the already-built layered-asset pipeline (Story 1.6b image split + Story 1.9c character idle-motion overlay) to actually run in real renders,
 so that videos show an independently-moving character over a panning background instead of a single flat Ken-Burns image.
 
-## Context (2026-07-03 라이브 리뷰 피드백 #3)
+## Context
 
-"투명 배경 + 캐릭터 오버레이 + 움직임" 방식이 설계·구현(1.6b, 1.9c)까지 끝났는데 실전 런에 하나도 안 나옴. 원인 확정됨:
-- `.env`에 `YTFLOW_COMFYUI_LAYERED`가 없음 (기본 false)
-- 현재 워크플로우 `comfyui_sdxl_anime_lora_workflow_api2.json`은 `SaveImage` 노드가 1개뿐 — 플래그를 켜도 배경/캐릭터 2-출력이 불가능
+Live render review on 2026-07-03 for run `eb522cf9` / SCP-096 found that the transparent character overlay path never appeared in real output even though the code for layered image assets and video overlay already exists.
 
-즉 코드 문제가 아니라 **ComfyUI 워크플로우 에셋 + 설정 배선** 문제.
+Confirmed causes:
+
+- `.env` does not define `YTFLOW_COMFYUI_LAYERED`, so `Settings.comfyui_layered` remains its default `False`.
+- The current baseline workflow `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json` has only one `SaveImage` output node: node `"9"` with prefix `ytflow`.
+- Current settings expect two output nodes when layered mode is on: `YTFLOW_COMFYUI_BACKGROUND_NODE` and `YTFLOW_COMFYUI_CHARACTER_NODE`, defaulting to `"9"` and `"10"`.
+
+This is primarily an asset/config/live-verification story. Do not rewrite `image_node` or `video_node` unless the chosen ComfyUI workflow needs a second prompt injection path that the current code cannot express.
 
 ## Acceptance Criteria
 
-1. **Given** 새 레이어드 워크플로우 JSON, **Then** 출력 노드 2개를 가진다 — 배경(불투명 PNG)과 캐릭터(배경 제거를 거친 RGBA PNG). 노드 ID는 `Settings.comfyui_background_node` / `comfyui_character_node`와 일치
-2. **Given** 로컬 ComfyUI(:8188)에 워크플로우 제출, **When** 실제 생성 실행, **Then** 검증 거부 없이 두 출력이 생성되고 캐릭터 PNG는 `_has_alpha()` 통과 (color_type 4 또는 6)
-3. **Given** `.env`에 `YTFLOW_COMFYUI_LAYERED=true` + 새 워크플로우 경로, **When** 실전 런 실행, **Then** `workspace/{run_id}/images/`에 shot별 `*_background.png` + `*_character.png`가 생기고 ShotData에 두 경로가 채워진다
-4. **Given** 레이어드 에셋이 있는 씬, **When** video_node 렌더, **Then** 1.9c 오버레이 경로(배경 zoompan + 캐릭터 idle-motion 오버레이)가 실제로 타는 것을 최종 mp4 프레임으로 확인
-5. 배경 제거가 실패해 캐릭터 출력이 없는 shot은 기존 폴백(배경 단독, 1.6b AC2)으로 계속 진행 — 런 전체가 죽지 않음
-6. 문서화: 워크플로우에 필요한 ComfyUI 커스텀 노드(배경 제거 노드 등)와 설치 방법을 워크플로우 JSON 옆 README에 기록
+1. Given a new layered ComfyUI workflow JSON, then it has two output nodes: one opaque background PNG and one transparent character PNG after background removal; the output node IDs match `Settings.comfyui_background_node` and `Settings.comfyui_character_node`.
+2. Given local ComfyUI at `YTFLOW_COMFYUI_URL` (default `http://127.0.0.1:8188`), when the new workflow is submitted directly, then ComfyUI accepts it and produces the two expected outputs without validation rejection.
+3. Given the character output, when `image_node` receives it, then `_has_alpha()` accepts it as PNG color type 4 or 6; an opaque character output is treated as an image-stage error.
+4. Given `.env` contains `YTFLOW_COMFYUI_LAYERED=true`, the new workflow path, and the correct background/character node IDs, when a real run reaches the image stage, then `workspace/{run_id}/images/` contains per-shot `*_background.png`, optional `*_character.png`, and compatibility `*.png` files, and `ShotData.background_path` / `ShotData.character_path` are populated from the image-stage state.
+5. Given at least one scene has `character_path`, when `video_node` renders the final video, then it uses the 1.9c layered path: background `zoompan`, character scale-to-motion-safe box, `overlay=...:eval=frame`, then subtitles; the final mp4 visibly shows independent character idle motion over the background.
+6. Given background removal fails or no character output is produced for a shot, when `image_node` completes, then `character_path` is `None`, `background_path` remains set, and downstream video rendering continues with the background-only fallback.
+7. Given the workflow JSON is added, then a README next to it documents required ComfyUI custom nodes, install steps, expected output node IDs, and the exact `.env` variables used for activation.
+8. Given the story is complete, then a live validation note records the run ID, image-stage artifact check, video-stage overlay check, and any background-only fallbacks observed.
 
 ## Tasks / Subtasks
 
-- [ ] 배경 제거용 ComfyUI 커스텀 노드 선정·설치 (후보: rembg 계열, Segment Anything 계열 — 로컬 ROCm 환경에서 동작 확인) (AC: 2, 6)
-- [ ] 레이어드 워크플로우 JSON 작성: 기존 SDXL+LoRA 그래프에서 분기 — ①배경 프롬프트→SaveImage(배경), ②캐릭터 생성→배경제거→SaveImage(RGBA) (AC: 1, 2)
-- [ ] ComfyUI에 직접 제출해 단독 검증 (image_node 경유 전, 워크플로우 자체 검증) (AC: 2)
-- [ ] `.env` 배선: `YTFLOW_COMFYUI_LAYERED=true`, `YTFLOW_COMFYUI_WORKFLOW_PATH` 교체, background/character 노드 ID 설정 (AC: 3)
-- [ ] 실전 런 1회: image 게이트에서 레이어 산출물 확인 → video 게이트에서 오버레이 모션 확인 (AC: 3, 4, 5)
-- [ ] 워크플로우 README 작성 (AC: 6)
+- [ ] Choose and install a background-removal custom node for the local ComfyUI environment. Prefer a maintained ComfyUI custom node that returns an RGBA image or image+mask suitable for alpha output. Document install commands and model/download requirements in the workflow README. (AC: 1, 2, 3, 7)
+- [ ] Create `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` from the existing SDXL+LoRA baseline, preserving positive/negative prompt injection at nodes `"6"` and `"7"` unless code changes are explicitly required. (AC: 1)
+- [ ] Ensure the layered workflow has two real output nodes:
+  - background: opaque PNG, recommended node ID `"9"` unless the workflow requires a different ID
+  - character: RGBA PNG after background removal, recommended node ID `"10"` unless the workflow requires a different ID
+  - If IDs differ, set `YTFLOW_COMFYUI_BACKGROUND_NODE` and `YTFLOW_COMFYUI_CHARACTER_NODE` accordingly. (AC: 1, 4)
+- [ ] Submit the workflow directly to ComfyUI before running yt.flow. Confirm both output node IDs appear in the returned outputs/history payload and that the character PNG has an alpha channel. (AC: 2, 3)
+- [ ] Add `data/workflows/README-layered-assets.md` documenting:
+  - custom node name/repo and install method
+  - required models and where ComfyUI expects them
+  - workflow file path
+  - output node ID mapping
+  - `.env` variables for activation
+  - direct ComfyUI validation procedure
+  - known fallback behavior when character extraction fails (AC: 6, 7)
+- [ ] Wire local `.env` for the live run:
+  - `YTFLOW_COMFYUI_LAYERED=true`
+  - `YTFLOW_COMFYUI_WORKFLOW_PATH=data/workflows/comfyui_sdxl_anime_lora_layered_api.json`
+  - `YTFLOW_COMFYUI_BACKGROUND_NODE=<background SaveImage node id>`
+  - `YTFLOW_COMFYUI_CHARACTER_NODE=<character SaveImage node id>`
+  Do not commit secrets; if a checked-in example file exists, add only non-secret example keys there. (AC: 4)
+- [ ] Run one real pipeline execution or image-stage retry with ComfyUI mock mode off. At the image gate, verify the workspace contains `*_background.png` and, where extraction succeeds, `*_character.png`; inspect the run state through the stage artifacts/API or checkpoint-derived artifact view. (AC: 4, 6)
+- [ ] Run or retry the video stage and inspect the final mp4 frames. Confirm at least one scene uses character overlay motion; if no `character_path` exists, the story is not complete unless the validation note explains why background removal produced no characters and includes the corrective action. (AC: 5, 8)
+- [ ] Run focused automated tests after asset/config changes:
+  - `uv run pytest tests/pipeline/nodes/test_image.py tests/pipeline/nodes/test_video.py`
+  - If config/example files change, also run `uv run pytest tests/test_config.py`
+  - If API artifact presentation is touched, also run `uv run pytest tests/api/test_stage_artifacts.py tests/api/test_stages.py` (AC: 3, 4, 5, 6)
 
 ## Dev Notes
 
-- **Python 코드 변경은 원칙적으로 0** — image.py의 `_generate_layered_shot`, video.py의 오버레이 합성, `_has_alpha` 전부 구현·테스트 완료 상태. 이 스토리는 에셋+설정+라이브 검증.
-- 캐릭터 프롬프트를 배경 프롬프트와 어떻게 분리할지가 유일한 설계 판단 지점: 현재 `_inject_prompts`는 노드 6/7(positive/negative) 한 쌍만 주입. 캐릭터 전용 positive 노드가 필요하면 image.py에 소폭 수정 발생 가능 — 그 경우에만 코드 스토리로 확장.
-- 알려진 인접 이슈(이 스토리 범위 밖, 1.9b/1.9c deferral): 씬당 첫 shot만 렌더되므로 shots[1:]의 캐릭터는 여전히 드롭됨. per-shot 타이밍 모델 결정은 Story 5.3과 함께 재론.
-- Epic 1에 캐릭터 생성/앵글 선택 인프라(1.11~1.13) 존재 — 캐릭터 이미지를 매 shot 생성하는 대신 캐릭터 라이브러리에서 재사용하는 통합은 이 스토리에서 판단.
+### Current Implementation State
+
+- `src/yt_flow/config.py` already defines:
+  - `comfyui_layered: bool = False`
+  - `comfyui_background_node: str = "9"`
+  - `comfyui_character_node: str = "10"`
+  These map to `YTFLOW_COMFYUI_LAYERED`, `YTFLOW_COMFYUI_BACKGROUND_NODE`, and `YTFLOW_COMFYUI_CHARACTER_NODE` through the `YTFLOW_` env prefix.
+- `src/yt_flow/pipeline/nodes/image.py` already implements layered mode:
+  - `_generate_layered_shot()` writes `scene_{scene_num:03d}_{shot_id}_background.png`, optional `*_character.png`, and compatibility `scene_{...}.png`.
+  - `_has_alpha()` accepts only PNG color type 4 or 6 for character outputs.
+  - Missing character output is allowed and yields `character_path=None`; missing background output is an error.
+  - Prompt injection currently targets workflow nodes `"6"` and `"7"` only.
+- `src/yt_flow/pipeline/nodes/video.py` already implements the layered rendering path:
+  - `_compose_scene()` prefers `background_path` over `image_path`.
+  - If `character_path` exists, FFmpeg uses `filter_complex` with background zoompan, character downscale, `overlay=...:eval=frame`, and subtitles.
+  - If `character_path` is `None`, it falls back to the non-layered Ken-Burns path.
+  - A set-but-missing `character_path` fails loudly before FFmpeg.
+- `src/yt_flow/domain/state.py` already includes `ShotData.background_path` and `ShotData.character_path`.
+- Current `.env` key list does not include `YTFLOW_COMFYUI_LAYERED`, `YTFLOW_COMFYUI_WORKFLOW_PATH`, `YTFLOW_COMFYUI_BACKGROUND_NODE`, or `YTFLOW_COMFYUI_CHARACTER_NODE`; add them locally for validation.
+
+### Files Expected To Change
+
+- `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` (new): layered workflow export in ComfyUI API format.
+- `data/workflows/README-layered-assets.md` (new): install, node-ID, env, and validation instructions.
+- `.env` (local only): activation values for the live run. Do not commit secrets.
+- Optional checked-in example/config docs if the repo has an established example env file. Keep it non-secret.
+
+### Files To Avoid Changing Unless Proven Necessary
+
+- `src/yt_flow/pipeline/nodes/image.py`: already supports layered outputs. Modify only if the new workflow requires separate background and character positive prompts that cannot use the current node `"6"` / `"7"` injection pair.
+- `src/yt_flow/pipeline/nodes/video.py`: already supports character overlay and fallback. Do not change motion constants in this story; intensity belongs to Story 5.3.
+- `src/yt_flow/domain/state.py`: already has the required state fields.
+- API/UI artifact code: only touch if the existing stage artifact view cannot expose `background_path` / `character_path` clearly enough for validation.
+
+### Architecture Guardrails
+
+- Preserve AD-1 layering: pipeline nodes may import `domain` and `config`, but not `db`, `api`, or service-layer orchestration.
+- Preserve AD-2 state authority: artifact paths live in `PipelineState`; do not add a DB table for layered assets.
+- Preserve AD-4 node purity: `image_node` and `video_node` return state updates and trace metadata only; they do not emit SSE, write DB rows, or handle gate approval.
+- Preserve AD-10: ComfyUI reachability remains an image-stage concern, not app startup; Langfuse tracing failures must remain non-fatal.
+
+### Workflow Design Guidance
+
+- Start from `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json`; it currently has `CLIPTextEncode` nodes `"6"` / `"7"` and a single `SaveImage` node `"9"`.
+- The safest first version is one shared generation branch feeding:
+  - a background output, and
+  - a background-removal branch that extracts the character as RGBA.
+- If that produces poor character isolation because the generated full image contains too much background, document it and consider a small code follow-up for separate character prompt injection. Do not silently expand this story into prompt-chain redesign.
+- If the selected custom node outputs image+mask rather than direct RGBA, add the necessary ComfyUI image/mask combine nodes inside the workflow so yt.flow still receives PNG bytes with alpha at the configured character output node.
+
+### Previous Story Intelligence
+
+Story 5.1 exists as a draft and is not marked complete in `sprint-status.yaml`. It targets `video.py` transitions/chapter cards, while this story targets ComfyUI workflow activation and existing layered overlay behavior. Do not assume Story 5.1 changes are present.
+
+Adjacent implementation history matters more:
+
+- Story 1.6b implemented `image_node` layered asset support and tests in `tests/pipeline/nodes/test_image.py`.
+- Story 1.9c implemented character idle-motion overlay support and tests in `tests/pipeline/nodes/test_video.py`.
+- Story 1.13 added optional LLM character angle pre-selection in `video_node`; it may overwrite `character_path` when an angle selector is injected. This story should verify live overlay behavior with that existing path, not remove it.
+
+### Git Intelligence
+
+Recent commits are focused on Prompt Ops and variant-label wiring (`6-1`) plus dependency/test housekeeping. No recent commit changes the layered image/video code path. Treat the existing layered implementation and tests as stable unless focused validation proves otherwise.
+
+### Latest Technical Notes
+
+- Official ComfyUI documentation confirms output node IDs in API responses correspond to output nodes such as `SaveImage` in the workflow JSON. Use this to validate that `YTFLOW_COMFYUI_BACKGROUND_NODE` and `YTFLOW_COMFYUI_CHARACTER_NODE` match the workflow outputs. Source: https://docs.comfy.org/development/cloud/overview
+- Candidate background-removal custom node families to evaluate:
+  - `1038lab/ComfyUI-RMBG`: broad background removal / segmentation support including RMBG, BiRefNet, SAM-family options. Source: https://github.com/1038lab/ComfyUI-RMBG
+  - `Jcd1230/rembg-comfyui-node`: simple rembg node, with `rembg[gpu]` recommended where supported. Source: https://github.com/Jcd1230/rembg-comfyui-node
+  - `john-mnz/ComfyUI-Inspyrenet-Rembg`: InSPyReNet-based background removal, installable through ComfyUI-Manager per project docs. Source: https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg
+- Pick the node that works reliably in Jay's local ROCm/ComfyUI environment; story success depends on live output correctness, not on choosing the most complex segmentation model.
+
+## Project Structure Notes
+
+- Runtime artifacts stay under `workspace/{run_id}/images/` and `workspace/{run_id}/video.mp4`.
+- Workflow assets belong under `data/workflows/`.
+- Tests remain under `tests/pipeline/nodes/` for node behavior and `tests/api/` only if artifact API/UI display changes.
+- No `project-context.md` file was found from the workflow persistent-facts glob during story creation.
+
+## References
+
+- `_bmad-output/planning-artifacts/epics.md#Story-5.2` - Epic 5 scope and ordering.
+- `_bmad-output/planning-artifacts/epics.md#Story-1.6b` - layered image asset contract.
+- `_bmad-output/planning-artifacts/architecture/architecture-yt.flow-2026-06-30/ARCHITECTURE-SPINE.md#Invariants-&-Rules` - AD-1, AD-2, AD-4, AD-10.
+- `src/yt_flow/config.py` - existing layered settings and env prefix.
+- `src/yt_flow/pipeline/nodes/image.py` - layered image generation, alpha validation, trace metadata.
+- `src/yt_flow/pipeline/nodes/video.py` - background/character composition path and fallback behavior.
+- `tests/pipeline/nodes/test_image.py` - layered image behavior tests.
+- `tests/pipeline/nodes/test_video.py` - character overlay behavior tests.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+TBD by dev-story agent.
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
