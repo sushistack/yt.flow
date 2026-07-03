@@ -189,6 +189,42 @@ async def test_critic_step_rejects_unknown_verdict(monkeypatch):
         await chain.critic_step({"scenes": []}, {}, "guide", None, call)
 
 
+async def test_call_stage_uses_get_prompt_when_label_is_none(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda *a, **k: calls.append(("get_prompt", a, k)) or FakePrompt(),
+    )
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be called when label is None")),
+    )
+
+    async def call(rendered, s):
+        return "{}", {}, "stop"
+
+    await chain._call_stage("scenario/research", {}, None, call, label=None)
+    assert calls == [("get_prompt", ("scenario/research",), {})]
+
+
+async def test_call_stage_uses_fallback_when_label_given(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be called when label is set")),
+    )
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback",
+        lambda *a, **k: calls.append(("get_prompt_with_fallback", a, k)) or FakePrompt(),
+    )
+
+    async def call(rendered, s):
+        return "{}", {}, "stop"
+
+    await chain._call_stage("scenario/research", {}, None, call, label="candidate")
+    assert calls == [("get_prompt_with_fallback", ("scenario/research",), {"label": "candidate"})]
+
+
 def test_build_scenes_merges_empty_prompt_into_previous_shot():
     writing = {
         "scenes": [

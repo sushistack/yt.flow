@@ -8,9 +8,14 @@ ponytail: fresh client per call. If prompt fetches ever dominate latency,
 cache the client or pass cache_ttl_seconds — not needed until measured.
 """
 
+import logging
+
 from langfuse import Langfuse
+from langfuse.api import NotFoundError
 
 from yt_flow.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def build_client() -> Langfuse:
@@ -40,6 +45,30 @@ def get_prompt(name: str, *, label: str | None = None):
         raise RuntimeError(
             f"Langfuse prompt fetch failed: name={name!r} label={label or 'production'}"
         ) from exc
+
+
+def get_prompt_with_fallback(name: str, *, label: str, fallback_label: str = "production"):
+    """Fetch by `label`, falling back to `fallback_label` if that label doesn't exist.
+
+    Lets an A/B run seed only some prompts as `candidate` — the rest fall
+    back to production instead of failing the whole run (Story 6.1 AC5).
+    """
+    client = build_client()
+    try:
+        return client.get_prompt(name, label=label)
+    except NotFoundError:
+        # No warning here would make a fallback silent: if NO prompt is seeded
+        # under `label`, every stage falls back and variant B renders identical
+        # to production — a meaningless A/B that looks real. Logging each
+        # fallback surfaces both the partial (some stages) and total (all
+        # stages) case, and leaves a breadcrumb if the fallback fetch also fails.
+        logger.warning(
+            "prompt %r has no %r label — falling back to %r; this stage is NOT part of the A/B experiment",
+            name, label, fallback_label,
+        )
+        return get_prompt(name, label=fallback_label)
+    except Exception as exc:  # noqa: BLE001 - re-raised with context below
+        raise RuntimeError(f"Langfuse prompt fetch failed: name={name!r} label={label!r}") from exc
 
 
 def compile_prompt(name: str, **variables: object) -> str:

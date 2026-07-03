@@ -30,7 +30,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     writing_step,
 )
 from yt_flow.domain.state import PipelineState
-from yt_flow.services.prompt_service import get_prompt
+from yt_flow.services.prompt_service import get_prompt, get_prompt_with_fallback
 
 
 def _settings() -> Settings:
@@ -93,16 +93,18 @@ async def _write_and_review(
     quality_feedback: str,
     s: Settings,
     stages: list[dict],
+    *,
+    label: str | None = None,
 ) -> tuple[dict, dict, dict, dict]:
     t0 = time.perf_counter()
-    writing = await writing_step(scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek)
+    writing = await writing_step(scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek, label=label)
     stages.append({"name": "writing", "latency_ms": _ms(t0)})
 
     t0 = time.perf_counter()
 
     async def _breakdown_for(idx: int, scene: dict) -> tuple[int, list[dict]]:
         sentences = split_sentences(scene["narration"])
-        shots = await visual_breakdown_step(scene, sentences, frozen_descriptor, s, _call_deepseek)
+        shots = await visual_breakdown_step(scene, sentences, frozen_descriptor, s, _call_deepseek, label=label)
         return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 
     results = await asyncio.gather(*(_breakdown_for(idx, scene) for idx, scene in enumerate(writing["scenes"])))
@@ -110,11 +112,11 @@ async def _write_and_review(
     stages.append({"name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene)})
 
     t0 = time.perf_counter()
-    review = await review_step(scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek)
+    review = await review_step(scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek, label=label)
     stages.append({"name": "review", "latency_ms": _ms(t0)})
 
     t0 = time.perf_counter()
-    critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek)
+    critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek, label=label)
     stages.append({"name": "critic_agent", "latency_ms": _ms(t0)})
 
     return writing, visual_by_scene, review, critic
@@ -130,26 +132,29 @@ async def scenario_node(state: PipelineState) -> dict:
         if not s.deepseek_api_key:
             raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
 
-        format_guide = get_prompt("scenario/format_guide").compile()
+        label = "candidate" if state.get("prompt_variant") == "B" else None
+        format_guide = (
+            get_prompt_with_fallback("scenario/format_guide", label=label) if label else get_prompt("scenario/format_guide")
+        ).compile()
 
         t0 = time.perf_counter()
-        research = await research_step(state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek)
+        research = await research_step(state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label)
         stages.append({"name": "research", "latency_ms": _ms(t0)})
 
         t0 = time.perf_counter()
-        structure = await structure_step(state["scp_id"], research, format_guide, s, _call_deepseek)
+        structure = await structure_step(state["scp_id"], research, format_guide, s, _call_deepseek, label=label)
         stages.append({"name": "structure", "latency_ms": _ms(t0)})
 
         writing, visual_by_scene, review, critic = await _write_and_review(
             state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
-            format_guide, "", s, stages,
+            format_guide, "", s, stages, label=label,
         )
 
         if critic["verdict"] == "retry" or not review["overall_pass"]:
             feedback = _format_feedback(review, critic)
             writing, visual_by_scene, review, critic = await _write_and_review(
                 state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
-                format_guide, feedback, s, stages,
+                format_guide, feedback, s, stages, label=label,
             )
 
         scenes = build_scenes(writing, visual_by_scene)

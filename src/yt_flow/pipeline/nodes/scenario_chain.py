@@ -35,21 +35,31 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in _SENTENCE_BOUNDARY.split(text) if p.strip()]
 
 
-async def _call_stage(prompt_name: str, variables: dict, s, call_deepseek) -> str:
+async def _call_stage(prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None) -> str:
     """Fetch + compile a Langfuse prompt, call DeepSeek, return raw JSON text.
 
     Raises on truncation (finish_reason == "length") so a caller never has to
     special-case a partial payload — json.loads on it would fail anyway, but
     this gives a clearer error message.
+
+    `label` is the A/B variant's Langfuse label (Story 6.1) — `None` (variant
+    A / no variant) must go through `prompt_service.get_prompt` unchanged, not
+    `get_prompt_with_fallback`, so existing tests that monkeypatch
+    `prompt_service.get_prompt` keep working.
     """
-    rendered = prompt_service.get_prompt(prompt_name).compile(**variables)
+    prompt = (
+        prompt_service.get_prompt_with_fallback(prompt_name, label=label)
+        if label
+        else prompt_service.get_prompt(prompt_name)
+    )
+    rendered = prompt.compile(**variables)
     raw, _usage, finish_reason = await call_deepseek(rendered, s)
     if finish_reason == "length":
         raise ValueError(f"{prompt_name} response truncated (finish_reason=length); raise max_tokens")
     return raw
 
 
-async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_deepseek) -> dict:
+async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
     raw = await _call_stage(
         "scenario/research",
         {
@@ -61,6 +71,7 @@ async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_d
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     if not isinstance(data, dict) or not str(data.get("frozen_descriptor") or "").strip():
@@ -68,7 +79,7 @@ async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_d
     return data
 
 
-async def structure_step(scp_id: str, research: dict, format_guide: str, s, call_deepseek) -> list[dict]:
+async def structure_step(scp_id: str, research: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> list[dict]:
     raw = await _call_stage(
         "scenario/structure",
         {
@@ -81,6 +92,7 @@ async def structure_step(scp_id: str, research: dict, format_guide: str, s, call
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     scenes = data.get("scenes") if isinstance(data, dict) else None
@@ -97,6 +109,8 @@ async def writing_step(
     quality_feedback: str,
     s,
     call_deepseek,
+    *,
+    label: str | None = None,
 ) -> dict:
     raw = await _call_stage(
         "scenario/writing",
@@ -110,6 +124,7 @@ async def writing_step(
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     scenes = data.get("scenes") if isinstance(data, dict) else None
@@ -127,6 +142,8 @@ async def visual_breakdown_step(
     frozen_descriptor: str,
     s,
     call_deepseek,
+    *,
+    label: str | None = None,
 ) -> list[dict]:
     numbered = "\n".join(f"{i + 1}. {sent}" for i, sent in enumerate(sentences))
     raw = await _call_stage(
@@ -145,6 +162,7 @@ async def visual_breakdown_step(
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     shots = data.get("visual_descriptions") if isinstance(data, dict) else None
@@ -167,6 +185,8 @@ async def review_step(
     format_guide: str,
     s,
     call_deepseek,
+    *,
+    label: str | None = None,
 ) -> dict:
     raw = await _call_stage(
         "scenario/review",
@@ -181,6 +201,7 @@ async def review_step(
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     if not isinstance(data, dict) or "overall_pass" not in data:
@@ -188,7 +209,7 @@ async def review_step(
     return data
 
 
-async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s, call_deepseek) -> dict:
+async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
     scenario_json = {"writing": writing, "visual_descriptions": visual_by_scene}
     raw = await _call_stage(
         "scenario/critic_agent",
@@ -198,6 +219,7 @@ async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s
         },
         s,
         call_deepseek,
+        label=label,
     )
     data = json.loads(raw)
     if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:

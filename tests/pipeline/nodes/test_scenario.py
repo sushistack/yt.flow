@@ -206,3 +206,36 @@ async def test_missing_api_key_sets_error(monkeypatch):
     _stub_chain(monkeypatch)
     out = await sc.scenario_node(_state())
     assert out["error"] and "DEEPSEEK_API_KEY" in out["error"]
+
+
+async def test_variant_b_fetches_format_guide_with_candidate_label(monkeypatch):
+    monkeypatch.setattr(sc, "get_prompt_with_fallback", lambda *a, **k: FakePrompt())
+    _stub_chain(monkeypatch)
+    label_calls = {}
+
+    async def fake_research(*a, label=None, **k):
+        label_calls["research"] = label
+        return RESEARCH
+
+    monkeypatch.setattr(sc, "research_step", fake_research)
+
+    out = await sc.scenario_node(_state(prompt_variant="B"))
+
+    assert out.get("error") is None
+    assert label_calls["research"] == "candidate"
+
+
+async def test_variant_a_and_none_fetch_format_guide_without_label(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sc, "get_prompt", lambda *a, **k: calls.append((a, k)) or FakePrompt())
+    monkeypatch.setattr(
+        sc, "get_prompt_with_fallback",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be called for variant A/None")),
+    )
+    _stub_chain(monkeypatch)
+
+    for variant in (None, "A"):
+        calls.clear()
+        out = await sc.scenario_node(_state(prompt_variant=variant))
+        assert out.get("error") is None
+        assert calls == [(("scenario/format_guide",), {})]
