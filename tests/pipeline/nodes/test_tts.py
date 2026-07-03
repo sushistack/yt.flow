@@ -211,6 +211,31 @@ def test_wav_duration_rejects_non_wav(tmp_path):
         tts._wav_duration(Path(bad))
 
 
+def test_wav_duration_distrusts_streamed_header(tmp_path):
+    # Qwen TTS streams its WAV: the data-chunk size in the header is a ~2^30
+    # placeholder, so wave.getnframes() reports hours for a 20-second file
+    # (live bug 2026-07-03: 21s audio -> 44739s -> 3-hour SRT cues). Duration
+    # must be bounded by the actual PCM bytes on disk, not the header.
+    import struct
+    from pathlib import Path
+
+    framerate, sampwidth, nchannels = 24000, 2, 1
+    real_frames = framerate * 2  # 2 seconds of actual audio
+    pcm = b"\x00\x00" * real_frames
+    bogus_frames = 1073741773  # header claims ~12.4 hours
+    header = (
+        b"RIFF" + struct.pack("<I", 36 + bogus_frames * sampwidth) + b"WAVE"
+        + b"fmt " + struct.pack("<IHHIIHH", 16, 1, nchannels, framerate,
+                                framerate * sampwidth * nchannels,
+                                sampwidth * nchannels, sampwidth * 8)
+        + b"data" + struct.pack("<I", bogus_frames * sampwidth)
+    )
+    path = tmp_path / "streamed.wav"
+    path.write_bytes(header + pcm)
+
+    assert abs(tts._wav_duration(Path(path)) - 2.0) < 0.01
+
+
 async def test_mock_writes_real_readable_wav(monkeypatch, tmp_path):
     monkeypatch.setattr(tts, "_settings", lambda: _settings(tmp_path))
     out = await tts.tts_node(_state([_scene(1, "alpha beta")]))

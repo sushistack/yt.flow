@@ -39,10 +39,19 @@ def _ms(t0: float) -> int:
 
 
 def _wav_duration(path: Path) -> float:
-    """Measure duration from the written file, not guessed from text. [Story 1.7]"""
+    """Measure duration from the written file, not guessed from text. [Story 1.7]
+
+    Qwen TTS streams its WAV, so the header's data-chunk size is a placeholder
+    (~2^30) and ``wave.getnframes()`` reports hours for a 20-second file — bound
+    frames by the actual PCM bytes on disk. [live bug 2026-07-03]
+    """
     try:
         with contextlib.closing(wave.open(str(path), "rb")) as w:
-            return w.getnframes() / float(w.getframerate())
+            bytes_per_frame = w.getsampwidth() * w.getnchannels()
+            # ponytail: 44 = canonical PCM header size; an exotic extra chunk only
+            # overestimates by <1ms, and the header path already lies by hours.
+            frames_on_disk = max(path.stat().st_size - 44, 0) // bytes_per_frame
+            return min(w.getnframes(), frames_on_disk) / float(w.getframerate())
     except (wave.Error, EOFError) as exc:
         # Real Qwen output is documented as WAV but unverified against a live key;
         # a format drift (e.g. MP3) gives a clear error, not a cryptic wave.Error. [review]
