@@ -143,6 +143,61 @@ async def test_stage_failure_surfaces_as_error(monkeypatch):
     assert "scenes" not in out
 
 
+async def test_duplicate_llm_scene_num_does_not_corrupt_shots(monkeypatch):
+    # Writing stage emits TWO scenes, both claiming scene_num=1 (a real, if
+    # rare, LLM misbehavior) — each scene's visual_breakdown must still keep
+    # its own distinct shots; nothing may silently collapse or drop.
+    writing_two_scenes = {
+        "scp_id": "SCP-173",
+        "title": "t",
+        "scenes": [
+            {"scene_num": 1, "narration": "첫 씬 문장.", "location": "a", "characters_present": [], "color_palette": "a", "atmosphere": "a"},
+            {"scene_num": 1, "narration": "둘째 씬 문장.", "location": "b", "characters_present": [], "color_palette": "b", "atmosphere": "b"},
+        ],
+    }
+
+    call_count = {"n": 0}
+
+    async def fake_research(*a, **k):
+        return RESEARCH
+
+    async def fake_structure(*a, **k):
+        return STRUCTURE
+
+    async def fake_writing(*a, **k):
+        return writing_two_scenes
+
+    async def fake_visual(scene, sentences, *a, **k):
+        # Distinguish the two scenes by their own narration/location so the
+        # test can prove which shot ended up where.
+        call_count["n"] += 1
+        tag = scene["location"]
+        return [{"image_prompt": f"shot-for-{tag}", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
+
+    async def fake_review(*a, **k):
+        return REVIEW_PASS
+
+    async def fake_critic(*a, **k):
+        return CRITIC_PASS
+
+    monkeypatch.setattr(sc, "research_step", fake_research)
+    monkeypatch.setattr(sc, "structure_step", fake_structure)
+    monkeypatch.setattr(sc, "writing_step", fake_writing)
+    monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
+    monkeypatch.setattr(sc, "review_step", fake_review)
+    monkeypatch.setattr(sc, "critic_step", fake_critic)
+
+    out = await sc.scenario_node(_state())
+
+    assert call_count["n"] == 2  # both scenes' visual_breakdown actually ran
+    assert out.get("error") is None
+    scenes = out["scenes"]
+    assert len(scenes) == 2
+    # Each output scene must carry ITS OWN shot, not both collapsing onto one.
+    assert scenes[0]["shots"][0]["image_prompt"] == "shot-for-a"
+    assert scenes[1]["shots"][0]["image_prompt"] == "shot-for-b"
+
+
 async def test_missing_api_key_sets_error(monkeypatch):
     class NoKeySettings(FakeSettings):
         deepseek_api_key = ""

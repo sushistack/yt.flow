@@ -100,12 +100,12 @@ async def _write_and_review(
 
     t0 = time.perf_counter()
 
-    async def _breakdown_for(scene: dict) -> tuple[int, list[dict]]:
+    async def _breakdown_for(idx: int, scene: dict) -> tuple[int, list[dict]]:
         sentences = split_sentences(scene["narration"])
         shots = await visual_breakdown_step(scene, sentences, frozen_descriptor, s, _call_deepseek)
-        return scene["scene_num"], shots
+        return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 
-    results = await asyncio.gather(*(_breakdown_for(scene) for scene in writing["scenes"]))
+    results = await asyncio.gather(*(_breakdown_for(idx, scene) for idx, scene in enumerate(writing["scenes"])))
     visual_by_scene = dict(results)
     stages.append({"name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene)})
 

@@ -223,7 +223,7 @@ def build_scenes(writing: dict, visual_by_scene: dict) -> list:
     scenes: list = []
     for idx, writing_scene in enumerate(writing["scenes"]):
         scene_num = idx + 1  # positional, matches scenario.py's pre-existing rule
-        raw_shots = visual_by_scene[writing_scene["scene_num"]]
+        raw_shots = visual_by_scene[idx]  # positional — matches _write_and_review's keying
 
         shots: list = []
         for i, raw_shot in enumerate(raw_shots):
