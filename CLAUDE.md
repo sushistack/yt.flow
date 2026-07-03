@@ -35,6 +35,10 @@ _TBD — fill in after initial project setup_
 - **Pipeline stages**: scenario → image → tts → subtitle → video
 - **Design details**: see `_bmad-output/brainstorm-intent.md` and PRD
 
+## Prompt Policy
+
+Any change to a runtime prompt (human or AI session) follows `docs/PROMPT_POLICY.md` — repo file is the source of truth, `production`/`candidate` labels only, no direct edits in the Langfuse UI.
+
 ---
 
 # BMAD Method v6.0.4

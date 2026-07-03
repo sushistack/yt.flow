@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-01
+# last_updated: 2026-07-04
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-01
+last_updated: 2026-07-04
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -104,6 +104,6 @@ development_status:
   5-5-visual-story-alignment: backlog  # Phase 2는 5-2 완료 후, A/B로 검증; 6-1 선행 필요
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
-  epic-6: backlog
-  6-1-prompt-policy-variant-label-wiring: backlog  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
+  epic-6: in-progress
+  6-1-prompt-policy-variant-label-wiring: review  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: backlog  # depends on 6-1
