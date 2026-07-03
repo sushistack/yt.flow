@@ -39,12 +39,11 @@ SOURCE_TO_NAME = {
     "vision/descriptor_enrichment.md": "vision/descriptor_enrichment",
 }
 
-# Required runtime entrypoint prompts -> source file (relative to --source) they wrap.
-# Downstream nodes fetch these by name; they must compile without node-side concatenation.
-ALIASES = {
-    "scenario": "scenario/01_research.md",
-    "image_prompt": "image/02_shot_to_prompt.md",
-}
+# No runtime entrypoint aliases: scenario_chain.py fetches prompts by their
+# discovered scenario/* names directly (see docs/superpowers/specs/
+# 2026-07-03-scenario-multistage-design.md). image/shot_breakdown and
+# image/shot_to_prompt are migrated for reference but unused by yt.flow.
+ALIASES: dict[str, str] = {}
 
 # A template variable is a bare identifier in single braces, not already doubled
 # and not a JSON object / literal. ponytail: identifier heuristic; if a real
