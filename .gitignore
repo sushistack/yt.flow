@@ -29,3 +29,6 @@ _bmad
 .agents
 .claude
 .github/agents
+# live-server / MCP session artifacts
+.playwright-mcp/
+server-live.log
