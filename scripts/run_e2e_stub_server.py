@@ -10,7 +10,8 @@ no new stub flag or branch added to ``src/yt_flow/``.
 
 NEVER use this for production. E2E/local testing only — zero real network or
 subprocess calls (DeepSeek/Qwen/ComfyUI/ffmpeg all stubbed; the A/B evaluation
-judge has no stub seam, so its API key is force-cleared below instead).
+judge has no stub seam, so its own ``eval_service._settings()`` seam is patched
+below to force its API key empty instead).
 
 Usage:
     uv run python scripts/run_e2e_stub_server.py             # http://127.0.0.1:8000
@@ -39,7 +40,6 @@ probe request inside it; ``tests/stubs/fakes.py`` itself is untouched, so pytest
 
 import argparse
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -76,9 +76,17 @@ def apply_stub_profile() -> None:
     import yt_flow.services.character_service as character_service
     import yt_flow.services.comfyui_client as comfyui_client
     import yt_flow.services.image_search as image_search
+    import yt_flow.services.prompt_service as prompt_service
 
-    scenario.get_prompt = fakes.fake_get_prompt
-    scenario._call_deepseek = fakes.deepseek_from_cassette()
+    # scenario.py's own one format_guide fetch uses the bare imported name;
+    # every scenario_chain.py step fetches via the module-qualified attribute
+    # (`from yt_flow.services import prompt_service`) — same two-target patch
+    # as tests/conftest.py's stub_profile fixture (Task 9), applied here as
+    # plain attribute assignment since this runs as a standalone process, not
+    # under pytest/monkeypatch.
+    scenario.get_prompt = fakes.fake_get_prompt_for_chain
+    prompt_service.get_prompt = fakes.fake_get_prompt_for_chain
+    scenario._call_deepseek = fakes.deepseek_stage_aware()
     tts._synthesize = fakes.fake_synthesize
     comfyui_client.submit_and_fetch = _delayed_submit_and_fetch
     comfyui_client.submit_and_fetch_outputs = _delayed_submit_and_fetch_outputs
@@ -97,10 +105,21 @@ if __name__ == "__main__":
     # judge calls go through raw httpx, not a seam fakes.py can monkeypatch cleanly.
     # A real YTFLOW_DEEPSEEK_API_KEY in .env would otherwise make the A/B-completion
     # trigger (run_service._trigger_ab_eval_if_variant_b) hit the live API during
-    # Playwright runs. Env vars win over .env in pydantic-settings, so this override
-    # forces the same "no key configured" RuntimeError the trigger already treats as
-    # non-fatal (AD-10) — deterministic, zero network, matches this script's promise.
-    os.environ["YTFLOW_DEEPSEEK_API_KEY"] = ""
+    # Playwright runs. Found during Task 12 verification: blanking the *global* env
+    # var (the previous approach) also fails scenario_node's own identical
+    # "if not s.deepseek_api_key" guard — unconditional, checked before
+    # scenario._call_deepseek (fully stubbed above) is ever invoked — which broke
+    # the scenario stage for every run regardless of the get_prompt/deepseek_stage_aware
+    # fix above. eval_service.py has the same "one seam" pattern as scenario.py
+    # (a local ``_settings()`` returning ``Settings()``), so patch that seam
+    # directly instead: eval_service sees a forced-empty key (same deterministic,
+    # zero-network "no key configured" RuntimeError the trigger already treats as
+    # non-fatal, AD-10) while scenario_node's own Settings() keeps the real
+    # .env-derived value it needs to pass its guard.
+    import yt_flow.services.eval_service as eval_service
+    from yt_flow.config import Settings
+
+    eval_service._settings = lambda: Settings(deepseek_api_key="")
 
     apply_stub_profile()
 
