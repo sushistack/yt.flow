@@ -44,7 +44,8 @@ def test_discovery_accepts_md_and_tmpl(tmp_path):
     assert files == {"scenario/01_research.md", "legacy/old.tmpl"}
 
 
-def test_build_manifest_maps_known_names_and_derives_unknown(tmp_path):
+def test_build_manifest_maps_known_names_and_derives_unknown(tmp_path, monkeypatch):
+    monkeypatch.setattr(mp, "ALIASES", {"my_alias": "scenario/01_research.md"})
     _write(tmp_path, "scenario/01_research.md", "research {scp_text}")
     _write(tmp_path, "image/02_shot_to_prompt.md", "shot {shot}")
     _write(tmp_path, "misc/extra_stage.md", "extra {y}")
@@ -53,9 +54,10 @@ def test_build_manifest_maps_known_names_and_derives_unknown(tmp_path):
     assert manifest["scenario/research"] == "research {{scp_text}}"
     # derived name for a file not in the map
     assert manifest["misc/extra_stage"] == "extra {{y}}"
-    # required runtime aliases exist and are compiled from their backing source
-    assert "scenario" in manifest and "{{scp_text}}" in manifest["scenario"]
-    assert "image_prompt" in manifest and "{{shot}}" in manifest["image_prompt"]
+    # an alias exists and is compiled from its backing source (mechanism test,
+    # not tied to any specific production alias — production has none, see
+    # docs/superpowers/specs/2026-07-03-scenario-multistage-design.md)
+    assert "my_alias" in manifest and "{{scp_text}}" in manifest["my_alias"]
 
 
 def test_build_manifest_fails_when_no_prompts(tmp_path):
@@ -63,18 +65,20 @@ def test_build_manifest_fails_when_no_prompts(tmp_path):
         mp.build_manifest(tmp_path)
 
 
-def test_build_manifest_fails_when_alias_source_missing(tmp_path):
+def test_build_manifest_fails_when_alias_source_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(mp, "ALIASES", {"my_alias": "scenario/01_research.md"})
     # only a non-alias file present -> alias backing source is absent
     _write(tmp_path, "misc/only.md", "x {a}")
     with pytest.raises(SystemExit):
         mp.build_manifest(tmp_path)
 
 
-def test_build_manifest_fails_on_reserved_alias_collision(tmp_path):
+def test_build_manifest_fails_on_reserved_alias_collision(tmp_path, monkeypatch):
+    monkeypatch.setattr(mp, "ALIASES", {"my_alias": "scenario/01_research.md"})
     # a discovered file deriving to a reserved alias name must not silently overwrite it
     _write(tmp_path, "scenario/01_research.md", "research {scp_text}")
     _write(tmp_path, "image/02_shot_to_prompt.md", "shot {shot}")
-    _write(tmp_path, "scenario.md", "colliding top-level file")  # derives to name "scenario"
+    _write(tmp_path, "my_alias.md", "colliding top-level file")  # derives to name "my_alias"
     with pytest.raises(SystemExit, match="collides"):
         mp.build_manifest(tmp_path)
 
