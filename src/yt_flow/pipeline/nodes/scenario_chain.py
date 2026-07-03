@@ -12,6 +12,7 @@ converts it into ``PipelineState.error`` exactly as before.
 import json
 import re
 
+from yt_flow.domain.state import SceneState, ShotData
 from yt_flow.services import prompt_service
 
 # ponytail: fixed per the design spec — this never varies, so it's a constant,
@@ -202,3 +203,67 @@ async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s
     if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
         raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
     return data
+
+
+def _fallback_prompt(scene: dict) -> str:
+    """Minimal prompt for a leading transition-only sentence with nothing to merge into."""
+    location = scene.get("location") or "an unmarked containment area"
+    atmosphere = scene.get("atmosphere") or "tense silence"
+    return f"static wide shot, {location}, {atmosphere}, no visible subject"
+
+
+def build_scenes(writing: dict, visual_by_scene: dict) -> list:
+    """Convert the chain's per-scene narration + visual_descriptions into PipelineState.scenes.
+
+    A shot with an empty ``image_prompt`` (yt.pipe's transition/effect-only
+    sentence marker) is merged into the previous shot's ``sentence_indices``
+    instead of becoming its own ``ShotData`` — yt.flow's image_node needs a
+    real prompt for every shot it renders.
+    """
+    scenes: list = []
+    for idx, writing_scene in enumerate(writing["scenes"]):
+        scene_num = idx + 1  # positional, matches scenario.py's pre-existing rule
+        raw_shots = visual_by_scene[writing_scene["scene_num"]]
+
+        shots: list = []
+        for i, raw_shot in enumerate(raw_shots):
+            sentence_idx = raw_shot["sentence_start"] - 1  # 1-based -> 0-based
+            image_prompt = str(raw_shot.get("image_prompt") or "").strip()
+
+            if not image_prompt:
+                if shots:
+                    shots[-1]["sentence_indices"].append(sentence_idx)
+                    continue
+                # No previous shot to merge into (leading transition sentence) — backfill.
+                image_prompt = _fallback_prompt(writing_scene)
+                raw_shot = {**raw_shot, "negative_prompt": raw_shot.get("negative_prompt") or ""}
+
+            shots.append(
+                ShotData(
+                    shot_id=f"S{scene_num:03d}{i:02d}",
+                    sentence_indices=[sentence_idx],
+                    image_prompt=image_prompt,
+                    negative_prompt=str(raw_shot.get("negative_prompt") or ""),
+                    camera_angle=raw_shot.get("camera_type") if isinstance(raw_shot.get("camera_type"), str) else None,
+                    camera_movement=None,  # yt.pipe's visual_breakdown has no equivalent field
+                    image_path=None,
+                    background_path=None,
+                    character_path=None,
+                )
+            )
+
+        if not shots:
+            raise ValueError(f"scene[{scene_num}]: no shots produced after merge")
+
+        scenes.append(
+            SceneState(
+                scene_num=scene_num,
+                narration=writing_scene["narration"],
+                shots=shots,
+                audio_path=None,
+                audio_duration=None,
+                word_timings=[],
+                subtitle_path=None,
+            )
+        )
+    return scenes

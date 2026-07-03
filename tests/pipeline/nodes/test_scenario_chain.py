@@ -187,3 +187,62 @@ async def test_critic_step_rejects_unknown_verdict(monkeypatch):
 
     with pytest.raises(ValueError, match="verdict"):
         await chain.critic_step({"scenes": []}, {}, "guide", None, call)
+
+
+def test_build_scenes_merges_empty_prompt_into_previous_shot():
+    writing = {
+        "scenes": [
+            {"scene_num": 1, "narration": "첫 문장. (정적) 셋째 문장."}
+        ]
+    }
+    visual_by_scene = {
+        1: [
+            {"image_prompt": "shot one", "negative_prompt": "neg one", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"},
+            {"image_prompt": "", "negative_prompt": "", "sentence_start": 2, "sentence_end": 2, "camera_type": "wide"},
+            {"image_prompt": "shot three", "negative_prompt": "neg three", "sentence_start": 3, "sentence_end": 3, "camera_type": "close-up"},
+        ]
+    }
+    scenes = chain.build_scenes(writing, visual_by_scene)
+    assert len(scenes) == 1
+    shots = scenes[0]["shots"]
+    assert len(shots) == 2  # the empty-prompt sentence merged into shot 1, not its own shot
+    assert shots[0]["sentence_indices"] == [0, 1]  # 0-based: sentences 1 and 2
+    assert shots[1]["sentence_indices"] == [2]
+    assert all(s["image_prompt"] for s in shots)  # never empty
+
+
+def test_build_scenes_first_sentence_empty_falls_back_to_scene_context():
+    writing = {"scenes": [{"scene_num": 1, "narration": "(정적) 둘째 문장.", "location": "hallway", "atmosphere": "cold dread"}]}
+    visual_by_scene = {
+        1: [
+            {"image_prompt": "", "negative_prompt": "", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"},
+            {"image_prompt": "shot two", "negative_prompt": "neg two", "sentence_start": 2, "sentence_end": 2, "camera_type": "medium"},
+        ]
+    }
+    scenes = chain.build_scenes(writing, visual_by_scene)
+    shots = scenes[0]["shots"]
+    assert len(shots) == 2  # no previous shot to merge into -> kept as its own, backfilled
+    assert "hallway" in shots[0]["image_prompt"] or "cold dread" in shots[0]["image_prompt"]
+    assert shots[0]["sentence_indices"] == [0]
+
+
+def test_build_scenes_scene_num_is_positional():
+    writing = {"scenes": [
+        {"scene_num": 1, "narration": "문장."},
+        {"scene_num": 1, "narration": "다른 문장."},  # duplicate scene_num from a misbehaving LLM
+    ]}
+    visual_by_scene = {
+        1: [{"image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}],
+    }
+    # Reuse the same visual breakdown for both (test only cares about positional numbering).
+    visual_by_scene_full = {1: visual_by_scene[1], 2: visual_by_scene[1]}
+    scenes = chain.build_scenes(writing, visual_by_scene_full)
+    assert [s["scene_num"] for s in scenes] == [1, 2]
+
+
+def test_build_scenes_single_empty_shot_falls_back_not_raises():
+    writing = {"scenes": [{"scene_num": 1, "narration": "(정적)", "location": "vault", "atmosphere": "silence"}]}
+    visual_by_scene = {1: [{"image_prompt": "", "negative_prompt": "", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]}
+    scenes = chain.build_scenes(writing, visual_by_scene)
+    assert len(scenes[0]["shots"]) == 1
+    assert scenes[0]["shots"][0]["image_prompt"]
