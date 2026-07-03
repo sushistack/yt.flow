@@ -99,3 +99,7 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 - **`fake_run_ffmpeg`가 출력 경로를 `args[-1]`로 가정** ([tests/stubs/fakes.py](tests/stubs/fakes.py)) — 현재 `video._run_ffmpeg` 호출 규약에서는 출력이 마지막 인자라 스모크 테스트가 통과하지만, ffmpeg 호출 규약이 바뀌면(옵션이 출력 뒤에 붙는 등) 페이크가 엉뚱한 파일에 쓰고도 `(0, "")`을 반환해 조용히 잘못될 수 있음. QA가 SYS-E2E-001용으로 이 seam을 확장할 때 출력 경로를 위치가 아니라 명시적으로 파싱하도록 강화할 것. (테스트 전용, 저위험)
 - **langfuse enable 플래그는 import 시점에 1회 바인딩됨** ([src/yt_flow/observability.py](src/yt_flow/observability.py)) — 프로세스 단위 config 플래그로는 정상 동작(런타임 토글 불필요). 테스트 스위트는 이제 `tests/conftest.py`에서 기본 OFF로 설정해 오프라인/무소음이지만, 향후 실제 `@observe` 경로를 테스트로 검증하려면 per-test env override가 아니라 하위 프로세스/재import가 필요함을 유의. (설계상 수용, 참고용)
+
+## Deferred from: 첫 실전 렌더 품질 리뷰 (2026-07-03)
+
+- **DuckDuckGo 검색 이미지 + LoRA img2img 변형 방식 보류** — 이미지-스토리 정합성 개선안으로 제안되었으나 보류. 이유: (a) 검색 이미지 저작권 통제 불가 — 유튜브 수익화 시 실제 리스크, (b) 매 shot 원본 스타일이 제각각이라 영상 전체 스타일 일관성이 현행보다 악화될 가능성, (c) 검색 결과 품질을 파이프라인이 통제 못 함. 축소판(SCP 위키 공식 이미지만 CC BY-SA 준수 하에 IPAdapter 참조로 사용)은 Story 5-5 Phase 2에 반영됨. **재고 조건**: 5-5 Phase 1(프롬프트 컨텍스트 강화) + Phase 2(위키 참조)로도 정합성이 부족하다고 A/B 평가로 확인되면 재검토.

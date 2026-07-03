@@ -913,3 +913,29 @@ So that I can query the outcome programmatically and from the UI.
 **Then** `ab_result.winner` is `"tie"` — system reports the result rather than forcing a verdict
 
 **FRs covered:** FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-27
+
+## Epic 5: 영상 품질 고도화
+
+**Goal:** 첫 실전 렌더(2026-07-03, run eb522cf9 / SCP-096) 리뷰에서 나온 품질 피드백 5건을 스테이지별로 해소한다. 상세 AC는 각 스토리 파일(`_bmad-output/implementation-artifacts/5-*.md`) 참조.
+
+**권장 순서:** 5.1(즉효) → 5.2(임팩트 최대, 1.6b/1.9c 기구현 코드 활성화) → 5.3 → 5.4 → 5.5(A/B 검증 필요).
+
+### Story 5.1: 장면 전환 개선 — 암전 전환 + 챕터 카드
+
+씬 경계의 크로스페이드(이미지 겹침)를 `fadeblack` 암전으로 교체하고, 씬 사이 1.5~2초 챕터 타이틀 카드를 삽입한다 (`YTFLOW_CHAPTER_CARDS`, 기본 on).
+
+### Story 5.2: 레이어드 에셋 실전 가동
+
+1.6b/1.9c로 구현 완료된 투명 캐릭터 오버레이 파이프라인을 실전 가동한다. 코드가 아니라 에셋+설정 문제: 배경 제거 노드를 포함한 2-출력 ComfyUI 워크플로우 작성 + `YTFLOW_COMFYUI_LAYERED=true` 배선 + 라이브 검증.
+
+### Story 5.3: 모션 강화
+
+Ken Burns zoom/pan 강도를 현행 미세 드리프트(1.0→1.005)에서 체감 3배 이상으로 상향하고, 씬 인덱스 기반 결정적 효과 로테이션(zoom-in/out, pan 방향)으로 단조 반복을 제거한다.
+
+### Story 5.4: TTS 한국어 자연화
+
+scenario 체인 끝에 `tts_normalize` 스테이지를 추가해 오독 유발 표현("한 연구원"→붙여 읽힘)을 낭독 친화적으로 재작성한다. 자막·TTS 동일 텍스트 유지, 문장 수 불변(shot 1:1 계약 보존).
+
+### Story 5.5: 비주얼 정합성
+
+visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의서(entity sheet)를 주입해 이미지-서사 정합성을 높인다 (Phase 1). 불충분 시 SCP 위키 공식 이미지(CC BY-SA)를 IPAdapter 참조로 사용 (Phase 2). 완료 판정은 Epic 4 A/B 평가. ※ 일반 웹검색 이미지 img2img 방식은 저작권/일관성 리스크로 보류 (deferred-work.md 2026-07-03 항목).
