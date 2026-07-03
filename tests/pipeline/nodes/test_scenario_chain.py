@@ -90,3 +90,54 @@ async def test_structure_step_rejects_empty_scene_list(monkeypatch):
 
     with pytest.raises(ValueError, match="scenes"):
         await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+
+
+async def test_writing_step_returns_scenes(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call = _deepseek_from_cassette("deepseek_writing.json")
+    result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+    assert result["scenes"][0]["narration"]
+    assert result["scenes"][0]["location"] == "underground containment chamber"
+
+
+async def test_writing_step_rejects_empty_narration(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
+        return json.dumps(payload), {}, "stop"
+
+    with pytest.raises(ValueError, match="narration"):
+        await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+
+
+async def test_visual_breakdown_step_maps_one_shot_per_sentence(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call = _deepseek_from_cassette("deepseek_visual_breakdown.json")
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    sentences = ["첫 문장.", "(정적)", "셋째 문장."]
+    result = await chain.visual_breakdown_step(scene, sentences, "desc", None, call)
+    assert len(result) == 3
+    assert result[0]["image_prompt"]
+    assert result[1]["image_prompt"] == ""  # transition sentence, no image
+    assert result[2]["camera_type"] == "wide"
+
+
+async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scene_num": 1, "visual_descriptions": [{"image_prompt": "x", "negative_prompt": "x", "sentence_start": 1, "sentence_end": 1, "entity_visible": False, "camera_type": "wide"}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    with pytest.raises(ValueError, match="1:1"):
+        await chain.visual_breakdown_step(scene, ["문장1.", "문장2."], "desc", None, call)

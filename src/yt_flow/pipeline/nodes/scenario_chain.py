@@ -86,3 +86,70 @@ async def structure_step(scp_id: str, research: dict, format_guide: str, s, call
     if not isinstance(scenes, list) or not scenes:
         raise ValueError("structure: payload must contain a non-empty 'scenes' list")
     return scenes
+
+
+async def writing_step(
+    scp_id: str,
+    structure: list[dict],
+    frozen_descriptor: str,
+    format_guide: str,
+    quality_feedback: str,
+    s,
+    call_deepseek,
+) -> dict:
+    raw = await _call_stage(
+        "scenario/writing",
+        {
+            "scp_id": scp_id,
+            "scene_structure": json.dumps(structure, ensure_ascii=False),
+            "scp_visual_reference": frozen_descriptor,
+            "format_guide": format_guide,
+            "glossary_section": "",
+            "quality_feedback": quality_feedback,
+        },
+        s,
+        call_deepseek,
+    )
+    data = json.loads(raw)
+    scenes = data.get("scenes") if isinstance(data, dict) else None
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("writing: payload must contain a non-empty 'scenes' list")
+    for scene in scenes:
+        if not str(scene.get("narration") or "").strip():
+            raise ValueError(f"writing: scene[{scene.get('scene_num')}] has empty narration")
+    return data
+
+
+async def visual_breakdown_step(
+    scene: dict,
+    sentences: list[str],
+    frozen_descriptor: str,
+    s,
+    call_deepseek,
+) -> list[dict]:
+    numbered = "\n".join(f"{i + 1}. {sent}" for i, sent in enumerate(sentences))
+    raw = await _call_stage(
+        "scenario/visual_breakdown",
+        {
+            "scene_num": scene["scene_num"],
+            "location": scene["location"],
+            "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
+            "color_palette": scene["color_palette"],
+            "atmosphere": scene["atmosphere"],
+            "scp_visual_reference": frozen_descriptor,
+            "character_visual_context": "",
+            "narration": scene.get("narration", ""),
+            "numbered_sentences": numbered,
+            "sentence_count": len(sentences),
+        },
+        s,
+        call_deepseek,
+    )
+    data = json.loads(raw)
+    shots = data.get("visual_descriptions") if isinstance(data, dict) else None
+    if not isinstance(shots, list) or len(shots) != len(sentences):
+        raise ValueError(
+            f"visual_breakdown: expected 1:1 sentence-to-shot mapping "
+            f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
+        )
+    return shots
