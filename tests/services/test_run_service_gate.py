@@ -52,8 +52,10 @@ def _load(run_id: str) -> Run:
 
 
 @pytest_asyncio.fixture
-async def env(tmp_path, monkeypatch):
-    # Real graph on a temp checkpointer + in-memory runs table.
+async def env(tmp_path, monkeypatch, stub_stage_nodes):
+    # Real graph on a temp checkpointer + in-memory runs table. Stage nodes are
+    # stubbed to instant successes: these tests exercise gate/status mechanics,
+    # and a genuinely failing stage no longer reaches its gate (error routes to END).
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
     db.init("sqlite://")
     settings = Settings(
@@ -321,3 +323,37 @@ async def test_trace_teardown_failure_is_non_fatal_and_logged(env, monkeypatch, 
     run = _load(run_id)
     assert run.status == "awaiting_approval"  # pipeline unaffected by the tracing failure
     assert any("Langfuse" in r.message for r in caplog.records)  # AD-10: error is logged
+
+
+async def test_stage_failure_marks_run_failed(env, monkeypatch, tmp_path):
+    # The silent-failure bug (live 2026-07-03): a stage that sets state["error"]
+    # must mark the run failed + gate_states[stage]="failed" (retryable via the
+    # existing retry endpoint), publish run_failed, and never offer a gate.
+    from yt_flow.pipeline import nodes
+
+    async def failing_scenario(state):
+        return {"current_stage": "scenario", "error": "stage=scenario run_id=r: boom"}
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "scenario", failing_scenario)
+    settings = Settings(
+        langfuse_host="http://localhost", langfuse_public_key="pk",
+        langfuse_secret_key="sk", db_path=str(tmp_path / "cp-fail.db"),
+    )
+    saver = await run_service.init(settings)  # rebuild graph with the failing node
+    try:
+        run_id = str(uuid.uuid4())
+        _seed(run_id)
+        reg = _FakeRegistry()
+
+        await run_service.start_run(run_id, "SCP-096", "t", reg)
+
+        run = _load(run_id)
+        assert run.status == "failed"
+        assert "boom" in (run.error or "")
+        assert json.loads(run.gate_states)["scenario"] == "failed"
+        failed = _kinds(reg, "run_failed")
+        assert failed and failed[0]["data"]["stage"] == "scenario"
+        assert _stages(reg, "gate_pending") == []  # no gate for a failed stage
+        assert run_id not in run_service._configs
+    finally:
+        await saver.conn.close()

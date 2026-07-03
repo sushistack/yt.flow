@@ -251,6 +251,18 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
             return "awaiting"
         for node, update in event.items():
             if node in _STAGES:
+                stage_error = (update or {}).get("error")
+                if stage_error:
+                    # Stage node caught its own failure and set state["error"] (AD-4);
+                    # the graph routes it to END, so mark failed + retryable here —
+                    # never leave the run looking like a normal pending gate. [live bug 2026-07-03]
+                    await asyncio.to_thread(_write_run, run_id, status="failed",
+                                            error=stage_error, current_stage=node)
+                    await asyncio.to_thread(_mirror_gate_state, run_id, node, "failed")
+                    await _publish(sse_registry, run_id, "run_failed",
+                                   {"run_id": run_id, "stage": node, "error": stage_error})
+                    terminal_failed = True
+                    continue
                 await asyncio.to_thread(_write_run, run_id, status="running", current_stage=node)
                 await _publish(sse_registry, run_id, "stage_entry", {"run_id": run_id, "stage": node})
                 await _publish(sse_registry, run_id, "stage_exit", {"run_id": run_id, "stage": node})

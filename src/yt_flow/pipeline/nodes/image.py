@@ -256,7 +256,7 @@ async def image_node(state: PipelineState) -> dict:
             background_count=background_count, character_count=character_count,
             latency_ms=_ms(t0),
         )
-        return {"scenes": new_scenes, "current_stage": "image"}
+        return {"scenes": new_scenes, "current_stage": "image", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(
             comfyui_url=s.comfyui_url if s else "?",

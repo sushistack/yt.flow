@@ -167,7 +167,7 @@ async def tts_node(state: PipelineState) -> dict:
 
         _record_trace(run_id=run_id, model=s.qwen_tts_model, voice=s.qwen_tts_voice,
                       scene_count=len(new_scenes), latency_ms=_ms(t0), per_scene=per_scene_ms)
-        return {"scenes": new_scenes, "current_stage": "tts"}
+        return {"scenes": new_scenes, "current_stage": "tts", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(run_id=run_id, model=s.qwen_tts_model if s else "?",
                       voice=s.qwen_tts_voice if s else "?",

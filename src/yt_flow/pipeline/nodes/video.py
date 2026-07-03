@@ -557,7 +557,7 @@ async def video_node(state: PipelineState) -> dict:
             character_scenes=sum(1 for *_, hc in segs_with_specs if hc),
             angle_selection=angle_meta if angle_meta else None,
         )
-        return {"current_stage": "video", "video_path": str(output)}
+        return {"current_stage": "video", "video_path": str(output), "error": None}
 
     except Exception as exc:  # noqa: BLE001
         _record_trace(

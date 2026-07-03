@@ -77,7 +77,30 @@ def test_graph_edges_follow_fixed_topology():
         assert (a, b) in edge_pairs, f"missing edge {a} -> {b}"
 
 
-async def test_stub_stage_persists_checkpoint(tmp_path):
+async def test_stage_error_routes_to_end_without_gate(tmp_path, monkeypatch):
+    # A failed stage (state["error"] set) must terminate the run, NOT interrupt
+    # for approval of nothing — the silent-failure bug found in live testing.
+    from yt_flow.pipeline import nodes
+
+    async def failing_scenario(state):
+        return {"current_stage": "scenario", "error": "stage=scenario run_id=x: boom"}
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "scenario", failing_scenario)
+    settings = _settings(tmp_path)
+    graph, saver = await build_graph(settings)
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke(_minimal_state(run_id), config)
+        assert "__interrupt__" not in result  # no gate for a failed stage
+        state = await graph.aget_state(config)
+        assert state.next == ()  # routed to END
+        assert "boom" in (state.values.get("error") or "")
+    finally:
+        await saver.conn.close()
+
+
+async def test_stub_stage_persists_checkpoint(tmp_path, stub_stage_nodes):
     # AC3 / FR-36: after the first stub stage runs, a checkpoint exists.
     settings = _settings(tmp_path)
     graph, saver = await build_graph(settings)
@@ -94,7 +117,7 @@ async def test_stub_stage_persists_checkpoint(tmp_path):
         await saver.conn.close()
 
 
-async def test_gate_resume_records_decision(tmp_path):
+async def test_gate_resume_records_decision(tmp_path, stub_stage_nodes):
     from langgraph.types import Command
 
     settings = _settings(tmp_path)
@@ -111,7 +134,7 @@ async def test_gate_resume_records_decision(tmp_path):
         await saver.conn.close()
 
 
-async def test_gate_rejects_invalid_decision(tmp_path):
+async def test_gate_rejects_invalid_decision(tmp_path, stub_stage_nodes):
     # Gate accepts only approved/rejected; resuming with anything else is a hard error.
     from langgraph.types import Command
 

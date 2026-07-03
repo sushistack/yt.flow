@@ -205,7 +205,7 @@ async def subtitle_node(state: PipelineState) -> dict:
             new_scenes.append({**scene, "subtitle_path": str(path)})
 
         _record_trace(run_id=run_id, scene_count=len(new_scenes), latency_ms=_ms(t0))
-        return {"scenes": new_scenes, "current_stage": "subtitle"}
+        return {"scenes": new_scenes, "current_stage": "subtitle", "error": None}
     except Exception as exc:  # noqa: BLE001
         _record_trace(run_id=run_id, scene_count=len(state.get("scenes", [])),
                       latency_ms=_ms(t0), error=exc)

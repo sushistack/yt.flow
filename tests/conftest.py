@@ -53,3 +53,23 @@ def stub_profile(monkeypatch):
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
     return fakes
+
+@pytest.fixture
+def stub_stage_nodes(monkeypatch):
+    """Replace all five stage nodes with instant no-op successes.
+
+    For graph/service tests that exercise gate/topology mechanics only. The real
+    nodes need live LLM/ComfyUI seams, and (since the error-routing fix) a failed
+    stage routes to END instead of its gate — so tests that assert gate behaviour
+    must run on nodes that genuinely succeed.
+    """
+    from yt_flow.pipeline import nodes
+
+    def _make(stage):
+        async def node(state):
+            return {"current_stage": stage, "error": None}
+        node.__name__ = f"stub_{stage}_node"
+        return node
+
+    for s in nodes.STAGES:
+        monkeypatch.setitem(nodes.STAGE_NODES, s, _make(s))

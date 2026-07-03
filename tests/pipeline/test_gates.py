@@ -56,7 +56,7 @@ def test_all_five_gate_nodes_registered():
 
 # ── Conditional routing (integration) ───────────────────────────────────────
 
-async def test_first_gate_interrupts_after_scenario(tmp_path):
+async def test_first_gate_interrupts_after_scenario(tmp_path, stub_stage_nodes):
     graph, saver = await build_graph(_settings(tmp_path))
     run_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": run_id}}
@@ -68,7 +68,7 @@ async def test_first_gate_interrupts_after_scenario(tmp_path):
         await saver.conn.close()
 
 
-async def test_approved_advances_to_next_gate(tmp_path):
+async def test_approved_advances_to_next_gate(tmp_path, stub_stage_nodes):
     graph, saver = await build_graph(_settings(tmp_path))
     run_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": run_id}}
@@ -82,7 +82,7 @@ async def test_approved_advances_to_next_gate(tmp_path):
         await saver.conn.close()
 
 
-async def test_scenario_reject_routes_to_end(tmp_path):
+async def test_scenario_reject_routes_to_end(tmp_path, stub_stage_nodes):
     graph, saver = await build_graph(_settings(tmp_path))
     run_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": run_id}}
@@ -95,7 +95,7 @@ async def test_scenario_reject_routes_to_end(tmp_path):
         await saver.conn.close()
 
 
-async def test_image_reject_loops_back_and_reinterrupts(tmp_path):
+async def test_image_reject_loops_back_and_reinterrupts(tmp_path, stub_stage_nodes):
     graph, saver = await build_graph(_settings(tmp_path))
     run_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": run_id}}
@@ -110,7 +110,7 @@ async def test_image_reject_loops_back_and_reinterrupts(tmp_path):
         await saver.conn.close()
 
 
-async def test_all_approved_reaches_end(tmp_path):
+async def test_all_approved_reaches_end(tmp_path, stub_stage_nodes):
     graph, saver = await build_graph(_settings(tmp_path))
     run_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": run_id}}
@@ -125,7 +125,7 @@ async def test_all_approved_reaches_end(tmp_path):
         await saver.conn.close()
 
 
-async def test_retry_reruns_stage_node(tmp_path, monkeypatch):
+async def test_retry_reruns_stage_node(tmp_path, monkeypatch, stub_stage_nodes):
     """AD-9 regression: retry must RE-RUN the stage node, not just re-hit its gate.
 
     Attributing the checkpoint update to the stage itself (as_node=stage) would resume

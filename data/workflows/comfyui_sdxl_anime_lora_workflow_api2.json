@@ -2,13 +2,13 @@
   "4": {
     "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "ckpt_name": "animagineXL_v31.safetensors"
+      "ckpt_name": "AnimagineXL_v31.safetensors"
     }
   },
   "10": {
     "class_type": "LoraLoader",
     "inputs": {
-      "lora_name": "horror_and_creepy.safetensors",
+      "lora_name": "horror.safetensors",
       "strength_model": 0.6,
       "strength_clip": 0.6,
       "model": ["4", 0],
@@ -18,7 +18,7 @@
   "11": {
     "class_type": "LoraLoader",
     "inputs": {
-      "lora_name": "darkness_sdxl_v2.safetensors",
+      "lora_name": "darkness_xl_v2.safetensors",
       "strength_model": 0.5,
       "strength_clip": 0.5,
       "model": ["10", 0],

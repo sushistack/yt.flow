@@ -154,7 +154,7 @@ async def scenario_node(state: PipelineState) -> dict:
 
         scenes = build_scenes(writing, visual_by_scene)
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total))
-        return {"scenes": scenes, "current_stage": "scenario"}
+        return {"scenes": scenes, "current_stage": "scenario", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total), error=exc)
         return {"current_stage": "scenario", "error": f"stage=scenario run_id={run_id}: {exc}"}

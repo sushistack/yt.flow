@@ -34,6 +34,14 @@ def _route_after_gate(stage: StageName):
     return route
 
 
+def _route_after_stage(state: PipelineState) -> str:
+    # A failed stage (its node set state["error"]) terminates the run instead of
+    # interrupting for approval of nothing; run_service._consume mirrors the error
+    # to the runs table so it is visible + retryable. Stage nodes clear error to
+    # None on success, so a stale message from a retried attempt can't re-route.
+    return "error" if state.get("error") else "ok"
+
+
 def build_state_graph() -> StateGraph:
     """Build the uncompiled StateGraph with the fixed stage/gate topology.
 
@@ -48,7 +56,9 @@ def build_state_graph() -> StateGraph:
 
     graph.add_edge(START, STAGES[0])
     for stage in STAGES:
-        graph.add_edge(stage, f"gate_{stage}")
+        graph.add_conditional_edges(
+            stage, _route_after_stage, {"ok": f"gate_{stage}", "error": END},
+        )
         graph.add_conditional_edges(
             f"gate_{stage}",
             _route_after_gate(stage),
