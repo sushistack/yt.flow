@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-cassette-structure",
+  "object": "chat.completion",
+  "model": "deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"scenes\": [{\"scene_num\": 1, \"act\": \"hook\", \"synopsis\": \"A guard is found dead with a broken neck, no weapon present.\", \"key_points\": [\"14 deaths total\", \"no weapon found\"], \"emotional_beat\": \"tension\", \"estimated_duration_sec\": 45, \"fact_references\": [\"death_count\"]}, {\"scene_num\": 2, \"act\": \"mystery_expansion\", \"synopsis\": \"Security footage shows the room was empty seconds before.\", \"key_points\": [\"footage anomaly\"], \"emotional_beat\": \"mystery\", \"estimated_duration_sec\": 75, \"fact_references\": [\"camera_blind_spot\"]}]}"
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 500, "completion_tokens": 150, "total_tokens": 650}
+}
