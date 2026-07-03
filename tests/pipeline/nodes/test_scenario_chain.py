@@ -141,3 +141,49 @@ async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     with pytest.raises(ValueError, match="1:1"):
         await chain.visual_breakdown_step(scene, ["문장1.", "문장2."], "desc", None, call)
+
+
+async def test_review_step_returns_report(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call = _deepseek_from_cassette("deepseek_review.json")
+    writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
+    result = await chain.review_step("scp text", writing, {1: []}, "desc", "guide", None, call)
+    assert result["overall_pass"] is True
+    assert result["coverage_pct"] == 92.0
+
+
+async def test_review_step_rejects_missing_overall_pass(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"coverage_pct": 50.0}), {}, "stop"
+
+    with pytest.raises(ValueError, match="overall_pass"):
+        await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+
+
+async def test_critic_step_returns_verdict(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call = _deepseek_from_cassette("deepseek_critic.json")
+    writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
+    result = await chain.critic_step(writing, {1: []}, "guide", None, call)
+    assert result["verdict"] == "pass"
+    assert result["feedback"]
+
+
+async def test_critic_step_rejects_unknown_verdict(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"verdict": "maybe", "feedback": "x", "scene_notes": []}), {}, "stop"
+
+    with pytest.raises(ValueError, match="verdict"):
+        await chain.critic_step({"scenes": []}, {}, "guide", None, call)

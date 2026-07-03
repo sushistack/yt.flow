@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-cassette-critic",
+  "object": "chat.completion",
+  "model": "deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"verdict\": \"pass\", \"hook_effective\": true, \"retention_risk\": \"low\", \"ending_impact\": \"strong\", \"feedback\": \"훅이 강력하고 몰입도가 높습니다.\", \"scene_notes\": []}"
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 900, "completion_tokens": 60, "total_tokens": 960}
+}

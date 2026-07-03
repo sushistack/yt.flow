@@ -153,3 +153,52 @@ async def visual_breakdown_step(
             f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
         )
     return shots
+
+
+_VALID_VERDICTS = {"pass", "retry", "accept_with_notes"}
+
+
+async def review_step(
+    scp_text: str,
+    writing: dict,
+    visual_by_scene: dict,
+    frozen_descriptor: str,
+    format_guide: str,
+    s,
+    call_deepseek,
+) -> dict:
+    raw = await _call_stage(
+        "scenario/review",
+        {
+            "scp_id": writing.get("scp_id", ""),
+            "scp_fact_sheet": scp_text,
+            "narration_script": json.dumps(writing, ensure_ascii=False),
+            "visual_descriptions": json.dumps(visual_by_scene, ensure_ascii=False),
+            "scp_visual_reference": frozen_descriptor,
+            "format_guide": format_guide,
+            "glossary_section": "",
+        },
+        s,
+        call_deepseek,
+    )
+    data = json.loads(raw)
+    if not isinstance(data, dict) or "overall_pass" not in data:
+        raise ValueError("review: payload missing 'overall_pass'")
+    return data
+
+
+async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s, call_deepseek) -> dict:
+    scenario_json = {"writing": writing, "visual_descriptions": visual_by_scene}
+    raw = await _call_stage(
+        "scenario/critic_agent",
+        {
+            "format_guide": format_guide,
+            "scenario_json": json.dumps(scenario_json, ensure_ascii=False),
+        },
+        s,
+        call_deepseek,
+    )
+    data = json.loads(raw)
+    if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
+        raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
+    return data
