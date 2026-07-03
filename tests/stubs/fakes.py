@@ -100,3 +100,68 @@ async def fake_download_reference_image(self, url: str, refs_dir: Path, num: int
     refs_dir.mkdir(parents=True, exist_ok=True)
     (refs_dir / f"ref_{num}.png").write_bytes(TINY_PNG)
     return "png"
+
+
+# ── scenario_chain multi-stage prompt/DeepSeek fakes (Story 1.5 chain redesign) ─
+_STAGE_CASSETTES = {
+    "scenario/research": "deepseek_research.json",
+    "scenario/structure": "deepseek_structure.json",
+    "scenario/writing": "deepseek_writing.json",
+    "scenario/visual_breakdown": "deepseek_visual_breakdown.json",
+    "scenario/review": "deepseek_review.json",
+    "scenario/critic_agent": "deepseek_critic.json",
+}
+
+
+class _FakeChainPrompt:
+    """Stands in for a Langfuse prompt object for one scenario_chain stage.
+
+    ``compile()`` returns a marker string embedding the stage name instead of
+    real prompt text — paired with ``deepseek_stage_aware()``, which reads the
+    marker back out of ``rendered`` to pick the right per-stage cassette. The
+    chain never inspects prompt *content* in tests, only structure, so a
+    marker is sufficient and avoids needing real prompt text offline.
+    """
+
+    def __init__(self, name: str):
+        self._name = name
+
+    def compile(self, **variables: object) -> str:
+        return f"__STAGE__:{self._name}"
+
+
+def fake_get_prompt_for_chain(name: str, *, label: str | None = None):
+    """Replaces ``yt_flow.services.prompt_service.get_prompt`` for the scenario chain.
+
+    ``scenario/format_guide`` has no variables and is only ever compiled once
+    for its static text — the existing zero-arg ``_FakePrompt`` fake covers it.
+    Every other name is one of the six chain stages.
+    """
+    if name == "scenario/format_guide":
+        return _FakePrompt()
+    return _FakeChainPrompt(name)
+
+
+def deepseek_stage_aware():
+    """Replaces ``scenario._call_deepseek`` for the multi-stage chain.
+
+    Reads the stage marker out of ``rendered`` (see ``_FakeChainPrompt``) and
+    replays that stage's real cassette from Tasks 3-5 — one fixed cassette per
+    stage, cached after first load. ``visual_breakdown`` is called once per
+    scene; the same cassette (3 shots) is replayed for every scene, which is
+    fine because the stub-profile run only ever has one scene (see the
+    ``deepseek_writing.json`` cassette's single scene).
+    """
+    cache: dict[str, dict] = {}
+
+    async def fake(rendered: str, s):
+        for name, filename in _STAGE_CASSETTES.items():
+            if rendered == f"__STAGE__:{name}":
+                if filename not in cache:
+                    cache[filename] = load_cassette(filename)
+                data = cache[filename]
+                choice = data["choices"][0]
+                return choice["message"]["content"], data.get("usage", {}), choice.get("finish_reason")
+        raise AssertionError(f"deepseek_stage_aware: no cassette mapped for rendered={rendered!r}")
+
+    return fake

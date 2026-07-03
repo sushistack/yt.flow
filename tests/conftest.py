@@ -39,9 +39,15 @@ def stub_profile(monkeypatch):
     import yt_flow.pipeline.nodes.tts as tts
     import yt_flow.pipeline.nodes.video as video
     import yt_flow.services.comfyui_client as comfyui_client
+    import yt_flow.services.prompt_service as prompt_service
 
-    monkeypatch.setattr(scenario, "get_prompt", fakes.fake_get_prompt)
-    monkeypatch.setattr(scenario, "_call_deepseek", fakes.deepseek_from_cassette())
+    # scenario.py's own one format_guide fetch uses the bare imported name...
+    monkeypatch.setattr(scenario, "get_prompt", fakes.fake_get_prompt_for_chain)
+    # ...but every scenario_chain.py step fetches via the module-qualified
+    # attribute (`from yt_flow.services import prompt_service`), which needs
+    # its own patch target.
+    monkeypatch.setattr(prompt_service, "get_prompt", fakes.fake_get_prompt_for_chain)
+    monkeypatch.setattr(scenario, "_call_deepseek", fakes.deepseek_stage_aware())
     monkeypatch.setattr(tts, "_synthesize", fakes.fake_synthesize)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)
