@@ -939,3 +939,23 @@ scenario 체인 끝에 `tts_normalize` 스테이지를 추가해 오독 유발 �
 ### Story 5.5: 비주얼 정합성
 
 visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의서(entity sheet)를 주입해 이미지-서사 정합성을 높인다 (Phase 1). 불충분 시 SCP 위키 공식 이미지(CC BY-SA)를 IPAdapter 참조로 사용 (Phase 2). 완료 판정은 Epic 4 A/B 평가. ※ 일반 웹검색 이미지 img2img 방식은 저작권/일관성 리스크로 보류 (deferred-work.md 2026-07-03 항목).
+
+## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
+
+**Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
+
+**발의 배경 (2026-07-03):** 정책 논의 중 배선 갭 발견 — `prompt_variant="B"`가 프롬프트 fetch에 연결돼 있지 않아 현재 A/B run은 두 변형이 동일한 production 프롬프트로 실행됨. Epic 4의 프롬프트 A/B가 실동작하려면 6-1이 필수.
+
+**순서 제약:** 6-1은 프롬프트를 수정하는 Epic 5 스토리(5-4, 5-5)보다 선행.
+
+### Story 6.1: 프롬프트 정책 문서 + variant→label 배선
+
+1페이지 정책(`docs/PROMPT_POLICY.md`: repo가 SoT, production/candidate 라벨, 변경 프로토콜, 골든셋 게이트, UI 직접편집 금지) + CLAUDE.md 참조 + scenario 체인의 variant→label 배선(candidate 부재 시 production 폴백으로 부분 실험 지원) + 시드 스크립트 라벨 옵션.
+
+### Story 6.2: 골든셋 + 오프라인 프롬프트 회귀 평가 러너
+
+고정 SCP 2~3개를 Langfuse Dataset으로 시딩, scenario 체인만 실행(풀 파이프라인 없이 ~3분/몇십 원)해 Epic 4 평가 축으로 채점, dataset run에 버전별 점수 기록. `--baseline production` 비교 모드가 승격 판단 근거를 출력. 창작 파이프라인의 골든셋은 정답 출력이 아니라 "고정 입력 + 루브릭 + 점수 추이"라는 원칙.
+
+### (미발의 후보) 승격 자동화
+
+candidate가 골든셋+A/B를 통과하면 production 라벨을 자동 이동하는 스크립트/CI. 수동 승격(라벨 이동은 Langfuse UI 클릭 1회)의 빈도가 부담이 될 때만 발의 — YAGNI.

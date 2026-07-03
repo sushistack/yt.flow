@@ -101,4 +101,9 @@ development_status:
   5-2-layered-assets-activation: backlog  # 1.6b/1.9c 코드 기구현 — 워크플로우+설정 배선
   5-3-motion-intensity: backlog  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: backlog
-  5-5-visual-story-alignment: backlog  # Phase 2는 5-2 완료 후, A/B로 검증
+  5-5-visual-story-alignment: backlog  # Phase 2는 5-2 완료 후, A/B로 검증; 6-1 선행 필요
+
+  # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
+  epic-6: backlog
+  6-1-prompt-policy-variant-label-wiring: backlog  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
+  6-2-golden-set-offline-eval: backlog  # depends on 6-1
