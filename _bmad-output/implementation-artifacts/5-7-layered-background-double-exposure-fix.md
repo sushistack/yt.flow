@@ -52,6 +52,10 @@ This is purely a visual-compositing defect; it is orthogonal to Story 5.5's prom
   - [ ] Run existing test suites: `uv run pytest tests/pipeline/nodes/test_image.py tests/pipeline/nodes/test_video.py -q`.
   - [ ] Run a real (non-mock) ComfyUI shot generation for an entity-visible shot and visually confirm the double-exposure is gone; save the before/after frame comparison in Dev Agent Record.
   - [ ] Confirm mock mode and `YTFLOW_COMFYUI_LAYERED=false` still pass their existing tests unmodified.
+- [ ] Re-validate Story 5.5's A/B result now that this confound is removed (AC: 5) — Story 5.5 was closed `done` with an unresolved caveat: its Epic 4 evaluation (Variant A beat Variant B on `atmosphere`/`audio_duration_variance`) may have been measuring this double-exposure bug rather than Phase 1's prompt-content changes, since both A/B variants shared the same broken layered-compositing path.
+  - [ ] After this fix lands, re-run the same SCP-096 A/B (`POST /runs` baseline + `POST /runs/{id}/ab`) and compare the new `ab_result` against Story 5.5's recorded scores.
+  - [ ] Record the re-run outcome in `5-5-visual-story-alignment.md`'s Dev Agent Record (not this story's), since it answers 5.5's own AC13 — link back from here.
+  - [ ] If Variant B still loses on a clean re-run, the Phase 2 go/no-go decision proceeds on solid evidence; if B now wins or ties, Story 5.5's Phase 1 can be considered validated retroactively.
 
 ## Dev Notes
 
