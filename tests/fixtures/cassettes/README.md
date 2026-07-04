@@ -7,6 +7,7 @@ suite runs fully offline (zero network, zero subprocess).
 | File | Seam | Shape source |
 |------|------|--------------|
 | `deepseek_scenario.json` | `scenario._call_deepseek` | OpenAI-compatible chat completion; `choices[0].message.content` is a JSON string parsed by `_parse_scenes` |
+| `deepseek_tts_normalize.json` | `scenario_chain.tts_normalize_step` | OpenAI-compatible chat completion; `choices[0].message.content` is `{"scenes": [{scene_num, narration}]}` from `prompts/scenario/tts_normalize.md` |
 | `qwen_tts.json` | `tts._synthesize` | Qwen DashScope response; `output.audio.url` (the audio itself is faked by `fake_synthesize`) |
 
 **Re-record these whenever the Prompt Hub templates or the pinned model IDs

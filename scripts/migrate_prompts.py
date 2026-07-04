@@ -33,6 +33,7 @@ SOURCE_TO_NAME = {
     "scenario/04_review.md": "scenario/review",
     "scenario/critic_agent.md": "scenario/critic_agent",
     "scenario/format_guide.md": "scenario/format_guide",
+    "scenario/tts_normalize.md": "scenario/tts_normalize",
     "image/01_shot_breakdown.md": "image/shot_breakdown",
     "image/02_shot_to_prompt.md": "image/shot_to_prompt",
     "tts/scenario_refine.md": "tts/scenario_refine",

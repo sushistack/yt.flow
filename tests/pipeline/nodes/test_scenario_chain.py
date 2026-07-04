@@ -225,6 +225,133 @@ async def test_call_stage_uses_fallback_when_label_given(monkeypatch):
     assert calls == [("get_prompt_with_fallback", ("scenario/research",), {"label": "candidate"})]
 
 
+async def test_tts_normalize_step_rewrites_narration(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call = _deepseek_from_cassette("deepseek_tts_normalize.json")
+    writing = {
+        "scp_id": "SCP-173",
+        "title": "t",
+        "scenes": [
+            {
+                "scene_num": 1,
+                "narration": "14명. 단 하룻밤에 목이 꺾인 채 발견된 재단 인원 수입니다. (정적) 아무도 무기를 찾지 못했습니다.",
+                "location": "underground containment chamber",
+                "characters_present": ["SCP-173"],
+                "color_palette": "cold gray",
+                "atmosphere": "dread",
+            }
+        ],
+    }
+    result = await chain.tts_normalize_step(writing, "guide", None, call)
+    assert result["scenes"][0]["narration"].startswith("열네 명.")
+    # non-narration fields are preserved unchanged
+    assert result["scenes"][0]["location"] == "underground containment chamber"
+    assert result["scenes"][0]["characters_present"] == ["SCP-173"]
+
+
+async def test_tts_normalize_step_rejects_malformed_payload(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": "not-a-list"}), {}, "stop"
+
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with pytest.raises(ValueError, match="tts_normalize"):
+        await chain.tts_normalize_step(writing, "guide", None, call)
+
+
+async def test_tts_normalize_step_rejects_scene_count_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": []}), {}, "stop"
+
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with pytest.raises(ValueError, match="tts_normalize"):
+        await chain.tts_normalize_step(writing, "guide", None, call)
+
+
+async def test_tts_normalize_step_matches_scenes_positionally(monkeypatch):
+    # LLM echoes a duplicate/misleading scene_num — matching must be by list
+    # position, not by the LLM's own scene_num, matching build_scenes()'s rule.
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {
+            "scenes": [
+                {"scene_num": 1, "narration": "정규화 첫째."},
+                {"scene_num": 1, "narration": "정규화 둘째."},
+            ]
+        }
+        return json.dumps(payload), {}, "stop"
+
+    writing = {
+        "scenes": [
+            {"scene_num": 1, "narration": "원본 첫째."},
+            {"scene_num": 2, "narration": "원본 둘째."},
+        ]
+    }
+    result = await chain.tts_normalize_step(writing, "guide", None, call)
+    assert result["scenes"][0]["narration"] == "정규화 첫째."
+    assert result["scenes"][0]["scene_num"] == 1  # original scene_num preserved
+    assert result["scenes"][1]["narration"] == "정규화 둘째."
+    assert result["scenes"][1]["scene_num"] == 2
+
+
+async def test_tts_normalize_step_falls_back_per_scene_on_sentence_count_mismatch(monkeypatch):
+    # Scene 1's normalized text adds a sentence boundary -> keep original.
+    # Scene 2 normalizes cleanly -> accept it. One bad scene must not fail the rest.
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {
+            "scenes": [
+                {"scene_num": 1, "narration": "첫 문장. 추가된 문장."},
+                {"scene_num": 2, "narration": "정규화된 둘째 문장."},
+            ]
+        }
+        return json.dumps(payload), {}, "stop"
+
+    writing = {
+        "scenes": [
+            {"scene_num": 1, "narration": "원본 첫 문장."},
+            {"scene_num": 2, "narration": "원본 둘째 문장."},
+        ]
+    }
+    result = await chain.tts_normalize_step(writing, "guide", None, call)
+    assert result["scenes"][0]["narration"] == "원본 첫 문장."  # fell back
+    assert result["scenes"][1]["narration"] == "정규화된 둘째 문장."  # accepted
+
+
+async def test_tts_normalize_step_propagates_candidate_label(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not be called when label is set")),
+    )
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback",
+        lambda *a, **k: calls.append(("get_prompt_with_fallback", a, k)) or FakePrompt(),
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": [{"scene_num": 1, "narration": "문장."}]}), {}, "stop"
+
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    await chain.tts_normalize_step(writing, "guide", None, call, label="candidate")
+    assert calls == [("get_prompt_with_fallback", ("scenario/tts_normalize",), {"label": "candidate"})]
+
+
 def test_build_scenes_merges_empty_prompt_into_previous_shot():
     writing = {
         "scenes": [

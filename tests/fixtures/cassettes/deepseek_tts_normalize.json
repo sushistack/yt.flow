@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-cassette-tts-normalize",
+  "object": "chat.completion",
+  "model": "deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"scenes\": [{\"scene_num\": 1, \"narration\": \"열네 명. 단 하룻밤에 목이 꺾인 채 발견된, 재단 인원의 수입니다. (정적) 아무도 무기를 찾지 못했습니다.\"}]}"
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 300, "completion_tokens": 120, "total_tokens": 420}
+}

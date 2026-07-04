@@ -10,10 +10,13 @@ converts it into ``PipelineState.error`` exactly as before.
 """
 
 import json
+import logging
 import re
 
 from yt_flow.domain.state import SceneState, ShotData
 from yt_flow.services import prompt_service
+
+logger = logging.getLogger(__name__)
 
 # ponytail: fixed per the design spec — this never varies, so it's a constant,
 # not a Settings field.
@@ -225,6 +228,51 @@ async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s
     if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
         raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
     return data
+
+
+async def tts_normalize_step(writing: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
+    """Rewrite each scene's narration for natural Korean TTS, matching scenes positionally.
+
+    A scene whose normalized sentence count doesn't match the original (per
+    ``split_sentences()``) keeps its original narration instead of failing the
+    whole scenario stage — see story 5-4-tts-korean-naturalization.md.
+    """
+    original_scenes = writing["scenes"]
+    scenes_input = [
+        {"scene_num": scene.get("scene_num"), "narration": scene.get("narration", "")} for scene in original_scenes
+    ]
+    raw = await _call_stage(
+        "scenario/tts_normalize",
+        {
+            "scenes_json": json.dumps(scenes_input, ensure_ascii=False),
+            "format_guide": format_guide,
+        },
+        s,
+        call_deepseek,
+        label=label,
+    )
+    data = json.loads(raw)
+    normalized_scenes = data.get("scenes") if isinstance(data, dict) else None
+    if not isinstance(normalized_scenes, list) or len(normalized_scenes) != len(original_scenes):
+        got = len(normalized_scenes) if isinstance(normalized_scenes, list) else "non-list"
+        raise ValueError(f"tts_normalize: expected {len(original_scenes)} scenes, got {got}")
+
+    updated_scenes = []
+    for idx, (original_scene, normalized_scene) in enumerate(zip(original_scenes, normalized_scenes)):
+        original_narration = original_scene.get("narration", "")
+        normalized_narration = str(normalized_scene.get("narration") or "")
+        if len(split_sentences(original_narration)) != len(split_sentences(normalized_narration)):
+            logger.warning(
+                "tts_normalize: scene %d sentence-count mismatch (original=%d, normalized=%d); keeping original narration",
+                idx + 1,
+                len(split_sentences(original_narration)),
+                len(split_sentences(normalized_narration)),
+            )
+            updated_scenes.append(original_scene)
+            continue
+        updated_scenes.append({**original_scene, "narration": normalized_narration})
+
+    return {**writing, "scenes": updated_scenes}
 
 
 def _fallback_prompt(scene: dict) -> str:

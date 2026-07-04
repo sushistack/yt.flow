@@ -60,8 +60,8 @@ def _isolate(monkeypatch):
     monkeypatch.setattr(sc, "get_prompt", lambda *a, **k: FakePrompt())
 
 
-def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None):
-    calls = {"writing": 0}
+def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None):
+    calls = {"writing": 0, "tts_normalize": 0}
 
     async def fake_research(*a, **k):
         return RESEARCH
@@ -82,12 +82,17 @@ def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_r
     async def fake_critic(*a, **k):
         return critic_retry if (calls["writing"] > 1 and critic_retry) else critic
 
+    async def fake_tts_normalize(writing, *a, **k):
+        calls["tts_normalize"] += 1
+        return tts_normalize if tts_normalize is not None else writing
+
     monkeypatch.setattr(sc, "research_step", fake_research)
     monkeypatch.setattr(sc, "structure_step", fake_structure)
     monkeypatch.setattr(sc, "writing_step", fake_writing)
     monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
     monkeypatch.setattr(sc, "review_step", fake_review)
     monkeypatch.setattr(sc, "critic_step", fake_critic)
+    monkeypatch.setattr(sc, "tts_normalize_step", fake_tts_normalize)
     return calls
 
 
@@ -110,6 +115,7 @@ async def test_retries_once_when_critic_says_retry(monkeypatch):
     calls = _stub_chain(monkeypatch, critic=CRITIC_RETRY, critic_retry=CRITIC_PASS)
     out = await sc.scenario_node(_state())
     assert calls["writing"] == 2  # exactly one retry, not an open loop
+    assert calls["tts_normalize"] == 1  # normalizes once, after the retry settles
     assert out.get("error") is None
 
 
@@ -117,6 +123,7 @@ async def test_retries_once_when_review_fails(monkeypatch):
     calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
     out = await sc.scenario_node(_state())
     assert calls["writing"] == 2
+    assert calls["tts_normalize"] == 1  # normalizes once, after the retry settles
     assert out.get("error") is None
 
 
@@ -180,12 +187,16 @@ async def test_duplicate_llm_scene_num_does_not_corrupt_shots(monkeypatch):
     async def fake_critic(*a, **k):
         return CRITIC_PASS
 
+    async def fake_tts_normalize(writing, *a, **k):
+        return writing
+
     monkeypatch.setattr(sc, "research_step", fake_research)
     monkeypatch.setattr(sc, "structure_step", fake_structure)
     monkeypatch.setattr(sc, "writing_step", fake_writing)
     monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
     monkeypatch.setattr(sc, "review_step", fake_review)
     monkeypatch.setattr(sc, "critic_step", fake_critic)
+    monkeypatch.setattr(sc, "tts_normalize_step", fake_tts_normalize)
 
     out = await sc.scenario_node(_state())
 
@@ -239,3 +250,55 @@ async def test_variant_a_and_none_fetch_format_guide_without_label(monkeypatch):
         out = await sc.scenario_node(_state(prompt_variant=variant))
         assert out.get("error") is None
         assert calls == [(("scenario/format_guide",), {})]
+
+
+async def test_tts_normalize_runs_after_critic_and_before_build_scenes(monkeypatch):
+    order = []
+
+    async def fake_critic(*a, **k):
+        order.append("critic")
+        return CRITIC_PASS
+
+    async def fake_tts_normalize(writing, *a, **k):
+        order.append("tts_normalize")
+        return {**writing, "scenes": [{**s, "narration": "정규화됨."} for s in writing["scenes"]]}
+
+    _stub_chain(monkeypatch, critic=CRITIC_PASS)
+    monkeypatch.setattr(sc, "critic_step", fake_critic)
+    monkeypatch.setattr(sc, "tts_normalize_step", fake_tts_normalize)
+
+    out = await sc.scenario_node(_state())
+
+    assert order == ["critic", "tts_normalize"]
+    assert out.get("error") is None
+    assert out["scenes"][0]["narration"] == "정규화됨."
+
+
+async def test_tts_normalize_failure_surfaces_as_error(monkeypatch):
+    _stub_chain(monkeypatch)
+
+    async def boom(*a, **k):
+        raise ValueError("tts_normalize: expected 1 scenes, got 0")
+
+    monkeypatch.setattr(sc, "tts_normalize_step", boom)
+    out = await sc.scenario_node(_state())
+    assert out["current_stage"] == "scenario"
+    assert out["error"] and "stage=scenario" in out["error"] and "run-123" in out["error"]
+    assert "scenes" not in out
+
+
+async def test_tts_normalize_receives_variant_b_candidate_label(monkeypatch):
+    _stub_chain(monkeypatch)
+    label_calls = {}
+
+    async def fake_tts_normalize(writing, *a, label=None, **k):
+        label_calls["tts_normalize"] = label
+        return writing
+
+    monkeypatch.setattr(sc, "get_prompt_with_fallback", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr(sc, "tts_normalize_step", fake_tts_normalize)
+
+    out = await sc.scenario_node(_state(prompt_variant="B"))
+
+    assert out.get("error") is None
+    assert label_calls["tts_normalize"] == "candidate"

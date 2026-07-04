@@ -110,6 +110,7 @@ _STAGE_CASSETTES = {
     "scenario/visual_breakdown": "deepseek_visual_breakdown.json",
     "scenario/review": "deepseek_review.json",
     "scenario/critic_agent": "deepseek_critic.json",
+    "scenario/tts_normalize": "deepseek_tts_normalize.json",
 }
 
 

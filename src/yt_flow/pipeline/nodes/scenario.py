@@ -26,6 +26,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     review_step,
     split_sentences,
     structure_step,
+    tts_normalize_step,
     visual_breakdown_step,
     writing_step,
 )
@@ -156,6 +157,10 @@ async def scenario_node(state: PipelineState) -> dict:
                 state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
                 format_guide, feedback, s, stages, label=label,
             )
+
+        t0 = time.perf_counter()
+        writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label)
+        stages.append({"name": "tts_normalize", "latency_ms": _ms(t0)})
 
         scenes = build_scenes(writing, visual_by_scene)
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total))
