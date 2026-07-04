@@ -4,7 +4,7 @@ baseline_commit: 8946828f9a1646d0055f1586cd1445d80b7d95e1
 
 # Story 5.1: Scene Transitions — Fadeblack + Chapter Cards
 
-Status: in-progress
+Status: done
 
 Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
 
@@ -35,36 +35,45 @@ Epic 5 is a quality-improvement epic; this story should be implemented as a focu
 
 ## Tasks / Subtasks
 
-- [ ] Add settings for chapter cards. (AC: 2, 4)
-  - [ ] Add `chapter_cards: bool = True` to `src/yt_flow/config.py` using the existing `YTFLOW_` env prefix.
-  - [ ] Add `chapter_card_duration_sec: float = 1.75` unless a simpler module constant is clearly better; keep the accepted range 1.5-2.0 seconds.
-  - [ ] Do not introduce per-run DB/API configuration for this story.
-- [ ] Change transition semantics in `src/yt_flow/pipeline/nodes/video.py`. (AC: 1, 4, 7)
-  - [ ] Change `XFADE_TRANSITION` from `"fade"` to `"fadeblack"`.
-  - [ ] Keep `XFADE_DURATION = 0.5` unless a failing live render proves it needs tuning.
-  - [ ] Update `_record_trace()` metadata to include chapter-card state and card duration/count.
-- [ ] Implement chapter-card segment creation. (AC: 2, 3, 5)
-  - [ ] Add a small helper in `video.py`, for example `_compose_chapter_card(scene: SceneState, index: int, out_dir: Path, duration: float) -> Path`.
-  - [ ] Generate a black video source with FFmpeg `color`, centered text with `drawtext`, and a silent audio stream with `anullsrc` so each card has both video and audio streams.
-  - [ ] Match existing composition invariants: `COMP_W x COMP_H`, `FPS`, H.264/AAC output, `yuv420p`, and an audio stream compatible with `_join_with_xfade`.
-  - [ ] Apply video `fade` in/out inside the card segment or use surrounding `fadeblack` joins; keep visual boundaries clean and deterministic.
-  - [ ] Escape/quote card text and font paths safely. Prefer `textfile=` with a temporary UTF-8 text file if direct `drawtext=text=...` escaping becomes fragile.
-- [ ] Adapt join input construction without rewriting the whole join engine. (AC: 5, 6)
-  - [ ] Keep `_compose_scene()` unchanged except where required for integration.
-  - [ ] For multi-scene card mode, build an interleaved segment list: `scene1, card2, scene2, card3, scene3, ...`.
-  - [ ] Pass the interleaved list into `_join_with_xfade()` with each card duration included in the duration list.
-  - [ ] Preserve the existing single-scene fast path: `segs[0].replace(output)`.
-- [ ] Update and extend tests in `tests/pipeline/nodes/test_video.py`. (AC: 1-7)
-  - [ ] Update xfade expectations from `transition=fade` to `transition=fadeblack`.
-  - [ ] Add chapter-card enabled test that monkeypatches `_run_ffmpeg`, captures card-render and join calls, and verifies a 3-scene run produces 3 scene segments + 2 card segments.
-  - [ ] Add chapter-card disabled test with fake settings and verify no card render call occurs while `fadeblack` remains in the join filtergraph.
-  - [ ] Add single-scene regression test verifying no card segment and no join call.
-  - [ ] Add trace metadata test for `chapter_cards_enabled`, card count, duration, and `transition`.
-  - [ ] Add one skippable live FFmpeg integration test for card generation if it stays fast; use `color` and a known font, not real pipeline assets.
-- [ ] Manual/live validation after automated tests pass. (AC: 1, 2, 5)
-  - [ ] Retry only the `video` stage for a completed run such as `eb522cf9`.
-  - [ ] Extract boundary frames around at least two scene transitions and verify there is no image-over-image overlap.
-  - [ ] Check final video duration with `ffprobe` against expected duration tolerance.
+- [x] Add settings for chapter cards. (AC: 2, 4)
+  - [x] Add `chapter_cards: bool = True` to `src/yt_flow/config.py` using the existing `YTFLOW_` env prefix.
+  - [x] Add `chapter_card_duration_sec: float = 1.75` unless a simpler module constant is clearly better; keep the accepted range 1.5-2.0 seconds.
+  - [x] Do not introduce per-run DB/API configuration for this story.
+- [x] Change transition semantics in `src/yt_flow/pipeline/nodes/video.py`. (AC: 1, 4, 7)
+  - [x] Change `XFADE_TRANSITION` from `"fade"` to `"fadeblack"`.
+  - [x] Keep `XFADE_DURATION = 0.5` unless a failing live render proves it needs tuning.
+  - [x] Update `_record_trace()` metadata to include chapter-card state and card duration/count.
+- [x] Implement chapter-card segment creation. (AC: 2, 3, 5)
+  - [x] Add a small helper in `video.py`, for example `_compose_chapter_card(scene: SceneState, index: int, out_dir: Path, duration: float) -> Path`.
+  - [x] Generate a black video source with FFmpeg `color`, centered text with `drawtext`, and a silent audio stream with `anullsrc` so each card has both video and audio streams.
+  - [x] Match existing composition invariants: `COMP_W x COMP_H`, `FPS`, H.264/AAC output, `yuv420p`, and an audio stream compatible with `_join_with_xfade`.
+  - [x] Apply video `fade` in/out inside the card segment or use surrounding `fadeblack` joins; keep visual boundaries clean and deterministic.
+  - [x] Escape/quote card text and font paths safely. Prefer `textfile=` with a temporary UTF-8 text file if direct `drawtext=text=...` escaping becomes fragile.
+- [x] Adapt join input construction without rewriting the whole join engine. (AC: 5, 6)
+  - [x] Keep `_compose_scene()` unchanged except where required for integration.
+  - [x] For multi-scene card mode, build an interleaved segment list: `scene1, card2, scene2, card3, scene3, ...`.
+  - [x] Pass the interleaved list into `_join_with_xfade()` with each card duration included in the duration list.
+  - [x] Preserve the existing single-scene fast path: `segs[0].replace(output)`.
+- [x] Update and extend tests in `tests/pipeline/nodes/test_video.py`. (AC: 1-7)
+  - [x] Update xfade expectations from `transition=fade` to `transition=fadeblack`.
+  - [x] Add chapter-card enabled test that monkeypatches `_run_ffmpeg`, captures card-render and join calls, and verifies a 3-scene run produces 3 scene segments + 2 card segments.
+  - [x] Add chapter-card disabled test with fake settings and verify no card render call occurs while `fadeblack` remains in the join filtergraph.
+  - [x] Add single-scene regression test verifying no card segment and no join call.
+  - [x] Add trace metadata test for `chapter_cards_enabled`, card count, duration, and `transition`.
+  - [x] Add one skippable live FFmpeg integration test for card generation if it stays fast; use `color` and a known font, not real pipeline assets.
+- [x] Manual/live validation after automated tests pass. (AC: 1, 2, 5)
+  - [x] Retry only the `video` stage for a completed run such as `eb522cf9`.
+  - [x] Extract boundary frames around at least two scene transitions and verify there is no image-over-image overlap.
+  - [x] Check final video duration with `ffprobe` against expected duration tolerance.
+
+### Review Findings
+
+- [x] [Review][Patch] Clamp configured chapter-card duration to the accepted 1.5-2.0s range [src/yt_flow/pipeline/nodes/video.py:621]
+- [x] [Review][Patch] Bound chapter-card FFmpeg output explicitly with `-t` even though `anullsrc` is infinite [src/yt_flow/pipeline/nodes/video.py:476]
+- [x] [Review][Patch] Handle `fc-match` timeout while trying fallback fonts [src/yt_flow/pipeline/nodes/video.py:256]
+- [x] [Review][Patch] Avoid using ad-hoc `scene["title"]` unless `SceneState` actually defines a title field [src/yt_flow/pipeline/nodes/video.py:276]
+- [x] [Review][Patch] Always emit chapter-card count metadata, including disabled/zero-card runs [src/yt_flow/pipeline/nodes/video.py:311]
+- [x] [Review][Patch] Strengthen chapter-card test to prove rendered card files are joined, not merely rendered [tests/pipeline/nodes/test_video.py:1070]
 
 ## Dev Notes
 
@@ -162,11 +171,32 @@ ffmpeg -y
 
 ### Agent Model Used
 
-TBD by dev-story agent.
+claude-sonnet-5 (dev-story workflow)
 
 ### Debug Log References
 
+- Loaded `scenes` state for run `eb522cf9-4e13-40f1-8876-f66d6695cb79` (9 scenes) directly from the LangGraph `AsyncSqliteSaver` checkpoint (thread_id = run_id) rather than driving `retry_stage()` — the run's `video` gate sits at `pending` (deliberately left unapproved as a 5.1 fixture per Epic 5/6 backlog notes), which is not in `_RETRYABLE`, so the HTTP retry endpoint would 409. Rendering `video_node()` directly against the real assets with `YTFLOW_WORKSPACE_PATH` pointed at a scratch dir validates the real FFmpeg behavior without mutating the run's DB/gate state or its existing `video.mp4`.
+- Live render: 9 scenes + 8 chapter cards, 155.6s wall time, no error, `chapter_cards_enabled=True`.
+- `ffprobe` duration: 197.249s actual vs. 197.12s expected (`Σscene_durations(191.12) + 8*1.75(card) − 16*0.5(xfade overlaps)`) — within tolerance.
+- Boundary-frame extraction at the scene1→card→scene2 and scene2→card→scene3 transitions confirmed: full scene frame → near-black mid-transition frame (card fading in, label visible, e.g. `- 2 -`) → pure card frame → fade into next scene. No frame shows two scene backgrounds blended (AC:1). Card label correctly used the `- N -` fallback since `SceneState` has no `title` field (AC:3).
+
 ### Completion Notes List
+
+- `XFADE_TRANSITION` changed `"fade"` → `"fadeblack"`; scene boundaries now cut through black instead of cross-fading two scene images.
+- Added `chapter_cards` (default `True`) and `chapter_card_duration_sec` (default `1.75`) to `Settings`.
+- Added `_compose_chapter_card()`: renders a `color` + `drawtext` (via `textfile=`, fontconfig-resolved font) + `anullsrc` segment matching the existing segment contract (COMP_W×COMP_H, FPS, H.264/AAC, yuv420p), with its own in/out fade.
+- `video_node()` interleaves cards between scene segments (`scene1, card, scene2, card, scene3, ...`) and passes the full list into the existing `_join_with_xfade()` unchanged — no new join engine, the existing `running_offset`/`acrossfade` accumulator handles cards as ordinary segments.
+- `_record_trace()` gained `chapter_cards_enabled`, and (when enabled) `chapter_card_duration`/`chapter_card_count`.
+- Single-scene runs are unaffected: the `len(segs) == 1` fast path (`segs[0].replace(output)`) short-circuits before any card/join logic runs.
+- 18 new/updated tests added to `tests/pipeline/nodes/test_video.py` (84 total in that file); full suite 509 passed / 1 pre-existing unrelated skip; ruff clean.
+- Manual live validation against real run `eb522cf9` assets confirms AC:1, AC:2, AC:3, AC:5 hold with production-shaped data (9 scenes), not just synthetic fixtures.
 
 ### File List
 
+- `src/yt_flow/config.py` — added `chapter_cards`, `chapter_card_duration_sec` settings.
+- `src/yt_flow/pipeline/nodes/video.py` — `XFADE_TRANSITION` → `fadeblack`; added `CARD_FADE_DURATION`/`CARD_FONT_SIZE` constants, `_drawtext_font()`, `_card_label()`, `_compose_chapter_card()`; `_record_trace()` and `video_node()` updated for chapter-card interleaving and metadata.
+- `tests/pipeline/nodes/test_video.py` — updated `_settings_ns` fixture; added fadeblack/chapter-card enabled/disabled/single-scene/trace/label/font/live-integration tests.
+
+## Change Log
+
+- 2026-07-04: Implemented Story 5.1 (fadeblack transitions + chapter cards), review findings fixed, automated tests + live-render validation pass. Status → done.
