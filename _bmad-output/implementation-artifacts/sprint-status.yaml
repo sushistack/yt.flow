@@ -105,5 +105,5 @@ development_status:
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
-  6-1-prompt-policy-variant-label-wiring: review  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
+  6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: ready-for-dev  # depends on 6-1

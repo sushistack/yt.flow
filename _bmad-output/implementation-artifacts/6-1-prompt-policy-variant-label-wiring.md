@@ -4,7 +4,7 @@ baseline_commit: 8ad4e9bf648b03491ba18608a3660c5a51847aac
 
 # Story 6.1: 프롬프트 정책 문서 + variant→label 배선
 
-Status: review
+Status: done
 
 ## Story
 
