@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from yt_flow.observability import get_client
 from langgraph.graph import START
 from langgraph.types import Command
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from yt_flow import db
@@ -374,34 +375,54 @@ async def _ensure_character_reference(scp_id: str) -> None:
     ``CharacterModel`` with no angle paths set makes ``select_character_angles`` return
     ``None`` (its own "no usable character" branch), so downstream code degrades
     exactly like the pre-Story-5.8 no-character case.
+
+    A totally failed attempt (no search results, or every angle generation fails)
+    deletes the ``CharacterModel`` it just created rather than leaving a permanent
+    empty row behind — otherwise ``check_existing_character`` would skip this SCP
+    forever, even after a transient failure (e.g. a rate limit) clears up.
+
+    ponytail: two concurrent first-time runs for the same ``scp_id`` (e.g. an A/B
+    pair, Story 4.1) can both pass the existence check before either commits; the
+    loser's ``create_character`` hits the DB's ``unique=True`` constraint on
+    ``scp_id`` and is treated as "another run is already handling this" rather than
+    a failure. No distributed lock — add one if duplicate-provisioning races become
+    frequent enough to matter.
     """
-    settings = _settings()
     try:
+        settings = _settings()
         with Session(db._engine) as session:
             svc = CharacterService(session, settings=settings)
             if svc.check_existing_character(scp_id) is not None:
                 return
-            character = svc.create_character(scp_id, scp_id)  # memorization, same as select_candidate
-            refs = await svc.search_references(scp_id, workspace_path=settings.workspace_path)
-            if not refs:
-                logger.info("auto character reference: no search results for %s", scp_id)
+            try:
+                character = svc.create_character(scp_id, scp_id)  # memorization, same as select_candidate
+            except IntegrityError:
+                logger.info("auto character reference: %s already being provisioned by another run", scp_id)
                 return
-            angle_paths: dict[str, str] = {}
-            for angle in CANONICAL_ANGLES:
-                saved = await svc.generate_candidates_from_reference(
-                    scp_id, ref_image_path=refs[0].local_path, angles=[angle],
-                )
-                if saved:
-                    angle_paths[angle] = saved[0]
-            if not angle_paths:
-                logger.warning("auto character reference: all angle generations failed for %s", scp_id)
-                return
-            updates: dict[str, str] = {f"angle_{angle}_path": path for angle, path in angle_paths.items()}
-            if "front" in angle_paths:
-                updates["selected_image_path"] = angle_paths["front"]
-            svc.update_character(character.id, **updates)
-            logger.info("auto character reference: provisioned %d/%d angles for %s",
-                        len(angle_paths), len(CANONICAL_ANGLES), scp_id)
+            try:
+                refs = await svc.search_references(scp_id, workspace_path=settings.workspace_path)
+                if not refs:
+                    raise LookupError(f"no search results for {scp_id}")
+                angle_paths: dict[str, str] = {}
+                for angle in CANONICAL_ANGLES:
+                    saved = await svc.generate_candidates_from_reference(
+                        scp_id, ref_image_path=refs[0].local_path, angles=[angle],
+                    )
+                    if saved:
+                        angle_paths[angle] = saved[0]
+                if not angle_paths:
+                    raise LookupError(f"all angle generations failed for {scp_id}")
+                updates: dict[str, str] = {f"angle_{angle}_path": path for angle, path in angle_paths.items()}
+                if "front" in angle_paths:
+                    updates["selected_image_path"] = angle_paths["front"]
+                svc.update_character(character.id, **updates)
+                logger.info("auto character reference: provisioned %d/%d angles for %s",
+                            len(angle_paths), len(CANONICAL_ANGLES), scp_id)
+            except Exception:
+                # Total failure — roll back the row so a future run (after e.g. a
+                # transient rate limit clears) retries instead of skipping forever.
+                svc.delete_character(character.id)
+                raise
     except Exception:  # noqa: BLE001 — auxiliary enrichment must never fail the run (AD-10)
         logger.warning("auto character reference provisioning failed for %s", scp_id, exc_info=True)
 
