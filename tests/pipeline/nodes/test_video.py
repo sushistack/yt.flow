@@ -323,8 +323,13 @@ async def test_xfade_offset_math_3_scenes(monkeypatch, tmp_path):
     assert "offset=4.0000" in fc or "offset=4.0" in fc
 
 
-async def test_xfade_has_acrossfade(monkeypatch, tmp_path):
-    """Both xfade and acrossfade must appear in the filtergraph. [AC:2]"""
+async def test_xfade_video_crossfades_audio_does_not(monkeypatch, tmp_path):
+    """Video keeps xfade; audio must NOT crossfade (no volume dip). [Story 5.9 AC:1]
+
+    Audio is joined via adelay (per-segment, positioned at the same offset the
+    video xfade uses) + amix (normalize=0, so no dip in level) instead of
+    acrossfade.
+    """
     segs = [(tmp_path / f"s{i}.mp4", 2.0) for i in range(2)]
     for p, _ in segs:
         p.write_bytes(b"FAKE")
@@ -344,7 +349,39 @@ async def test_xfade_has_acrossfade(monkeypatch, tmp_path):
 
     fc = captured_filter[0]
     assert "xfade" in fc
-    assert "acrossfade" in fc
+    assert "acrossfade" not in fc
+    assert "adelay" in fc
+    assert "amix=inputs=2" in fc
+    assert "normalize=0" in fc
+
+
+async def test_xfade_audio_delay_matches_video_offset_3_scenes(monkeypatch, tmp_path):
+    """Audio adelay values must equal the video xfade offsets (zero-drift sync). [Story 5.9 AC:3]
+
+    Same fixture as test_xfade_offset_math_3_scenes: durations [3.0, 2.0, 4.0],
+    XFADE_DURATION=0.5 → offsets 2.5 and 4.0 → delays 2500ms and 4000ms.
+    """
+    segs = [(tmp_path / f"s{i}.mp4", float(d)) for i, d in enumerate([3.0, 2.0, 4.0])]
+    for p, _ in segs:
+        p.write_bytes(b"FAKE")
+
+    captured_filter: list[str] = []
+
+    async def _capture(*args):
+        args_list = list(args)
+        if "-filter_complex" in args_list:
+            idx = args_list.index("-filter_complex")
+            captured_filter.append(args_list[idx + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
+    await _join_with_xfade(segs, tmp_path / "out.mp4")
+
+    fc = captured_filter[0]
+    assert "adelay=2500:all=1" in fc
+    assert "adelay=4000:all=1" in fc
+    assert "amix=inputs=3" in fc
 
 
 async def test_xfade_uses_fadeblack_transition(monkeypatch, tmp_path):
@@ -377,6 +414,19 @@ async def test_xfade_fail_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_fail)
 
     with pytest.raises(RuntimeError, match="xfade join failed"):
+        await _join_with_xfade(segs, tmp_path / "out.mp4")
+
+
+async def test_xfade_offset_negative_raises(monkeypatch, tmp_path):
+    """A scene shorter than XFADE_DURATION drives offset negative — this must fail
+    loudly rather than silently clamp the audio delay to 0 and desync from video.
+    [Story 5.9 AC:3]"""
+    segs = [(tmp_path / "s0.mp4", 0.1), (tmp_path / "s1.mp4", 2.0)]
+    for p, _ in segs:
+        p.write_bytes(b"FAKE")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    with pytest.raises(AssertionError, match="offset went negative"):
         await _join_with_xfade(segs, tmp_path / "out.mp4")
 
 
@@ -940,14 +990,24 @@ async def test_xfade_join_integration(tmp_path):
     await _join_with_xfade([(seg1, dur1), (seg2, dur2)], output)
     assert output.exists()
 
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(output)],
-        capture_output=True, text=True,
-    )
-    actual = float(result.stdout.strip())
+    def _stream_duration(stream: str) -> float:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-select_streams", stream,
+             "-show_entries", "stream=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(output)],
+            capture_output=True, text=True,
+        )
+        out = result.stdout.strip()
+        assert out, f"ffprobe returned no duration for stream {stream!r} — stream missing? stderr: {result.stderr}"
+        return float(out)
+
     expected = dur1 + dur2 - XFADE_DURATION
-    assert abs(actual - expected) < 0.5, f"Duration {actual:.2f}s ≠ expected {expected:.2f}s"
+    video_dur = _stream_duration("v:0")
+    audio_dur = _stream_duration("a:0")
+    assert abs(video_dur - expected) < 0.5, f"Video duration {video_dur:.2f}s ≠ expected {expected:.2f}s"
+    # [Story 5.9 AC:3] audio must land on the same combined-output duration as
+    # video — no accumulating drift from the adelay+amix audio join.
+    assert abs(audio_dur - expected) < 0.5, f"Audio duration {audio_dur:.2f}s ≠ expected {expected:.2f}s"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -1114,6 +1174,13 @@ async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path
     join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
     assert len([a for a in join_args if isinstance(a, str) and "/seg_" in a]) == 3
     assert len([a for a in join_args if isinstance(a, str) and "/card_" in a]) == 2
+
+    # [Story 5.9 AC:2] card segments (silent anullsrc audio, Story 5.1) go through
+    # the same adelay/amix join as ordinary scenes — no acrossfade, no special-casing.
+    filter_complex = join_args[join_args.index("-filter_complex") + 1]
+    assert "acrossfade" not in filter_complex
+    assert "adelay" in filter_complex
+    assert "amix=inputs=5" in filter_complex
 
 
 async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):

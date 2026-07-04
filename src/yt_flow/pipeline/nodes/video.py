@@ -538,42 +538,65 @@ async def _join_with_xfade(
     segments: list[tuple[Path, float]],
     output: Path,
 ) -> None:
-    """Join scenes with xfade (video) + acrossfade (audio) transitions. [AC:2]
+    """Join scenes with xfade (video) + delayed overlay-mix (audio). [AC:2] [Story 5.9 AC:1-3]
 
     segments: list of (path, duration_seconds).
     xfade offset is measured on the *combined* prior output, so it accumulates:
     the transition after segment i begins at Σ(dur_0..i) − (i+1)·XFADE_DURATION,
     which is XFADE_DURATION before the running combined length ends. This is the
     #1 source of xfade timing bugs; we track running_offset explicitly.
+
+    Audio does NOT use `acrossfade` (Story 5.9): that filter fades each
+    segment's volume down/up over the overlap window, which is audible as a
+    volume dip at every scene cut in sync with the video's fade-to-black.
+    Instead, each segment's audio is delayed (`adelay`) to start at the exact
+    same offset the video xfade uses for that segment, then summed
+    (`amix=normalize=0`, so ongoing solo playback is never scaled down) —
+    narration plays at full, constant volume and only briefly overlaps with
+    its neighbor during the black-frame transition window, landing on the
+    same total duration as the video stream (proven: the last segment's
+    delayed end time telescopes to exactly the video's combined length).
     """
     n = len(segments)
     assert n >= 2
-    # ponytail: assumes each scene ≥ XFADE_DURATION (TTS narration is always multi-second).
-    # Sub-0.5s scenes would make offset negative / acrossfade underflow — add a per-pair
+    # ponytail: assumes each scene ≥ 2×XFADE_DURATION (TTS narration is always multi-second).
+    # Below XFADE_DURATION, offset goes negative outright (guarded below). Between
+    # XFADE_DURATION and 2×XFADE_DURATION, offset stays non-negative but the scene's
+    # own overlap windows with both neighbors touch/collide, producing 3-way audio
+    # overlap instead of the intended pairwise crossfade window — add a per-pair
     # min-duration clamp only if scenes that short ever become real.
 
     # Build video filter chain
     v_parts: list[str] = []
     a_parts: list[str] = []
+    audio_labels: list[str] = ["[0:a]"]
     running_offset = 0.0
     v_prev = "[0:v]"
-    a_prev = "[0:a]"
 
     for i, (_, dur) in enumerate(segments):
         if i < n - 1:
             running_offset += dur
             offset = running_offset - (i + 1) * XFADE_DURATION
             v_out = f"[vx{i}]" if i < n - 2 else "[vout]"
-            a_out = f"[ax{i}]" if i < n - 2 else "[aout]"
             v_parts.append(
                 f"{v_prev}[{i+1}:v]xfade=transition={XFADE_TRANSITION}"
                 f":duration={XFADE_DURATION}:offset={offset:.4f}{v_out}"
             )
-            a_parts.append(
-                f"{a_prev}[{i+1}:a]acrossfade=d={XFADE_DURATION}{a_out}"
-            )
             v_prev = v_out
-            a_prev = a_out
+
+            assert offset >= 0, (
+                f"segment {i} duration {dur}s is too short for XFADE_DURATION="
+                f"{XFADE_DURATION}s — offset went negative ({offset:.3f}s); a silent "
+                "clamp here would desync audio from the video xfade's own offset"
+            )
+            delay_ms = round(offset * 1000)
+            a_out = f"[ad{i+1}]"
+            a_parts.append(f"[{i+1}:a]adelay={delay_ms}:all=1{a_out}")
+            audio_labels.append(a_out)
+
+    a_parts.append(
+        "".join(audio_labels) + f"amix=inputs={n}:normalize=0:duration=longest[aout]"
+    )
 
     filter_complex = "; ".join(v_parts + a_parts)
 
