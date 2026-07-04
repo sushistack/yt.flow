@@ -8,11 +8,12 @@ depends_on:
   - 6-1-prompt-policy-variant-label-wiring
   - 5-2-layered-assets-activation
   - 5-3-motion-intensity
+baseline_commit: c2c638a76973c84ecb6ae0ca5df16be506da6139
 ---
 
 # Story 5.5: Visual Story Alignment - visual_breakdown Context + SCP Reference Image Option
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -54,33 +55,45 @@ This story implements Phase 1 first: strengthen the scenario prompt/data contrac
 
 ## Tasks / Subtasks
 
-- [ ] Update scenario prompt source of truth under `prompts/scenario/` (AC: 1, 3, 4, 8)
-  - [ ] Add or update `prompts/scenario/research.md` to emit `entity_sheet` alongside the existing `frozen_descriptor`.
-  - [ ] Add in-repo prompt sources for missing runtime prompts before changing them, especially `prompts/scenario/visual_breakdown.md`; do not make Langfuse-only prompt edits.
-  - [ ] Ensure `visual_breakdown` prompt asks for structured composition/camera framing while preserving the existing JSON shape expected by tests.
-- [ ] Update `src/yt_flow/pipeline/nodes/scenario_chain.py` (AC: 1-7)
-  - [ ] Validate `research["entity_sheet"]` as non-empty if the prompt contract adds it.
-  - [ ] Thread global premise/logline and per-scene role from `research`/`structure`/`writing` into `visual_breakdown_step`.
-  - [ ] Keep `label: str | None = None` keyword-only plumbing exactly compatible with Story 6.1.
-  - [ ] Keep sentence-count validation and `finish_reason == "length"` truncation errors.
-- [ ] Update `src/yt_flow/pipeline/nodes/scenario.py` only if orchestration needs extra state passed into `_write_and_review` (AC: 2, 6)
-  - [ ] Preserve the current `label = "candidate" if state.get("prompt_variant") == "B" else None` behavior.
-  - [ ] Preserve bounded retry: one retry max if review/critic requests it.
-- [ ] Update tests and cassettes (AC: 1-8)
-  - [ ] Add `entity_sheet` to the relevant DeepSeek cassette(s), especially `tests/fixtures/cassettes/deepseek_research.json`.
-  - [ ] Add unit coverage proving `visual_breakdown_step` receives story/global and scene-role variables.
-  - [ ] Add regression coverage proving Variant A/None still uses production lookup and Variant B still uses candidate lookup.
-  - [ ] Run at minimum: `uv run pytest tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/test_prompt_service.py -q`.
-- [ ] Seed prompt candidate labels (AC: 6, 8, 13)
-  - [ ] Use `uv run python scripts/migrate_prompts.py --label candidate --source prompts/scenario`.
-  - [ ] Record whether each changed prompt was created/skipped and whether any candidate fallback warnings appeared during test/live runs.
-- [ ] Validate Phase 1 with A/B (AC: 13, 15)
-  - [ ] Run or document `POST /runs/{id}/ab` for the same SCP input after Variant A is available.
-  - [ ] Run Epic 4 evaluation and record visual alignment outcome in Dev Agent Record.
-- [ ] Conditional Phase 2 only after Phase 1 evidence (AC: 9-12, 14)
+- [x] Update scenario prompt source of truth under `prompts/scenario/` (AC: 1, 3, 4, 8)
+  - [x] Add or update `prompts/scenario/research.md` to emit `entity_sheet` alongside the existing `frozen_descriptor`.
+  - [x] Add in-repo prompt sources for missing runtime prompts before changing them, especially `prompts/scenario/visual_breakdown.md`; do not make Langfuse-only prompt edits.
+  - [x] Ensure `visual_breakdown` prompt asks for structured composition/camera framing while preserving the existing JSON shape expected by tests.
+- [x] Update `src/yt_flow/pipeline/nodes/scenario_chain.py` (AC: 1-7)
+  - [x] Validate `research["entity_sheet"]` as non-empty if the prompt contract adds it.
+  - [x] Thread global premise/logline and per-scene role from `research`/`structure`/`writing` into `visual_breakdown_step`.
+  - [x] Keep `label: str | None = None` keyword-only plumbing exactly compatible with Story 6.1.
+  - [x] Keep sentence-count validation and `finish_reason == "length"` truncation errors.
+- [x] Update `src/yt_flow/pipeline/nodes/scenario.py` only if orchestration needs extra state passed into `_write_and_review` (AC: 2, 6)
+  - [x] Preserve the current `label = "candidate" if state.get("prompt_variant") == "B" else None` behavior.
+  - [x] Preserve bounded retry: one retry max if review/critic requests it.
+- [x] Update tests and cassettes (AC: 1-8)
+  - [x] Add `entity_sheet` to the relevant DeepSeek cassette(s), especially `tests/fixtures/cassettes/deepseek_research.json`.
+  - [x] Add unit coverage proving `visual_breakdown_step` receives story/global and scene-role variables.
+  - [x] Add regression coverage proving Variant A/None still uses production lookup and Variant B still uses candidate lookup.
+  - [x] Run at minimum: `uv run pytest tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/test_prompt_service.py -q`.
+- [x] Seed prompt candidate labels (AC: 6, 8, 13)
+  - [x] `--source prompts/scenario` reproduces a known naming bug (see deferred-work.md); actually used `uv run python scripts/migrate_prompts.py --label candidate --source prompts` after cleaning up 4 wrongly-named versions.
+  - [x] Record whether each changed prompt was created/skipped and whether any candidate fallback warnings appeared during test/live runs.
+- [ ] Validate Phase 1 with A/B (AC: 13, 15) — **blocked**, see Completion Notes
+  - [x] Run or document `POST /runs/{id}/ab` for the same SCP input after Variant A is available.
+  - [ ] Run Epic 4 evaluation and record visual alignment outcome in Dev Agent Record. — **blocked**, see Completion Notes; honestly left unchecked per AC15.
+- [ ] Conditional Phase 2 only after Phase 1 evidence (AC: 9-12, 14) — **deferred**: Phase 1 evidence not yet gathered (blocked, see Completion Notes), so Phase 2's own trigger condition (AC9) isn't met. Not started.
   - [ ] Reuse existing character/reference infrastructure before adding a new fetcher.
   - [ ] Add ComfyUI workflow/config support for an IPAdapter reference only if the existing workflow path and Story 5.2 layered workflow can remain intact.
   - [ ] Persist attribution metadata where downstream video description tooling can read it.
+
+### Review Findings
+
+- [x] [Review][Patch] `_scene_role_text` crashes/silently degrades on non-dict or non-string structure fields, and `structure[idx]`/`writing["scenes"][idx]` length mismatch is unlogged [src/yt_flow/pipeline/nodes/scenario_chain.py:149, src/yt_flow/pipeline/nodes/scenario.py:111]
+- [x] [Review][Patch] `research_step` entity_sheet/story_logline validation stays lenient even under the candidate (new) prompt label, and doesn't check value type [src/yt_flow/pipeline/nodes/scenario_chain.py:82-88]
+- [x] [Review][Patch] Tasks checklist self-contradiction: "Validate Phase 1 with A/B" checked done while its required child (Epic 4 evaluation) is blocked [5-5-visual-story-alignment.md:78]
+- [x] [Review][Patch] Tasks checklist cites the exact `migrate_prompts.py --source prompts/scenario` invocation that Completion Notes say was broken and discarded [5-5-visual-story-alignment.md:76]
+- [x] [Review][Patch] No test exercises the real `prompts/scenario/visual_breakdown.md` placeholder tokens [tests/pipeline/nodes/test_scenario_chain.py]
+- [x] [Review][Defer] `scenario/tts_normalize` has no `production` Langfuse label — every live pipeline run (any variant) currently fails end-to-end; pre-existing Story 5.4 gap, understated severity — deferred, pre-existing [src/yt_flow/pipeline/nodes/scenario_chain.py:257]
+- [x] [Review][Defer] Cleanup of 4 wrongly-named candidate Langfuse prompt versions only stripped labels, did not delete the orphaned versions — deferred, pre-existing (Langfuse-side, not a code change)
+- [x] [Review][Defer] `scripts/migrate_prompts.py`'s `derive_name()` naming bug has now recurred across 5.4 and 5.5 (twice); `docs/PROMPT_POLICY.md`'s own example reproduces it — deferred, pre-existing
+- [x] [Review][Defer] ComfyUI + yt.flow API dev server left running locally after the session (`/tmp/comfyui_boot.log`, `/tmp/ytflow_boot2.log`) — deferred, operational hygiene only
 
 ## Dev Notes
 
@@ -179,20 +192,47 @@ This story implements Phase 1 first: strengthen the scenario prompt/data contrac
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 5 (claude-sonnet-5)
 
 ### Debug Log References
+
+- Live A/B attempt run IDs: `0b9e807d-1ba3-4a42-b5ce-cca7f88972d0` (failed — pre-fix `entity_sheet` KeyError bug, superseded), `dc526c8d-abb4-4814-b296-e0900e2a60c9` (failed — blocked on pre-existing `scenario/tts_normalize` production-label gap, see below).
+- ComfyUI (`$HOME/workspaces/ComfyUI`) and the yt.flow API (`uv run uvicorn yt_flow.api.main:app --host 127.0.0.1 --port 8000`) were started locally for the live attempt and left running at session end.
 
 ### Completion Notes List
 
 - Story context created by BMad create-story workflow on 2026-07-04.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- **Phase 1 implemented and offline-tested.** `research_step` now emits and (leniently) validates `entity_sheet`/`story_logline`; `visual_breakdown_step` threads `entity_sheet`, `story_logline`, and a compact `scene_role` (from `structure_step`'s `act`/`emotional_beat`/`synopsis`) into the rendered prompt alongside the existing `frozen_descriptor`. `prompts/scenario/visual_breakdown.md` did not exist in-repo despite being live in Langfuse production (v1) — reconstructed verbatim from the live production content (confirmed byte-for-byte against `client.get_prompt("scenario/visual_breakdown")`) before layering the new Story/Scene/Entity-Sheet sections on top, per AC8/policy ("no Langfuse-only edits").
+- **Backward-compatibility fix found via live testing, not review**: the first validation pass raised on entity_sheet/story_logline whenever the key was merely *absent* (old production prompt shape), which would have hard-crashed Variant A/None for every run until the new prompt is promoted to production. Fixed to only raise when the key is *present but blank* (a real LLM output bug); an absent key now passes through as `None`/`""` via `research.get(...)`. Locked in with `test_research_step_tolerates_missing_entity_sheet_and_logline`. This is exactly the kind of gap AC5 ("existing contracts stay intact") calls out, and it was only caught because a real Variant A run was attempted against the fixed API server before code review — see [[worktree-editable-install-shadowing]]-style lesson: local unit tests all used the *new* cassette shape, so none of them exercised "key entirely absent."
+- Candidate seeding: `scenario/research` and `scenario/visual_breakdown` created under the `candidate` label (see exact commands below). While doing this I initially reproduced a **known, already-documented bug** (`docs/PROMPT_POLICY.md` / deferred-work.md 5.4 review entry): running `migrate_prompts.py --source prompts/scenario` derives bare names (`research`, `visual_breakdown`, ...) instead of `scenario/research` etc., because `derive_name()` is relative to `--source`. I did not re-check deferred-work.md before running it and repeated the mistake — created 4 wrongly-named candidate prompt versions, then cleaned them up via `client.update_prompt(name=..., version=1, new_labels=[])` and re-seeded correctly with explicit `scenario/`-prefixed names. No `production` label was touched by either the mistake or the fix.
+- **Live A/B validation (AC13/14/15) is BLOCKED, not completed** — honestly recorded per AC15. Attempted a real run end-to-end (ComfyUI + yt.flow API server started locally, `POST /runs` for SCP-096 — the same SCP as the original 2026-07-03 review that motivated this story). `scenario_node` reached `tts_normalize_step` and failed: `Langfuse prompt fetch failed: name='scenario/tts_normalize' label=production`. Root cause: Story 5.4 seeded `scenario/tts_normalize` only under `candidate` and never promoted it to `production` — a pre-existing gap, not introduced by this story, and it blocks **Variant A too** (the `label=None` path still requires a `production` version for every stage in the chain). Recorded in `deferred-work.md` under "Deferred from: 5-5 visual-story-alignment 라이브 A/B 시도 (2026-07-04)". Jay decided to fix Story 5.4's promotion gap as a separate follow-up rather than promote the label from inside this story's session.
+- **Exact manual commands to complete AC13/14/15 once the 5.4 gap is fixed:**
+  1. Promote `scenario/tts_normalize` candidate v1 to `production` (Langfuse UI label move, or `Langfuse.update_prompt(name="scenario/tts_normalize", version=1, new_labels=["production"])`), per PROMPT_POLICY's change protocol.
+  2. `curl -X POST http://127.0.0.1:8000/runs -H "Content-Type: application/json" -d '{"scp_id": "SCP-096"}'` — Variant A (baseline, production labels).
+  3. Approve each gate as the run reaches it: `curl -X POST http://127.0.0.1:8000/runs/{run_id}/stages/{stage}/gate -H "Content-Type: application/json" -d '{"action": "approve"}'` for `scenario`, `image`, `tts`, `subtitle`, `video` in order, polling `GET /runs/{run_id}` for `status=="awaiting_approval"` between each.
+  4. Once Variant A's `status=="complete"`: `curl -X POST http://127.0.0.1:8000/runs/{run_id}/ab` to create Variant B (`prompt_variant="B"`, reads `scenario/research` + `scenario/visual_breakdown` under `candidate`, everything else falls back to `production` with a logged warning per Story 6.1/AC7).
+  5. Approve Variant B's gates the same way.
+  6. Run the Epic 4 evaluation (`eval_service`) against the resulting `ab_pair_id` and record the visual-alignment score delta + Jay's gate-review verdict here.
+- ComfyUI and the yt.flow dev API server were left running locally (`/tmp/comfyui_boot.log`, `/tmp/ytflow_boot2.log`) so the above can be resumed without a cold model-load wait; stop with `pkill -f "main.py --preview-method auto"` and `pkill -f "uvicorn yt_flow.api.main:app"` when no longer needed.
+- Phase 2 (AC9-12, 14) is correctly **not started**: its own trigger condition (AC9 — "Phase 1 A/B results are insufficient") cannot be evaluated until the blocked validation above runs.
 
 ### File List
+
+- `prompts/scenario/research.md` (modified — added `entity_sheet`, `story_logline` fields)
+- `prompts/scenario/visual_breakdown.md` (new — reconstructed repo source-of-truth + Story Logline / Scene Narrative Role / Entity Sheet sections)
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` (modified — `research_step` entity_sheet/story_logline validation (lenient on absent key); `visual_breakdown_step` new `entity_sheet`/`story_logline`/`scene_role` params + `_scene_role_text` helper)
+- `src/yt_flow/pipeline/nodes/scenario.py` (modified — `_write_and_review` threads `entity_sheet`/`story_logline`/per-scene `structure` role into `visual_breakdown_step`)
+- `tests/pipeline/nodes/test_scenario_chain.py` (modified — entity_sheet/story_logline validation tests, backward-compat test, `visual_breakdown_step` signature updates, variable-threading test)
+- `tests/pipeline/nodes/test_scenario.py` (modified — `RESEARCH` fixture gains `entity_sheet`/`story_logline`; new orchestration test proving threading)
+- `tests/fixtures/cassettes/deepseek_research.json` (modified — added `entity_sheet`/`story_logline` to the cassette payload)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (modified — recorded the `scenario/tts_normalize` production-label gap discovered during live validation)
 
 ## Change Log
 
 - 2026-07-04: Created ready-for-dev story context for visual story alignment; included Phase 1 prompt-context path, conditional Phase 2 IPAdapter path, prompt policy constraints, architecture guardrails, and validation requirements.
+- 2026-07-04: Implemented Phase 1 (prompt-context strengthening) — `entity_sheet`/`story_logline` in `scenario/research`, reconstructed + extended `scenario/visual_breakdown` repo source, threaded story/scene context through `scenario_chain.py`/`scenario.py`, fixed a backward-compatibility bug (absent vs. blank field), seeded both prompts under Langfuse `candidate`. Attempted live A/B validation; blocked by a pre-existing Story 5.4 gap (`scenario/tts_normalize` never promoted to `production`), documented exact resumption commands, moved to review with the validation gap honestly open per AC15.
+- 2026-07-04: Code review (3-layer adversarial: Blind Hunter, Edge Case Hunter, Acceptance Auditor). 5 patch findings fixed: `_scene_role_text` now guards non-dict/non-string structure data and `scenario.py` logs a warning on writing/structure scene-count mismatch instead of silently rendering an empty role; `research_step`'s `entity_sheet`/`story_logline` validation is now strict when `label` is set (candidate/variant-B path) and also checks value type, closing a loophole where the new prompt could silently omit required fields or return non-string values; corrected two self-contradicting Tasks-checklist entries (the "Validate Phase 1 with A/B" parent checkbox and the `migrate_prompts.py` command actually used); added a placeholder-coverage test for `prompts/scenario/visual_breakdown.md`. 4 pre-existing issues deferred to `deferred-work.md` (tts_normalize production-label gap severity, orphaned Langfuse candidate versions, recurring `migrate_prompts.py` naming bug, stray local dev processes). Status set to `in-progress` (not `done`) because AC13/14/15's live A/B validation remains genuinely blocked on the pre-existing Story 5.4 gap, unrelated to this review.
 
 ## Saved Questions / Clarifications
 

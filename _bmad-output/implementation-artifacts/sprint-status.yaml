@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # 5-4-tts-korean-naturalization -> done (code review passed)
+last_updated: 2026-07-04  # 5-5-visual-story-alignment -> in-progress (code review: 5 patches fixed; AC13/14/15 live A/B still blocked on pre-existing 5.4 gap)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -101,7 +101,7 @@ development_status:
   5-2-layered-assets-activation: done  # 워크플로우+rembg+.env 배선, 실제 ComfyUI/ffmpeg로 라이브 검증 완료
   5-3-motion-intensity: done  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: done
-  5-5-visual-story-alignment: ready-for-dev  # Phase 2는 5-2 완료 후, A/B로 검증; 6-1 선행 필요
+  5-5-visual-story-alignment: in-progress  # 코드 리뷰 완료, patch 5건 수정; AC13/14/15 라이브 A/B는 5.4의 scenario/tts_normalize production 라벨 미승격 gap에 막혀 여전히 보류(deferred-work.md 기록)
   5-6-character-cutout-quality: ready-for-dev  # cutout 품질 비교/교체 판단 스토리 컨텍스트 생성
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
