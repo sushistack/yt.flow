@@ -1,6 +1,10 @@
+---
+baseline_commit: a3bd5446a22ec69fd6ab4c85c8e4f70e4644ec65
+---
+
 # Story 5.3: Motion Intensity - Ken Burns Strength and Variety
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -29,32 +33,32 @@ This story is deliberately narrow: strengthen and diversify background/single-im
 
 ## Tasks / Subtasks
 
-- [ ] Strengthen normal Ken Burns constants in `src/yt_flow/pipeline/nodes/video.py`.
-  - [ ] Raise `ZOOM_IN_MAX` from the current `1.08` only if live review confirms `1.08` is still too subtle; recommended tuning ceiling is `1.15`.
-  - [ ] Keep `ZOOM_SAFE_MARGIN` large enough that stronger pan/zoom never exposes edges or clips important subject area.
-  - [ ] Do not change `FPS`, `COMP_W`, `COMP_H`, xfade constants, character overlay constants, or output codec settings for this story.
-- [ ] Extend deterministic fallback variety in `select_effect()`.
-  - [ ] Update `_DIRECTION_POOL` to include diagonal directions, for example `pan-up-right`, `pan-up-left`, `pan-down-right`, `pan-down-left`.
-  - [ ] Preserve explicit hint mapping for current hints; fallback rotation only applies when hint is `None` or unrecognized.
-  - [ ] Keep `"static"` as a special case returning `EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=1.005)`.
-- [ ] Teach `_zoompan_filter()` diagonal directions without changing its public signature.
-  - [ ] For diagonal directions, combine the existing horizontal pan expressions with vertical pan expressions.
-  - [ ] Preserve current zoom-out conditional workaround: `if(lte(zoom,1.0),...)` style behavior for `out-center`.
-  - [ ] Preserve current filter order: `scale -> setsar -> crop -> scale=8000 -> zoompan`.
-- [ ] Update tests in `tests/pipeline/nodes/test_video.py`.
-  - [ ] Add/adjust assertions that normal non-static effects use the stronger `ZOOM_IN_MAX` while static still uses `1.005`.
-  - [ ] Add fallback rotation tests covering diagonal directions and wraparound.
-  - [ ] Add `_zoompan_filter()` tests proving every direction in `_DIRECTION_POOL` builds a filter containing `zoompan` and `scale=8000`.
-  - [ ] Add at least one diagonal filter test that asserts both x and y motion expressions are present.
-  - [ ] Keep existing character overlay, subtitle escaping, xfade, and AD-1 layer guard tests passing.
-- [ ] Run verification.
-  - [ ] Fast targeted check: `uv run pytest tests/pipeline/nodes/test_video.py`.
-  - [ ] Broader backend regression if targeted tests pass: `uv run pytest tests/pipeline`.
-  - [ ] If FFmpeg is installed locally, allow the existing skippable live-FFmpeg tests to run; do not make live FFmpeg mandatory for CI.
-- [ ] Live render tuning.
-  - [ ] Re-run or retry the `video` stage on a representative completed run, preferably SCP-096 or the reviewed run if still available.
-  - [ ] Inspect the final mp4 and Langfuse effect metadata before finalizing any value above `1.08`.
-  - [ ] If stronger than `1.15` feels necessary, stop and create a follow-up story for per-shot timing / storyboard motion rather than cranking constants indefinitely.
+- [x] Strengthen normal Ken Burns constants in `src/yt_flow/pipeline/nodes/video.py`.
+  - [x] Raise `ZOOM_IN_MAX` from the current `1.08` only if live review confirms `1.08` is still too subtle; recommended tuning ceiling is `1.15`.
+  - [x] Keep `ZOOM_SAFE_MARGIN` large enough that stronger pan/zoom never exposes edges or clips important subject area.
+  - [x] Do not change `FPS`, `COMP_W`, `COMP_H`, xfade constants, character overlay constants, or output codec settings for this story.
+- [x] Extend deterministic fallback variety in `select_effect()`.
+  - [x] Update `_DIRECTION_POOL` to include diagonal directions, for example `pan-up-right`, `pan-up-left`, `pan-down-right`, `pan-down-left`.
+  - [x] Preserve explicit hint mapping for current hints; fallback rotation only applies when hint is `None` or unrecognized.
+  - [x] Keep `"static"` as a special case returning `EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=1.005)`.
+- [x] Teach `_zoompan_filter()` diagonal directions without changing its public signature.
+  - [x] For diagonal directions, combine the existing horizontal pan expressions with vertical pan expressions.
+  - [x] Preserve current zoom-out conditional workaround: `if(lte(zoom,1.0),...)` style behavior for `out-center`.
+  - [x] Preserve current filter order: `scale -> setsar -> crop -> scale=8000 -> zoompan`.
+- [x] Update tests in `tests/pipeline/nodes/test_video.py`.
+  - [x] Add/adjust assertions that normal non-static effects use the stronger `ZOOM_IN_MAX` while static still uses `1.005`.
+  - [x] Add fallback rotation tests covering diagonal directions and wraparound.
+  - [x] Add `_zoompan_filter()` tests proving every direction in `_DIRECTION_POOL` builds a filter containing `zoompan` and `scale=8000`.
+  - [x] Add at least one diagonal filter test that asserts both x and y motion expressions are present.
+  - [x] Keep existing character overlay, subtitle escaping, xfade, and AD-1 layer guard tests passing.
+- [x] Run verification.
+  - [x] Fast targeted check: `uv run pytest tests/pipeline/nodes/test_video.py`.
+  - [x] Broader backend regression if targeted tests pass: `uv run pytest tests/pipeline`.
+  - [x] If FFmpeg is installed locally, allow the existing skippable live-FFmpeg tests to run; do not make live FFmpeg mandatory for CI.
+- [x] Live render tuning.
+  - [x] Re-run or retry the `video` stage on a representative completed run, preferably SCP-096 or the reviewed run if still available.
+  - [x] Inspect the final mp4 and Langfuse effect metadata before finalizing any value above `1.08`.
+  - [x] If stronger than `1.15` feels necessary, stop and create a follow-up story for per-shot timing / storyboard motion rather than cranking constants indefinitely.
 
 ## Dev Notes
 
@@ -139,16 +143,29 @@ Recommended new assertions:
 
 ### Agent Model Used
 
-TBD by dev agent.
+Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story workflow.
 
 ### Debug Log References
 
-TBD by dev agent.
+- Targeted suite: `uv run pytest tests/pipeline/nodes/test_video.py` → 89 passed.
+- Full backend regression: `uv run pytest tests/pipeline` → 205 passed, 1 skipped (unrelated TTS smoke test gated by `YTFLOW_QWEN_TTS_SMOKE`).
+- `uv run ruff check` on both changed files → clean.
+- Live render tuning: reconstructed the reviewed run's 9-scene state from the real assets still on disk at `workspace/eb522cf9-4e13-40f1-8876-f66d6695cb79/{images,audio,subtitles}` and re-ran `video_node()` end-to-end (real ffmpeg, no mocks) via an ad-hoc scratch script. Captured trace `effects` metadata confirmed deterministic rotation across all 9 scenes (`in-center, pan-right, pan-left, out-center, pan-up, pan-down, pan-up-right, pan-up-left, pan-down-right`) each at `1.0↔1.15`. Extracted first/last frames of the `pan-right` and `pan-up-right` (diagonal) segments with `ffmpeg`/`ffprobe` and visually inspected them (Read tool) — diagonal motion is clearly visible with no edge clipping, so `1.15` was kept as final and no follow-up story was needed. Verification render output and extracted frames were scratch artifacts, not committed.
 
 ### Completion Notes List
 
-TBD by dev agent.
+- Raised `ZOOM_IN_MAX` 1.08 → 1.15 (top of the story's recommended band); `ZOOM_SAFE_MARGIN` (10%) left unchanged — still ample headroom at 1.15 zoom, confirmed via live render with no clipping.
+- Added 4 diagonal directions (`pan-up-right/-left`, `pan-down-right/-left`) to `_DIRECTION_POOL`; `select_effect()` needed no other change since fallback rotation, hint precedence, and the `static` special case already worked generically off the pool.
+- `_zoompan_filter()` gained one new `elif` branch combining the existing horizontal/vertical pan expressions for the 4 diagonal directions; filter order, zoom-out conditional, and jitter-fix (`scale=8000`) chain untouched.
+- Existing pool-driven tests (`test_select_effect_none_rotates_pool`, `_unknown_rotates_pool`, `_pool_wraps`, `test_zoompan_filter_all_directions_build`) automatically exercised the new diagonals since they iterate `video._DIRECTION_POOL` rather than hardcoding the old 6 directions — no changes needed there.
+- Added: `test_zoom_in_max_within_recommended_range` (AC:1 band check) and `test_zoompan_filter_diagonal_has_both_axes` (parametrized over the 4 new directions, AC:2). Fixed one stale hardcoded-`"1.08"` literal in `test_zoompan_filter_honors_spec_zoom_range` to reference `video.ZOOM_IN_MAX` instead.
+- No new dependencies; no API/DB/UI changes; AD-1 layering guard test still passes unmodified.
 
 ### File List
 
-TBD by dev agent.
+- `src/yt_flow/pipeline/nodes/video.py`
+- `tests/pipeline/nodes/test_video.py`
+
+## Change Log
+
+- 2026-07-04: Raised `ZOOM_IN_MAX` 1.08 → 1.15, added 4 diagonal fallback directions to `_DIRECTION_POOL` and their `_zoompan_filter()` x/y expressions; live-rendered the reviewed run's real assets end-to-end with real ffmpeg to confirm visible, non-clipping motion before finalizing 1.15 as the ceiling. Full backend regression green (205 passed, 1 unrelated skip).

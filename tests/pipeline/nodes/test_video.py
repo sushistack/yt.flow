@@ -248,15 +248,21 @@ def test_zoompan_filter_zoom_out_uses_conditional():
 
 def test_zoompan_filter_honors_spec_zoom_range():
     """[review:G] 'static' EffectSpec (1.0→1.005) must produce a subtle drift, not a
-    full 1.08 push-in. The filter previously ignored start_zoom/end_zoom entirely."""
+    full push-in to ZOOM_IN_MAX. The filter previously ignored start_zoom/end_zoom."""
     spec = select_effect(_shot(camera_movement="static"), 0)  # → 1.0→1.005 in-center
     filt = _zoompan_filter(spec, duration=2.0)
-    assert "1.005" in filt          # honors spec.end_zoom
-    assert "1.08" not in filt       # not the hardcoded ZOOM_IN_MAX target
+    assert "1.005" in filt                        # honors spec.end_zoom
+    assert str(video.ZOOM_IN_MAX) not in filt      # not the hardcoded ZOOM_IN_MAX target
+
+
+def test_zoom_in_max_within_recommended_range():
+    """[Story 5.3 AC:1] Normal Ken Burns strength must sit in the visible-but-not
+    -nauseating 1.08-1.15 band, strengthened from the pre-5.3 1.08 baseline."""
+    assert 1.08 <= video.ZOOM_IN_MAX <= 1.15
 
 
 def test_zoompan_filter_all_directions_build():
-    """All 6 pool directions produce a valid-looking filter string."""
+    """Every pool direction (including Story 5.3 diagonals) produces a valid filter."""
     for direction in video._DIRECTION_POOL:
         if direction == "out-center":
             spec = EffectSpec(direction=direction, start_zoom=video.ZOOM_IN_MAX, end_zoom=1.0)
@@ -265,6 +271,17 @@ def test_zoompan_filter_all_directions_build():
         filt = _zoompan_filter(spec, duration=2.0)
         assert "zoompan" in filt
         assert "scale=8000" in filt
+
+
+@pytest.mark.parametrize(
+    "direction", ["pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left"]
+)
+def test_zoompan_filter_diagonal_has_both_axes(direction):
+    """[Story 5.3 AC:2] Diagonal directions must animate x AND y, not just one axis."""
+    spec = EffectSpec(direction=direction, start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    filt = _zoompan_filter(spec, duration=2.0)
+    assert "(iw-iw/zoom)" in filt  # horizontal pan expression present
+    assert "(ih-ih/zoom)" in filt  # vertical pan expression present
 
 
 # ── _join_with_xfade offset math ─────────────────────────────────────────────

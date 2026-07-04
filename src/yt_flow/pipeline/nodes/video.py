@@ -44,11 +44,15 @@ def inject_angle_selector(fn: Any) -> None:
 FPS = 25
 COMP_W = 1920
 COMP_H = 1080
-ZOOM_IN_MAX = 1.08   # subtle push; SCP horror = slow + deliberate
+ZOOM_IN_MAX = 1.15   # Story 5.3: raised from 1.08 — review found it read as still-image drift
 ZOOM_SAFE_MARGIN = 0.10  # 10% inset before crop so zoom/pan never clips subject
 
-# Direction pool: round-robin by scene_index to avoid identical consecutive directions
-_DIRECTION_POOL = ["in-center", "pan-right", "pan-left", "out-center", "pan-up", "pan-down"]
+# Direction pool: round-robin by scene_index to avoid identical consecutive directions.
+# Story 5.3 added the diagonal directions for more visible fallback variety.
+_DIRECTION_POOL = [
+    "in-center", "pan-right", "pan-left", "out-center", "pan-up", "pan-down",
+    "pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left",
+]
 
 # xfade defaults — single type until a second is actually wanted
 # ponytail: single crossfade type, constants not per-scene config
@@ -180,6 +184,17 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
         elif direction == "pan-down":
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = f"(ih-ih/zoom)*(1-on/{frames})"
+        elif direction in ("pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left"):
+            # Diagonal: combine the horizontal pan-left/right expr with the
+            # vertical pan-up/down expr instead of centering the other axis.
+            x_expr = (
+                f"(iw-iw/zoom)*on/{frames}" if "right" in direction
+                else f"(iw-iw/zoom)*(1-on/{frames})"
+            )
+            y_expr = (
+                f"(ih-ih/zoom)*on/{frames}" if "up" in direction
+                else f"(ih-ih/zoom)*(1-on/{frames})"
+            )
         else:  # in-center
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = "ih/2-(ih/zoom/2)"
