@@ -14,6 +14,7 @@ module rather than the stub. [mirrors test_scenario.py]
 import json
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 
@@ -115,6 +116,24 @@ def test_load_workflow_rejects_missing_prompt_nodes(tmp_path):
     bad = {"6": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}}  # no node "7"
     with pytest.raises(ValueError):
         img._load_workflow(_wf_file(tmp_path, bad))
+
+
+# ── Real layered workflow file (Story 5.7 inpaint fix) — regression guard ──
+# Existing tests above only build synthetic tmp-dir fixtures; nothing else
+# parses the actual shipped JSON, so a bad hand-edit to it would pass CI.
+
+_LAYERED_WF_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "data" / "workflows" / "comfyui_sdxl_anime_lora_layered_inspyrenet_api.json"
+)
+
+
+def test_layered_workflow_file_is_valid_and_prompt_injectable():
+    wf = img._load_workflow(str(_LAYERED_WF_PATH))
+    assert wf["9"]["inputs"]["images"] == ["18", 0], "background must save the inpainted frame"
+    assert wf["16"]["inputs"]["mask"] == ["12", 1], "inpaint mask must come from segmentation"
+    assert wf["17"]["inputs"]["negative"] == ["15", 0], "inpaint must use its own entity-exclusion negative"
+    assert wf["18"]["class_type"] == "VAEDecode"
 
 
 # ── Mock mode (AC4) ─────────────────────────────────────────────────────────
