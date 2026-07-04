@@ -114,7 +114,7 @@
     "9": {
         "class_type": "SaveImage",
         "_meta": {
-            "title": "Background Output (opaque)"
+            "title": "Background Output (opaque) — KNOWN DEFECT: double-exposure (see README-layered-assets.md, Story 5.7); superseded by comfyui_sdxl_anime_lora_layered_inspyrenet_api.json"
         },
         "inputs": {
             "filename_prefix": "ytflow_bg",
