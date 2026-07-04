@@ -949,6 +949,18 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 5.2 라이브 검증(run `bed3b329-b7d1-4cf3-b37f-f40d086765b5`, 2026-07-04)에서 rembg(u2net) 배경 제거가 72/72 샷에서 포맷상 정상(RGBA, alpha 채널 존재)으로 동작함을 확인했으나, 컷아웃 **품질**(알파 경계 halo/톱니, 전신 대비 클로즈업 편중 프레이밍)은 별도로 검증되지 않았다. `data/workflows/README-layered-assets.md`에 이미 후보로 언급된 더 나은 세그멘테이션 노드(ComfyUI-RMBG/BiRefNet, Inspyrenet)와 비교 평가하여 필요 시 교체한다. 5.5(프롬프트 정합성)·5.3(모션 강도)과는 관심사가 달라 별도 스토리로 분리— 이 스토리는 오직 "ComfyUI가 캐릭터를 얼마나 깨끗하게 잘라내는가"만 다룬다.
 
+### Story 5.7: 레이어드 배경 이중노출 제거
+
+5.5 라이브 A/B 리뷰(2026-07-04, SCP-096)에서 발견: 배경과 캐릭터 컷아웃이 동일한 ComfyUI 생성 프레임에서 나와(`data/workflows/README-layered-assets.md`가 "intentional"로 명시), 배경에 개체가 원본 그대로 남은 채로 캐릭터 오버레이가 그 위에 또 그려져 화면에 개체가 두 번 보임. 배경에서 개체를 제거(인페인팅 등)하는 워크플로우 수정.
+
+### Story 5.8: SCP 개체 검색 기반 레퍼런스 자동 생성
+
+1.11~1.13이 이미 구현한 "DuckDuckGo 검색 → Vision LLM 멀티앵글 생성 → LLM 앵글 선택" 파이프라인이 `CharacterModel`이 사전에 존재해야만 동작(`character_service.py::select_character_angles`)하는데, 이 레코드 생성이 Character Management UI(3.7)를 통한 수동 절차라 실제 라이브 run에서 한 번도 자동 발동하지 않았음. 런 시작 시 자동으로 트리거하도록 배선.
+
+### Story 5.9: 전환 구간 오디오 연속성
+
+5.1이 씬 경계를 `fadeblack` 암전으로 바꾸면서 오디오 crossfade(`acrossfade`)를 비디오 전환과 동일 `XFADE_DURATION`으로 묶어 유지했는데, 이로 인해 컷마다 나레이션 오디오 볼륨이 같이 페이드됨. 비디오 전환은 그대로 두고 오디오만 연속 재생 또는 무음 갭으로 분리.
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
