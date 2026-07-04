@@ -104,6 +104,21 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 - **DuckDuckGo 검색 이미지 + LoRA img2img 변형 방식 보류** — 이미지-스토리 정합성 개선안으로 제안되었으나 보류. 이유: (a) 검색 이미지 저작권 통제 불가 — 유튜브 수익화 시 실제 리스크, (b) 매 shot 원본 스타일이 제각각이라 영상 전체 스타일 일관성이 현행보다 악화될 가능성, (c) 검색 결과 품질을 파이프라인이 통제 못 함. 축소판(SCP 위키 공식 이미지만 CC BY-SA 준수 하에 IPAdapter 참조로 사용)은 Story 5-5 Phase 2에 반영됨. **재고 조건**: 5-5 Phase 1(프롬프트 컨텍스트 강화) + Phase 2(위키 참조)로도 정합성이 부족하다고 A/B 평가로 확인되면 재검토.
 
+## Deferred from: 5-2 layered-assets-activation 라이브 검증 (2026-07-04)
+
+5-2 완료 후 실제 API 게이트 흐름으로 SCP-096 run(`bed3b329-b7d1-4cf3-b37f-f40d086765b5`)을 처음부터 실행해 image 스테이지를 검증. 스토리의 "구조/포맷" 기준(AC1/AC3/AC4)은 **완전 충족**: 72개 샷 전부 `*_background.png`(color type 2, opaque) + `*_character.png`(color type 6, RGBA) 생성, `_has_alpha()` 통과율 100%, 배경 제거 실패로 인한 background-only 폴백은 이번 run에서 0건.
+
+다만 **컷아웃 품질**은 별도 축이며 이번 5-2 스토리 범위 밖(Dev Notes에 "품질 나쁘면 문서화만 하고 범위 확장 금지"로 명시)이라 여기 기록만 하고 넘어감:
+
+- **프레이밍 편중** — 5-2 세션의 단발 검증 렌더(포즈/구도를 지시하지 않은 제네릭 프롬프트 "masterpiece, best quality")에서 rembg가 얼굴/상반신 클로즈업만 남기고 전신을 못 살린 사례 관찰. 원인은 rembg 자체가 아니라 base 이미지의 구도 — 프롬프트가 "full body"/"wide shot" 등 구도를 명시하지 않으면 캐릭터 클로즈업으로 쏠릴 수 있음. **이 항목은 Story 5.5 AC4(shot composition/camera framing을 프롬프트에 명시)로 이미 커버됨 — 5.5 구현 시 참고 근거로만 사용, 별도 스토리 불필요.**
+- **알파 경계/세그멘테이션 정확도 미검증** — 이번 라이브 검증은 "RGBA 포맷인가"(바이트 레벨)만 확인했고, 컷아웃 경계에 배경색 halo나 톱니 아티팩트가 있는지, 배경 제거가 캐릭터 실루엣을 정확히 따라가는지는 픽셀 단위로 확인하지 않았다. `data/workflows/README-layered-assets.md`가 이미 후보로 언급한 `1038lab/ComfyUI-RMBG`(BiRefNet/SAM 계열, 더 정확하지만 무거움) 및 `john-mnz/ComfyUI-Inspyrenet-Rembg` 대비 현재 채택된 rembg(u2net, 가장 가벼움)의 실측 품질 비교가 없음. **→ Story 5.6(레이어드 캐릭터 컷아웃 품질)로 승격**, epics.md에 항목 추가 완료. 사람 눈 A/B 비교(현재 rembg vs 대안 노드 1개 이상, 동일 SCP/동일 시드)로 교체 여부 결정 필요.
+
+## Deferred from: 5-3 motion-intensity 라이브 QA (2026-07-04)
+
+5.3 완료 후 5-2 라이브 검증 run(`bed3b329`)의 실제 layered asset(배경+캐릭터)으로 `video_node`를 재렌더링해 AC3/AC4/AC7을 라이브로 확인하는 과정에서 관찰:
+
+- **배경 확대 시 고정 크기 캐릭터 오버레이가 상대적으로 커 보이는 현상** — 배경은 Ken Burns로 최대 1.15까지 확대되지만 캐릭터 오버레이(`_overlay_filter()`)는 크기 애니메이션이 없는 고정 크기 sway/bob만 적용됨(Story 1.9c부터의 기존 설계). 결과적으로 씬이 진행될수록 캐릭터가 배경 대비 점점 "가까워 보이는" 시차(parallax) 유사 효과가 생김. 버그는 아니고 배경 zoompan과 캐릭터 오버레이가 의도적으로 독립적이라 생기는 자연스러운 결과(5.3 AC7 스펙 그대로)이지만, 5.3에서 `ZOOM_IN_MAX`를 1.08→1.15로 올리면서 이 효과가 이전보다는 더 눈에 띌 수 있음. 픽셀 단위로 "어색해 보이는" 정도를 판단하려면 사람 눈 리뷰가 필요하며, 현재는 어떤 스토리의 스코프에도 안 들어가 있음(5.3은 배경 모션 강도만, 5.6은 컷아웃 세그멘테이션 품질만, 5.5는 프롬프트/구도만 다룸). **재고 조건**: 5.2+5.3이 합쳐진 실제 렌더를 사람이 리뷰했을 때 이 시차 효과가 거슬린다는 피드백이 나오면, 캐릭터 오버레이에 배경과 연동된 미세 스케일 애니메이션을 추가하는 별도 스토리로 검토(현재는 추측성 개선이라 스토리화 안 함).
+
 ## Deferred from: code review of 5-4-tts-korean-naturalization (2026-07-04)
 
 - **`_step` 함수들의 리스트 요소가 dict가 아니면 `AttributeError`** ([src/yt_flow/pipeline/nodes/scenario_chain.py](src/yt_flow/pipeline/nodes/scenario_chain.py)) — LLM이 `scenes` 리스트에 dict가 아닌 요소(문자열/숫자 등)를 반환하면 `.get()` 호출에서 처리되지 않은 `AttributeError`가 발생하며, 의도된 `ValueError`("malformed output") 계약을 우회함. `tts_normalize_step` 신규 코드뿐 아니라 `research_step`/`structure_step`/`writing_step`/`visual_breakdown_step`/`review_step`/`critic_step` 전부에 동일하게 존재하는 기존 패턴이라 이번 스토리 범위 밖으로 보류. **재고 조건**: 체인 전체에 걸친 방어적 파싱 강화가 필요하다고 판단되면 별도 스토리로 일괄 처리.

@@ -940,6 +940,10 @@ scenario 체인 끝에 `tts_normalize` 스테이지를 추가해 오독 유발 �
 
 visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의서(entity sheet)를 주입해 이미지-서사 정합성을 높인다 (Phase 1). 불충분 시 SCP 위키 공식 이미지(CC BY-SA)를 IPAdapter 참조로 사용 (Phase 2). 완료 판정은 Epic 4 A/B 평가. ※ 일반 웹검색 이미지 img2img 방식은 저작권/일관성 리스크로 보류 (deferred-work.md 2026-07-03 항목).
 
+### Story 5.6: 레이어드 캐릭터 컷아웃 품질
+
+5.2 라이브 검증(run `bed3b329-b7d1-4cf3-b37f-f40d086765b5`, 2026-07-04)에서 rembg(u2net) 배경 제거가 72/72 샷에서 포맷상 정상(RGBA, alpha 채널 존재)으로 동작함을 확인했으나, 컷아웃 **품질**(알파 경계 halo/톱니, 전신 대비 클로즈업 편중 프레이밍)은 별도로 검증되지 않았다. `data/workflows/README-layered-assets.md`에 이미 후보로 언급된 더 나은 세그멘테이션 노드(ComfyUI-RMBG/BiRefNet, Inspyrenet)와 비교 평가하여 필요 시 교체한다. 5.5(프롬프트 정합성)·5.3(모션 강도)과는 관심사가 달라 별도 스토리로 분리— 이 스토리는 오직 "ComfyUI가 캐릭터를 얼마나 깨끗하게 잘라내는가"만 다룬다.
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.

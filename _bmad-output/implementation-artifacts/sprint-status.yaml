@@ -102,6 +102,7 @@ development_status:
   5-3-motion-intensity: done  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: done
   5-5-visual-story-alignment: ready-for-dev  # Phase 2는 5-2 완료 후, A/B로 검증; 6-1 선행 필요
+  5-6-character-cutout-quality: ready-for-dev  # cutout 품질 비교/교체 판단 스토리 컨텍스트 생성
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
