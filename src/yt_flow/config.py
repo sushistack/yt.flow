@@ -71,3 +71,8 @@ class Settings(BaseSettings):
     character_qwen_api_key: str = ""
     character_image_width: int = 1664
     character_image_height: int = 928
+
+    # Chapter-card transitions (Story 5.1). Cards insert between scenes when true;
+    # video_node clamps duration to the accepted 1.5-2.0s range.
+    chapter_cards: bool = True
+    chapter_card_duration_sec: float = 1.75

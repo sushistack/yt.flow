@@ -8,8 +8,10 @@ Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
 
 import asyncio
+import functools
 import logging
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,8 +52,16 @@ _DIRECTION_POOL = ["in-center", "pan-right", "pan-left", "out-center", "pan-up",
 
 # xfade defaults — single type until a second is actually wanted
 # ponytail: single crossfade type, constants not per-scene config
-XFADE_TRANSITION = "fade"
+# fadeblack (Story 5.1): scene boundaries cut to black, never blend two scene
+# images together — plain "fade" showed both images overlapped mid-transition.
+XFADE_TRANSITION = "fadeblack"
 XFADE_DURATION = 0.5  # seconds
+
+# ── Chapter-card constants (Story 5.1) ─────────────────────────────────────────
+MIN_CARD_DURATION = 1.5
+MAX_CARD_DURATION = 2.0
+CARD_FADE_DURATION = 0.25  # seconds, in/out fade inside the card itself
+CARD_FONT_SIZE = 72
 
 # ── Character idle-motion constants (Story 1.9c) ──────────────────────────────
 # Sway = larger/slower horizontal drift; bob = subtle/faster vertical breathing.
@@ -236,6 +246,54 @@ def _settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
 
 
+@functools.lru_cache(maxsize=1)
+def _drawtext_font() -> str:
+    """Resolve a Korean-capable drawtext font via fontconfig. [Story 5.1 AC:2]
+
+    Never hardcodes a machine-specific path: ``fc-match`` resolves whatever the
+    OS actually has installed. Noto Sans CJK first (Korean labels), DejaVu Sans
+    as the widely-packaged fallback.
+    """
+    for family in ("Noto Sans CJK KR", "DejaVu Sans"):
+        try:
+            result = subprocess.run(
+                ["fc-match", "--format=%{file}", family],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        path = result.stdout.strip()
+        if path and Path(path).exists():
+            return path
+    for path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ):
+        if Path(path).exists():
+            return path
+    raise RuntimeError("no drawtext font resolved via fc-match (Noto Sans CJK KR / DejaVu Sans)")
+
+
+def _card_label(scene: SceneState) -> str:
+    """Chapter-card label for the upcoming scene. [Story 5.1 AC:3]
+
+    Uses a real title only if the state already carries one; SceneState has no
+    ``title`` field today, so this always falls back to ``"- N -"`` until one
+    is added upstream.
+    """
+    if "title" in SceneState.__annotations__:
+        title = str(scene.get("title", "")).strip()  # type: ignore[typeddict-item]
+        if title:
+            return title
+    return f"- {scene['scene_num']} -"
+
+
+def _chapter_card_duration(value: float) -> float:
+    """Clamp chapter-card duration to the accepted Story 5.1 range."""
+    return min(MAX_CARD_DURATION, max(MIN_CARD_DURATION, float(value)))
+
+
 def _ms(t0: float) -> int:
     return int((time.perf_counter() - t0) * 1000)
 
@@ -251,6 +309,9 @@ def _record_trace(
     upscale_pass: bool = True,
     character_scenes: int = 0,
     angle_selection: dict | None = None,
+    chapter_cards_enabled: bool = False,
+    chapter_card_duration: float | None = None,
+    chapter_card_count: int = 0,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -264,6 +325,9 @@ def _record_trace(
             **({"effects": effects} if effects is not None else {}),
             "transition": XFADE_TRANSITION,
             "transition_duration": XFADE_DURATION,
+            "chapter_cards_enabled": chapter_cards_enabled,
+            "chapter_card_count": chapter_card_count,
+            **({"chapter_card_duration": chapter_card_duration} if chapter_card_duration is not None else {}),
             "upscale_pass": upscale_pass,
             # Character idle-motion params (Story 1.9c) — constant across scenes.
             "character_scenes": character_scenes,
@@ -401,6 +465,47 @@ async def _compose_scene(
     return seg_path, spec, bool(character_path)
 
 
+async def _compose_chapter_card(
+    label: str,
+    index: int,
+    out_dir: Path,
+    duration: float,
+) -> Path:
+    """Render a black title-card segment: color bg + centered drawtext + silent
+    audio, fading in/out at its own edges. [Story 5.1 AC:2,5]
+
+    Matches _compose_scene's output contract (COMP_W x COMP_H, FPS, H.264/AAC,
+    yuv420p, has an audio stream) so _join_with_xfade can treat it as an
+    ordinary segment — no join-engine changes needed.
+    """
+    card_path = out_dir / f"card_{index:03d}.mp4"
+    label_file = out_dir / f"card_{index:03d}_label.txt"
+    label_file.write_text(label, encoding="utf-8")
+    font = _escape_subtitles_path(Path(_drawtext_font()))
+    textfile = _escape_subtitles_path(label_file)
+    fade_out_start = max(0.0, duration - CARD_FADE_DURATION)
+    vf = (
+        f"drawtext=fontfile='{font}':textfile='{textfile}':"
+        f"fontcolor=white:fontsize={CARD_FONT_SIZE}:x=(w-text_w)/2:y=(h-text_h)/2,"
+        f"fade=t=in:st=0:d={CARD_FADE_DURATION},"
+        f"fade=t=out:st={fade_out_start:.3f}:d={CARD_FADE_DURATION}"
+    )
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi", "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={duration}",
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-vf", vf,
+        "-t", f"{duration:.3f}",
+        *_OUTPUT_ARGS,
+        str(card_path),
+    )
+    if rc != 0:
+        raise RuntimeError(f"FFmpeg chapter card {index} failed (rc={rc}): {stderr[-500:]}")
+    if not card_path.exists():
+        raise RuntimeError(f"FFmpeg chapter card {index}: output not created: {card_path}")
+    return card_path
+
+
 async def _join_with_xfade(
     segments: list[tuple[Path, float]],
     output: Path,
@@ -531,13 +636,23 @@ async def video_node(state: PipelineState) -> dict:
         output = run_dir / "video.mp4"
         segs = [p for p, _, _, _ in segs_with_specs]
 
+        # Chapter cards (Story 5.1): only meaningful with 2+ scenes to join.
+        chapter_cards_enabled = bool(s.chapter_cards) and len(segs_with_specs) >= 2
+        card_duration = _chapter_card_duration(s.chapter_card_duration_sec)
+        card_count = 0
+
         if len(segs) == 1:
             segs[0].replace(output)  # replace: atomic overwrite, cross-platform
         else:  # 2+ scenes: xfade join (label wiring handles n>=2 uniformly)
-            await _join_with_xfade(
-                [(p, d) for p, d, _, _ in segs_with_specs],
-                output,
-            )
+            join_segments: list[tuple[Path, float]] = []
+            for i, (seg_path, duration, _, _) in enumerate(segs_with_specs):
+                join_segments.append((seg_path, duration))
+                if chapter_cards_enabled and i < len(segs_with_specs) - 1:
+                    label = _card_label(scenes[i + 1])
+                    card_path = await _compose_chapter_card(label, i + 1, run_dir, card_duration)
+                    join_segments.append((card_path, card_duration))
+                    card_count += 1
+            await _join_with_xfade(join_segments, output)
 
         effects_meta = [
             {
@@ -556,6 +671,9 @@ async def video_node(state: PipelineState) -> dict:
             returncode=0, effects=effects_meta, upscale_pass=True,
             character_scenes=sum(1 for *_, hc in segs_with_specs if hc),
             angle_selection=angle_meta if angle_meta else None,
+            chapter_cards_enabled=chapter_cards_enabled,
+            chapter_card_duration=card_duration,
+            chapter_card_count=card_count,
         )
         return {"current_stage": "video", "video_path": str(output), "error": None}
 

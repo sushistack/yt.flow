@@ -31,8 +31,15 @@ from yt_flow.pipeline.nodes.video import (
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path):
-    return SimpleNamespace(workspace_path=str(tmp_path))
+def _settings_ns(tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75):
+    # ponytail: fake settings default cards OFF so pre-existing tests (written
+    # before Story 5.1) don't need touching; the real Settings() default is True
+    # (AC:2) — see test_config_chapter_cards_default_true.
+    return SimpleNamespace(
+        workspace_path=str(tmp_path),
+        chapter_cards=chapter_cards,
+        chapter_card_duration_sec=chapter_card_duration_sec,
+    )
 
 
 async def _fake_ffmpeg_ok(*args):
@@ -315,6 +322,29 @@ async def test_xfade_has_acrossfade(monkeypatch, tmp_path):
     fc = captured_filter[0]
     assert "xfade" in fc
     assert "acrossfade" in fc
+
+
+async def test_xfade_uses_fadeblack_transition(monkeypatch, tmp_path):
+    """Default transition must be fadeblack, not a plain image-over-image crossfade. [AC:1]"""
+    segs = [(tmp_path / f"s{i}.mp4", 2.0) for i in range(2)]
+    for p, _ in segs:
+        p.write_bytes(b"FAKE")
+
+    captured_filter: list[str] = []
+
+    async def _capture(*args):
+        args_list = list(args)
+        if "-filter_complex" in args_list:
+            idx = args_list.index("-filter_complex")
+            captured_filter.append(args_list[idx + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
+    await _join_with_xfade(segs, tmp_path / "out.mp4")
+
+    assert video.XFADE_TRANSITION == "fadeblack"
+    assert "transition=fadeblack" in captured_filter[0]
 
 
 async def test_xfade_fail_raises(monkeypatch, tmp_path):
@@ -1012,6 +1042,234 @@ async def test_angle_selector_returns_none_skips(monkeypatch, tmp_path, assets):
 
     assert out.get("error") is None
     assert scene["shots"][0]["character_path"] == assets.character
+
+
+# ── chapter cards (Story 5.1) ─────────────────────────────────────────────────
+
+
+def _capture_ffmpeg_calls():
+    """Return (fake, calls) recording every ffmpeg invocation's arg list."""
+    calls: list[tuple] = []
+
+    async def _fake(*args):
+        calls.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    return _fake, calls
+
+
+def _output_files(calls, substr: str) -> list[str]:
+    """Match each call's own output (last arg) — not the inputs it references —
+    against a path-separator-anchored substring, so a tmp_path directory name
+    that happens to contain the word (e.g. a test named ..._no_card_...) can't
+    produce a false positive."""
+    return [args[-1] for args in calls if isinstance(args[-1], str) and f"/{substr}" in args[-1]]
+
+
+async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path, assets):
+    """3-scene run with cards enabled renders 3 scene segs + 2 card segs and joins
+    all 5 into one filtergraph. [AC:2,5]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    seg_outputs = _output_files(calls, "seg_")
+    card_outputs = _output_files(calls, "card_")
+    assert len(seg_outputs) == 3
+    assert len(card_outputs) == 2
+
+    join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
+    assert len([a for a in join_args if isinstance(a, str) and "/seg_" in a]) == 3
+    assert len([a for a in join_args if isinstance(a, str) and "/card_" in a]) == 2
+
+
+async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):
+    """Out-of-range config is clamped to the accepted 1.5-2.0s card range. [AC:2]"""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True, chapter_card_duration_sec=99.0))
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    await video_node(_state(scenes))
+
+    assert captured.get("chapter_card_duration") == pytest.approx(2.0)
+    assert video._chapter_card_duration(0.1) == pytest.approx(1.5)
+    assert video._chapter_card_duration(1.75) == pytest.approx(1.75)
+
+
+async def test_chapter_cards_disabled_no_card_render(monkeypatch, tmp_path, assets):
+    """chapter_cards=False: no card render call; join still uses fadeblack only. [AC:4]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=False))
+    captured_filter: list[str] = []
+
+    async def _fake(*args):
+        args_list = list(args)
+        if "-filter_complex" in args_list:
+            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert captured_filter, "join filtergraph not captured"
+    assert "transition=fadeblack" in captured_filter[0]
+    assert "card_" not in captured_filter[0]
+
+
+async def test_single_scene_no_card_no_join(monkeypatch, tmp_path, assets):
+    """Single-scene run: no card, no join call — only the scene segment render. [AC:6]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    state = _state([_scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)])
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    assert len(calls) == 1  # only the single scene render, no card, no join
+    assert not _output_files(calls, "card_")
+
+
+async def test_trace_chapter_card_metadata(monkeypatch, tmp_path, assets):
+    """Trace metadata reflects fadeblack transition + chapter-card state/count/duration. [AC:7]"""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True, chapter_card_duration_sec=1.75))
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    await video_node(_state(scenes))
+
+    assert captured.get("chapter_cards_enabled") is True
+    assert captured.get("chapter_card_count") == 1
+    assert captured.get("chapter_card_duration") == pytest.approx(1.75)
+
+
+async def test_trace_chapter_cards_disabled_metadata(monkeypatch, tmp_path, assets):
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=False))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    await video_node(_state(scenes))
+
+    assert captured.get("chapter_cards_enabled") is False
+    assert captured.get("chapter_card_count") == 0
+
+
+def test_config_chapter_cards_default_true():
+    """Settings.chapter_cards defaults true, per AC:2 ("YTFLOW_CHAPTER_CARDS=true (default true)")."""
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["chapter_cards"].default is True
+    assert 1.5 <= Settings.model_fields["chapter_card_duration_sec"].default <= 2.0
+
+
+def test_card_label_uses_fallback_when_no_title(assets):
+    scene = _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    assert video._card_label(scene) == "- 3 -"
+
+
+def test_card_label_ignores_ad_hoc_title_until_scene_state_defines_it(assets):
+    scene = _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    scene["title"] = "The Discovery"  # type: ignore[typeddict-unknown-key]
+    assert video._card_label(scene) == "- 3 -"
+
+
+@pytest.mark.skipif(shutil.which("fc-match") is None, reason="fontconfig not installed")
+def test_drawtext_font_resolves_to_existing_file():
+    font = video._drawtext_font()
+    assert Path(font).exists()
+
+
+def test_drawtext_font_tries_fallback_after_fc_match_timeout(monkeypatch, tmp_path):
+    fallback = tmp_path / "fallback.ttf"
+    fallback.write_bytes(b"font")
+    calls = 0
+
+    def _run(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout"))
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout=str(fallback), stderr="")
+
+    try:
+        video._drawtext_font.cache_clear()
+        monkeypatch.setattr(subprocess, "run", _run)
+        font = video._drawtext_font()
+        assert font == str(fallback)
+    finally:
+        video._drawtext_font.cache_clear()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("fc-match") is None,
+    reason="ffmpeg or fontconfig not installed",
+)
+async def test_compose_chapter_card_integration(tmp_path):
+    """Real FFmpeg: card segment renders with video+audio streams. [AC:2]"""
+    from yt_flow.pipeline.nodes.video import _compose_chapter_card
+
+    card_path = await _compose_chapter_card("- 1 -", 1, tmp_path, 1.75)
+    assert card_path.exists()
+
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-show_entries", "stream=codec_type",
+         "-of", "csv=p=0", str(card_path)],
+        capture_output=True, text=True,
+    )
+    stream_types = result.stdout.split()
+    assert "video" in stream_types
+    assert "audio" in stream_types
+
+
+async def test_compose_chapter_card_bounds_infinite_audio(monkeypatch, tmp_path):
+    captured: list[tuple] = []
+
+    async def _fake(*args):
+        captured.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    await video._compose_chapter_card("- 1 -", 1, tmp_path, 1.75)
+
+    args = list(captured[0])
+    assert "-t" in args
+    assert args[args.index("-t") + 1] == "1.750"
 
 
 async def test_angle_selector_trace_metadata(monkeypatch, tmp_path, assets):
