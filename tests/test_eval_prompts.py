@@ -63,9 +63,13 @@ class FakeDataset:
                     output = await output
                 evaluations = []
                 for ev in evaluators:
-                    result = ev(input=item.input, output=output, expected_output=None, metadata=None)
-                    if asyncio.iscoroutine(result):
-                        result = await result
+                    try:
+                        result = ev(input=item.input, output=output, expected_output=None, metadata=None)
+                        if asyncio.iscoroutine(result):
+                            result = await result
+                    except Exception:
+                        # real SDK: an evaluator that raises yields no evaluations for that item
+                        continue
                     evaluations.extend(result if isinstance(result, list) else [result])
                 item_results.append(SimpleNamespace(item=item, output=output, evaluations=evaluations))
             return SimpleNamespace(item_results=item_results)
@@ -204,6 +208,35 @@ def test_scenario_failure_marks_item_failed_and_continues(monkeypatch):
     assert all(r.error == "boom" for r in results)
 
 
+def test_empty_scenes_marks_item_failed():
+    import asyncio
+
+    result = asyncio.run(ep._score_evaluator(input={"scp_text": "x"}, output={"scenes": [], "error": None}))
+    assert result[0].name == "failed"
+
+
+def test_scoring_exception_marks_item_failed_not_crashed(monkeypatch):
+    _wire_scenario_capturing_state(monkeypatch, [])
+
+    async def raising_score_run(scp_text, artifact_text, settings):
+        raise RuntimeError("judge timed out")
+
+    monkeypatch.setattr(ep, "_score_run", raising_score_run)
+
+    results = ep.evaluate_label(_client_with_seeded_dataset(), ep.DATASET_NAME, "production")
+
+    assert len(results) == len(ep.GOLDEN_IDS)  # run continued for every item, did not crash
+    assert all(r.failed for r in results)
+
+
+def test_to_item_result_treats_missing_scores_as_failed():
+    from types import SimpleNamespace
+
+    item_result = SimpleNamespace(item=FakeDatasetItem("SCP-096", {"scp_id": "SCP-096"}), evaluations=[])
+    result = ep._to_item_result(item_result)
+    assert result.failed is True
+
+
 # ── baseline comparison + verdict (AC6) ─────────────────────────────────────
 
 
@@ -246,6 +279,24 @@ def test_compare_fails_when_baseline_item_failed():
     verdict, rows = ep.compare(candidate, baseline)
     assert verdict == "FAIL"
     assert rows[0]["status"] == "item failure"
+
+
+def test_compare_fails_on_empty_candidate():
+    verdict, rows = ep.compare([], [_ok("SCP-096", 4, 4, 4)])
+    assert verdict == "FAIL"
+
+
+def test_compare_fails_on_empty_baseline():
+    verdict, rows = ep.compare([_ok("SCP-096", 4, 4, 4)], [])
+    assert verdict == "FAIL"
+
+
+def test_compare_fails_when_baseline_has_item_missing_from_candidate():
+    candidate = [_ok("SCP-096", 4, 4, 4)]
+    baseline = [_ok("SCP-096", 4, 4, 4), _ok("SCP-173", 4, 4, 4)]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "FAIL"
+    assert any(r["scp_id"] == "SCP-173" and r["status"] == "missing from candidate run" for r in rows)
 
 
 # ── CLI exit codes ───────────────────────────────────────────────────────────
@@ -292,3 +343,13 @@ def test_main_seed_only_exits_zero(monkeypatch):
 
     assert ep.main(["--seed"]) == 0
     assert set(client.items[ep.DATASET_NAME]) == set(ep.GOLDEN_IDS)
+
+
+def test_main_rejects_baseline_without_label():
+    with pytest.raises(SystemExit):
+        ep.main(["--baseline", "production"])
+
+
+def test_main_rejects_label_equal_to_baseline():
+    with pytest.raises(SystemExit):
+        ep.main(["--label", "production", "--baseline", "production"])

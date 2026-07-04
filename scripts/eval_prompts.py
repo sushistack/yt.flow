@@ -88,11 +88,20 @@ def _rule_metrics(scenes: list[dict]) -> dict[str, float]:
     }
 
 
+def _failed(comment: str) -> list[Evaluation]:
+    return [Evaluation(name="failed", value=True, data_type="BOOLEAN", comment=comment)]
+
+
 async def _score_evaluator(*, input, output, expected_output=None, metadata=None) -> list[Evaluation]:
     if output.get("error"):
-        return [Evaluation(name="failed", value=1, data_type="BOOLEAN", comment=output["error"])]
-    scenes = output["scenes"]
-    axis_scores = await _score_run(input["scp_text"], "\n\n".join(sc["narration"] for sc in scenes), Settings())
+        return _failed(output["error"])
+    scenes = output.get("scenes")
+    if not scenes:
+        return _failed("scenario produced no scenes")
+    try:
+        axis_scores = await _score_run(input["scp_text"], "\n\n".join(sc["narration"] for sc in scenes), Settings())
+    except Exception as exc:  # judge timeout/parse errors are a failed item, not a crashed run (AC7)
+        return _failed(f"scoring failed: {exc}")
     evals = [Evaluation(name=axis, value=getattr(axis_scores, axis)) for axis in AXES]
     evals.append(Evaluation(name="total", value=axis_scores.total))
     evals.extend(Evaluation(name=name, value=value) for name, value in _rule_metrics(scenes).items())
@@ -117,6 +126,9 @@ def _to_item_result(item_result) -> ItemResult:
     by_name = {ev.name: ev for ev in item_result.evaluations}
     if "failed" in by_name:
         return ItemResult(scp_id, failed=True, error=by_name["failed"].comment)
+    if "total" not in by_name or any(ax not in by_name for ax in AXES):
+        # real Langfuse SDK swallows an evaluator exception into evaluations=[] for the item
+        return ItemResult(scp_id, failed=True, error="evaluator produced no scores")
     axes = {ax: by_name[ax].value for ax in AXES}
     rule_metrics = {name: ev.value for name, ev in by_name.items() if name not in AXES and name != "total"}
     return ItemResult(scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics)
@@ -141,7 +153,11 @@ def evaluate_label(client, dataset_name: str, label: str, *, max_concurrency: in
 
 
 def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[str, list[dict]]:
+    if not candidate or not baseline:
+        return "FAIL", [{"scp_id": "*", "status": "no results — dataset empty or run produced nothing"}]
+
     baseline_by_id = {r.scp_id: r for r in baseline}
+    candidate_ids = {r.scp_id for r in candidate}
     rows: list[dict] = []
     verdict = "PASS"
 
@@ -164,14 +180,18 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
             "total_delta": total_delta,
         })
 
+    for scp_id in sorted(set(baseline_by_id) - candidate_ids):
+        verdict = "FAIL"
+        rows.append({"scp_id": scp_id, "status": "missing from candidate run"})
+
     return verdict, rows
 
 
 def print_comparison(candidate_label: str, baseline_label: str, rows: list[dict], verdict: str) -> None:
     print(f"\n=== {candidate_label} vs {baseline_label} (golden-set) ===")
     for row in rows:
-        if row["status"] == "item failure":
-            print(f"  {row['scp_id']}: FAIL (item failure)")
+        if row["status"] in ("item failure", "missing from candidate run", "no results — dataset empty or run produced nothing"):
+            print(f"  {row['scp_id']}: FAIL ({row['status']})")
             continue
         deltas = ", ".join(f"{ax}={d:+.2f}" for ax, d in row["deltas"].items())
         print(f"  {row['scp_id']}: {row['status']:9s} {deltas}  total={row['total_delta']:+.2f}")
@@ -185,7 +205,9 @@ def print_report(label: str, results: list[ItemResult]) -> None:
             print(f"  {r.scp_id}: FAILED — {r.error}")
             continue
         axes = ", ".join(f"{ax}={v:.2f}" for ax, v in r.axes.items())
+        metrics = ", ".join(f"{k}={v:.2f}" for k, v in r.rule_metrics.items())
         print(f"  {r.scp_id}: {axes}  total={r.total:.2f}")
+        print(f"    rules: {metrics}")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -200,6 +222,11 @@ def main(argv=None) -> int:
     ap.add_argument("--max-concurrency", type=int, default=3)
     args = ap.parse_args(argv)
 
+    if args.baseline and not args.label:
+        ap.error("--baseline requires --label")
+    if args.label and args.baseline and args.label == args.baseline:
+        ap.error("--label and --baseline must differ")
+
     client = build_client()
 
     if args.seed:
@@ -213,7 +240,7 @@ def main(argv=None) -> int:
 
     if not args.baseline:
         print_report(args.label, candidate)
-        return 1 if any(r.failed for r in candidate) else 0
+        return 1 if not candidate or any(r.failed for r in candidate) else 0
 
     baseline = evaluate_label(client, args.dataset, args.baseline, max_concurrency=args.max_concurrency)
     verdict, rows = compare(candidate, baseline)
