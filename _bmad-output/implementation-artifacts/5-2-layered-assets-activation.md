@@ -1,6 +1,10 @@
+---
+baseline_commit: e88bf1f314d9307e187d64e0948acf3ade74fd88
+---
+
 # Story 5.2: Layered Assets Activation
 
-Status: ready-for-dev
+Status: done
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -35,14 +39,14 @@ This is primarily an asset/config/live-verification story. Do not rewrite `image
 
 ## Tasks / Subtasks
 
-- [ ] Choose and install a background-removal custom node for the local ComfyUI environment. Prefer a maintained ComfyUI custom node that returns an RGBA image or image+mask suitable for alpha output. Document install commands and model/download requirements in the workflow README. (AC: 1, 2, 3, 7)
-- [ ] Create `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` from the existing SDXL+LoRA baseline, preserving positive/negative prompt injection at nodes `"6"` and `"7"` unless code changes are explicitly required. (AC: 1)
-- [ ] Ensure the layered workflow has two real output nodes:
+- [x] Choose and install a background-removal custom node for the local ComfyUI environment. Prefer a maintained ComfyUI custom node that returns an RGBA image or image+mask suitable for alpha output. Document install commands and model/download requirements in the workflow README. (AC: 1, 2, 3, 7)
+- [x] Create `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` from the existing SDXL+LoRA baseline, preserving positive/negative prompt injection at nodes `"6"` and `"7"` unless code changes are explicitly required. (AC: 1)
+- [x] Ensure the layered workflow has two real output nodes:
   - background: opaque PNG, recommended node ID `"9"` unless the workflow requires a different ID
   - character: RGBA PNG after background removal, recommended node ID `"10"` unless the workflow requires a different ID
   - If IDs differ, set `YTFLOW_COMFYUI_BACKGROUND_NODE` and `YTFLOW_COMFYUI_CHARACTER_NODE` accordingly. (AC: 1, 4)
-- [ ] Submit the workflow directly to ComfyUI before running yt.flow. Confirm both output node IDs appear in the returned outputs/history payload and that the character PNG has an alpha channel. (AC: 2, 3)
-- [ ] Add `data/workflows/README-layered-assets.md` documenting:
+- [x] Submit the workflow directly to ComfyUI before running yt.flow. Confirm both output node IDs appear in the returned outputs/history payload and that the character PNG has an alpha channel. (AC: 2, 3)
+- [x] Add `data/workflows/README-layered-assets.md` documenting:
   - custom node name/repo and install method
   - required models and where ComfyUI expects them
   - workflow file path
@@ -50,18 +54,25 @@ This is primarily an asset/config/live-verification story. Do not rewrite `image
   - `.env` variables for activation
   - direct ComfyUI validation procedure
   - known fallback behavior when character extraction fails (AC: 6, 7)
-- [ ] Wire local `.env` for the live run:
+- [x] Wire local `.env` for the live run:
   - `YTFLOW_COMFYUI_LAYERED=true`
   - `YTFLOW_COMFYUI_WORKFLOW_PATH=data/workflows/comfyui_sdxl_anime_lora_layered_api.json`
   - `YTFLOW_COMFYUI_BACKGROUND_NODE=<background SaveImage node id>`
   - `YTFLOW_COMFYUI_CHARACTER_NODE=<character SaveImage node id>`
   Do not commit secrets; if a checked-in example file exists, add only non-secret example keys there. (AC: 4)
-- [ ] Run one real pipeline execution or image-stage retry with ComfyUI mock mode off. At the image gate, verify the workspace contains `*_background.png` and, where extraction succeeds, `*_character.png`; inspect the run state through the stage artifacts/API or checkpoint-derived artifact view. (AC: 4, 6)
-- [ ] Run or retry the video stage and inspect the final mp4 frames. Confirm at least one scene uses character overlay motion; if no `character_path` exists, the story is not complete unless the validation note explains why background removal produced no characters and includes the corrective action. (AC: 5, 8)
-- [ ] Run focused automated tests after asset/config changes:
+- [x] Run one real pipeline execution or image-stage retry with ComfyUI mock mode off. At the image gate, verify the workspace contains `*_background.png` and, where extraction succeeds, `*_character.png`; inspect the run state through the stage artifacts/API or checkpoint-derived artifact view. (AC: 4, 6)
+- [x] Run or retry the video stage and inspect the final mp4 frames. Confirm at least one scene uses character overlay motion; if no `character_path` exists, the story is not complete unless the validation note explains why background removal produced no characters and includes the corrective action. (AC: 5, 8)
+- [x] Run focused automated tests after asset/config changes:
   - `uv run pytest tests/pipeline/nodes/test_image.py tests/pipeline/nodes/test_video.py`
   - If config/example files change, also run `uv run pytest tests/test_config.py`
   - If API artifact presentation is touched, also run `uv run pytest tests/api/test_stage_artifacts.py tests/api/test_stages.py` (AC: 3, 4, 5, 6)
+
+### Review Findings
+
+- [x] [Review][Patch] Keep `.env.example` flat-mode defaults on the baseline workflow [.env.example:28]
+- [x] [Review][Patch] Document required checkpoint and LoRA filenames for the layered workflow [data/workflows/README-layered-assets.md:22]
+- [x] [Review][Patch] Document rembg first-run cache/offline requirements and class-name recovery [data/workflows/README-layered-assets.md:18]
+- [x] [Review][Patch] Document that PNG alpha type validation is not semantic transparency validation [data/workflows/README-layered-assets.md:75]
 
 ## Dev Notes
 
@@ -160,10 +171,34 @@ Recent commits are focused on Prompt Ops and variant-label wiring (`6-1`) plus d
 
 ### Agent Model Used
 
-TBD by dev-story agent.
+Claude Sonnet 5 (claude-sonnet-5)
 
 ### Debug Log References
 
+- ComfyUI-Manager headless install: `cm-cli.py install rembg-comfyui-node` → installed `Jcd1230/rembg-comfyui-node` + `rembg==2.0.76` (onnxruntime already present).
+- Direct `/prompt` submission of the new layered workflow accepted with `node_errors: {}`.
+- `/history/{prompt_id}` returned outputs for both node `"9"` (background) and node `"13"` (character) after ~13s.
+- Downloaded both outputs and checked PNG IHDR color-type byte: background = `2` (RGB, opaque), character = `6` (RGBA) — matches `_has_alpha()` exactly.
+- Ran `image_node` and `video_node` directly (not monkeypatched) against real ComfyUI (mock off) and real ffmpeg via a throwaway script; inspected two extracted frames of the resulting mp4 and confirmed the character silhouette shifts position/scale between frames (sway/bob overlay) against the same panning background — visual confirmation of AC5.
+
 ### Completion Notes List
 
+- Installed `Jcd1230/rembg-comfyui-node` (rembg/u2net) into the local ComfyUI via `ComfyUI-Manager`'s headless `cm-cli.py` — no GUI step needed, no new project dependency (lives in the ComfyUI venv, not `pyproject.toml`).
+- Added `data/workflows/comfyui_sdxl_anime_lora_layered_api.json`: baseline SDXL+LoRA graph unchanged (prompt injection still nodes `"6"`/`"7"`) with two `VAEDecode`-fed output branches — `SaveImage` node `"9"` (opaque background) and `Image Remove Background (rembg)` (node `"12"`) → `SaveImage` node `"13"` (RGBA character). Node `"10"` was unavailable for the character output because the baseline workflow already uses `"10"`/`"11"` for its two `LoraLoader` nodes, so `YTFLOW_COMFYUI_CHARACTER_NODE=13` is required (documented in the README and `.env`/`.env.example`).
+- Added `data/workflows/README-layered-assets.md` covering the custom node, workflow topology, node-ID mapping, `.env` activation variables, a copy-pasteable direct-ComfyUI validation snippet, and the background-only fallback behavior.
+- Added non-secret `YTFLOW_COMFYUI_LAYERED` / `YTFLOW_COMFYUI_WORKFLOW_PATH` / `YTFLOW_COMFYUI_BACKGROUND_NODE` / `YTFLOW_COMFYUI_CHARACTER_NODE` keys to `.env.example` (layered mode left `false` there — activation is opt-in) and set them (`layered=true`) in the local `.env` for the live run.
+- No changes to `src/yt_flow/pipeline/nodes/image.py`, `video.py`, or `domain/state.py` — the existing 1.6b/1.9c implementations worked against the new workflow and real ComfyUI output without modification, confirming the story's "asset/config only" framing.
+- **Live validation note (AC:8)**: run_id `5-2-live-validation` (throwaway workspace dir, not a DB-tracked run). Image stage: `workspace/5-2-live-validation/images/scene_001_S001_background.png` (opaque) and `scene_001_S001_character.png` (RGBA, alpha confirmed) both written; `ShotData.background_path`/`character_path` populated from `image_node`'s return value. Video stage: `workspace/5-2-live-validation/video.mp4` (1920x1080, h264/aac, 3s) rendered via the real `filter_complex` overlay path (background `zoompan` + character sway/bob `overlay=...:eval=frame` + burned SRT); two extracted frames (t=0s and t≈1.5s) show the character's position/scale shifting independently of the static background pan, confirming visible idle motion. No background-only fallback was hit in this run (character extraction succeeded); the fallback path itself remains covered by the existing `test_video_node_no_character_uses_vf_fallback` unit test. ComfyUI was started (`~/workspaces/ComfyUI/run.sh`) and stopped again after validation.
+- Focused tests: `uv run pytest tests/pipeline/nodes/test_image.py tests/pipeline/nodes/test_video.py tests/test_config.py` → 117 passed. Full regression: `uv run pytest` → 509 passed, 1 skipped.
+
 ### File List
+
+- `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` (new)
+- `data/workflows/README-layered-assets.md` (new)
+- `.env` (local, not committed — layered activation for the live run)
+- `.env.example` (non-secret layered-mode keys documented)
+
+## Change Log
+
+- 2026-07-04: Implemented and live-validated layered-asset activation — new layered ComfyUI workflow with `rembg` background removal, README, `.env`/`.env.example` wiring; verified real image + video stages produce a background/character-overlay mp4 with no changes to `image_node`/`video_node`. Status → review.
+- 2026-07-04: Code review findings fixed — `.env.example` now keeps flat-mode defaults on the baseline workflow, README documents required ComfyUI model files, rembg first-run/cache expectations, custom-node recovery, and the limits of format-only alpha validation. Status → done.

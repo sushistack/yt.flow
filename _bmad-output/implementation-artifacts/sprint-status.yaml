@@ -98,7 +98,7 @@ development_status:
   # ── Epic 5: 영상 품질 고도화 (2026-07-03 첫 실전 렌더 리뷰 피드백) ──────────
   epic-5: in-progress
   5-1-scene-transitions-chapter-cards: done
-  5-2-layered-assets-activation: ready-for-dev  # 1.6b/1.9c 코드 기구현 — 워크플로우+설정 배선
+  5-2-layered-assets-activation: done  # 워크플로우+rembg+.env 배선, 실제 ComfyUI/ffmpeg로 라이브 검증 완료
   5-3-motion-intensity: ready-for-dev  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: ready-for-dev
   5-5-visual-story-alignment: ready-for-dev  # Phase 2는 5-2 완료 후, A/B로 검증; 6-1 선행 필요
