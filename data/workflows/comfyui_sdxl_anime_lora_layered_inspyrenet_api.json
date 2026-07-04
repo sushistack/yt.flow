@@ -114,12 +114,12 @@
     "9": {
         "class_type": "SaveImage",
         "_meta": {
-            "title": "Background Output (opaque)"
+            "title": "Background Output (opaque, character-erased)"
         },
         "inputs": {
             "filename_prefix": "ytflow_bg",
             "images": [
-                "8",
+                "18",
                 0
             ]
         }
@@ -147,6 +147,99 @@
             "images": [
                 "12",
                 0
+            ]
+        }
+    },
+    "14": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {
+            "title": "Background Inpaint Positive Prompt (entity-free)"
+        },
+        "inputs": {
+            "text": "empty background, scenery only, no people, no person, no character, no figure, no creature",
+            "clip": [
+                "11",
+                1
+            ]
+        }
+    },
+    "15": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {
+            "title": "Background Inpaint Negative Prompt (entity exclusion)"
+        },
+        "inputs": {
+            "text": "person, people, human, character, creature, figure, silhouette, lowres, bad anatomy, worst quality",
+            "clip": [
+                "11",
+                1
+            ]
+        }
+    },
+    "16": {
+        "class_type": "VAEEncodeForInpaint",
+        "_meta": {
+            "title": "Background Inpaint Encode (mask = InSPyReNet foreground)"
+        },
+        "inputs": {
+            "pixels": [
+                "8",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ],
+            "mask": [
+                "12",
+                1
+            ],
+            "grow_mask_by": 12
+        }
+    },
+    "17": {
+        "class_type": "KSampler",
+        "_meta": {
+            "title": "Background Inpaint Sampler"
+        },
+        "inputs": {
+            "seed": 1,
+            "steps": 30,
+            "cfg": 7.5,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "model": [
+                "11",
+                0
+            ],
+            "positive": [
+                "14",
+                0
+            ],
+            "negative": [
+                "15",
+                0
+            ],
+            "latent_image": [
+                "16",
+                0
+            ]
+        }
+    },
+    "18": {
+        "class_type": "VAEDecode",
+        "_meta": {
+            "title": "Background Inpaint Decode"
+        },
+        "inputs": {
+            "samples": [
+                "17",
+                0
+            ],
+            "vae": [
+                "4",
+                2
             ]
         }
     }
