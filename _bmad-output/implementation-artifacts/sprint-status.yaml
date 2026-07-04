@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # story 7-5-kinetic-subtitles → ready-for-dev
+last_updated: 2026-07-04  # story 5-6-character-cutout-quality → done (code review)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -102,7 +102,7 @@ development_status:
   5-3-motion-intensity: done  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: done
   5-5-visual-story-alignment: in-progress  # 코드 리뷰 완료, patch 5건 수정; scenario/tts_normalize production 승격 완료(2026-07-04)로 라이브 run 차단은 해소, AC13/14/15 라이브 A/B 실행 자체는 아직 미실행
-  5-6-character-cutout-quality: ready-for-dev  # cutout 품질 비교/교체 판단 스토리 컨텍스트 생성
+  5-6-character-cutout-quality: done  # rembg -> InSPyReNet 교체; 코드리뷰 반영(config char-node 기본값 10→13, README 노드 문구), 라이브 검증 완료
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
