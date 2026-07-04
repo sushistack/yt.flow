@@ -5,6 +5,11 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture/architecture-yt.flow-2026-06-30/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/ux-designs/ux-yt.flow-2026-06-30/DESIGN.md
   - _bmad-output/planning-artifacts/ux-designs/ux-yt.flow-2026-06-30/EXPERIENCE.md
+  - docs/superpowers/specs/2026-07-04-sound-design-design.md
+  - docs/superpowers/specs/2026-07-04-color-grade-postfx-design.md
+  - docs/superpowers/specs/2026-07-04-character-parallax-design.md
+  - docs/superpowers/specs/2026-07-04-transition-variety-design.md
+  - docs/superpowers/specs/2026-07-04-kinetic-subtitles-design.md
 ---
 
 # yt.flow - Epic Breakdown
@@ -963,3 +968,31 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 ### (미발의 후보) 승격 자동화
 
 candidate가 골든셋+A/B를 통과하면 production 라벨을 자동 이동하는 스크립트/CI. 수동 승격(라벨 이동은 Langfuse UI 클릭 1회)의 빈도가 부담이 될 때만 발의 — YAGNI.
+
+## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
+
+**Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.
+
+**발의 배경 (2026-07-04):** 사운드 디자인/후처리 필터/패럴랙스/트랜지션 다양화/키네틱 자막 5개 설계 문서가 순차 커밋됨(4924c65, 5054066, 2bd5675, 58fe998, b8f5b6a). 패럴랙스 스펙은 `deferred-work.md`의 "5-3 motion-intensity 라이브 QA (2026-07-04)" 디퍼럴(배경 확대 시 고정 크기 캐릭터가 상대적으로 가까워 보이는 우발적 효과)을 재고해 의도적 기능으로 만든 것.
+
+**순서 제약:** 7.1(사운드 디자인)이 `SceneState.mood` 필드를 신설하는 오너이므로 7.2/7.4보다 반드시 선행. 7.3/7.5는 mood 비의존이라 순서 무관하지만, 7.1/7.2/7.3/7.4 네 스토리 전부 `video.py`를 건드리므로(오디오 믹싱/필터체인/모션 수식/`_join_with_xfade` 시그니처 변경) 병렬 세션 진행 시 파일 충돌 위험 — 순차 진행 권장.
+
+### Story 7.1: 사운드 디자인 (BGM + 앰비언트 + SFX 스팅어)
+
+씬 mood(dread/clinical/escalation/revelation, `SceneState.mood` 신설)에 따라 배경음악/앰비언트 루프/전환 스팅어를 사이드체인 컴프레션으로 내레이션 아래 덕킹해 믹스한다. 새 모듈 `pipeline/nodes/sound_design.py`, `video_node._compose_scene` 확장, 신규 파이프라인 노드/게이트 없음. 설정: `YTFLOW_SOUND_DESIGN_ENABLED`. 상세: [2026-07-04-sound-design-design.md](../../docs/superpowers/specs/2026-07-04-sound-design-design.md)
+
+### Story 7.2: 후처리 필터 (색보정 + 비네트 + 필름 그레인)
+
+[depends_on: 7.1] mood별 색보정(`eq`)을 씬·챕터카드에 적용하고, 비네트·그레인은 mood 무관 고정 강도로 전 프레임에 적용한다. 자막은 그레인/비네트 이후(번인 전) 별도 처리해 가독성을 유지한다. 새 모듈 `pipeline/nodes/color_grade.py` — mood 판정은 `sound_design.resolve_mood` 재사용, 중복 정의 없음. 설정: `YTFLOW_POST_FX_ENABLED`. 상세: [2026-07-04-color-grade-postfx-design.md](../../docs/superpowers/specs/2026-07-04-color-grade-postfx-design.md)
+
+### Story 7.3: 진짜 패럴랙스 (배경/캐릭터 속도 분리)
+
+`deferred-work.md`의 5-3 라이브 QA 디퍼럴을 해소 — 캐릭터(근경)가 배경(원경)과 동일 방향으로 `CHAR_DEPTH_FACTOR` 배 증폭되어 움직이도록 만들어 우발적 아티팩트를 의도적 다중평면 뎁스 연출로 전환한다. 기존 `video.py`의 `EffectSpec`/`select_effect`/`_zoompan_filter` 시스템을 그대로 확장(신규 파일 없음). **필수 수정사항**: 캐릭터 줌 증폭을 반영해 `CHAR_MAX_W`/`CHAR_MAX_H` 세이프 박스를 축소하지 않으면 캐릭터가 프레임을 벗어남 — 이 스펙의 핵심 정합성 요구사항이지 부가 개선이 아님. 10개 방향 전체에 대해 팬 방향 부호를 라이브 렌더로 검증 필수(머지 전). 설정: `YTFLOW_PARALLAX_ENABLED`. 상세: [2026-07-04-character-parallax-design.md](../../docs/superpowers/specs/2026-07-04-character-parallax-design.md)
+
+### Story 7.4: 트랜지션 다양화 (mood 기반 xfade 타입)
+
+[depends_on: 7.1] 씬 경계 전환 타입(`fadeblack` 고정 → mood별 `MOOD_XFADE_MAP`)을 mood로 결정한다. 전환 길이(`XFADE_DURATION`)는 불변, 타입만 변화. 챕터카드가 걸린 경계는 예외적으로 항상 `fadeblack` 유지. `_join_with_xfade`의 `segments` 튜플에 전환 타입 요소를 추가한다. 설정: `YTFLOW_TRANSITION_VARIETY_ENABLED`. 상세: [2026-07-04-transition-variety-design.md](../../docs/superpowers/specs/2026-07-04-transition-variety-design.md)
+
+### Story 7.5: 키네틱 자막 (단어 단위 가라오케 하이라이트)
+
+`SceneState.word_timings`의 단어별 타이밍을 활용해 SRT 대신 ASS(libass, 신규 의존성 없음) `\k` 카라오케 태그로 발화 중인 단어를 하이라이트한다. mood 비의존, 신규 모듈 없이 `subtitle.py`에 함수 추가(`build_ass_events`/`format_ass`, 큐 그룹핑은 기존 `_word_timings_to_segments` 재사용). 단어 단위 타이밍이 없는 경우(정렬 fallback)는 기존 SRT로 자동 강등 — 없는 데이터를 지어내지 않는다. 설정: `YTFLOW_KINETIC_SUBTITLES_ENABLED`. 상세: [2026-07-04-kinetic-subtitles-design.md](../../docs/superpowers/specs/2026-07-04-kinetic-subtitles-design.md)

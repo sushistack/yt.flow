@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-04
+# last_updated: 2026-07-04  # 7-4-transition-variety → ready-for-dev
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # 5-5-visual-story-alignment -> in-progress (code review: 5 patches fixed; scenario/tts_normalize promoted to production, live-run blocker resolved)
+last_updated: 2026-07-04  # story 7-5-kinetic-subtitles → ready-for-dev
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -108,3 +108,11 @@ development_status:
   epic-6: in-progress
   6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: ready-for-dev  # depends on 6-1
+
+  # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
+  epic-7: in-progress
+  7-1-sound-design: ready-for-dev  # SceneState.mood 필드 신설(오너) — 7-2/7-4 선행 조건
+  7-2-post-fx-color-grade: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 merged
+  7-3-character-parallax: ready-for-dev  # depends on 5-3 (motion system); mood 무관, 5-3 라이브 QA 디퍼럴 해소
+  7-4-transition-variety: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 lands (SceneState.mood/resolve_mood)
+  7-5-kinetic-subtitles: ready-for-dev  # mood 무관, subtitle.py만
