@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # story 5-8-automatic-entity-reference-generation → done (code review)
+last_updated: 2026-07-04  # story 5-9-transition-audio-continuity → done (code review complete)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -105,7 +105,7 @@ development_status:
   5-6-character-cutout-quality: done  # rembg -> InSPyReNet 교체; 코드리뷰 반영(config char-node 기본값 10→13, README 노드 문구), 라이브 검증 완료
   5-7-layered-background-double-exposure-fix: done  # ComfyUI 인페인트 패스로 배경에서 개체 제거; 코드리뷰 반영(전용 inpaint negative prompt 노드 추가, legacy rembg 워크플로우 경고, 합성 프레임 증거 추가, README fallback 문서 정정) + 회귀 테스트 추가. 세그멘테이션 실패 시 전체 run 실패로 전환되는 결합은 후속 결정 필요 항목으로 문서화(미해결)
   5-8-automatic-entity-reference-generation: done  # run_service.start_run 사전 그래프 단계로 자동 트리거 구현(AC2/AC3/AC4 라이브 검증); 코드리뷰 반영(non-fatal 보장 깨짐 수정, 전체 실패 시 영구 미제공 레코드 롤백, A/B 동시성 레이스 처리) + 회귀 테스트 3건 추가, 중복 monkeypatch 제거. AC1 낙관 경로는 DuckDuckGo 403 + 캐릭터 생성 ComfyUI 워크플로우 누락/부적합(1.12 소관, 미해결)으로 라이브 미검증 — 후속 스토리 필요
-  5-9-transition-audio-continuity: ready-for-dev  # depends on 5-1 — 씬 전환 시 acrossfade가 비디오 xfade와 커플링되어 나레이션 오디오가 같이 페이드됨
+  5-9-transition-audio-continuity: done  # depends on 5-1 — acrossfade를 adelay+amix(normalize=0)로 교체, 비디오 xfade offset 재사용으로 드리프트 없음; 코드 리뷰 완료(패치 6건 적용, 3건 보류)
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
