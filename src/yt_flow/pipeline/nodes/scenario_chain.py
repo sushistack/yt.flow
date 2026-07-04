@@ -79,6 +79,17 @@ async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_d
     data = json.loads(raw)
     if not isinstance(data, dict) or not str(data.get("frozen_descriptor") or "").strip():
         raise ValueError("research: payload missing non-empty 'frozen_descriptor'")
+    # entity_sheet/story_logline are new fields (this story). A prompt version still
+    # running under the pre-existing production label (label=None) simply omits the
+    # key, and that must not break variant A/None (AC5) — absence is only checked
+    # when we're intentionally using the candidate prompt that promises these fields.
+    for key in ("entity_sheet", "story_logline"):
+        if key not in data:
+            if label:
+                raise ValueError(f"research: payload missing non-empty '{key}'")
+            continue
+        if not isinstance(data[key], str) or not data[key].strip():
+            raise ValueError(f"research: payload missing non-empty '{key}'")
     return data
 
 
@@ -139,10 +150,30 @@ async def writing_step(
     return data
 
 
+def _scene_role_text(scene_role: object) -> str:
+    """Compact 'act / emotional_beat: synopsis' string from a structure_step scene entry.
+
+    ``scene_role`` is a raw structure_step list element (LLM-derived JSON) indexed
+    positionally by the caller — guard against it not being a dict at all.
+    """
+    if not isinstance(scene_role, dict):
+        return ""
+    parts = [
+        str(scene_role.get("act") or ""),
+        str(scene_role.get("emotional_beat") or ""),
+    ]
+    role = " / ".join(p for p in parts if p)
+    synopsis = str(scene_role.get("synopsis") or "")
+    return f"{role}: {synopsis}" if role and synopsis else role or synopsis
+
+
 async def visual_breakdown_step(
     scene: dict,
     sentences: list[str],
     frozen_descriptor: str,
+    entity_sheet: str,
+    story_logline: str,
+    scene_role: object,
     s,
     call_deepseek,
     *,
@@ -158,6 +189,9 @@ async def visual_breakdown_step(
             "color_palette": scene["color_palette"],
             "atmosphere": scene["atmosphere"],
             "scp_visual_reference": frozen_descriptor,
+            "entity_sheet": entity_sheet,
+            "story_logline": story_logline,
+            "scene_role": _scene_role_text(scene_role),
             "character_visual_context": "",
             "narration": scene.get("narration", ""),
             "numbered_sentences": numbered,

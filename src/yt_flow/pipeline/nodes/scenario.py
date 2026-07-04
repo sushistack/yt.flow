@@ -13,6 +13,7 @@ already-installed ``httpx`` client instead of adding the ``openai`` SDK.
 """
 
 import asyncio
+import logging
 import time
 
 import httpx
@@ -32,6 +33,8 @@ from yt_flow.pipeline.nodes.scenario_chain import (
 )
 from yt_flow.domain.state import PipelineState
 from yt_flow.services.prompt_service import get_prompt, get_prompt_with_fallback
+
+logger = logging.getLogger(__name__)
 
 
 def _settings() -> Settings:
@@ -90,6 +93,8 @@ async def _write_and_review(
     scp_text: str,
     structure: list[dict],
     frozen_descriptor: str,
+    entity_sheet: str,
+    story_logline: str,
     format_guide: str,
     quality_feedback: str,
     s: Settings,
@@ -105,7 +110,18 @@ async def _write_and_review(
 
     async def _breakdown_for(idx: int, scene: dict) -> tuple[int, list[dict]]:
         sentences = split_sentences(scene["narration"])
-        shots = await visual_breakdown_step(scene, sentences, frozen_descriptor, s, _call_deepseek, label=label)
+        # positional — writing_step's scenes correspond 1:1 to structure's scenes, same rule as build_scenes.
+        if idx < len(structure):
+            scene_role = structure[idx]
+        else:
+            logger.warning(
+                "scenario: writing produced more scenes (%d) than structure (%d); scene %d has no narrative role",
+                len(writing["scenes"]), len(structure), idx + 1,
+            )
+            scene_role = {}
+        shots = await visual_breakdown_step(
+            scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, s, _call_deepseek, label=label
+        )
         return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 
     results = await asyncio.gather(*(_breakdown_for(idx, scene) for idx, scene in enumerate(writing["scenes"])))
@@ -148,6 +164,7 @@ async def scenario_node(state: PipelineState) -> dict:
 
         writing, visual_by_scene, review, critic = await _write_and_review(
             state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+            research.get("entity_sheet", ""), research.get("story_logline", ""),
             format_guide, "", s, stages, label=label,
         )
 
@@ -155,6 +172,7 @@ async def scenario_node(state: PipelineState) -> dict:
             feedback = _format_feedback(review, critic)
             writing, visual_by_scene, review, critic = await _write_and_review(
                 state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+                research.get("entity_sheet", ""), research.get("story_logline", ""),
                 format_guide, feedback, s, stages, label=label,
             )
 
