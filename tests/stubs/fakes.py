@@ -116,6 +116,23 @@ def fake_get_image_provider(self) -> _FakeCharacterImageProvider:
     return _FakeCharacterImageProvider()
 
 
+def patch_character_reference_seams(monkeypatch) -> None:
+    """Wire DuckDuckGo search + download + generation to the offline fakes above.
+
+    Shared by every fixture that needs ``run_service._ensure_character_reference``
+    (Story 5.8) to stay offline: ``conftest.stub_profile`` plus the gate/resume test
+    files, which stub LangGraph nodes directly instead of going through it.
+    """
+    import yt_flow.services.character_service as character_service
+    import yt_flow.services.image_search as image_search
+
+    monkeypatch.setattr(image_search.DuckDuckGoImageSearch, "search", fake_image_search)
+    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
+                         fake_download_reference_image)
+    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider",
+                         fake_get_image_provider)
+
+
 # ── scenario_chain multi-stage prompt/DeepSeek fakes (Story 1.5 chain redesign) ─
 _STAGE_CASSETTES = {
     "scenario/research": "deepseek_research.json",

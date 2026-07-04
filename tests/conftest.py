@@ -40,9 +40,7 @@ def stub_profile(monkeypatch):
     import yt_flow.pipeline.nodes.scenario as scenario
     import yt_flow.pipeline.nodes.tts as tts
     import yt_flow.pipeline.nodes.video as video
-    import yt_flow.services.character_service as character_service
     import yt_flow.services.comfyui_client as comfyui_client
-    import yt_flow.services.image_search as image_search
     import yt_flow.services.prompt_service as prompt_service
 
     # scenario.py's own one format_guide fetch uses the bare imported name...
@@ -56,11 +54,7 @@ def stub_profile(monkeypatch):
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
-    monkeypatch.setattr(image_search.DuckDuckGoImageSearch, "search", fakes.fake_image_search)
-    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
-                         fakes.fake_download_reference_image)
-    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider",
-                         fakes.fake_get_image_provider)
+    fakes.patch_character_reference_seams(monkeypatch)
     return fakes
 
 @pytest.fixture

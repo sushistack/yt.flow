@@ -15,8 +15,7 @@ from sqlmodel import Session
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.db.models import Run
-from yt_flow.services import character_service, run_service
-from yt_flow.services import image_search as image_search_mod
+from yt_flow.services import run_service
 
 from tests.stubs import fakes
 
@@ -61,13 +60,8 @@ async def env(tmp_path, monkeypatch, stub_stage_nodes):
     # and a genuinely failing stage no longer reaches its gate (error routes to END).
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
     # Story 5.8: start_run now auto-triggers character reference search/generation
-    # for a never-before-seen scp_id — fake the same three seams stub_profile fakes,
-    # so these gate/status-mechanics tests stay offline (B-2).
-    monkeypatch.setattr(image_search_mod.DuckDuckGoImageSearch, "search", fakes.fake_image_search)
-    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
-                         fakes.fake_download_reference_image)
-    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider",
-                         fakes.fake_get_image_provider)
+    # for a never-before-seen scp_id — keep these gate/status-mechanics tests offline (B-2).
+    fakes.patch_character_reference_seams(monkeypatch)
     db.init("sqlite://")
     settings = Settings(
         langfuse_host="http://localhost",

@@ -8,6 +8,8 @@ exactly like ``tests/services/test_character_service*.py`` fake them — no
 network, no ComfyUI.
 """
 
+from types import SimpleNamespace
+
 from sqlmodel import Session, select
 
 from yt_flow import db
@@ -207,3 +209,25 @@ async def test_concurrent_creation_race_is_non_fatal(monkeypatch, tmp_path):
     assert fake_search.calls == []  # lost the race at create_character — never reached search
     monkeypatch.setattr(character_service.CharacterService, "check_existing_character", real_check)
     assert _get_character("SCP-096") is not None  # the winner's row is untouched
+
+
+async def test_start_run_invokes_character_provisioning(monkeypatch, tmp_path):
+    """The one-line production wiring: start_run must actually call
+    _ensure_character_reference, not just have it defined."""
+    calls: list[str] = []
+
+    async def fake_ensure(scp_id: str) -> None:
+        calls.append(scp_id)
+
+    monkeypatch.setattr(run_service, "_ensure_character_reference", fake_ensure)
+
+    async def fake_run(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(run_service, "_run", fake_run)
+    monkeypatch.setattr(run_service, "_initial_state", lambda *a, **k: {})
+    monkeypatch.setattr(run_service, "_graph", SimpleNamespace(astream=lambda *a, **k: None))
+
+    await run_service.start_run("run-1", "SCP-096", "scp text")
+
+    assert calls == ["SCP-096"]

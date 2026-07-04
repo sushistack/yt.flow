@@ -20,8 +20,7 @@ from sqlmodel import Session
 from yt_flow import db
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
-from yt_flow.services import character_service, run_service
-from yt_flow.services import image_search as image_search_mod
+from yt_flow.services import run_service
 
 from tests.stubs import fakes
 
@@ -74,13 +73,8 @@ def _load(run_id: str) -> Run:
 async def spy(tmp_path, monkeypatch):
     _spy = _Spy()
     # Story 5.8: start_run now auto-triggers character reference search/generation
-    # for a never-before-seen scp_id — fake the same three seams stub_profile fakes,
-    # so these resume/restart orchestration tests stay offline (B-2).
-    monkeypatch.setattr(image_search_mod.DuckDuckGoImageSearch, "search", fakes.fake_image_search)
-    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
-                         fakes.fake_download_reference_image)
-    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider",
-                         fakes.fake_get_image_provider)
+    # for a never-before-seen scp_id — keep these resume/restart orchestration tests offline (B-2).
+    fakes.patch_character_reference_seams(monkeypatch)
     db.init("sqlite://")
     conn = await aiosqlite.connect(str(tmp_path / "cp.db"))
     saver = AsyncSqliteSaver(conn)
