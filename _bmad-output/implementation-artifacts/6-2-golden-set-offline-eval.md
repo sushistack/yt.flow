@@ -4,7 +4,7 @@ baseline_commit: 8946828
 
 # Story 6.2: Golden Set + Offline Prompt Regression Eval Runner
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -32,14 +32,14 @@ For this creative pipeline, the golden set is not expected-output snapshots. The
 
 ## Tasks / Subtasks
 
-- [ ] Add `scripts/eval_prompts.py` with CLI options `--label`, `--baseline`, `--dataset golden-scps`, `--seed`, and optional `--max-concurrency` (AC: 1, 2, 3, 6, 7)
-- [ ] Implement idempotent dataset seeding from `data/scps.json`; use stable dataset item ids so repeated `--seed` does not duplicate items (AC: 1)
-- [ ] Execute `scenario_node` directly with a minimal `PipelineState` per item and label mapping: `candidate` -> `prompt_variant="B"`, `production` -> `prompt_variant=None`; reject any non-`production`/`candidate` label unless explicitly supported by policy (AC: 2, 3, 8)
-- [ ] Reuse `yt_flow.services.eval_service` scoring primitives for LLM judge scores; reuse only scenario-applicable rule metrics such as scene count and shot/narration structural checks (AC: 4)
-- [ ] Record dataset run outputs and item scores through Langfuse v4 dataset/experiment APIs; ensure scores include item id, label, prompt label metadata, and failure state (AC: 5, 7)
-- [ ] Implement baseline comparison mode and terminal table; verdict fails on any item failure, any candidate axis below baseline, or candidate total below baseline (AC: 6)
-- [ ] Update `docs/PROMPT_POLICY.md` with golden-set commands and pass criteria (AC: 9)
-- [ ] Add tests with fake Langfuse client, fake `scenario_node`, and fake judge calls; no live network, no DB writes, no pipeline graph invocation (AC: 1-8)
+- [x] Add `scripts/eval_prompts.py` with CLI options `--label`, `--baseline`, `--dataset golden-scps`, `--seed`, and optional `--max-concurrency` (AC: 1, 2, 3, 6, 7)
+- [x] Implement idempotent dataset seeding from `data/scps.json`; use stable dataset item ids so repeated `--seed` does not duplicate items (AC: 1)
+- [x] Execute `scenario_node` directly with a minimal `PipelineState` per item and label mapping: `candidate` -> `prompt_variant="B"`, `production` -> `prompt_variant=None`; reject any non-`production`/`candidate` label unless explicitly supported by policy (AC: 2, 3, 8)
+- [x] Reuse `yt_flow.services.eval_service` scoring primitives for LLM judge scores; reuse only scenario-applicable rule metrics such as scene count and shot/narration structural checks (AC: 4)
+- [x] Record dataset run outputs and item scores through Langfuse v4 dataset/experiment APIs; ensure scores include item id, label, prompt label metadata, and failure state (AC: 5, 7)
+- [x] Implement baseline comparison mode and terminal table; verdict fails on any item failure, any candidate axis below baseline, or candidate total below baseline (AC: 6)
+- [x] Update `docs/PROMPT_POLICY.md` with golden-set commands and pass criteria (AC: 9)
+- [x] Add tests with fake Langfuse client, fake `scenario_node`, and fake judge calls; no live network, no DB writes, no pipeline graph invocation (AC: 1-8)
 
 ## Dev Notes
 
@@ -159,12 +159,32 @@ The script exit code should be `0` only when all compared items pass. Use non-ze
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5
 
 ### Debug Log References
 
+- `uv run pytest -q tests/test_eval_prompts.py` → 19 passed (new test file).
+- `uv run pytest -q` (full suite) → 553 passed, 1 skipped, 0 failed.
+- `uv run ruff check scripts/eval_prompts.py tests/test_eval_prompts.py` → clean.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- `scripts/eval_prompts.py` uses `Langfuse.Dataset.run_experiment(task=..., evaluators=[...])` (SDK v4.12.0) instead of hand-rolling dataset-run/score bookkeeping: the SDK creates the dataset run, links each item's trace, and posts every `Evaluation` returned by the evaluator as a Langfuse score automatically (AC5) — the script only supplies the task (run `scenario_node`) and the evaluator (score it). `dataset.run_experiment()` is a plain sync call (it wraps its own event loop internally via `run_async_safely`), so `main()` stays fully synchronous with no `asyncio.run()` of its own.
+- Task function (`_run_scenario`) builds a minimal `PipelineState` per dataset item exactly as sketched in Dev Notes and calls `scenario_node` directly — never `run_service`, the LangGraph graph, DB session, or a FastAPI route.
+- `_score_evaluator` reuses `eval_service.AXES`/`_score_run` unchanged for the judge axes (import + call the module's own name, patched the same way `test_scenario.py` patches `scenario.py`'s bound names, so tests monkeypatch `eval_prompts._score_run`). Scenario-applicable rule metrics (`scene_count`, `shot_count`, `empty_narration_count`, `empty_image_prompt_count`, `avg_shots_per_scene`) are computed by a small pure `_rule_metrics()` helper, kept separate from the judge axes per Dev Notes.
+- Item failure handling: `scenario_node` never raises (it already returns `{"error": ...}` internally per AD-10), so the evaluator just checks `output.get("error")` and returns a `failed` marker Evaluation instead of scoring — the loop always produces one result per dataset item (AC7). Verified with a dedicated test that a scenario failure on every item still returns all N results, each marked failed.
+- Dataset seeding (`seed_dataset`) relies on the SDK's own documented upsert semantics: `create_dataset` upserts by name, `create_dataset_item(..., id=scp_id)` upserts by id — no extra existence-check code needed for idempotency (AC1).
+- `compare()` implements the Dev Notes' Baseline Comparison Criteria exactly: any item failure (candidate or baseline) fails the verdict; otherwise any per-axis or total regression fails it. Exit code is `0` only when every item passes.
+- `docs/PROMPT_POLICY.md` updated: new "Golden-set regression" section with commands + pass criteria, and change-protocol step 4 now points at `eval_prompts.py --baseline` instead of "eyeball the gate output" (AC9).
+- Tests (`tests/test_eval_prompts.py`, following the `tests/test_prompt_migration.py` sys.path-insert-scripts-dir convention): fake Langfuse client (`create_dataset`/`create_dataset_item`/`get_dataset`) and a `FakeDataset.run_experiment` that mirrors the real SDK's task/evaluator calling convention (`task(item=item)`, `evaluator(input=, output=, expected_output=, metadata=)`, both awaited if async) — no live network, no DB, no pipeline graph. 19 new tests covering: label mapping, idempotent seeding, variant wiring per label, rule metrics, item-failure continuation, comparison pass/fail/regression/item-failure cases, and CLI exit codes.
 
 ### File List
+
+- `scripts/eval_prompts.py` (new)
+- `tests/test_eval_prompts.py` (new)
+- `docs/PROMPT_POLICY.md` (modified — golden-set regression section + change-protocol step 4)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — story status in-progress)
+
+## Change Log
+
+- 2026-07-04: Implemented `scripts/eval_prompts.py` golden-set offline eval runner (AC1-9) using Langfuse `Dataset.run_experiment`; updated `docs/PROMPT_POLICY.md`; full regression green (553 passed, 1 skipped).
