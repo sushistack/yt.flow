@@ -103,7 +103,7 @@ development_status:
   5-4-tts-korean-naturalization: done
   5-5-visual-story-alignment: done  # 라이브 A/B+Epic4 평가+Jay 리뷰 완료(2026-07-04). AC13 손실은 5-7 이중노출 버그로 confound 의심 — 재검증은 5-7 완료 후 그쪽에서 진행
   5-6-character-cutout-quality: done  # rembg -> InSPyReNet 교체; 코드리뷰 반영(config char-node 기본값 10→13, README 노드 문구), 라이브 검증 완료
-  5-7-layered-background-double-exposure-fix: ready-for-dev  # 5.5 라이브 리뷰에서 발견: 배경+캐릭터가 동일 생성 프레임이라 개체가 이중으로 보임
+  5-7-layered-background-double-exposure-fix: review  # ComfyUI 인페인트 패스로 배경에서 개체 제거(워크플로우 JSON만 수정, image.py 무변경); 실제 ComfyUI 단일샷 + SCP-096 A/B 재실행(Variant A/B)까지 라이브 검증 완료. 5.5 confound 부분 해소(atmosphere 격차 사라짐) 확인, 결론(A 승)은 불변
   5-8-automatic-entity-reference-generation: ready-for-dev  # depends on 1-11/1-12/1-13/3-7/5-7 — 검색 기반 개체 레퍼런스 파이프라인이 CharacterModel 사전 생성 없이는 자동 미작동
   5-9-transition-audio-continuity: ready-for-dev  # depends on 5-1 — 씬 전환 시 acrossfade가 비디오 xfade와 커플링되어 나레이션 오디오가 같이 페이드됨
 

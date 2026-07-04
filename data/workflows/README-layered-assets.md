@@ -46,6 +46,12 @@ for the full evidence set and decision rationale.
 Kept as `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` for
 reference/rollback; not the default recommendation as of Story 5.6.
 
+> **Warning (Story 5.7):** this file predates the background inpaint fix and
+> still has the double-exposure defect — its background output shows the
+> same entity that the character overlay also renders. Do not reactivate it
+> for a real run without porting the inpaint pass from
+> `comfyui_sdxl_anime_lora_layered_inspyrenet_api.json` first.
+
 - Repo: [`Jcd1230/rembg-comfyui-node`](https://github.com/Jcd1230/rembg-comfyui-node)
 - Node name in the workflow JSON: `Image Remove Background (rembg)`
 - Install via ComfyUI-Manager's headless CLI (no GUI needed):
@@ -88,17 +94,40 @@ the baseline `comfyui_sdxl_anime_lora_workflow_api2.json` with one shared
 generation branch (checkpoint → LoRAs → `CLIPTextEncode` nodes `"6"`/`"7"`
 → `KSampler` → `VAEDecode`) feeding two independent output branches:
 
-- **Background** (opaque): `VAEDecode` → `SaveImage` (node `"9"`, prefix
-  `ytflow_bg`).
-- **Character** (RGBA): `VAEDecode` → segmentation node (node `"12"`, either
-  `InspyrenetRembg` or `Image Remove Background (rembg)`) → `SaveImage`
-  (node `"13"`, prefix `ytflow_char`).
+- **Character** (RGBA): `VAEDecode` (node `"8"`) → segmentation node (node
+  `"12"`, either `InspyrenetRembg` or `Image Remove Background (rembg)`) →
+  `SaveImage` (node `"13"`, prefix `ytflow_char`).
+- **Background** (opaque, character-erased, Story 5.7): node `"12"`'s MASK
+  output (the same foreground mask used to cut out the character) also feeds
+  `VAEEncodeForInpaint` (node `"16"`), which re-encodes node `"8"`'s image
+  with that region marked for regeneration (`grow_mask_by: 12` pixels to
+  feather the mask edge and reduce visible seams; `denoise: 1.0` to fully
+  replace the masked pixels rather than blend with the original figure). A
+  second `KSampler` (node `"17"`) fills the masked area using a static
+  entity-free positive prompt (node `"14"`, `"empty background, scenery
+  only, no people, ..."`) and a dedicated entity-exclusion negative prompt
+  (node `"15"`, `"person, people, human, character, creature, ..."` — kept
+  separate from node `"7"` because node `"7"` is overwritten per-shot by
+  `image_node` and may not always contain person-exclusion terms).
+  `VAEDecode` (node `"18"`) → `SaveImage` (node `"9"`, prefix `ytflow_bg`)
+  then saves the entity-free result instead of the raw node `"8"` frame.
+  Everything outside the mask is *intended* to pass through unchanged, but a
+  second full VAE encode/decode round-trip is not bit-exact — expect minor
+  global reconstruction differences (not just inside the masked region), not
+  an absolute pixel-identity guarantee.
 
 Prompt injection stays on nodes `"6"`/`"7"`, unchanged from the baseline
-workflow — no code changes were needed in `image_node`. The two workflow
-files are identical except for node `"12"`'s `class_type`/`inputs`, so
-switching between them never changes `Settings.comfyui_background_node` /
-`Settings.comfyui_character_node`.
+workflow — no code changes were needed in `image_node`. Both output node IDs
+(`"9"` background, `"13"` character) are unchanged, so `Settings.comfyui_background_node`
+/ `Settings.comfyui_character_node` don't need to change either. The extra
+inpaint pass (nodes `"14"`/`"15"`/`"16"`/`"17"`/`"18"`) roughly doubles
+per-shot ComfyUI sampling time (a second 30-step `KSampler` run — confirmed
+live, see Story 5.7's Dev Agent Record) — the accepted cost of removing the
+double-exposure. The legacy `comfyui_sdxl_anime_lora_layered_api.json`
+(rembg) has not been updated with this inpaint pass since it is superseded and
+kept only for rollback; it still has the double-exposure defect if
+reactivated — its node `"9"` `_meta.title` carries an inline warning to that
+effect for anyone opening the file directly.
 
 ## Output node ID mapping
 
@@ -167,15 +196,32 @@ channel or extracted frames to confirm there are transparent pixels and useful
 foreground separation; the byte check proves format compatibility, not visual
 quality.
 
-Both layered workflows intentionally derive the character cutout from the
-same generated frame as the background. If segmentation extracts too much
-foreground for a specific prompt, keep the run as background-only or follow
-up with a separate character-prompt workflow; do not treat either file as a
-semantic segmentation guarantee.
+The character cutout is still derived from the same generated frame as the
+background (Story 5.7 only fixed the background leaking the character —
+segmentation quality is Story 5.6's scope). If segmentation extracts too much
+foreground for a specific prompt, the inpaint pass will also erase that
+over-extracted region from the background; keep the run as background-only or
+follow up manually rather than treating either file as a semantic
+segmentation guarantee.
 
 ## Fallback behavior
 
-If background removal fails or the character node produces no output for
-a shot, `image_node` sets `character_path = None` and keeps
-`background_path` set. `video_node` then falls back to the background-only
-Ken Burns path (Story 1.9b) for that shot instead of failing the run.
+If the character node alone produces no output for a shot (e.g. the
+segmentation node runs but the RGBA check fails), `image_node` sets
+`character_path = None` and keeps `background_path` set; `video_node` then
+falls back to the background-only Ken Burns path (Story 1.9b) for that shot
+instead of failing the run.
+
+**Story 5.7 changed this for one failure mode.** Before 5.7, node `"9"`
+(background) sourced directly from node `"8"` and was independent of node
+`"12"` (segmentation) — a segmentation failure only cost the character
+layer. After 5.7, node `"9"` depends on node `"12"`'s mask via the inpaint
+chain (`"16"`→`"17"`→`"18"`), so if segmentation itself errors (not just
+produces a bad cutout), **both** background and character outputs are now
+missing, `image_node` raises `ComfyUIError` for that shot, and — since the
+per-shot loop has no per-shot try/except — the entire run's image stage
+fails rather than degrading to background-only. This coupling is a known
+limitation of the workflow-JSON-only fix approach and has not been
+addressed at the Python level; treat a segmentation-node crash as a
+run-failing event, not a soft per-shot fallback, until a follow-up story
+revisits it.
