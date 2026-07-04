@@ -4,7 +4,7 @@ baseline_commit: a3bd5446a22ec69fd6ab4c85c8e4f70e4644ec65
 
 # Story 5.3: Motion Intensity - Ken Burns Strength and Variety
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -59,6 +59,11 @@ This story is deliberately narrow: strengthen and diversify background/single-im
   - [x] Re-run or retry the `video` stage on a representative completed run, preferably SCP-096 or the reviewed run if still available.
   - [x] Inspect the final mp4 and Langfuse effect metadata before finalizing any value above `1.08`.
   - [x] If stronger than `1.15` feels necessary, stop and create a follow-up story for per-shot timing / storyboard motion rather than cranking constants indefinitely.
+
+### Review Findings
+
+- [x] [Review][Patch] Diagonal direction implementation used substring detection instead of explicit direction mapping [src/yt_flow/pipeline/nodes/video.py:187]
+- [x] [Review][Patch] Diagonal tests only asserted both axes existed, not that each direction emitted the intended x/y expressions [tests/pipeline/nodes/test_video.py:276]
 
 ## Dev Notes
 
@@ -159,6 +164,7 @@ Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story workflow.
 - `_zoompan_filter()` gained one new `elif` branch combining the existing horizontal/vertical pan expressions for the 4 diagonal directions; filter order, zoom-out conditional, and jitter-fix (`scale=8000`) chain untouched.
 - Existing pool-driven tests (`test_select_effect_none_rotates_pool`, `_unknown_rotates_pool`, `_pool_wraps`, `test_zoompan_filter_all_directions_build`) automatically exercised the new diagonals since they iterate `video._DIRECTION_POOL` rather than hardcoding the old 6 directions — no changes needed there.
 - Added: `test_zoom_in_max_within_recommended_range` (AC:1 band check) and `test_zoompan_filter_diagonal_has_both_axes` (parametrized over the 4 new directions, AC:2). Fixed one stale hardcoded-`"1.08"` literal in `test_zoompan_filter_honors_spec_zoom_range` to reference `video.ZOOM_IN_MAX` instead.
+- Code review follow-up: replaced diagonal substring detection with an explicit direction-to-expression map and tightened the diagonal test to assert each expected x/y expression.
 - No new dependencies; no API/DB/UI changes; AD-1 layering guard test still passes unmodified.
 
 ### File List

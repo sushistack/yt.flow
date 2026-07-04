@@ -184,17 +184,30 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
         elif direction == "pan-down":
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = f"(ih-ih/zoom)*(1-on/{frames})"
-        elif direction in ("pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left"):
+        elif direction in {
+            "pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left",
+        }:
             # Diagonal: combine the horizontal pan-left/right expr with the
             # vertical pan-up/down expr instead of centering the other axis.
-            x_expr = (
-                f"(iw-iw/zoom)*on/{frames}" if "right" in direction
-                else f"(iw-iw/zoom)*(1-on/{frames})"
-            )
-            y_expr = (
-                f"(ih-ih/zoom)*on/{frames}" if "up" in direction
-                else f"(ih-ih/zoom)*(1-on/{frames})"
-            )
+            diagonal_exprs = {
+                "pan-up-right": (
+                    f"(iw-iw/zoom)*on/{frames}",
+                    f"(ih-ih/zoom)*on/{frames}",
+                ),
+                "pan-up-left": (
+                    f"(iw-iw/zoom)*(1-on/{frames})",
+                    f"(ih-ih/zoom)*on/{frames}",
+                ),
+                "pan-down-right": (
+                    f"(iw-iw/zoom)*on/{frames}",
+                    f"(ih-ih/zoom)*(1-on/{frames})",
+                ),
+                "pan-down-left": (
+                    f"(iw-iw/zoom)*(1-on/{frames})",
+                    f"(ih-ih/zoom)*(1-on/{frames})",
+                ),
+            }
+            x_expr, y_expr = diagonal_exprs[direction]
         else:  # in-center
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = "ih/2-(ih/zoom/2)"

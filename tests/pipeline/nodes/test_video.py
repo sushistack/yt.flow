@@ -274,14 +274,20 @@ def test_zoompan_filter_all_directions_build():
 
 
 @pytest.mark.parametrize(
-    "direction", ["pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left"]
+    ("direction", "x_expr", "y_expr"),
+    [
+        ("pan-up-right", "(iw-iw/zoom)*on/50", "(ih-ih/zoom)*on/50"),
+        ("pan-up-left", "(iw-iw/zoom)*(1-on/50)", "(ih-ih/zoom)*on/50"),
+        ("pan-down-right", "(iw-iw/zoom)*on/50", "(ih-ih/zoom)*(1-on/50)"),
+        ("pan-down-left", "(iw-iw/zoom)*(1-on/50)", "(ih-ih/zoom)*(1-on/50)"),
+    ],
 )
-def test_zoompan_filter_diagonal_has_both_axes(direction):
-    """[Story 5.3 AC:2] Diagonal directions must animate x AND y, not just one axis."""
+def test_zoompan_filter_diagonal_has_expected_axis_expressions(direction, x_expr, y_expr):
+    """[Story 5.3 AC:2] Each diagonal direction must animate the intended x/y pair."""
     spec = EffectSpec(direction=direction, start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
     filt = _zoompan_filter(spec, duration=2.0)
-    assert "(iw-iw/zoom)" in filt  # horizontal pan expression present
-    assert "(ih-ih/zoom)" in filt  # vertical pan expression present
+    assert f":x='{x_expr}'" in filt
+    assert f":y='{y_expr}'" in filt
 
 
 # ── _join_with_xfade offset math ─────────────────────────────────────────────
