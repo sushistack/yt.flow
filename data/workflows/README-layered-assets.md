@@ -1,11 +1,50 @@
-# Layered Assets (Story 5.2)
+# Layered Assets (Story 5.2, cutout quality upgraded in Story 5.6)
 
 Activates the already-built layered-image / character-overlay pipeline
 (Story 1.6b `image_node`, Story 1.9c `video_node`) against a real ComfyUI
 workflow that emits an opaque background PNG plus a transparent (RGBA)
 character PNG.
 
-## Custom node
+## Segmentation node — recommended: InSPyReNet (Story 5.6)
+
+Story 5.2's original `rembg`/u2net node satisfied the mechanical contract
+(`_has_alpha()`) but Story 5.6's side-by-side comparison against
+`john-mnz/ComfyUI-Inspyrenet-Rembg` found rembg regularly leaves translucent
+background "ghosts" (a phone-booth silhouette bleeding through a portrait's
+shoulder) and solid background islands fused onto the character silhouette
+(a knife/ladder shape merged into a hooded figure's outline). InSPyReNet
+produced clean edges on every tested case and never regressed relative to
+rembg, so it is now the recommended node. See
+[Story 5.6's Dev Agent Record](../../_bmad-output/implementation-artifacts/5-6-character-cutout-quality.md)
+for the full evidence set and decision rationale.
+
+- Repo: [`john-mnz/ComfyUI-Inspyrenet-Rembg`](https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg)
+- Node name in the workflow JSON: `InspyrenetRembg`
+- Workflow file: `data/workflows/comfyui_sdxl_anime_lora_layered_inspyrenet_api.json`
+- Install (git-clone, matches the existing custom-node layout — the
+  ComfyUI-Manager `cm-cli.py install <id>` path failed to resolve the node id
+  in this environment, so a direct clone was used instead):
+
+  ```bash
+  cd <ComfyUI>/custom_nodes
+  git clone https://github.com/john-mnz/ComfyUI-Inspyrenet-Rembg.git
+  <ComfyUI venv>/bin/pip install -r ComfyUI-Inspyrenet-Rembg/requirements.txt
+  ```
+
+  This pulls the `transparent-background` PyPI package (InSPyReNet). The
+  first `Remover()` call downloads its checkpoint to the package's cache
+  directory (`~/.transparent-background` by default) — warm this once before
+  a real pipeline run in offline environments. Restart ComfyUI after
+  installing so the new node is picked up.
+
+  The node outputs `(IMAGE, MASK)` where `IMAGE` is already RGBA
+  (`type='rgba'` internally), so no extra mask-combine node is needed — the
+  same `SaveImage` → RGBA PNG chain as rembg works unchanged.
+
+## Legacy node — `rembg`/u2net (Story 5.2, superseded)
+
+Kept as `data/workflows/comfyui_sdxl_anime_lora_layered_api.json` for
+reference/rollback; not the default recommendation as of Story 5.6.
 
 - Repo: [`Jcd1230/rembg-comfyui-node`](https://github.com/Jcd1230/rembg-comfyui-node)
 - Node name in the workflow JSON: `Image Remove Background (rembg)`
@@ -43,18 +82,23 @@ workflow. ComfyUI must be able to resolve them before prompt submission:
 
 ## Workflow file
 
-`data/workflows/comfyui_sdxl_anime_lora_layered_api.json` — a copy of the
-baseline `comfyui_sdxl_anime_lora_workflow_api2.json` with one shared
+`data/workflows/comfyui_sdxl_anime_lora_layered_inspyrenet_api.json` (recommended)
+and the legacy `comfyui_sdxl_anime_lora_layered_api.json` are both a copy of
+the baseline `comfyui_sdxl_anime_lora_workflow_api2.json` with one shared
 generation branch (checkpoint → LoRAs → `CLIPTextEncode` nodes `"6"`/`"7"`
 → `KSampler` → `VAEDecode`) feeding two independent output branches:
 
 - **Background** (opaque): `VAEDecode` → `SaveImage` (node `"9"`, prefix
   `ytflow_bg`).
-- **Character** (RGBA): `VAEDecode` → `Image Remove Background (rembg)`
-  (node `"12"`) → `SaveImage` (node `"13"`, prefix `ytflow_char`).
+- **Character** (RGBA): `VAEDecode` → segmentation node (node `"12"`, either
+  `InspyrenetRembg` or `Image Remove Background (rembg)`) → `SaveImage`
+  (node `"13"`, prefix `ytflow_char`).
 
 Prompt injection stays on nodes `"6"`/`"7"`, unchanged from the baseline
-workflow — no code changes were needed in `image_node`.
+workflow — no code changes were needed in `image_node`. The two workflow
+files are identical except for node `"12"`'s `class_type`/`inputs`, so
+switching between them never changes `Settings.comfyui_background_node` /
+`Settings.comfyui_character_node`.
 
 ## Output node ID mapping
 
@@ -71,14 +115,30 @@ nodes — hence the explicit `YTFLOW_COMFYUI_CHARACTER_NODE=13` below.
 
 ```
 YTFLOW_COMFYUI_LAYERED=true
-YTFLOW_COMFYUI_WORKFLOW_PATH=data/workflows/comfyui_sdxl_anime_lora_layered_api.json
+YTFLOW_COMFYUI_WORKFLOW_PATH=data/workflows/comfyui_sdxl_anime_lora_layered_inspyrenet_api.json
 YTFLOW_COMFYUI_BACKGROUND_NODE=9
 YTFLOW_COMFYUI_CHARACTER_NODE=13
 ```
 
-Keep the baseline workflow path when `YTFLOW_COMFYUI_LAYERED=false`; the layered
-workflow requires the rembg custom node even if the pipeline later uses the
+Keep the baseline (non-layered) workflow path when `YTFLOW_COMFYUI_LAYERED=false`;
+each layered workflow file hard-pins its own segmentation node (`InspyrenetRembg`
+or `Image Remove Background (rembg)`), so ComfyUI must have that specific custom
+node installed to validate the graph even if the pipeline later uses the
 flat-image branch.
+
+## Known limitation — no "is this the story's character" concept
+
+Neither rembg/u2net nor InSPyReNet know what a video's protagonist is; both
+are generic saliency/foreground segmenters. For shots whose composition has
+no person in frame (an establishing shot of laptops on a table, a close-up
+of a hand holding an ID card), both models still extract *something* as the
+"character" — the most visually distinct foreground blob — which is
+format-valid (passes `_has_alpha()`) but semantically wrong, and gets the
+same idle-motion overlay treatment as a real character. Story 5.6 confirmed
+this is model-agnostic (both nodes fail the same way on the same shots) and
+explicitly out of scope to fix here: it needs either a person-presence
+pre-check before segmentation or acceptance as a documented limitation. See
+Story 5.6's Dev Agent Record for the concrete evidence.
 
 ## Direct ComfyUI validation procedure
 
@@ -88,7 +148,7 @@ both output nodes appear with an alpha-channel character PNG:
 ```bash
 python3 - <<'EOF'
 import json, urllib.request
-wf = json.load(open("data/workflows/comfyui_sdxl_anime_lora_layered_api.json"))
+wf = json.load(open("data/workflows/comfyui_sdxl_anime_lora_layered_inspyrenet_api.json"))
 req = urllib.request.Request(
     "http://127.0.0.1:8188/prompt",
     data=json.dumps({"prompt": wf}).encode(),
@@ -107,11 +167,11 @@ channel or extracted frames to confirm there are transparent pixels and useful
 foreground separation; the byte check proves format compatibility, not visual
 quality.
 
-This first layered workflow intentionally derives the character cutout from the
-same generated frame as the background. If rembg extracts too much foreground
-for a specific prompt, keep the run as background-only or follow up with a
-separate character-prompt workflow; do not treat this file as a semantic
-segmentation guarantee.
+Both layered workflows intentionally derive the character cutout from the
+same generated frame as the background. If segmentation extracts too much
+foreground for a specific prompt, keep the run as background-only or follow
+up with a separate character-prompt workflow; do not treat either file as a
+semantic segmentation guarantee.
 
 ## Fallback behavior
 
