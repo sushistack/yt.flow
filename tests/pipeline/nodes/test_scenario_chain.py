@@ -54,6 +54,24 @@ async def test_research_step_returns_frozen_descriptor(monkeypatch):
     result = await chain.research_step("SCP-173", "text", "guide", None, call)
     assert result["frozen_descriptor"].startswith("Silhouette")
     assert result["core_identity"]
+    assert result["entity_sheet"]
+    assert result["story_logline"]
+
+
+async def test_research_step_tolerates_missing_entity_sheet_and_logline(monkeypatch):
+    # Variant A/None still reads the pre-existing production prompt, which doesn't
+    # ask for these two new fields at all yet — an absent key must not crash the
+    # pipeline (AC5: existing contracts stay intact).
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+
+    result = await chain.research_step("SCP-173", "text", "guide", None, call)
+    assert result.get("entity_sheet") is None
+    assert result.get("story_logline") is None
 
 
 async def test_research_step_rejects_empty_frozen_descriptor(monkeypatch):
@@ -62,10 +80,78 @@ async def test_research_step_rejects_empty_frozen_descriptor(monkeypatch):
     )
 
     async def call(rendered, s):
-        return json.dumps({"core_identity": "x", "frozen_descriptor": "", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "", "entity_sheet": "x", "story_logline": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
 
     with pytest.raises(ValueError, match="frozen_descriptor"):
         await chain.research_step("SCP-173", "text", "guide", None, call)
+
+
+async def test_research_step_rejects_empty_entity_sheet(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "entity_sheet": "", "story_logline": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+
+    with pytest.raises(ValueError, match="entity_sheet"):
+        await chain.research_step("SCP-173", "text", "guide", None, call)
+
+
+async def test_research_step_rejects_empty_story_logline(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "entity_sheet": "x", "story_logline": "", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+
+    with pytest.raises(ValueError, match="story_logline"):
+        await chain.research_step("SCP-173", "text", "guide", None, call)
+
+
+async def test_research_step_candidate_label_requires_entity_sheet(monkeypatch):
+    # Variant B intentionally reads the new candidate prompt, which always asks for
+    # entity_sheet/story_logline — unlike variant A/None, an absent key here is a
+    # real regression, not backward-compat noise.
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+
+    with pytest.raises(ValueError, match="entity_sheet"):
+        await chain.research_step("SCP-173", "text", "guide", None, call, label="candidate")
+
+
+async def test_research_step_rejects_non_string_entity_sheet(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"core_identity": "x", "frozen_descriptor": "x", "entity_sheet": ["not", "a", "string"], "story_logline": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}
+        return json.dumps(payload), {}, "stop"
+
+    with pytest.raises(ValueError, match="entity_sheet"):
+        await chain.research_step("SCP-173", "text", "guide", None, call)
+
+
+def test_scene_role_text_ignores_non_dict_input():
+    assert chain._scene_role_text("not a dict") == ""
+    assert chain._scene_role_text(None) == ""
+
+
+def test_scene_role_text_coerces_non_string_fields():
+    assert chain._scene_role_text({"act": ["hook"], "emotional_beat": "tension", "synopsis": "x"}) == "['hook'] / tension: x"
+
+
+def test_visual_breakdown_prompt_file_has_required_placeholders():
+    prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "visual_breakdown.md"
+    content = prompt_path.read_text(encoding="utf-8")
+    for placeholder in ("{{story_logline}}", "{{scene_role}}", "{{entity_sheet}}", "{{scp_visual_reference}}", "{{numbered_sentences}}", "{{sentence_count}}"):
+        assert placeholder in content, f"missing {placeholder} in visual_breakdown.md"
 
 
 async def test_structure_step_returns_scene_list(monkeypatch):
@@ -122,7 +208,7 @@ async def test_visual_breakdown_step_maps_one_shot_per_sentence(monkeypatch):
     call = _deepseek_from_cassette("deepseek_visual_breakdown.json")
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     sentences = ["첫 문장.", "(정적)", "셋째 문장."]
-    result = await chain.visual_breakdown_step(scene, sentences, "desc", None, call)
+    result = await chain.visual_breakdown_step(scene, sentences, "desc", "entity sheet", "logline", {}, None, call)
     assert len(result) == 3
     assert result[0]["image_prompt"]
     assert result[1]["image_prompt"] == ""  # transition sentence, no image
@@ -140,7 +226,37 @@ async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
 
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     with pytest.raises(ValueError, match="1:1"):
-        await chain.visual_breakdown_step(scene, ["문장1.", "문장2."], "desc", None, call)
+        await chain.visual_breakdown_step(scene, ["문장1.", "문장2."], "desc", "entity sheet", "logline", {}, None, call)
+
+
+async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatch):
+    class CapturingPrompt:
+        def __init__(self):
+            self.kwargs = None
+
+        def compile(self, **kwargs):
+            self.kwargs = kwargs
+            return "rendered"
+
+    captured = CapturingPrompt()
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: captured
+    )
+
+    async def call(rendered, s):
+        payload = {"scene_num": 1, "visual_descriptions": [{"image_prompt": "x", "negative_prompt": "x", "sentence_start": 1, "sentence_end": 1, "entity_visible": False, "camera_type": "wide"}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    scene_role = {"act": "hook", "emotional_beat": "tension", "synopsis": "the discovery"}
+    await chain.visual_breakdown_step(scene, ["문장1."], "frozen desc", "entity sheet text", "story logline text", scene_role, None, call)
+
+    assert captured.kwargs["scp_visual_reference"] == "frozen desc"
+    assert captured.kwargs["entity_sheet"] == "entity sheet text"
+    assert captured.kwargs["story_logline"] == "story logline text"
+    assert "hook" in captured.kwargs["scene_role"]
+    assert "tension" in captured.kwargs["scene_role"]
+    assert "the discovery" in captured.kwargs["scene_role"]
 
 
 async def test_review_step_returns_report(monkeypatch):

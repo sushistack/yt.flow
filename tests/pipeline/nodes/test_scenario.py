@@ -23,7 +23,7 @@ class FakePrompt:
         return "rendered"
 
 
-RESEARCH = {"core_identity": "x", "frozen_descriptor": "desc", "dramatic_beats": "x", "environment": "x", "hooks": "x"}
+RESEARCH = {"core_identity": "x", "frozen_descriptor": "desc", "entity_sheet": "entity sheet", "story_logline": "logline", "dramatic_beats": "x", "environment": "x", "hooks": "x"}
 STRUCTURE = [{"scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension", "estimated_duration_sec": 45}]
 WRITING = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "문장.", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
 VISUAL = [{"image_prompt": "shot", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
@@ -58,6 +58,10 @@ def _isolate(monkeypatch):
     # directly) — so the seam here must be the module-local name, not the
     # prompt_service module attribute.
     monkeypatch.setattr(sc, "get_prompt", lambda *a, **k: FakePrompt())
+
+
+async def _async_return(value):
+    return value
 
 
 def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None):
@@ -207,6 +211,57 @@ async def test_duplicate_llm_scene_num_does_not_corrupt_shots(monkeypatch):
     # Each output scene must carry ITS OWN shot, not both collapsing onto one.
     assert scenes[0]["shots"][0]["image_prompt"] == "shot-for-a"
     assert scenes[1]["shots"][0]["image_prompt"] == "shot-for-b"
+
+
+async def test_scene_count_exceeding_structure_logs_warning_instead_of_crashing(monkeypatch, caplog):
+    # writing_step and structure_step are two independent LLM calls; if writing
+    # ever emits more scenes than structure, the extra scene must get an empty
+    # (not crashing) scene_role and a visible warning instead of silent data loss.
+    writing_two_scenes = {
+        "scp_id": "SCP-173",
+        "title": "t",
+        "scenes": [
+            {"scene_num": 1, "narration": "첫 씬.", "location": "a", "characters_present": [], "color_palette": "a", "atmosphere": "a"},
+            {"scene_num": 2, "narration": "둘째 씬.", "location": "b", "characters_present": [], "color_palette": "b", "atmosphere": "b"},
+        ],
+    }
+    captured_roles = []
+
+    async def fake_visual(scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+        captured_roles.append(scene_role)
+        return VISUAL
+
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "structure_step", lambda *a, **k: _async_return(STRUCTURE))  # only 1 entry
+    monkeypatch.setattr(sc, "writing_step", lambda *a, **k: _async_return(writing_two_scenes))
+    monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
+
+    with caplog.at_level("WARNING"):
+        out = await sc.scenario_node(_state())
+
+    assert out.get("error") is None
+    assert STRUCTURE[0] in captured_roles
+    assert {} in captured_roles  # scene 2 has no matching structure entry
+    assert "more scenes" in caplog.text
+
+
+async def test_visual_breakdown_receives_entity_sheet_logline_and_scene_role(monkeypatch):
+    _stub_chain(monkeypatch)
+    captured = {}
+
+    async def fake_visual(scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+        captured["entity_sheet"] = entity_sheet
+        captured["story_logline"] = story_logline
+        captured["scene_role"] = scene_role
+        return VISUAL
+
+    monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
+    out = await sc.scenario_node(_state())
+
+    assert out.get("error") is None
+    assert captured["entity_sheet"] == RESEARCH["entity_sheet"]
+    assert captured["story_logline"] == RESEARCH["story_logline"]
+    assert captured["scene_role"] == STRUCTURE[0]  # positional match with structure_step's scenes
 
 
 async def test_missing_api_key_sets_error(monkeypatch):
