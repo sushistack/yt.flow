@@ -101,7 +101,7 @@ development_status:
   5-2-layered-assets-activation: done  # 워크플로우+rembg+.env 배선, 실제 ComfyUI/ffmpeg로 라이브 검증 완료
   5-3-motion-intensity: done  # 5-2와 합쳐야 체감 배수
   5-4-tts-korean-naturalization: done
-  5-5-visual-story-alignment: in-progress  # 코드 리뷰 완료, patch 5건 수정; scenario/tts_normalize production 승격 완료(2026-07-04)로 라이브 run 차단은 해소, AC13/14/15 라이브 A/B 실행 자체는 아직 미실행
+  5-5-visual-story-alignment: in-progress  # 라이브 A/B+Epic4 평가 완료(2026-07-04, SCP-096): 자동 평가에서 Variant A(기존) 승, B(Phase1 변경) 패 — AC13 미충족. Jay 검토+Phase1 반복/Phase2 진행 여부 결정 대기
   5-6-character-cutout-quality: done  # rembg -> InSPyReNet 교체; 코드리뷰 반영(config char-node 기본값 10→13, README 노드 문구), 라이브 검증 완료
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
