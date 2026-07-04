@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # story 6-2-golden-set-offline-eval → review
+last_updated: 2026-07-04  # story 6-2-golden-set-offline-eval → done (code review)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -110,7 +110,7 @@ development_status:
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
   6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
-  6-2-golden-set-offline-eval: review  # depends on 6-1
+  6-2-golden-set-offline-eval: done  # depends on 6-1
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

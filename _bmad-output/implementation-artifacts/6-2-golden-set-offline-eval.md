@@ -4,7 +4,7 @@ baseline_commit: 8946828
 
 # Story 6.2: Golden Set + Offline Prompt Regression Eval Runner
 
-Status: review
+Status: done
 
 ## Story
 
@@ -185,6 +185,22 @@ claude-sonnet-5
 - `docs/PROMPT_POLICY.md` (modified — golden-set regression section + change-protocol step 4)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — story status in-progress)
 
+### Review Findings
+
+Code review 2026-07-04 (Blind Hunter + Edge Case Hunter + Acceptance Auditor). Acceptance Auditor: AC1-6, AC8, AC9 PASS; AC7 PARTIAL (scoring-step failures were not isolated per item — fixed below).
+
+- [x] [Review][Patch] `_score_evaluator` had no guard around `_score_run` — a judge timeout/parse error (a documented failure mode of the reused `eval_service` code) raised out of the evaluator; verified against the installed `langfuse==4.12.0` SDK that this crashes the whole label's `run_experiment` call instead of failing just that item, contradicting AC7 — wrapped in try/except, records a `failed` Evaluation instead [scripts/eval_prompts.py:101-104].
+- [x] [Review][Patch] Scenario success with empty `scenes` was not treated as a failed item, per Dev Notes' explicit "if `out["scenes"]` is missing/empty, record a failed item" guidance — added the check [scripts/eval_prompts.py:98-100].
+- [x] [Review][Patch] `_to_item_result` raised an unguarded `KeyError` when an item had no/partial evaluations (the real SDK swallows an evaluator exception into `evaluations=[]` for that item rather than propagating) — now classified as a failed item [scripts/eval_prompts.py:129-131].
+- [x] [Review][Patch] `compare()` silently returned verdict `PASS` when the candidate or baseline result list was empty (e.g. an unseeded dataset or a `--max-concurrency` misconfiguration) — a false-positive promotion gate; now returns `FAIL` [scripts/eval_prompts.py:156-157].
+- [x] [Review][Patch] `compare()` never flagged baseline items with no candidate counterpart, so incomplete coverage could still verdict `PASS` — added a pass over the id difference [scripts/eval_prompts.py:183-185].
+- [x] [Review][Patch] `--baseline` passed without `--label` silently no-op'd and exited `0` ("success") — now a clear `argparse` error [scripts/eval_prompts.py:225-226].
+- [x] [Review][Patch] `--label` equal to `--baseline` produced a meaningless self-comparison with no warning — now rejected [scripts/eval_prompts.py:227-228].
+- [x] [Review][Patch] `Evaluation(name="failed", value=1, data_type="BOOLEAN", ...)` used an `int` where the SDK's documented contract expects a `bool` — changed to `value=True` [scripts/eval_prompts.py:92].
+- [x] [Review][Patch] Rule metrics (AC4) were computed and sent to Langfuse but never surfaced in the local CLI output a developer reads before promoting — added to `print_report` [scripts/eval_prompts.py:207-210].
+- Dismissed (14): unguarded `data/scps.json`/`--dataset` malformed-input paths and no `--max-concurrency` bound (repo-controlled fixture / dev-run script trust boundary, and the latter is now caught by the empty-result-set fix above); no CI wiring for the gate (explicitly out of scope — AC8 keeps this a pure script/helper); hand-built `PipelineState` dict has no shared factory (matches the Dev Notes' own suggested shape); non-unique `run_id` across repeated invocations (verified it's only used in a local error-message string in `scenario_node`, not Langfuse trace identity — no collision risk); golden-ID list duplicated between docs and code (trivial 3-item list, not worth an indirection); self-reported test/lint counts in the Dev Agent Record (verified directly instead — see Change Log); no epsilon tolerance on axis-score deltas (contradicts the explicit AC6 text "must be greater than or equal to"; `AxisScores` values are already an average of `REPS_PER_AXIS` judge runs); `--dataset` flag called "decorative" (false positive — by AC1 design the golden set is a fixed 3-SCP set, `--dataset` legitimately names which dataset holds it); no baseline-run caching across repeated candidate iterations (scope/enhancement request, not a defect); fake SDK test double not exercising real `max_concurrency` semantics (same faked-SDK limitation as every other test in this suite); one test coupled to call order (order is deterministic by implementation, not fragile in practice); Tasks checklist wording overstates per-score Langfuse metadata (AC5 substantively satisfied via named dataset runs regardless).
+
 ## Change Log
 
 - 2026-07-04: Implemented `scripts/eval_prompts.py` golden-set offline eval runner (AC1-9) using Langfuse `Dataset.run_experiment`; updated `docs/PROMPT_POLICY.md`; full regression green (553 passed, 1 skipped).
+- 2026-07-04: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) found scoring-step failures could crash a whole label's run instead of failing one item (AC7 gap) plus 8 related hardening gaps; applied all 9 patches, added 8 regression tests (27 total in `test_eval_prompts.py`), full suite green (561 passed, 1 skipped), `ruff check` clean.
