@@ -102,6 +102,20 @@ async def fake_download_reference_image(self, url: str, refs_dir: Path, num: int
     return "png"
 
 
+# ── character_service.CharacterService._get_image_provider (Story 5.8) ─────
+class _FakeCharacterImageProvider:
+    """Stands in for ComfyUI/Qwen multi-angle character generation — returns TINY_PNG."""
+
+    supports_i2i = True
+
+    async def generate(self, prompt: str, ref_image_path: str, *, width: int = 1664, height: int = 928) -> bytes:
+        return TINY_PNG
+
+
+def fake_get_image_provider(self) -> _FakeCharacterImageProvider:
+    return _FakeCharacterImageProvider()
+
+
 # ── scenario_chain multi-stage prompt/DeepSeek fakes (Story 1.5 chain redesign) ─
 _STAGE_CASSETTES = {
     "scenario/research": "deepseek_research.json",

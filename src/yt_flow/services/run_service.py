@@ -28,6 +28,7 @@ from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
 from yt_flow.services import eval_service
+from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -361,6 +362,50 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
         await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": stage, "error": str(exc)})
 
 
+async def _ensure_character_reference(scp_id: str) -> None:
+    """Auto-provision search-based character references before the graph starts (Story 5.8).
+
+    Reuses ``CharacterService.search_references``/``generate_candidates_from_reference``
+    exactly as the Character Management UI (Story 3.7) does — the only difference is this
+    runs unattended, once per never-before-seen ``scp_id``. Skips entirely if a
+    ``CharacterModel`` already exists (AC2/AC4 — no duplicate work). Best-effort and
+    non-fatal (AD-10): any failure here is logged and swallowed, leaving
+    ``image_node``'s same-frame segmentation cutout as the fallback (AC3) — a
+    ``CharacterModel`` with no angle paths set makes ``select_character_angles`` return
+    ``None`` (its own "no usable character" branch), so downstream code degrades
+    exactly like the pre-Story-5.8 no-character case.
+    """
+    settings = _settings()
+    try:
+        with Session(db._engine) as session:
+            svc = CharacterService(session, settings=settings)
+            if svc.check_existing_character(scp_id) is not None:
+                return
+            character = svc.create_character(scp_id, scp_id)  # memorization, same as select_candidate
+            refs = await svc.search_references(scp_id, workspace_path=settings.workspace_path)
+            if not refs:
+                logger.info("auto character reference: no search results for %s", scp_id)
+                return
+            angle_paths: dict[str, str] = {}
+            for angle in CANONICAL_ANGLES:
+                saved = await svc.generate_candidates_from_reference(
+                    scp_id, ref_image_path=refs[0].local_path, angles=[angle],
+                )
+                if saved:
+                    angle_paths[angle] = saved[0]
+            if not angle_paths:
+                logger.warning("auto character reference: all angle generations failed for %s", scp_id)
+                return
+            updates: dict[str, str] = {f"angle_{angle}_path": path for angle, path in angle_paths.items()}
+            if "front" in angle_paths:
+                updates["selected_image_path"] = angle_paths["front"]
+            svc.update_character(character.id, **updates)
+            logger.info("auto character reference: provisioned %d/%d angles for %s",
+                        len(angle_paths), len(CANONICAL_ANGLES), scp_id)
+    except Exception:  # noqa: BLE001 — auxiliary enrichment must never fail the run (AD-10)
+        logger.warning("auto character reference provisioning failed for %s", scp_id, exc_info=True)
+
+
 async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
                     prompt_variant: Any = None) -> None:
     """Kick off the pipeline: stream until the first gate interrupt (or terminal state).
@@ -368,6 +413,7 @@ async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQ
     ``prompt_variant`` seeds the run's PipelineState — ``"B"`` for an A/B Variant B run
     (Story 4.1), ``None`` for a standard run.
     """
+    await _ensure_character_reference(scp_id)  # Story 5.8 — pre-graph, non-fatal
     config = {"configurable": {"thread_id": run_id}}
     _configs[run_id] = config
     await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text, prompt_variant), config,
