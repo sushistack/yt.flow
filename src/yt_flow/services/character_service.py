@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 _DOWNLOAD_TIMEOUT = 30.0
+# DashScope Qwen-VL (Story 5.13) — hardcoded like QwenCharacterProvider's endpoint;
+# only the model/API key are config-pinned (ponytail: no config for a value that never changes).
+_DASHSCOPE_VISION_ENDPOINT = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
 _CONTENT_TYPE_RE = re.compile(r"^image/(png|jpeg|jpg|webp)")
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -428,17 +431,17 @@ class CharacterService:
     ) -> str | None:
         """Analyze reference images with Vision LLM and return an enriched visual descriptor.
 
-        Loads images as base64 data URIs and sends them to the DeepSeek multimodal
-        API with a vision enrichment prompt. Returns the descriptor string on success,
-        or ``None`` on failure (non-fatal — the pipeline continues).
+        Loads images as base64 data URIs and sends them to the DashScope Qwen-VL
+        multimodal API with a vision enrichment prompt. Returns the descriptor string
+        on success, or ``None`` on failure (non-fatal — the pipeline continues).
         """
         if not ref_image_paths:
             logger.warning("enrich_descriptor_from_references: no reference images provided for %s", scp_id)
             return None
 
         s = self._settings
-        if not s.deepseek_api_key:
-            logger.warning("enrich_descriptor_from_references: DeepSeek API key not configured")
+        if not s.character_vision_api_key:
+            logger.warning("enrich_descriptor_from_references: vision API key not configured")
             return None
 
         # Load images as base64 data URIs
@@ -475,10 +478,10 @@ class CharacterService:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
                 resp = await client.post(
-                    f"{s.deepseek_base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {s.deepseek_api_key}"},
+                    _DASHSCOPE_VISION_ENDPOINT,
+                    headers={"Authorization": f"Bearer {s.character_vision_api_key}"},
                     json={
-                        "model": s.deepseek_model,
+                        "model": s.character_vision_model,
                         "messages": [{"role": "user", "content": content_parts}],
                         "max_tokens": s.deepseek_max_tokens,
                     },
@@ -492,7 +495,7 @@ class CharacterService:
             logger.info("Vision LLM enriched descriptor for %s (%d chars)", scp_id, len(descriptor))
             return descriptor
 
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, AttributeError) as exc:
             logger.warning("enrich_descriptor_from_references: Vision LLM call failed for %s: %s", scp_id, exc)
             # Fallback: use existing visual_descriptor if present
             character = self.check_existing_character(scp_id)

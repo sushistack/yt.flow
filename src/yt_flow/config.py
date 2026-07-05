@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     character_image_width: int = 1664
     character_image_height: int = 928
 
+    # Vision LLM descriptor enrichment (Story 5.13). DashScope Qwen-VL — the DeepSeek
+    # account has no vision-capable model at all (text-only), so this is a distinct
+    # provider from deepseek_*, not just a different model on the same account.
+    # ponytail: api_key defaults to "" so Settings() stays constructible in tests/tooling;
+    # enrich_descriptor_from_references guards for a missing key at call time.
+    character_vision_model: str = "qwen-vl-plus"
+    character_vision_api_key: str = ""
+
     # Chapter-card transitions (Story 5.1). Cards insert between scenes when true;
     # video_node clamps duration to the accepted 1.5-2.0s range.
     chapter_cards: bool = True

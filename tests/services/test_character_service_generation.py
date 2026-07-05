@@ -73,7 +73,7 @@ class TestVisionLLMEnrichment:
 
     def test_no_api_key_returns_none(self, service, temp_ref_image):
         """AC2: No API key → returns None."""
-        service._settings.deepseek_api_key = ""
+        service._settings.character_vision_api_key = ""
         result = asyncio_run(
             service.enrich_descriptor_from_references("SCP-096", [temp_ref_image])
         )
@@ -89,7 +89,7 @@ class TestVisionLLMEnrichment:
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
     def test_successful_enrichment(self, mock_post, service, temp_ref_image):
         """AC1: Successful Vision LLM call returns enriched descriptor."""
-        service._settings.deepseek_api_key = "test-key"
+        service._settings.character_vision_api_key = "test-key"
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -103,8 +103,12 @@ class TestVisionLLMEnrichment:
         )
         assert result == "A tall humanoid figure with pale skin..."
 
-        # Verify the request contained image data
+        # Verify the request targets DashScope Qwen-VL, not the old DeepSeek endpoint
         call_args = mock_post.call_args
+        assert call_args[0][0] == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+        assert call_args[1]["json"]["model"] == "qwen-vl-plus"
+
+        # Verify the request contained image data
         messages = call_args[1]["json"]["messages"]
         content = messages[0]["content"]
         assert content[0]["type"] == "text"
@@ -114,7 +118,7 @@ class TestVisionLLMEnrichment:
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
     def test_vision_llm_failure_returns_none(self, mock_post, service, temp_ref_image):
         """AC2: Vision LLM HTTP error → returns None."""
-        service._settings.deepseek_api_key = "test-key"
+        service._settings.character_vision_api_key = "test-key"
         mock_post.side_effect = httpx.HTTPStatusError(
             "Server error", request=MagicMock(), response=MagicMock(status_code=500)
         )
@@ -127,7 +131,7 @@ class TestVisionLLMEnrichment:
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
     def test_vision_llm_fallback_to_existing_descriptor(self, mock_post, service, temp_ref_image):
         """AC2: On failure, falls back to existing Character.visual_descriptor."""
-        service._settings.deepseek_api_key = "test-key"
+        service._settings.character_vision_api_key = "test-key"
         mock_post.side_effect = httpx.TimeoutException("timeout")
 
         # Create character with existing descriptor
@@ -142,7 +146,7 @@ class TestVisionLLMEnrichment:
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
     def test_empty_response_returns_none(self, mock_post, service, temp_ref_image):
         """Empty LLM response → returns None."""
-        service._settings.deepseek_api_key = "test-key"
+        service._settings.character_vision_api_key = "test-key"
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
