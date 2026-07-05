@@ -5,6 +5,8 @@ Architecture: services/ imports domain/ and db/. Must NOT import api/ or pipelin
 
 import json
 import logging
+import os
+import random
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import override
@@ -92,6 +94,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         workflow = self._load_workflow()
         workflow = self._inject_prompt(workflow, prompt)
         workflow = self._inject_dimensions(workflow, width, height)
+        workflow = self._inject_seed(workflow)
 
         # Try i2i with reference image
         try:
@@ -110,11 +113,17 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             return result
 
     def _load_workflow(self) -> dict:
-        """Load ComfyUI workflow JSON template."""
-        path = Path(self._workflow_path)
+        """Load ComfyUI workflow JSON template.
+
+        Relative paths resolve against ``YTFLOW_PROJECT_ROOT`` (falls back to CWD),
+        matching ``character_service.py``'s existing convention — the app may run
+        from a CWD other than the project root.
+        """
+        project_root = Path(os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd()))
+        path = project_root / self._workflow_path
         if not path.exists():
             # ponytail: fallback to default workflow path
-            path = Path("data/workflows/comfyui_character_multi_angle_api.json")
+            path = project_root / "data/workflows/comfyui_character_multi_angle_api.json"
         if path.exists():
             return json.loads(path.read_text())
         # Built-in minimal workflow
@@ -149,6 +158,16 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         return workflow
 
     @staticmethod
+    def _inject_seed(workflow: dict) -> dict:
+        """Randomize KSampler.seed — the authored workflow JSON pins seed=0, which
+        would make repeated angle generations more likely to converge on near-identical
+        output for a given prompt/reference pair."""
+        for node in workflow.values():
+            if isinstance(node, dict) and node.get("class_type") == "KSampler":
+                node["inputs"]["seed"] = random.randint(0, 2**32 - 1)
+        return workflow
+
+    @staticmethod
     def _inject_reference_image(workflow: dict, image_name: str) -> dict:
         """Inject the uploaded reference image's filename into the Load Image node.
 
@@ -177,12 +196,21 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             if isinstance(node, dict) and node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced"):
                 upstream_model = node.get("inputs", {}).get("model")
                 if upstream_model is None:
+                    logger.warning(
+                        "t2i fallback: IPAdapter node %s has no upstream model input; cannot bypass", node_id
+                    )
                     break
+                reconnected = False
                 for sampler in workflow.values():
                     if isinstance(sampler, dict) and sampler.get("class_type") == "KSampler":
                         if sampler.get("inputs", {}).get("model") == [node_id, 0]:
                             sampler["inputs"]["model"] = upstream_model
                             logger.info("t2i fallback: KSampler model bypassed IPAdapter node %s", node_id)
+                            reconnected = True
+                if not reconnected:
+                    logger.warning(
+                        "t2i fallback: no KSampler references IPAdapter node %s; workflow left i2i-wired", node_id
+                    )
                 return workflow
 
         # Legacy shape: find the EmptyLatentImage node ID

@@ -388,8 +388,9 @@ class TestWikiFirstReferenceSearch:
 
         monkeypatch.setattr(CharacterService, "_download_reference_image", fake_download)
 
-        with pytest.raises(httpx.ConnectError):
-            await svc.search_references("SCP-096", tmp_path, max_results=10)
+        result = await svc.search_references("SCP-096", tmp_path, max_results=10)
+        assert len(result) == 1
+        assert result[0].url == "https://ddg.example/fallback.png"
 
 
 # ── Layer-boundary test ──────────────────────────────────────────────────────

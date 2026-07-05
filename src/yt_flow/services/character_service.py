@@ -308,13 +308,17 @@ class CharacterService:
         refs_dir = Path(workspace_path) / safe_scp / "references"
         refs_dir.mkdir(parents=True, exist_ok=True)
 
-        wiki_image = await self._wiki_fetch.fetch(scp_id)
+        try:
+            wiki_image = await self._wiki_fetch.fetch(scp_id)
+        except Exception as exc:
+            # ScpWikiImageFetch.fetch() documents "never raises", but this call site
+            # must not depend on that promise — any violation must fall back to
+            # search, not escalate to CharacterService's caller as total failure.
+            logger.warning("SCP Wiki fetch raised for %s: %s; falling back to search", scp_id, exc)
+            wiki_image = None
         if wiki_image is not None:
             try:
                 ext = await self._download_reference_image(wiki_image.image_url, refs_dir, 1)
-            except Exception as exc:
-                logger.info("SCP Wiki image download failed for %s: %s; falling back to search", scp_id, exc)
-            else:
                 record = ReferenceImageModel(
                     character_id=character.id,
                     url=wiki_image.page_url,  # AC3: page URL preserved for CC BY-SA attribution
@@ -322,6 +326,9 @@ class CharacterService:
                 )
                 self._session.add(record)
                 self._session.commit()
+            except Exception as exc:
+                logger.warning("SCP Wiki image download/persist failed for %s: %s; falling back to search", scp_id, exc)
+            else:
                 logger.info("Downloaded SCP Wiki reference image for %s", scp_id)
                 return [record]
 

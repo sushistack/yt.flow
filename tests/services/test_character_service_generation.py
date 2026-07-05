@@ -304,6 +304,16 @@ class TestProviderSelection:
         provider = create_provider(s)
         assert provider.supports_i2i is False
 
+    def test_load_workflow_resolves_against_project_root_not_cwd(self, monkeypatch, tmp_path):
+        """Story 5.10 Dev Notes: the configured path must not silently miss when the
+        app's CWD differs from the project root."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+        s = Settings(character_image_provider="comfyui")
+        provider = ComfyUICharacterProvider(s)
+        workflow = provider._load_workflow()
+        assert any(n.get("class_type") == "IPAdapterAdvanced" for n in workflow.values())
+
 
 # ── Reference image injection / t2i fallback (Story 5.10, AC7-9) ────────────
 
@@ -348,6 +358,31 @@ class TestReferenceImageInjectionAndFallback:
         }
         updated = ComfyUICharacterProvider._remove_i2i_input(legacy_workflow)
         assert updated["3"]["inputs"]["latent_image"] == ["5", 0]
+
+    def test_remove_i2i_input_warns_when_no_ksampler_matches(self, workflow, caplog):
+        """Silent no-ops are exactly the failure class this story exists to fix —
+        an unmatched IPAdapter node must at least log, not fail silently."""
+        ipadapter_node_id = next(
+            nid for nid, n in workflow.items() if n.get("class_type") == "IPAdapterAdvanced"
+        )
+        sampler_id = next(nid for nid, n in workflow.items() if n.get("class_type") == "KSampler")
+        workflow[sampler_id]["inputs"]["model"] = ["some-other-node", 0]
+
+        with caplog.at_level("WARNING"):
+            ComfyUICharacterProvider._remove_i2i_input(workflow)
+
+        assert f"IPAdapter node {ipadapter_node_id}" in caplog.text
+
+    def test_inject_seed_randomizes_ksampler_seed(self, workflow):
+        original_seed = next(
+            n["inputs"]["seed"] for n in workflow.values() if n.get("class_type") == "KSampler"
+        )
+        updated = ComfyUICharacterProvider._inject_seed(workflow)
+        new_seed = next(
+            n["inputs"]["seed"] for n in updated.values() if n.get("class_type") == "KSampler"
+        )
+        assert new_seed != original_seed
+        assert isinstance(new_seed, int)
 
 
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────

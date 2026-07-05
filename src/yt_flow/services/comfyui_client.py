@@ -10,6 +10,7 @@ so no new dependency is added. [Ponytail]
 """
 
 import asyncio
+import mimetypes
 
 import httpx
 
@@ -82,9 +83,10 @@ def _error_detail(resp: httpx.Response) -> str:
 
 async def _upload(client: httpx.AsyncClient, image_bytes: bytes, filename: str) -> str:
     try:
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         resp = await client.post(
             "/upload/image",
-            files={"image": (filename, image_bytes, "image/png")},
+            files={"image": (filename, image_bytes, content_type)},
             data={"overwrite": "true"},
         )
         resp.raise_for_status()

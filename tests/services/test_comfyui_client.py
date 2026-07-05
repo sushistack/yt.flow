@@ -133,3 +133,17 @@ async def test_upload_raises_when_name_missing():
     async with _client(handler) as c:
         with pytest.raises(cc.ComfyUIError, match="missing name"):
             await cc._upload(c, b"PNGBYTES", "ref.png")
+
+
+async def test_upload_declares_content_type_from_filename():
+    captured = {}
+
+    async def handler(req):
+        content_type = req.headers["content-type"]
+        assert content_type.startswith("multipart/form-data")
+        captured["body"] = req.content
+        return httpx.Response(200, json={"name": "ref.jpg", "subfolder": ""})
+
+    async with _client(handler) as c:
+        await cc._upload(c, b"JPEGBYTES", "ref.jpg")
+    assert b"Content-Type: image/jpeg" in captured["body"]
