@@ -248,18 +248,27 @@ async def image_node(state: PipelineState) -> dict:
                             request_count += 1
                     except comfyui_client.ComfyUIError as exc:
                         logger.warning(
-                            "shot %s segmentation failed, falling back to flat image: %s",
-                            shot["shot_id"], exc,
+                            "scene %s shot %s segmentation failed, falling back to flat image: %s",
+                            scene["scene_num"], shot["shot_id"], exc,
                         )
-                        if flat_template is None:
-                            flat_template = _load_workflow(s.comfyui_flat_fallback_workflow_path)
-                        bg_path, img_path = await _generate_flat_fallback_shot(
-                            s, out_dir, scene["scene_num"], shot, flat_template
-                        )
+                        if not s.comfyui_mock:
+                            request_count += 1
+                        try:
+                            if flat_template is None:
+                                flat_template = _load_workflow(s.comfyui_flat_fallback_workflow_path)
+                            bg_path, img_path = await _generate_flat_fallback_shot(
+                                s, out_dir, scene["scene_num"], shot, flat_template
+                            )
+                        except Exception as fallback_exc:
+                            raise comfyui_client.ComfyUIError(
+                                f"shot {shot['shot_id']}: segmentation failed ({exc}); "
+                                f"flat fallback also failed: {fallback_exc}"
+                            ) from exc
                         char_path = None
                         layered_fallback = True
                         fallback_count += 1
-                        request_count += 1
+                        if not s.comfyui_mock:
+                            request_count += 1
                     image_count += 1
                     background_count += 1
                     if char_path is not None:

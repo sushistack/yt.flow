@@ -518,10 +518,38 @@ async def test_segmentation_failure_fallback_also_fails_propagates(monkeypatch, 
     out = await img.image_node(_state())
     assert "scenes" not in out
     assert out["error"] and "stage=image" in out["error"]
+    # Review fix: the original segmentation error must not be discarded when the
+    # fallback also fails — both messages should be visible for diagnosis.
+    assert "segmentation node crashed" in out["error"]
+    assert "ComfyUI unreachable" in out["error"]
+
+
+async def test_segmentation_failure_bad_fallback_workflow_path_fails_gracefully(monkeypatch, tmp_path):
+    """Review fix: a misconfigured comfyui_flat_fallback_workflow_path raises inside
+    _load_workflow (not a ComfyUIError) — it must still be caught and reported, not
+    crash uncaught past the per-shot handler."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), layered=True,
+                             bg_node="9", char_node="10",
+                             flat_fallback_workflow_path="does/not/exist.json"),
+    )
+
+    async def fake_outputs(url, workflow, node_ids):
+        raise ComfyUIError("segmentation node crashed")
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())
+    assert "scenes" not in out
+    assert out["error"] and "stage=image" in out["error"]
+    assert "segmentation node crashed" in out["error"]
 
 
 async def test_segmentation_failure_fallback_records_count(monkeypatch, tmp_path):
-    """The fallback_count trace metadata reflects the number of degraded shots."""
+    """The fallback_count/request_count trace metadata reflects the number of degraded
+    shots and the real ComfyUI submissions made (failed layered attempt + fallback)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         img, "_settings",
@@ -542,6 +570,9 @@ async def test_segmentation_failure_fallback_records_count(monkeypatch, tmp_path
 
     await img.image_node(_state())
     assert captured["fallback_count"] == 3  # every shot in this fixture fails and falls back
+    # Review fix: both the failed layered attempt and the fallback attempt count as
+    # real ComfyUI requests — 2 per shot, not 1.
+    assert captured["request_count"] == 6
 
 
 # ── Layered observability (AC5) ──────────────────────────────────────────────
