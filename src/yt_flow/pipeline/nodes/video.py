@@ -477,8 +477,9 @@ async def _compose_scene(
     mood = scene.get("mood")
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
     # so every chain below degrades to today's byte-for-byte ungraded output.
-    post_frag = f",{build_post_filter(mood)}" if post_fx_enabled else ""
-    post_label = f"{build_post_filter(mood)}[graded];[graded]" if post_fx_enabled else ""
+    post_filter = build_post_filter(mood) if post_fx_enabled else ""
+    post_frag = f",{post_filter}" if post_fx_enabled else ""
+    post_label = f"{post_filter}[graded];[graded]" if post_fx_enabled else ""
 
     if character_path:
         # Layered: zoompan the background, overlay the moving character, then burn

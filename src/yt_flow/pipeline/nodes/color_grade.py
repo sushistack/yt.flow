@@ -7,7 +7,7 @@ fallback.
 Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
 
-from yt_flow.pipeline.nodes.sound_design import resolve_mood
+from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 
 VIGNETTE_ANGLE = "PI/5"  # constant across all moods
 GRAIN_STRENGTH = 8  # noise filter `alls=`, subtle photographic grain
@@ -21,6 +21,9 @@ MOOD_GRADE_PARAMS: dict[str, dict[str, float]] = {
     "escalation": {"saturation": 1.15, "contrast": 1.15, "brightness": 0.02, "gamma": 1.00},
     "revelation": {"saturation": 1.00, "contrast": 1.30, "brightness": 0.00, "gamma": 1.05},
 }
+# resolve_mood only guarantees a MOOD_VALUES member; keep this dict's keys in
+# lockstep or a taxonomy change silently turns into a runtime KeyError here.
+assert set(MOOD_GRADE_PARAMS) == set(MOOD_VALUES)
 
 
 def build_post_filter(mood: str | None) -> str:

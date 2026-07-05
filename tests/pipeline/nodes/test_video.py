@@ -1146,6 +1146,60 @@ async def test_video_node_sound_design_disabled_unchanged(monkeypatch, tmp_path,
     assert "[aout]" not in args
 
 
+async def test_video_node_character_sound_design_and_post_fx_together(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """[Review] Story 7.1 + 7.2 intersection, layered path: sound-design mix and the
+    post-fx fragment both land in the same filter_complex."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, sound_design_enabled=True, post_fx_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+        mood="dread",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    args = list(calls[0])
+    fc = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress=" in fc
+    assert "[aout]" in args
+    p = MOOD_GRADE_PARAMS["dread"]
+    assert f"eq=saturation={p['saturation']}" in fc
+    assert fc.index("overlay=") < fc.index("eq=saturation=") < fc.index("subtitles=")
+
+
+async def test_video_node_background_only_sound_design_and_post_fx_together(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """[Review] Story 7.1 + 7.2 intersection, background-only path: sound-design mix
+    and the post-fx fragment both land in the same filter_complex."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, sound_design_enabled=True, post_fx_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="clinical")
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    args = list(calls[0])
+    fc = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress=" in fc
+    assert "[aout]" in args
+    p = MOOD_GRADE_PARAMS["clinical"]
+    assert f"eq=saturation={p['saturation']}" in fc
+    assert fc.index("zoompan") < fc.index("eq=saturation=") < fc.index("subtitles=")
+
+
 def test_validate_scene_assets_sound_design_enabled_missing_asset_fails_fast(assets, tmp_path, monkeypatch):
     """[AC:5] Missing mood asset file fails before ffmpeg when sound design is on."""
     import yt_flow.pipeline.nodes.sound_design as sound_design
