@@ -47,7 +47,8 @@ RGBA_PNG = _make_png(6)
 
 
 class FakeSettings:
-    def __init__(self, *, mock, workflow_path, layered=False, bg_node="9", char_node="10"):
+    def __init__(self, *, mock, workflow_path, layered=False, bg_node="9", char_node="10",
+                 flat_fallback_workflow_path=None):
         self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
         self.comfyui_url = "http://comfy.test:8188"
         self.comfyui_workflow_path = workflow_path
@@ -55,6 +56,7 @@ class FakeSettings:
         self.comfyui_layered = layered
         self.comfyui_background_node = bg_node
         self.comfyui_character_node = char_node
+        self.comfyui_flat_fallback_workflow_path = flat_fallback_workflow_path or workflow_path
 
 
 def _state(**over):
@@ -301,6 +303,7 @@ async def test_layered_mock_sets_background_and_character_paths(monkeypatch, tmp
             assert shot["image_path"] and (tmp_path / shot["image_path"]).is_file()
             assert "_background.png" in shot["background_path"]
             assert "_character.png" in shot["character_path"]
+            assert shot["layered_fallback"] is False
 
 
 async def test_layered_mock_image_path_is_backward_compatible(monkeypatch, tmp_path):
@@ -354,8 +357,10 @@ async def test_layered_mock_input_state_not_mutated(monkeypatch, tmp_path):
 
 # ── Layered real mode — alpha validation (AC4) ──────────────────────────────
 
-async def test_layered_real_opaque_character_sets_error(monkeypatch, tmp_path):
-    """AC4: character output that is not RGBA → image-stage error."""
+async def test_layered_real_opaque_character_falls_back_to_flat(monkeypatch, tmp_path):
+    """Story 5.11: an opaque character output raises the same ComfyUIError type as a
+    segmentation crash, so it gets the same per-shot flat-fallback treatment (Dev Notes:
+    "no need to distinguish sub-cases") rather than failing the whole run (old AC4)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         img, "_settings",
@@ -366,17 +371,24 @@ async def test_layered_real_opaque_character_sets_error(monkeypatch, tmp_path):
     async def fake_outputs(url, workflow, node_ids):
         return {"9": RGB_PNG, "10": RGB_PNG}  # character is opaque — invalid
 
+    async def fake_fetch(url, workflow):
+        return b"\x89PNG flat fallback bytes"
+
     monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
 
     out = await img.image_node(_state())
-    assert "scenes" not in out
-    assert out["current_stage"] == "image"
-    assert out["error"] and "stage=image" in out["error"] and "run-img-1" in out["error"]
-    assert "opaque" in out["error"]
+    assert out.get("error") is None
+    for scene in out["scenes"]:
+        for shot in scene["shots"]:
+            assert shot["layered_fallback"] is True
+            assert shot["character_path"] is None
+            assert shot["background_path"] and (tmp_path / shot["background_path"]).is_file()
 
 
 async def test_layered_real_missing_background_sets_error(monkeypatch, tmp_path):
-    """AC4: background node absent from ComfyUI output → image-stage error."""
+    """Background node absent triggers the Story 5.11 flat fallback; if that fallback
+    submission ALSO fails (as here), the run fails as before (AC2)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         img, "_settings",
@@ -387,7 +399,11 @@ async def test_layered_real_missing_background_sets_error(monkeypatch, tmp_path)
     async def fake_outputs(url, workflow, node_ids):
         return {"10": RGBA_PNG}  # only character, no background
 
+    async def fake_fetch(url, workflow):
+        raise ComfyUIError("ComfyUI unreachable")
+
     monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
 
     out = await img.image_node(_state())
     assert "scenes" not in out
@@ -436,6 +452,96 @@ async def test_layered_real_valid_rgba_character_accepted(monkeypatch, tmp_path)
         for shot in scene["shots"]:
             assert shot["character_path"] and (tmp_path / shot["character_path"]).is_file()
             assert shot["background_path"] and (tmp_path / shot["background_path"]).is_file()
+            assert shot["layered_fallback"] is False
+
+
+# ── Segmentation-failure shot-level fallback (Story 5.11) ───────────────────
+
+async def test_segmentation_failure_falls_back_to_flat_for_one_shot(monkeypatch, tmp_path):
+    """AC1/AC3: one shot's ComfyUIError degrades only that shot to a flat image."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), layered=True,
+                             bg_node="9", char_node="10"),
+    )
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:  # first shot's segmentation errors
+            raise ComfyUIError("segmentation node crashed")
+        return {"9": RGB_PNG, "10": RGBA_PNG}  # every other shot succeeds
+
+    async def fake_fetch(url, workflow):
+        return b"\x89PNG flat fallback bytes"
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    shots = [s for scene in out["scenes"] for s in scene["shots"]]
+
+    failed = shots[0]
+    assert failed["layered_fallback"] is True
+    assert failed["character_path"] is None
+    assert failed["background_path"] and (tmp_path / failed["background_path"]).read_bytes() == \
+        b"\x89PNG flat fallback bytes"
+
+    for ok in shots[1:]:
+        assert ok["layered_fallback"] is False
+        assert ok["character_path"] and (tmp_path / ok["character_path"]).is_file()
+        assert ok["background_path"] and (tmp_path / ok["background_path"]).is_file()
+
+
+async def test_segmentation_failure_fallback_also_fails_propagates(monkeypatch, tmp_path):
+    """AC2: if the flat-fallback submission also raises, the whole run fails as before."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), layered=True,
+                             bg_node="9", char_node="10"),
+    )
+
+    async def fake_outputs(url, workflow, node_ids):
+        raise ComfyUIError("segmentation node crashed")
+
+    async def fake_fetch(url, workflow):
+        raise ComfyUIError("ComfyUI unreachable")
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert "scenes" not in out
+    assert out["error"] and "stage=image" in out["error"]
+
+
+async def test_segmentation_failure_fallback_records_count(monkeypatch, tmp_path):
+    """The fallback_count trace metadata reflects the number of degraded shots."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), layered=True,
+                             bg_node="9", char_node="10"),
+    )
+    captured = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    async def fake_outputs(url, workflow, node_ids):
+        raise ComfyUIError("segmentation node crashed")
+
+    async def fake_fetch(url, workflow):
+        return b"\x89PNG flat"
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    await img.image_node(_state())
+    assert captured["fallback_count"] == 3  # every shot in this fixture fails and falls back
 
 
 # ── Layered observability (AC5) ──────────────────────────────────────────────

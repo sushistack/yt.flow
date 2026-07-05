@@ -60,7 +60,7 @@ export type ScenarioArtifacts = {
 }
 export type ImageArtifacts = {
   stage: "image"
-  images: { scene_num: number; shot_id: string; image_path: string }[]
+  images: { scene_num: number; shot_id: string; image_path: string; layered_fallback: boolean }[]
 }
 export type TtsArtifacts = {
   stage: "tts"

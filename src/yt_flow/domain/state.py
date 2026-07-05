@@ -32,6 +32,7 @@ class ShotData(TypedDict):
     image_path: str | None       # composed/preview; backward-compatible with 1.9/1.9b
     background_path: str | None  # layered mode: opaque background layer
     character_path: str | None   # layered mode: transparent character PNG; None = background-only
+    layered_fallback: bool       # layered mode: True if segmentation errored and this shot degraded to flat
 
 
 class SceneState(TypedDict):

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     comfyui_layered: bool = False
     comfyui_background_node: str = "9"
     comfyui_character_node: str = "13"
+    # Story 5.11: per-shot flat-image fallback when segmentation errors in layered
+    # mode. Reuses the already-shipped plain non-layered workflow — no new asset.
+    comfyui_flat_fallback_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
 
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"

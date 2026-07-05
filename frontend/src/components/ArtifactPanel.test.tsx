@@ -65,8 +65,8 @@ describe("ArtifactPanel", () => {
         data: {
           stage: "image",
           images: [
-            { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png" },
-            { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png" },
+            { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png", layered_fallback: false },
+            { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png", layered_fallback: false },
           ],
         },
         onOpenImage,
@@ -77,6 +77,19 @@ describe("ArtifactPanel", () => {
     expect(imgs[0]).toHaveAttribute("src", "/files/r1/images/a.png")
     fireEvent.click(imgs[1].closest("button")!)
     expect(onOpenImage).toHaveBeenCalledWith(1)
+  })
+
+  it("image: shows a flat-fallback warning indicator on degraded shots (Story 5.11)", () => {
+    renderPanel({
+      data: {
+        stage: "image",
+        images: [
+          { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png", layered_fallback: false },
+          { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png", layered_fallback: true },
+        ],
+      },
+    })
+    expect(screen.getByText("⚠ 플랫 폴백")).toBeInTheDocument()
   })
 
   it("tts: sorted native audio controls with scene index + duration (AC5)", () => {

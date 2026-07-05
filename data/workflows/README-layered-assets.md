@@ -217,11 +217,19 @@ instead of failing the run.
 `"12"` (segmentation) — a segmentation failure only cost the character
 layer. After 5.7, node `"9"` depends on node `"12"`'s mask via the inpaint
 chain (`"16"`→`"17"`→`"18"`), so if segmentation itself errors (not just
-produces a bad cutout), **both** background and character outputs are now
-missing, `image_node` raises `ComfyUIError` for that shot, and — since the
-per-shot loop has no per-shot try/except — the entire run's image stage
-fails rather than degrading to background-only. This coupling is a known
-limitation of the workflow-JSON-only fix approach and has not been
-addressed at the Python level; treat a segmentation-node crash as a
-run-failing event, not a soft per-shot fallback, until a follow-up story
-revisits it.
+produces a bad cutout), **both** background and character outputs are
+missing from that ComfyUI submission.
+
+**Story 5.11 closed the resulting gap.** `image_node` now catches
+`ComfyUIError` per shot in the layered branch and retries with a second,
+plain (non-layered) ComfyUI submission using
+`comfyui_flat_fallback_workflow_path` (defaults to the same workflow the
+non-layered mode already uses). The failed shot degrades to a flat image —
+`character_path = None`, `background_path` set to the flat render,
+`layered_fallback = True` — while every other shot in the run is
+unaffected. A `logger.warning` is emitted and the flag is exposed via
+`GET /runs/{id}/stages/image/artifacts` so it's visible in the image gate
+artifact panel. If the fallback submission *also* raises `ComfyUIError`
+(e.g. ComfyUI itself is unreachable), that error propagates and the run
+fails exactly as it did before this story — the fallback only covers a
+real segmentation-specific failure, not a total ComfyUI outage.

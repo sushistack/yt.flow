@@ -24,6 +24,7 @@ runs.
 
 import copy
 import json
+import logging
 import shutil
 import time
 from pathlib import Path
@@ -33,6 +34,8 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.services import comfyui_client
+
+logger = logging.getLogger(__name__)
 
 POSITIVE_NODE = "6"
 NEGATIVE_NODE = "7"
@@ -124,6 +127,7 @@ def _record_trace(
     layered_assets_enabled=False,
     background_count=0,
     character_count=0,
+    fallback_count=0,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -137,6 +141,7 @@ def _record_trace(
                 "layered_assets_enabled": layered_assets_enabled,
                 "background_count": background_count,
                 "character_count": character_count,
+                "fallback_count": fallback_count,
                 "latency_ms": latency_ms,
                 **({"error": repr(error)} if error is not None else {}),
             },
@@ -191,6 +196,25 @@ async def _generate_layered_shot(
     return str(bg_dest), char_path, str(img_dest)
 
 
+async def _generate_flat_fallback_shot(
+    s: Settings, out_dir: Path, scene_num: int, shot: ShotData, template: dict
+) -> tuple[str, str]:
+    """Non-layered fallback for a shot whose layered generation raised ComfyUIError.
+
+    Reuses ``comfyui_client.submit_and_fetch`` (the same call the non-layered branch
+    uses) and writes into the layered naming convention so ``video.py``'s
+    background-only path (``character_path is None``) needs no changes.
+    """
+    base = f"scene_{scene_num:03d}_{shot['shot_id']}"
+    bg_dest = out_dir / f"{base}_background.png"
+    img_dest = out_dir / f"{base}.png"
+    wf = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"])
+    image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, wf)
+    bg_dest.write_bytes(image_bytes)
+    shutil.copyfile(bg_dest, img_dest)
+    return str(bg_dest), str(img_dest)
+
+
 @observe(name="image")
 async def image_node(state: PipelineState) -> dict:
     run_id = state.get("run_id", "?")
@@ -200,11 +224,13 @@ async def image_node(state: PipelineState) -> dict:
     image_count = 0
     background_count = 0
     character_count = 0
+    fallback_count = 0
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
         out_dir.mkdir(parents=True, exist_ok=True)
         template = None if s.comfyui_mock else _load_workflow(s.comfyui_workflow_path)
+        flat_template: dict | None = None  # lazily loaded on first segmentation failure
 
         new_scenes: list[SceneState] = []
         for scene in state.get("scenes", []):
@@ -213,10 +239,26 @@ async def image_node(state: PipelineState) -> dict:
                 if s.comfyui_layered:
                     wf = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"]) \
                         if template is not None else None
-                    bg_path, char_path, img_path = await _generate_layered_shot(
-                        s, out_dir, scene["scene_num"], shot, wf
-                    )
-                    if not s.comfyui_mock:
+                    layered_fallback = False
+                    try:
+                        bg_path, char_path, img_path = await _generate_layered_shot(
+                            s, out_dir, scene["scene_num"], shot, wf
+                        )
+                        if not s.comfyui_mock:
+                            request_count += 1
+                    except comfyui_client.ComfyUIError as exc:
+                        logger.warning(
+                            "shot %s segmentation failed, falling back to flat image: %s",
+                            shot["shot_id"], exc,
+                        )
+                        if flat_template is None:
+                            flat_template = _load_workflow(s.comfyui_flat_fallback_workflow_path)
+                        bg_path, img_path = await _generate_flat_fallback_shot(
+                            s, out_dir, scene["scene_num"], shot, flat_template
+                        )
+                        char_path = None
+                        layered_fallback = True
+                        fallback_count += 1
                         request_count += 1
                     image_count += 1
                     background_count += 1
@@ -227,6 +269,7 @@ async def image_node(state: PipelineState) -> dict:
                         "image_path": img_path,
                         "background_path": bg_path,
                         "character_path": char_path,
+                        "layered_fallback": layered_fallback,
                     })
                 else:
                     dest = out_dir / f"scene_{scene['scene_num']:03d}_{shot['shot_id']}.png"
@@ -246,6 +289,7 @@ async def image_node(state: PipelineState) -> dict:
                         "image_path": str(dest),
                         "background_path": None,
                         "character_path": None,
+                        "layered_fallback": False,
                     })
             new_scenes.append({**scene, "shots": new_shots})
 
@@ -254,6 +298,7 @@ async def image_node(state: PipelineState) -> dict:
             request_count=request_count, image_count=image_count,
             layered_assets_enabled=s.comfyui_layered,
             background_count=background_count, character_count=character_count,
+            fallback_count=fallback_count,
             latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None}
@@ -264,6 +309,7 @@ async def image_node(state: PipelineState) -> dict:
             request_count=request_count, image_count=image_count,
             layered_assets_enabled=s.comfyui_layered if s else False,
             background_count=background_count, character_count=character_count,
+            fallback_count=fallback_count,
             latency_ms=_ms(t0), error=exc,
         )
         return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}"}

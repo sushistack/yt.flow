@@ -31,6 +31,7 @@ def _scene(n, *, image=None, audio=None, subtitle=None):
             "image_path": image,
             "background_path": None,
             "character_path": None,
+            "layered_fallback": False,
         }],
         "audio_path": audio,
         "audio_duration": 12.5 if audio else None,
@@ -102,6 +103,7 @@ def test_image_artifacts(client, monkeypatch):
     assert body["stage"] == "image"
     assert body["images"][0] == {
         "scene_num": 1, "shot_id": "S001", "image_path": "workspace/x/images/S001.png",
+        "layered_fallback": False,
     }
 
 

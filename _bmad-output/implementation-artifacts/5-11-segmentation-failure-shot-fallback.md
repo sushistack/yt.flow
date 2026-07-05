@@ -11,7 +11,7 @@ baseline_commit: c1e94d1d9b444c0f93b3fe3b557c2d55f09c8969
 
 # Story 5.11: Segmentation-Failure Shot-Level Fallback
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,35 +37,35 @@ This is 5.7's own documented, deliberately-deferred gap (`data/workflows/README-
 
 ## Tasks / Subtasks
 
-- [ ] Add a fallback workflow config setting (AC: 1) — `src/yt_flow/config.py`
-  - [ ] Add `comfyui_flat_fallback_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"` next to the existing `comfyui_*` settings (line ~39-41). Reuses the already-existing, already-tested plain non-layered workflow file — do not author a new workflow JSON for this.
-  - [ ] Add `YTFLOW_COMFYUI_FLAT_FALLBACK_WORKFLOW_PATH=...` line to `.env.example` near the other `COMFYUI_*` lines (~line 25-34), following the existing comment style.
-- [ ] Add the per-shot fallback field (AC: 3, 4) — `src/yt_flow/domain/state.py`
-  - [ ] Add `layered_fallback: bool` to `ShotData` (after `character_path`, line ~34) — mirrors the naming of `character_service.py`'s existing `{"fallback": bool}` semantic from Story 5.8/1.13, not a new vocabulary.
-  - [ ] `TypedDict` isn't runtime-enforced, so most existing `ShotData` literal sites (`tests/api/test_stages.py`, `tests/services/test_character_angle_selector.py`, `tests/pipeline/test_stub_profile_smoke.py`, `tests/pipeline/nodes/test_video.py`) will keep working unmodified — only touch them if a test in that file happens to do exact-dict equality against a shot. The one site that WILL break is `tests/api/test_stage_artifacts.py`, because it asserts exact dict equality against `run_service.get_stage_artifacts()`'s output (see Tests subtask below) — grep `"character_path":` repo-wide before assuming any given file needs a change, don't blanket-edit every hit.
-- [ ] Implement per-shot fallback in `image_node` (AC: 1, 2, 3, 4) — `src/yt_flow/pipeline/nodes/image.py`
-  - [ ] Add `import logging` + `logger = logging.getLogger(__name__)` at module level (matches `video.py:12,31`; this module currently has no logger).
-  - [ ] In `image_node`'s scene/shot loop (line ~213-230, the `if s.comfyui_layered:` branch), wrap the `_generate_layered_shot(...)` call in `try`/`except comfyui_client.ComfyUIError as exc`.
-  - [ ] On catch: lazily load a second workflow template via `_load_workflow(s.comfyui_flat_fallback_workflow_path)` — load it once (e.g. a local `flat_template` variable initialized to `None` before the scene loop, populated on first failure) rather than re-reading the file per failed shot. Inject this shot's own `image_prompt`/`negative_prompt` via the existing `_inject_prompts()` helper, then call `comfyui_client.submit_and_fetch(s.comfyui_url, wf)` (the same non-layered call the `else` branch at line ~235+ already uses) to get flat image bytes. Write them to the shot's existing `img_dest`/`bg_dest` path convention (reuse `_generate_layered_shot`'s naming, e.g. write to the `*_background.png` destination so downstream `video.py` compositing — which reads `background_path` — needs no changes) and set `char_path = None`.
-  - [ ] `logger.warning("shot %s segmentation failed, falling back to flat image: %s", shot["shot_id"], exc)` before falling back.
-  - [ ] Set `new_shots.append({..., "background_path": <flat path>, "character_path": None, "layered_fallback": True})` for the fallback case; the success case must explicitly set `"layered_fallback": False` (don't rely on a default — TypedDict has none).
-  - [ ] The non-layered `else` branch (line ~231+) must also set `"layered_fallback": False` on its shot dict (AC5 — field must exist and be `False` everywhere layered mode isn't in play, for consistent downstream typing).
-  - [ ] If the fallback submission itself raises `ComfyUIError`, let it propagate uncaught (AC2) — do not catch twice.
-  - [ ] Track a `fallback_count` alongside the existing `request_count`/`image_count`/`background_count`/`character_count` locals and add it to `_record_trace()`'s metadata (mirrors the existing counters' pattern, line ~119-145).
-- [ ] Update `run_service.get_stage_artifacts`'s image branch (AC: 4) — `src/yt_flow/services/run_service.py:102-108`
-  - [ ] Add `"layered_fallback": sh.get("layered_fallback", False)` to each image dict in the list comprehension.
-- [ ] Update the frontend artifact type + panel (AC: 4) — `frontend/src/lib/api.ts:61-64`, `frontend/src/components/ArtifactPanel.tsx`
-  - [ ] Extend `ImageArtifacts.images` item type with `layered_fallback: boolean`.
-  - [ ] In `ImagePanel` (`ArtifactPanel.tsx:284+`), render a small warning indicator on thumbnails where `layered_fallback` is `true` — reuse the existing `text-status-awaiting` token (same one `stage-sidebar-item.tsx` uses for its pending/warning glyph) rather than inventing a new color; a short label is enough (e.g. "⚠ 플랫 폴백"), no new dependency or icon library.
-- [ ] Update documentation (AC: 6) — `data/workflows/README-layered-assets.md:207-227`
-  - [ ] Rewrite the "Fallback behavior" section's final paragraph (currently ends "...treat a segmentation-node crash as a run-failing event, not a soft per-shot fallback, until a follow-up story revisits it") to describe the new behavior: segmentation-node execution errors now degrade only the affected shot to a flat image via `comfyui_flat_fallback_workflow_path`, logged and recorded on the shot (`layered_fallback`); the run continues.
-- [ ] Tests (AC: 7)
-  - [ ] `tests/pipeline/nodes/test_image.py`: new test(s) — monkeypatch `comfyui_client.submit_and_fetch_outputs` to raise `ComfyUIError` for one shot's call and succeed for others (it's called once per shot in the layered branch); assert the run's `error` is `None`, the failed shot has `layered_fallback=True`, `character_path=None`, and a `background_path` pointing at the fallback image; assert unaffected shots have `layered_fallback=False` and their normal layered paths. Also add a test where the fallback `submit_and_fetch` ALSO raises — assert the run's `error` is set (existing whole-run-failure behavior, AC2).
-  - [ ] The existing layered-mode tests in `test_image.py` (`test_layered_mock_sets_background_and_character_paths`, `test_layered_mock_background_only_when_no_character_fixture`, `test_layered_real_background_only_allowed`, `test_layered_real_valid_rgba_character_accepted`, etc.) assert individual `shot["background_path"]`/`shot["character_path"]` values, not exact-dict equality — they should keep passing unmodified. Confirm this while implementing; only add assertions to them if it's cheap to also assert `layered_fallback is False` on the happy path.
-  - [ ] `tests/api/test_stage_artifacts.py::test_image_artifacts` (line ~97-105) asserts `body["images"][0] == {...}` with exact dict equality on 3 keys — this WILL fail once `layered_fallback` is added to the DTO; add the key to the expected dict, and update the `_scene()` test fixture helper (line ~20-34) which builds `ShotData`-shaped dicts to include `"layered_fallback": False`.
-  - [ ] `frontend/src/components/ArtifactPanel.test.tsx`: the existing image test (line ~61-80) builds `images` literals without `layered_fallback` — TypeScript will require the field once the type changes; add it (`false` for existing cases) and add one new case with `layered_fallback: true` asserting the warning indicator renders.
-  - [ ] Run `uv run pytest tests/pipeline/nodes/test_image.py tests/api/test_stage_artifacts.py -q` and `cd frontend && npm test -- ArtifactPanel` (or the project's actual vitest invocation — check `frontend/package.json` scripts).
-  - [ ] Live validation (matches 5.7/5.6/5.8's pattern): if there's a way to force a real ComfyUI segmentation error (e.g. a shot whose InspyrenetRembg step legitimately fails, or a temporarily-broken workflow JSON pointed at for one manual run), do a real (non-mock) validation confirming the run completes with a flat-fallback shot and the artifact panel shows the warning. If not practically reproducible live within this story's scope, say so explicitly rather than fabricating evidence (per this project's `verification-before-completion` norm) — synthetic/mocked test coverage (above) is the primary evidence either way, since this is a Python-level control-flow fix, not a ComfyUI-graph change.
+- [x] Add a fallback workflow config setting (AC: 1) — `src/yt_flow/config.py`
+  - [x] Add `comfyui_flat_fallback_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"` next to the existing `comfyui_*` settings (line ~39-41). Reuses the already-existing, already-tested plain non-layered workflow file — do not author a new workflow JSON for this.
+  - [x] Add `YTFLOW_COMFYUI_FLAT_FALLBACK_WORKFLOW_PATH=...` line to `.env.example` near the other `COMFYUI_*` lines (~line 25-34), following the existing comment style.
+- [x] Add the per-shot fallback field (AC: 3, 4) — `src/yt_flow/domain/state.py`
+  - [x] Add `layered_fallback: bool` to `ShotData` (after `character_path`, line ~34) — mirrors the naming of `character_service.py`'s existing `{"fallback": bool}` semantic from Story 5.8/1.13, not a new vocabulary.
+  - [x] `TypedDict` isn't runtime-enforced, so most existing `ShotData` literal sites (`tests/api/test_stages.py`, `tests/services/test_character_angle_selector.py`, `tests/pipeline/test_stub_profile_smoke.py`, `tests/pipeline/nodes/test_video.py`) will keep working unmodified — only touch them if a test in that file happens to do exact-dict equality against a shot. The one site that WILL break is `tests/api/test_stage_artifacts.py`, because it asserts exact dict equality against `run_service.get_stage_artifacts()`'s output (see Tests subtask below) — grep `"character_path":` repo-wide before assuming any given file needs a change, don't blanket-edit every hit.
+- [x] Implement per-shot fallback in `image_node` (AC: 1, 2, 3, 4) — `src/yt_flow/pipeline/nodes/image.py`
+  - [x] Add `import logging` + `logger = logging.getLogger(__name__)` at module level (matches `video.py:12,31`; this module currently has no logger).
+  - [x] In `image_node`'s scene/shot loop (line ~213-230, the `if s.comfyui_layered:` branch), wrap the `_generate_layered_shot(...)` call in `try`/`except comfyui_client.ComfyUIError as exc`.
+  - [x] On catch: lazily load a second workflow template via `_load_workflow(s.comfyui_flat_fallback_workflow_path)` — load it once (e.g. a local `flat_template` variable initialized to `None` before the scene loop, populated on first failure) rather than re-reading the file per failed shot. Inject this shot's own `image_prompt`/`negative_prompt` via the existing `_inject_prompts()` helper, then call `comfyui_client.submit_and_fetch(s.comfyui_url, wf)` (the same non-layered call the `else` branch at line ~235+ already uses) to get flat image bytes. Write them to the shot's existing `img_dest`/`bg_dest` path convention (reuse `_generate_layered_shot`'s naming, e.g. write to the `*_background.png` destination so downstream `video.py` compositing — which reads `background_path` — needs no changes) and set `char_path = None`.
+  - [x] `logger.warning("shot %s segmentation failed, falling back to flat image: %s", shot["shot_id"], exc)` before falling back.
+  - [x] Set `new_shots.append({..., "background_path": <flat path>, "character_path": None, "layered_fallback": True})` for the fallback case; the success case must explicitly set `"layered_fallback": False` (don't rely on a default — TypedDict has none).
+  - [x] The non-layered `else` branch (line ~231+) must also set `"layered_fallback": False` on its shot dict (AC5 — field must exist and be `False` everywhere layered mode isn't in play, for consistent downstream typing).
+  - [x] If the fallback submission itself raises `ComfyUIError`, let it propagate uncaught (AC2) — do not catch twice.
+  - [x] Track a `fallback_count` alongside the existing `request_count`/`image_count`/`background_count`/`character_count` locals and add it to `_record_trace()`'s metadata (mirrors the existing counters' pattern, line ~119-145).
+- [x] Update `run_service.get_stage_artifacts`'s image branch (AC: 4) — `src/yt_flow/services/run_service.py:102-108`
+  - [x] Add `"layered_fallback": sh.get("layered_fallback", False)` to each image dict in the list comprehension.
+- [x] Update the frontend artifact type + panel (AC: 4) — `frontend/src/lib/api.ts:61-64`, `frontend/src/components/ArtifactPanel.tsx`
+  - [x] Extend `ImageArtifacts.images` item type with `layered_fallback: boolean`.
+  - [x] In `ImagePanel` (`ArtifactPanel.tsx:284+`), render a small warning indicator on thumbnails where `layered_fallback` is `true` — reuse the existing `text-status-awaiting` token (same one `stage-sidebar-item.tsx` uses for its pending/warning glyph) rather than inventing a new color; a short label is enough (e.g. "⚠ 플랫 폴백"), no new dependency or icon library.
+- [x] Update documentation (AC: 6) — `data/workflows/README-layered-assets.md:207-227`
+  - [x] Rewrite the "Fallback behavior" section's final paragraph (currently ends "...treat a segmentation-node crash as a run-failing event, not a soft per-shot fallback, until a follow-up story revisits it") to describe the new behavior: segmentation-node execution errors now degrade only the affected shot to a flat image via `comfyui_flat_fallback_workflow_path`, logged and recorded on the shot (`layered_fallback`); the run continues.
+- [x] Tests (AC: 7)
+  - [x] `tests/pipeline/nodes/test_image.py`: new test(s) — monkeypatch `comfyui_client.submit_and_fetch_outputs` to raise `ComfyUIError` for one shot's call and succeed for others (it's called once per shot in the layered branch); assert the run's `error` is `None`, the failed shot has `layered_fallback=True`, `character_path=None`, and a `background_path` pointing at the fallback image; assert unaffected shots have `layered_fallback=False` and their normal layered paths. Also add a test where the fallback `submit_and_fetch` ALSO raises — assert the run's `error` is set (existing whole-run-failure behavior, AC2).
+  - [x] The existing layered-mode tests in `test_image.py` (`test_layered_mock_sets_background_and_character_paths`, `test_layered_mock_background_only_when_no_character_fixture`, `test_layered_real_background_only_allowed`, `test_layered_real_valid_rgba_character_accepted`, etc.) assert individual `shot["background_path"]`/`shot["character_path"]` values, not exact-dict equality — they should keep passing unmodified. Confirm this while implementing; only add assertions to them if it's cheap to also assert `layered_fallback is False` on the happy path.
+  - [x] `tests/api/test_stage_artifacts.py::test_image_artifacts` (line ~97-105) asserts `body["images"][0] == {...}` with exact dict equality on 3 keys — this WILL fail once `layered_fallback` is added to the DTO; add the key to the expected dict, and update the `_scene()` test fixture helper (line ~20-34) which builds `ShotData`-shaped dicts to include `"layered_fallback": False`.
+  - [x] `frontend/src/components/ArtifactPanel.test.tsx`: the existing image test (line ~61-80) builds `images` literals without `layered_fallback` — TypeScript will require the field once the type changes; add it (`false` for existing cases) and add one new case with `layered_fallback: true` asserting the warning indicator renders.
+  - [x] Run `uv run pytest tests/pipeline/nodes/test_image.py tests/api/test_stage_artifacts.py -q` and `cd frontend && npm test -- ArtifactPanel` (or the project's actual vitest invocation — check `frontend/package.json` scripts).
+  - [x] Live validation (matches 5.7/5.6/5.8's pattern): if there's a way to force a real ComfyUI segmentation error (e.g. a shot whose InspyrenetRembg step legitimately fails, or a temporarily-broken workflow JSON pointed at for one manual run), do a real (non-mock) validation confirming the run completes with a flat-fallback shot and the artifact panel shows the warning. If not practically reproducible live within this story's scope, say so explicitly rather than fabricating evidence (per this project's `verification-before-completion` norm) — synthetic/mocked test coverage (above) is the primary evidence either way, since this is a Python-level control-flow fix, not a ComfyUI-graph change.
 
 ## Dev Notes
 
@@ -139,8 +139,38 @@ This is 5.7's own documented, deliberately-deferred gap (`data/workflows/README-
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story, in an isolated git worktree (`story/5-11-segmentation-failure-shot-fallback`) to avoid colliding with concurrent in-progress work on Story 5.10 in the main worktree.
+
 ### Debug Log References
+
+- `PYTHONPATH=$PWD/src uv run pytest tests/pipeline/nodes/test_image.py tests/api/test_stage_artifacts.py -q` → 37 passed.
+- Full backend regression: `PYTHONPATH=$PWD/src uv run pytest -q --ignore=tests/services/test_character_service_generation.py --ignore=tests/services/test_comfyui_client.py --ignore=tests/services/test_image_search.py` (excluded files per existing project convention, confirmed still accurate) → 1 pre-existing, unrelated failure (`tests/api/test_e2e_stub_run.py::test_stub_run_completes_via_api_with_ordered_sse_and_artifact_on_disk`, confirmed via `git stash` to also fail against the story's own `baseline_commit`/current HEAD with zero code changes — not caused by this story). Re-run with that one test deselected: `557 passed, 1 skipped, 1 deselected`.
+- Frontend: `npx vitest run ArtifactPanel` → 12 passed. `npx tsc -b` → clean, no type errors.
 
 ### Completion Notes List
 
+- Implemented the per-shot flat-image fallback exactly as scoped: `image_node`'s layered branch now catches `comfyui_client.ComfyUIError` from `_generate_layered_shot` per shot, lazily loads `comfyui_flat_fallback_workflow_path` once, and retries with a plain (non-layered) submission via the already-existing `comfyui_client.submit_and_fetch`. Per the Dev Notes guidance, this deliberately also catches the pre-existing "opaque character output" `ComfyUIError` sub-case (previously a whole-run failure under AC4 of the original 1.6b story) — both sub-cases get the same flat-fallback treatment now, since they're the same exception type and the story explicitly said not to distinguish them in code.
+- Updated the two existing tests that encoded the old "opaque character → whole run fails" and "missing background → whole run fails" behavior to reflect the new fallback-first behavior (the missing-background case still fails the *run* in its test, but now because the mocked *fallback* submission fails too, per AC2 — not because the original error propagated directly).
+- `fallback_count` added as a new `_record_trace()` metadata field, following the existing counter pattern.
+- Frontend: added the `layered_fallback` boolean end-to-end (DTO type → `ImagePanel` warning glyph reusing the existing `text-status-awaiting` token, no new dependency).
+- Live validation: not attempted. Per the story's own Dev Notes/Testing Requirements, forcing a real ComfyUI segmentation-node crash on demand isn't practical, and the story explicitly says not to block completion on manufacturing one — this is a pure Python control-flow fix with no ComfyUI graph change, so the synthetic monkeypatched tests (`test_segmentation_failure_falls_back_to_flat_for_one_shot`, `test_segmentation_failure_fallback_also_fails_propagates`, `test_layered_real_opaque_character_falls_back_to_flat`) are the primary and, per the story, sufficient evidence for AC1-3, 5, 7.
+- Also fixed `tests/domain/test_state_imports.py::test_type_hint_shapes` (an existing field-drift guard not called out in the story's Tasks list, but broken by adding `layered_fallback` to `ShotData` — added the field to its `EXPECTED_FIELDS` set).
+
 ### File List
+
+- `src/yt_flow/config.py`
+- `.env.example`
+- `src/yt_flow/domain/state.py`
+- `src/yt_flow/pipeline/nodes/image.py`
+- `src/yt_flow/services/run_service.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/ArtifactPanel.tsx`
+- `data/workflows/README-layered-assets.md`
+- `tests/pipeline/nodes/test_image.py`
+- `tests/api/test_stage_artifacts.py`
+- `tests/domain/test_state_imports.py`
+- `frontend/src/components/ArtifactPanel.test.tsx`
+
+## Change Log
+
+- 2026-07-05: Implemented per-shot flat-image fallback for segmentation-node ComfyUI errors in `image_node`; added `comfyui_flat_fallback_workflow_path` config, `layered_fallback` state field, `run_service`/frontend artifact exposure, and README update. Full regression suite green (557 passed, 1 pre-existing unrelated failure excluded) plus frontend tests/typecheck green. Live validation not practical per story's own guidance; synthetic test coverage is primary evidence. Status → review.

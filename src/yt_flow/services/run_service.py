@@ -104,7 +104,8 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
         if not shots or any(sh["image_path"] is None for _, sh in shots):
             raise LookupError("Stage not reached")
         return {"stage": "image", "images": [
-            {"scene_num": n, "shot_id": sh["shot_id"], "image_path": sh["image_path"]}
+            {"scene_num": n, "shot_id": sh["shot_id"], "image_path": sh["image_path"],
+             "layered_fallback": sh.get("layered_fallback", False)}
             for n, sh in shots
         ]}
 

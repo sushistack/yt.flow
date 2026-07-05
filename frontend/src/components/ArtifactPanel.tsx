@@ -285,7 +285,7 @@ function ImagePanel({
   images,
   onOpenImage,
 }: {
-  images: { scene_num: number; shot_id: string; image_path: string }[]
+  images: { scene_num: number; shot_id: string; image_path: string; layered_fallback: boolean }[]
   onOpenImage: (index: number) => void
 }) {
   return (
@@ -310,6 +310,9 @@ function ImagePanel({
             <span className="mt-1 block font-mono text-[11px] text-subtle-foreground">
               씬 {img.scene_num} · {img.shot_id}
             </span>
+            {img.layered_fallback && (
+              <span className="mt-0.5 block text-[11px] text-status-awaiting">⚠ 플랫 폴백</span>
+            )}
           </button>
         ))}
       </div>
