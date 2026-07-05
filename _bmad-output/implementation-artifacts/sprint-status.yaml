@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-05  # story 5-11-segmentation-failure-shot-fallback → done
+last_updated: 2026-07-05  # story 5-12-character-prompt-content-repair created → ready-for-dev; 5-10-entity-reference-pipeline-repair code review → done
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -106,8 +106,9 @@ development_status:
   5-7-layered-background-double-exposure-fix: done  # ComfyUI 인페인트 패스로 배경에서 개체 제거; 코드리뷰 반영(전용 inpaint negative prompt 노드 추가, legacy rembg 워크플로우 경고, 합성 프레임 증거 추가, README fallback 문서 정정) + 회귀 테스트 추가. 세그멘테이션 실패 시 전체 run 실패로 전환되는 결합은 후속 결정 필요 항목으로 문서화(미해결)
   5-8-automatic-entity-reference-generation: done  # run_service.start_run 사전 그래프 단계로 자동 트리거 구현(AC2/AC3/AC4 라이브 검증); 코드리뷰 반영(non-fatal 보장 깨짐 수정, 전체 실패 시 영구 미제공 레코드 롤백, A/B 동시성 레이스 처리) + 회귀 테스트 3건 추가, 중복 monkeypatch 제거. AC1 낙관 경로는 DuckDuckGo 403 + 캐릭터 생성 ComfyUI 워크플로우 누락/부적합(1.12 소관, 미해결)으로 라이브 미검증 — 후속 스토리 필요
   5-9-transition-audio-continuity: done  # depends on 5-1 — acrossfade를 adelay+amix(normalize=0)로 교체, 비디오 xfade offset 재사용으로 드리프트 없음; 코드 리뷰 완료(패치 6건 적용, 3건 보류)
-  5-10-entity-reference-pipeline-repair: ready-for-dev  # 5-8 라이브 검증에서 발견된 블로커 2건: DDG 403 → SCP 위키 우선 fetch로 교체 + comfyui_character_multi_angle_api.json 저작/라이브 검증; DoD = 5-8 AC1 낙관 경로 라이브 재검증
+  5-10-entity-reference-pipeline-repair: done  # 5-8 라이브 검증에서 발견된 블로커 2건 해결: SCP 위키 우선 fetch(+CC BY-SA 출처) 구현, comfyui_character_multi_angle_api.json(IPAdapter) 저작+라이브 검증; 부수 발견한 base64→파일명 주입 버그(1.12 소관, i2i 항상 실패)도 수정. 라이브 e2e 재검증 완료(신규 SCP-1471 run, 5게이트 전체 승인, character_path가 실제 앵글 이미지로 해석됨) — 5-8 AC1 낙관 경로 확인. 코드 리뷰 완료(패치 6건 적용: wiki-fetch 예외 미포착→DDG 폴백 실패 AC2 위반 수정, 업로드 content-type 하드코딩 수정, _remove_i2i_input 무음 no-op에 경고 로그 추가, seed=0 고정 수정, 로그 레벨 조정, _load_workflow CWD-상대경로 수정 / 5건 보류: 위키 이미지 휴리스틱 견고성, 위키 경로 단일후보 제약, 업로드 resp.json() 미포착, 업로드 크기 캡, scp_id 슬러그 정규화 불일치). 회귀 스위트 그린(626 passed, 무관 스킵 1건, 신규 테스트 4건 추가). 후속 이슈 2건 문서화(Vision LLM 디스크립터 미배선, Langfuse character-generation 프롬프트 브레이스 버그) — 5-12로 스토리화 완료
   5-11-segmentation-failure-shot-fallback: done  # 5-7 미해결 결합 해소 — 세그 실패 시 해당 샷만 플랫 폴백 + 경고, run은 계속 (AD-10); 코드 리뷰 완료(패치 3건 적용: 폴백-실패 시 원본 에러 보존+ValueError도 캐치, request_count 언더카운트 수정, 로그에 scene_num 추가 / 2건 보류: 타임아웃 지연 2배, opaque-character 재렌더 낭비); 회귀 스위트 그린, 프론트 테스트/타입체크 그린; 라이브 검증은 실전 세그멘테이션 크래시 재현 불가로 미실시(스토리 가이드에 따름)
+  5-12-character-prompt-content-repair: ready-for-dev  # 5-10 라이브 검증에서 발견: Vision LLM 디스크립터(1.11) 자동 배선 누락 + Langfuse character-generation 프롬프트 브레이스 문법 불일치(4앵글 전부 동일 미치환 텍스트 수신, 재현 확인); angle_selection 프롬프트도 동일 버그 의심(라이브 run에서 49샷 전부 front로 귀결) — 상세 스토리 파일 작성 완료(create-story)
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
