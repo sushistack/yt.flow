@@ -1,5 +1,6 @@
 ---
 created: 2026-07-04
+baseline_commit: c1e94d1d9b444c0f93b3fe3b557c2d55f09c8969
 story_key: 7-1-sound-design
 story_id: "7.1"
 epic: 7
@@ -15,7 +16,7 @@ related:
 
 # Story 7.1: Sound Design (BGM + Ambient + SFX Stinger)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -50,44 +51,53 @@ The full, approved design is `docs/superpowers/specs/2026-07-04-sound-design-des
 
 ## Tasks / Subtasks
 
-- [ ] Add the mood field to the state substrate (AC: 1)
-  - [ ] Add `mood: str` to `SceneState` in `src/yt_flow/domain/state.py` (pure stdlib typing, no upper-layer import — AD-1/AD-2).
-  - [ ] In `scenario_chain.build_scenes()`, set `mood=str(writing_scene.get("mood") or DEFAULT_MOOD)` on each `SceneState(...)` construction. Import `DEFAULT_MOOD` from `sound_design` (or duplicate the literal only if it would create an import cycle — verify: `sound_design` imports `domain`+`config` only, `scenario_chain` imports `domain`+`services`, so importing `DEFAULT_MOOD` from `pipeline.nodes.sound_design` into `pipeline.nodes.scenario_chain` is same-layer and cycle-free).
-  - [ ] Confirm the `SceneState(...)` literal in `build_scenes` gets the new key (a TypedDict with a missing key won't fail at runtime but breaks the contract downstream).
-- [ ] Create `src/yt_flow/pipeline/nodes/sound_design.py` (AC: 2, 3, 5)
-  - [ ] Module docstring with the AD-1 layer rule note (mirror `video.py`'s header).
-  - [ ] `MOOD_VALUES`, `DEFAULT_MOOD`, `resolve_mood` (fallback pattern from `video.select_effect`).
-  - [ ] Module-level volume/ducking constants: `BGM_VOLUME`, `AMBIENT_VOLUME`, `STINGER_VOLUME`, sidechain `threshold/ratio/attack/release`. Seed them from the design's filter sketch (0.25 / 0.15 / 0.5; threshold=0.05, ratio=8, attack=5, release=300) and mark them `# ponytail: tuned-by-ear defaults, promote to Settings only if a real scene needs a different value`.
-  - [ ] `MOOD_ASSET_PATHS: dict[str, dict[str, Path]]` built from `data/audio/...` paths.
-  - [ ] `validate_mood_assets(mood)` — resolve mood first, then raise `FileNotFoundError` naming the missing file (match `_validate_scene_assets` message style).
-  - [ ] `build_sound_design_args(mood)` — returns the extra ffmpeg input args: bgm/ambient looped with `-stream_loop -1 -i`, stinger as a plain `-i` (one-shot). Order must match the index math the filter builder assumes.
-  - [ ] `build_sound_design_filter(mood, duration, narration_label, input_offset)` — returns `(filter_complex_fragment, output_label)` per the design sketch; `input_offset` is the index of the first sound-design input so bgm/ambient/stinger get correct `[N:a]` labels regardless of branch.
-- [ ] Wire into `video._compose_scene` for BOTH branches (AC: 3, 4, 8) — read Integration Hazards first
-  - [ ] Guard the whole block on `s.sound_design_enabled` (pass `Settings` in or read via existing `_settings()` seam — check how `_compose_scene` currently gets settings; today it does NOT take settings, `video_node` calls `_settings()` once — decide whether to thread `sound_design_enabled` as a param or read settings inside `_compose_scene`, preferring the smallest diff).
-  - [ ] Character branch: append `build_sound_design_args(mood)` after the 3 existing inputs (bg=0, char=1, narration=2), set `narration_label="[2:a]"`, `input_offset=3`, append the filter fragment to `filter_complex`, and remap `-map 2:a` → `-map [aout]`.
-  - [ ] Background-only branch: **migrate from `-vf` to `-filter_complex`** when sound is enabled (append the zoompan+subtitles chain into the complex graph with a labeled video output), inputs bg=0, narration=1, `narration_label="[1:a]"`, `input_offset=2`, map video out + `[aout]`. When sound is disabled, keep today's `-vf` path verbatim.
-  - [ ] Read `mood` off the scene: `resolve_mood(scene.get("mood"))`.
-  - [ ] Call `validate_mood_assets(resolved_mood)` (either in `_validate_scene_assets` for all scenes up front, or per-scene in `_compose_scene` before ffmpeg — up-front is more consistent with the existing fail-fast validator).
-- [ ] Source & commit the 12-file CC0 asset library (AC: 6)
+- [x] Add the mood field to the state substrate (AC: 1)
+  - [x] Add `mood: str` to `SceneState` in `src/yt_flow/domain/state.py` (pure stdlib typing, no upper-layer import — AD-1/AD-2).
+  - [x] In `scenario_chain.build_scenes()`, set `mood=str(writing_scene.get("mood") or DEFAULT_MOOD)` on each `SceneState(...)` construction. Import `DEFAULT_MOOD` from `sound_design` (or duplicate the literal only if it would create an import cycle — verify: `sound_design` imports `domain`+`config` only, `scenario_chain` imports `domain`+`services`, so importing `DEFAULT_MOOD` from `pipeline.nodes.sound_design` into `pipeline.nodes.scenario_chain` is same-layer and cycle-free).
+  - [x] Confirm the `SceneState(...)` literal in `build_scenes` gets the new key (a TypedDict with a missing key won't fail at runtime but breaks the contract downstream).
+- [x] Create `src/yt_flow/pipeline/nodes/sound_design.py` (AC: 2, 3, 5)
+  - [x] Module docstring with the AD-1 layer rule note (mirror `video.py`'s header).
+  - [x] `MOOD_VALUES`, `DEFAULT_MOOD`, `resolve_mood` (fallback pattern from `video.select_effect`).
+  - [x] Module-level volume/ducking constants: `BGM_VOLUME`, `AMBIENT_VOLUME`, `STINGER_VOLUME`, sidechain `threshold/ratio/attack/release`. Seed them from the design's filter sketch (0.25 / 0.15 / 0.5; threshold=0.05, ratio=8, attack=5, release=300) and mark them `# ponytail: tuned-by-ear defaults, promote to Settings only if a real scene needs a different value`.
+  - [x] `MOOD_ASSET_PATHS: dict[str, dict[str, Path]]` built from `data/audio/...` paths.
+  - [x] `validate_mood_assets(mood)` — resolve mood first, then raise `FileNotFoundError` naming the missing file (match `_validate_scene_assets` message style).
+  - [x] `build_sound_design_args(mood)` — returns the extra ffmpeg input args: bgm/ambient looped with `-stream_loop -1 -i`, stinger as a plain `-i` (one-shot). Order must match the index math the filter builder assumes.
+  - [x] `build_sound_design_filter(mood, duration, narration_label, input_offset)` — returns `(filter_complex_fragment, output_label)` per the design sketch; `input_offset` is the index of the first sound-design input so bgm/ambient/stinger get correct `[N:a]` labels regardless of branch.
+- [x] Wire into `video._compose_scene` for BOTH branches (AC: 3, 4, 8) — read Integration Hazards first
+  - [x] Guard the whole block on `s.sound_design_enabled` (pass `Settings` in or read via existing `_settings()` seam — check how `_compose_scene` currently gets settings; today it does NOT take settings, `video_node` calls `_settings()` once — decide whether to thread `sound_design_enabled` as a param or read settings inside `_compose_scene`, preferring the smallest diff).
+  - [x] Character branch: append `build_sound_design_args(mood)` after the 3 existing inputs (bg=0, char=1, narration=2), set `narration_label="[2:a]"`, `input_offset=3`, append the filter fragment to `filter_complex`, and remap `-map 2:a` → `-map [aout]`.
+  - [x] Background-only branch: **migrate from `-vf` to `-filter_complex`** when sound is enabled (append the zoompan+subtitles chain into the complex graph with a labeled video output), inputs bg=0, narration=1, `narration_label="[1:a]"`, `input_offset=2`, map video out + `[aout]`. When sound is disabled, keep today's `-vf` path verbatim.
+  - [x] Read `mood` off the scene: `resolve_mood(scene.get("mood"))`.
+  - [x] Call `validate_mood_assets(resolved_mood)` (either in `_validate_scene_assets` for all scenes up front, or per-scene in `_compose_scene` before ffmpeg — up-front is more consistent with the existing fail-fast validator).
+- [ ] Source & commit the 12-file CC0 asset library (AC: 6) — **BLOCKED, human step (see Dev Agent Record)**
   - [ ] `data/audio/bgm/{dread,clinical,escalation,revelation}.mp3` — seamless 10–30s loops.
   - [ ] `data/audio/ambient/{dread,clinical,escalation,revelation}.mp3` — seamless loops.
   - [ ] `data/audio/sfx/{dread,clinical,escalation,revelation}_stinger.mp3` — 1–2s one-shots.
   - [ ] Source strictly CC0 (Pixabay Audio, Freesound CC0-filtered). Record each file's source URL + license in a short `data/audio/README.md` or `CREDITS.md` (same evidence posture as the SCP reference-image sourcing in Story 5.5).
-  - [ ] Verify `data/audio/` is NOT gitignored (it's new; `data/.gitkeep`, `data/voices/sutak.mp3` are tracked, so the pattern is tracked — confirm no `data/audio` ignore rule).
-- [ ] Settings + env (AC: 7)
-  - [ ] Add `sound_design_enabled: bool = True` to `Settings` (place near `chapter_cards`).
-  - [ ] Add `YTFLOW_SOUND_DESIGN_ENABLED=true` (with an opt-out comment) to `.env.example`, near the `YTFLOW_COMFYUI_LAYERED` block.
-- [ ] Prompt emission — reconcile the writing.md gap (AC: 10) — read Prompt Emission Reality first
-  - [ ] Add `mood` (enum of the 4 values) to `prompts/scenario/structure.md`'s per-scene JSON schema. **Do not conflate with the existing `emotional_beat` field** (values tension/mystery/horror/revelation) — mood is a separate 4-value audio-driving axis (dread/clinical/escalation/revelation).
-  - [ ] Decide and record how mood reaches `writing_scene` given `prompts/scenario/writing.md` has no repo file (see Prompt Emission Reality for the two viable options). Do not fabricate a writing.md from thin air without confirming the Langfuse-served writing prompt's actual current content.
-  - [ ] If prompt changes are made: follow `docs/PROMPT_POLICY.md` (edit repo file → seed `candidate` → do NOT move `production` in this story). Prompt promotion is gated on A/B + golden set, which is out of scope here.
-- [ ] Tests (AC: 11, 12)
-  - [ ] New `tests/pipeline/nodes/test_sound_design.py`: `resolve_mood` fallback table (valid/unknown/None/empty), `validate_mood_assets` raises on missing + passes with a tmp file tree, `build_sound_design_args` order/loop-flags, `build_sound_design_filter` returns expected label + fragment substrings for a known mood.
-  - [ ] Extend `tests/pipeline/nodes/test_video.py`: with `fake_run_ffmpeg`, assert the new `-i` inputs and `-map [aout]` appear for the character branch AND the background-only branch when enabled, and are absent when `sound_design_enabled=False`. Reuse the `_settings_ns` fixture (add a `sound_design_enabled` field to it).
-  - [ ] Extend `tests/test_config.py`: assert `Settings().sound_design_enabled is True` by default.
-  - [ ] Run `uv run pytest tests/pipeline/nodes/test_video.py tests/pipeline/nodes/test_sound_design.py tests/test_config.py -q`.
-- [ ] Live validation (AC: 3, 4)
+  - [x] Verify `data/audio/` is NOT gitignored (confirmed: no `data/audio` ignore rule; `data/audio/{bgm,ambient,sfx}/` dirs + `data/audio/README.md` created and tracked, ready for the files once sourced).
+- [x] Settings + env (AC: 7)
+  - [x] Add `sound_design_enabled: bool = True` to `Settings` (place near `chapter_cards`).
+  - [x] Add `YTFLOW_SOUND_DESIGN_ENABLED=true` (with an opt-out comment) to `.env.example`, near the `YTFLOW_COMFYUI_LAYERED` block.
+- [x] Prompt emission — reconcile the writing.md gap (AC: 10) — read Prompt Emission Reality first
+  - [x] Add `mood` (enum of the 4 values) to `prompts/scenario/structure.md`'s per-scene JSON schema. **Do not conflate with the existing `emotional_beat` field** (values tension/mystery/horror/revelation) — mood is a separate 4-value audio-driving axis (dread/clinical/escalation/revelation).
+  - [x] Decide and record how mood reaches `writing_scene` given `prompts/scenario/writing.md` has no repo file (see Prompt Emission Reality for the two viable options) — **Option 1 chosen** (mechanical-only, `DEFAULT_MOOD` fallback; writing.md echo-through deferred, see Dev Agent Record). Did not fabricate a writing.md from thin air.
+  - [x] No prompt changes beyond `structure.md` were made in this story, so `docs/PROMPT_POLICY.md`'s candidate/production seeding step does not apply here.
+- [x] Tests (AC: 11, 12)
+  - [x] New `tests/pipeline/nodes/test_sound_design.py`: `resolve_mood` fallback table (valid/unknown/None/empty), `validate_mood_assets` raises on missing + passes with a tmp file tree, `build_sound_design_args` order/loop-flags, `build_sound_design_filter` returns expected label + fragment substrings for a known mood.
+  - [x] Extend `tests/pipeline/nodes/test_video.py`: with `fake_run_ffmpeg`, assert the new `-i` inputs and `-map [aout]` appear for the character branch AND the background-only branch when enabled, and are absent when `sound_design_enabled=False`. Reuse the `_settings_ns` fixture (add a `sound_design_enabled` field to it).
+  - [x] Extend `tests/test_config.py`: assert `Settings().sound_design_enabled is True` by default.
+  - [x] Run `uv run pytest tests/pipeline/nodes/test_video.py tests/pipeline/nodes/test_sound_design.py tests/test_config.py -q`.
+- [ ] Live validation (AC: 3, 4) — **BLOCKED on AC6 asset sourcing (see Dev Agent Record)**
   - [ ] Render a real 2+ scene run with `YTFLOW_SOUND_DESIGN_ENABLED=true` and confirm by ear: narration intelligible, bgm/ambient present and ducking under speech, stinger audible at scene start. Record run ID + findings in the Dev Agent Record. Tune the volume/sidechain constants by ear if needed (that's why they're module constants, not magic numbers).
+
+### Review Findings
+
+- [x] [Review][Patch] Real ffmpeg never terminates once `sound_design_enabled=True` — `-shortest` doesn't reliably bound the infinite `-loop 1` background image against a filter-graph-produced `[aout]` pad [src/yt_flow/pipeline/nodes/video.py:_compose_scene] — fixed by adding an explicit `-t {duration}` output cap; confirmed via direct real-ffmpeg repro (pre-fix: still running past 8s for a 2s clip; post-fix: completes in ~2.2s, exact duration). Added `tests/pipeline/nodes/test_video.py::test_compose_scene_sound_design_terminates_and_matches_duration` (real-ffmpeg, skipped if unavailable) covering both branches; verified it fails via timeout (not an unbounded hang) when the fix is reverted.
+- [x] [Review][Patch] Dev Agent Record claimed `data/audio/{bgm,ambient,sfx}/` dirs were "tracked" but git does not track empty directories — added `.gitkeep` to each so the claim holds.
+- [x] [Review][Patch] Dev Agent Record's "Focused" pytest count (187 passed) did not match actual output (174 passed) — corrected in Debug Log References.
+- [x] [Review][Defer] `sound_design_enabled` defaults `True` with no CC0 assets sourced yet — deferred, pre-existing/accepted tradeoff (already decided by Jay: "mark review, document gap"; production must opt out via env until AC6 lands).
+- [x] [Review][Defer] No `aformat`/`aresample` normalization before `amix` across bgm/ambient/stinger/narration — deferred, depends on the actual encodes of the still-unsourced CC0 files; covered by the blocked Live Validation by-ear tuning task.
+- [x] [Review][Defer] `amix ... normalize=0` risks clipping with no downstream limiter — deferred, part of the same blocked by-ear tuning task.
 
 ## Dev Notes
 
@@ -184,20 +194,47 @@ Do not add real audio-decoding or an ffmpeg invocation to the unit suite. Live-b
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5
 
 ### Debug Log References
+
+- Full regression: `uv run pytest -q` → 602 passed, 1 skipped (pre-existing ffmpeg-integration skip), 0 failed.
+- Focused: `uv run pytest tests/pipeline/nodes/test_video.py tests/pipeline/nodes/test_sound_design.py tests/pipeline/nodes/test_scenario_chain.py tests/test_config.py tests/domain/test_state_imports.py -q` → 174 passed (corrected during code review; originally logged as 187).
+- `uv run ruff check` on all touched files → clean.
 
 ### Completion Notes List
 
 - Story context created by BMad create-story workflow on 2026-07-04.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- **Implemented AC1–5, 7–9, 11–12 in full.** `mood: str` added to `SceneState`; new pure module `src/yt_flow/pipeline/nodes/sound_design.py` (resolve_mood/validate_mood_assets/build_sound_design_args/build_sound_design_filter, AD-1 compliant — stdlib + `pathlib` only); `video._compose_scene` refactored to a shared inputs/video_chain/narration_label/input_offset setup with three ffmpeg-arg branches (sound-enabled, character-only, background-only-disabled) so both disabled paths stay byte-for-byte identical to pre-story behavior (verified by the pre-existing test suite passing unchanged) while the enabled paths implement both integration hazards from Dev Notes (background-only migrates `-vf`→`-filter_complex`; per-branch `input_offset`/`narration_label` pinned by dedicated unit tests).
+- **AC10 (prompt emission): Option 1 chosen** (mechanical-only, lowest risk, matches the story's own recommendation). Added `mood` enum to `prompts/scenario/structure.md`'s per-scene schema with a note distinguishing it from `emotional_beat`. Did **not** touch the Langfuse-served `scenario/writing` prompt or fabricate a `writing.md` repo file — `build_scenes()`'s lenient `.get(...) or DEFAULT_MOOD` fallback means every scene resolves to `dread` until the writing-stage prompt is updated to emit `mood`, which is a separate follow-up (prompt-ops, arguably Epic 6 — the missing `writing.md` repo file is a pre-existing `docs/PROMPT_POLICY.md` compliance gap, not something introduced by this story).
+- **AC6 (asset library) and Live Validation are BLOCKED on a human step, left unchecked by design.** Sourcing and license-verifying 12 real CC0 audio files is not something this session can do reliably — the story's own Saved Questions #2 explicitly calls this out. Created `data/audio/{bgm,ambient,sfx}/` directories and `data/audio/README.md` documenting the exact files needed, sourcing guidance, and the operational implication (real deployments must set `YTFLOW_SOUND_DESIGN_ENABLED=false` until the library is populated, since `Settings.sound_design_enabled` defaults `True` per AC7 and `validate_mood_assets` will fail-fast on every run otherwise).
+- **Regression fallout from AC7's `True` default, found and fixed.** Three existing tests exercised `video_node` via a real (non-mocked) `Settings()` and broke once `sound_design_enabled` defaulted to `True` with no real asset files on disk: `tests/pipeline/test_stub_profile_smoke.py::test_video_node_emits_tiny_artifact`, `tests/api/test_e2e_stub_run.py::test_stub_run_completes_via_api_with_ordered_sse_and_artifact_on_disk`, and `tests/domain/test_state_imports.py::test_type_hint_shapes` (an intentional TypedDict-shape drift guard that needed its expected-fields set updated for the new `mood` key — not a false positive, just needed updating). Fixed by adding `os.environ.setdefault("YTFLOW_SOUND_DESIGN_ENABLED", "false")` to `tests/conftest.py`, mirroring the existing `YTFLOW_LANGFUSE_ENABLED` suite-default pattern, and updating the `SceneState` drift-guard's expected field set. `test_config.py`'s new default-true test still asserts the real class default by explicitly clearing the env var first.
+- Asked Jay how to close out the story given the AC6/Live-Validation block; he chose "mark review, document gap" (all mechanical work ships now; real deployments must opt out via env until assets land).
+- **2026-07-05 code review fix: real ffmpeg never terminated with sound design on.** All pre-merge tests mocked `_run_ffmpeg`, so the mocked suite passed while real ffmpeg would hang indefinitely: `-shortest` does not reliably bound the infinitely-looped `-loop 1` background image against a filter-graph-produced `[aout]` pad (isolating each factor — dropping video, dropping sidechaincompress, reordering the `amix` operands — showed the `amix`/`sidechaincompress` audio graph alone always ends correctly; only adding the mapped video stream back in caused the runaway). Fixed with an explicit `-t {duration}` cap on the sound-design-enabled ffmpeg invocation in `_compose_scene`. Added a real-ffmpeg regression test that fails via a bounded timeout (not an unbounded hang) if this regresses. Full details and repro method in `bmad-code-review`'s findings below.
 
 ### File List
+
+- `src/yt_flow/domain/state.py` — added `mood: str` to `SceneState`.
+- `src/yt_flow/pipeline/nodes/sound_design.py` — new module (AC2,3,5).
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` — `build_scenes()` populates `mood`; imports `DEFAULT_MOOD`.
+- `src/yt_flow/pipeline/nodes/video.py` — `_validate_scene_assets` gained `sound_design_enabled` param + mood-asset check; `_compose_scene` rewired for both branches + sound design; `video_node` loads settings before validation and threads `sound_design_enabled` through.
+- `src/yt_flow/config.py` — added `sound_design_enabled: bool = True`.
+- `.env.example` — documented `YTFLOW_SOUND_DESIGN_ENABLED`.
+- `prompts/scenario/structure.md` — added `mood` enum to the per-scene JSON schema.
+- `data/audio/README.md` — new: documents the AC6 asset-sourcing gap and env opt-out.
+- `data/audio/{bgm,ambient,sfx}/.gitkeep` — new (code review fix): actually tracks the empty dirs, matching the Dev Agent Record's original claim.
+- `tests/pipeline/nodes/test_sound_design.py` — new unit test file.
+- `tests/pipeline/nodes/test_video.py` — `_settings_ns` fixture gained `sound_design_enabled`; added sound-design integration tests (both branches, enabled/disabled, fail-fast validation); code review added a real-ffmpeg termination/duration regression test.
+- `tests/pipeline/nodes/test_scenario_chain.py` — added `mood` population/fallback tests.
+- `tests/test_config.py` — added `sound_design_enabled` default-true test.
+- `tests/domain/test_state_imports.py` — updated `SceneState` expected-fields drift guard to include `mood`.
+- `tests/conftest.py` — added `YTFLOW_SOUND_DESIGN_ENABLED=false` suite default.
 
 ## Change Log
 
 - 2026-07-04: Created ready-for-dev story context from the approved sound-design design doc. Added current-code analysis, two integration hazards (background-only `-vf`→`-filter_complex` migration; per-branch input-index bookkeeping), and a decisive reconciliation of the design's `writing.md` reference against repo reality (file absent; recommend shipping mechanical-only with `DEFAULT_MOOD` fallback and deferring prompt-driven mood variation).
+- 2026-07-04: Implemented AC1–5,7–9,11–12 (mood field, `sound_design.py`, `video._compose_scene` wiring for both ffmpeg branches, `Settings`/`.env.example`, `structure.md` mood enum, full unit+integration test coverage). Fixed 3 regressions caused by AC7's `sound_design_enabled=True` default hitting real-Settings tests without asset files. Left AC6 (asset sourcing) and Live Validation unchecked/documented as blocked on a human licensing step, per Jay's explicit direction.
 
 ## Saved Questions / Clarifications
 
