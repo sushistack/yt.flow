@@ -4,7 +4,7 @@ One page. Read this before touching any runtime prompt (human or AI session).
 
 ## Rules
 
-1. **Source of truth is the repo.** Every runtime prompt lives at `prompts/<stage>/<name>.md`, seeded into Langfuse via `scripts/migrate_prompts.py` (evaluation/character prompts via `scripts/seed_eval_prompts.py`). Langfuse serves the prompt, holds the label, and records metrics — it is never the place you author a prompt.
+1. **Source of truth is the repo.** Every runtime prompt lives at `prompts/<stage>/<name>.md`, seeded into Langfuse via `scripts/migrate_prompts.py` (evaluation prompts via `scripts/seed_eval_prompts.py`, character prompts via `scripts/seed_character_prompts.py`). Langfuse serves the prompt, holds the label, and records metrics — it is never the place you author a prompt.
 2. **Two labels only.** `production` (default, live traffic) and `candidate` (the A/B challenger). `production` changes only by moving the label onto a version that already passed evaluation — never by editing prompt text in place.
 3. **Change protocol**, in order:
    1. Edit the prompt file in `prompts/<stage>/<name>.md`.
@@ -13,7 +13,7 @@ One page. Read this before touching any runtime prompt (human or AI session).
    4. Run the golden-set regression gate: `uv run python scripts/eval_prompts.py --label candidate --baseline production` (see below) — must exit `0`.
    5. Promote the winner by moving the `production` label onto its version in the Langfuse UI. Commit the prompt file change with the evaluation scores as the rationale.
    6. Discard the loser (leave its version unlabeled — no separate archival step needed).
-4. **Golden-set regression before promotion.** A candidate must pass the golden set (Story 6.2) before its label moves to `production`.
+4. **Golden-set regression before promotion.** A candidate must pass the golden set (Story 6.2) before its label moves to `production`. The gate (`scripts/eval_prompts.py`) only exercises the `scenario` stage — for a stage it doesn't cover (e.g. character prompts, which also aren't wired into the standard `POST /runs/{id}/ab` A/B mechanism), substitute a direct `candidate`-vs-`production` compile comparison against identical inputs as the pre-promotion check instead.
 5. **No editing `production` prompt text directly in the Langfuse UI.** Any content change starts at the repo file (rule 1) — the UI's only write action here is dragging a label.
 
 ## Golden-set regression (Story 6.2)

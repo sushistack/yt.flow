@@ -377,6 +377,12 @@ async def _ensure_character_reference(scp_id: str) -> None:
     ``None`` (its own "no usable character" branch), so downstream code degrades
     exactly like the pre-Story-5.8 no-character case.
 
+    After search succeeds, also calls ``CharacterService.enrich_descriptor_from_references``
+    (Story 5.12) to populate ``visual_descriptor`` before generation runs, so the generation
+    prompt is identity-described rather than relying on IPAdapter image-conditioning alone.
+    Enrichment failure is its own non-fatal branch, separate from the search/generation
+    try/except below — it must never trigger the total-failure rollback.
+
     A totally failed attempt (no search results, or every angle generation fails)
     deletes the ``CharacterModel`` it just created rather than leaving a permanent
     empty row behind — otherwise ``check_existing_character`` would skip this SCP
@@ -404,6 +410,15 @@ async def _ensure_character_reference(scp_id: str) -> None:
                 refs = await svc.search_references(scp_id, workspace_path=settings.workspace_path)
                 if not refs:
                     raise LookupError(f"no search results for {scp_id}")
+                try:
+                    descriptor = await svc.enrich_descriptor_from_references(
+                        scp_id, ref_image_paths=[r.local_path for r in refs],
+                    )
+                    if descriptor is not None:
+                        svc.update_character(character.id, visual_descriptor=descriptor)
+                except Exception:  # noqa: BLE001 — enrichment is enrichment, not a hard requirement (AD-10)
+                    logger.warning("auto character reference: vision descriptor enrichment or persistence failed for %s",
+                                   scp_id, exc_info=True)
                 angle_paths: dict[str, str] = {}
                 for angle in CANONICAL_ANGLES:
                     saved = await svc.generate_candidates_from_reference(

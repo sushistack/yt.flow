@@ -211,6 +211,75 @@ async def test_concurrent_creation_race_is_non_fatal(monkeypatch, tmp_path):
     assert _get_character("SCP-096") is not None  # the winner's row is untouched
 
 
+async def test_enrichment_success_persists_descriptor_before_generation(monkeypatch, tmp_path):
+    """AC1: enrich_descriptor_from_references is called after search, before generation,
+    and its result is persisted to Character.visual_descriptor."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    fake_search = _FakeImageSearch([
+        {"url": "https://example.com/a.png", "thumbnail_url": "", "title": "a"},
+    ])
+    monkeypatch.setattr(character_service, "DuckDuckGoImageSearch", lambda: fake_search)
+    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image", _fake_download)
+
+    class _CapturingProvider:
+        supports_i2i = True
+
+        def __init__(self):
+            self.prompts: list[str] = []
+
+        async def generate(self, prompt, ref_image_path, *, width=1664, height=928):
+            self.prompts.append(prompt)
+            return b"fake-png-bytes"
+
+    provider = _CapturingProvider()
+
+    async def _fake_enrich(self, scp_id, ref_image_paths):
+        return "a tall figure in a tattered lab coat"
+
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _fake_enrich)
+    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider", lambda self: provider)
+
+    await run_service._ensure_character_reference("SCP-096")
+
+    character = _get_character("SCP-096")
+    assert character is not None
+    assert character.visual_descriptor == "a tall figure in a tattered lab coat"
+    assert len(provider.prompts) == len(CANONICAL_ANGLES)
+    # The descriptor was persisted before generation ran — it shows up in every compiled prompt.
+    assert all("a tall figure in a tattered lab coat" in p for p in provider.prompts)
+
+
+async def test_enrichment_failure_is_non_fatal_generation_still_proceeds(monkeypatch, tmp_path):
+    """AC2: a Vision LLM enrichment failure must not raise past _ensure_character_reference
+    and must not trigger the total-failure rollback — generation proceeds normally."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    fake_search = _FakeImageSearch([
+        {"url": "https://example.com/a.png", "thumbnail_url": "", "title": "a"},
+    ])
+    monkeypatch.setattr(character_service, "DuckDuckGoImageSearch", lambda: fake_search)
+    monkeypatch.setattr(character_service.CharacterService, "_download_reference_image", _fake_download)
+    provider = _FakeProvider()
+    monkeypatch.setattr(character_service.CharacterService, "_get_image_provider", lambda self: provider)
+
+    async def _broken_enrich(self, scp_id, ref_image_paths):
+        raise RuntimeError("DeepSeek API unreachable")
+
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _broken_enrich)
+
+    await run_service._ensure_character_reference("SCP-096")  # must not raise
+
+    character = _get_character("SCP-096")
+    assert character is not None  # enrichment failure alone must not trigger rollback
+    assert character.visual_descriptor is None
+    assert provider.calls == len(CANONICAL_ANGLES)  # generation still ran for every angle
+
+
 async def test_start_run_invokes_character_provisioning(monkeypatch, tmp_path):
     """The one-line production wiring: start_run must actually call
     _ensure_character_reference, not just have it defined."""
