@@ -5,6 +5,7 @@ Covers: select_effect, zoompan filter, xfade offset math, happy/error paths,
 observability, AD-1 layer guards, integration (skippable without ffmpeg+ffprobe).
 """
 
+import asyncio
 import json
 import shutil
 import subprocess
@@ -31,14 +32,18 @@ from yt_flow.pipeline.nodes.video import (
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75):
-    # ponytail: fake settings default cards OFF so pre-existing tests (written
-    # before Story 5.1) don't need touching; the real Settings() default is True
-    # (AC:2) — see test_config_chapter_cards_default_true.
+def _settings_ns(
+    tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
+    sound_design_enabled: bool = False,
+):
+    # ponytail: fake settings default cards/sound-design OFF so pre-existing tests
+    # (written before Story 5.1/7.1) don't need touching; the real Settings()
+    # default is True for both — see test_sound_design_enabled_defaults_true.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
         chapter_card_duration_sec=chapter_card_duration_sec,
+        sound_design_enabled=sound_design_enabled,
     )
 
 
@@ -910,6 +915,107 @@ async def test_video_node_no_character_uses_vf_fallback(monkeypatch, tmp_path, a
     assert "zoompan" in captured_vf[0]
 
 
+# ── Sound design integration (Story 7.1) ───────────────────────────────────────
+
+
+@pytest.fixture
+def sound_assets(tmp_path, monkeypatch):
+    """Point sound_design.MOOD_ASSET_PATHS at real tmp files for the default mood."""
+    import yt_flow.pipeline.nodes.sound_design as sound_design
+    paths = {
+        "bgm": tmp_path / "bgm.mp3",
+        "ambient": tmp_path / "ambient.mp3",
+        "stinger": tmp_path / "stinger.mp3",
+    }
+    for p in paths.values():
+        p.write_bytes(b"\x00")
+    monkeypatch.setitem(sound_design.MOOD_ASSET_PATHS, sound_design.DEFAULT_MOOD, paths)
+    return paths
+
+
+async def test_video_node_character_sound_design_enabled(monkeypatch, tmp_path, assets, sound_assets):
+    """Character branch + sound_design_enabled: bgm/ambient/stinger inputs + [aout] map. [AC:3,4]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, sound_design_enabled=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    args = list(calls[0])
+    assert str(sound_assets["bgm"]) in args
+    assert str(sound_assets["ambient"]) in args
+    assert str(sound_assets["stinger"]) in args
+    assert "[aout]" in args
+    fc = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress=" in fc
+    assert "[2:a]" in fc  # narration referenced inside the ducking fragment
+
+
+async def test_video_node_background_only_sound_design_enabled(monkeypatch, tmp_path, assets, sound_assets):
+    """Background-only branch migrates -vf -> -filter_complex when sound design is on
+    (ffmpeg forbids -vf + -filter_complex together). [AC:3,4]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, sound_design_enabled=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    args = list(calls[0])
+    assert "-vf" not in args
+    assert "-filter_complex" in args
+    assert "[vout]" in args
+    assert "[aout]" in args
+    fc = args[args.index("-filter_complex") + 1]
+    assert "subtitles=" in fc
+    assert "zoompan" in fc
+
+
+async def test_video_node_sound_design_disabled_unchanged(monkeypatch, tmp_path, assets, sound_assets):
+    """sound_design_enabled=False: no sound-design inputs, no [aout], -vf path preserved. [AC:8]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, sound_design_enabled=False))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    args = list(calls[0])
+    assert "-vf" in args
+    assert "-filter_complex" not in args
+    assert str(sound_assets["bgm"]) not in args
+    assert "[aout]" not in args
+
+
+def test_validate_scene_assets_sound_design_enabled_missing_asset_fails_fast(assets, tmp_path, monkeypatch):
+    """[AC:5] Missing mood asset file fails before ffmpeg when sound design is on."""
+    import yt_flow.pipeline.nodes.sound_design as sound_design
+    monkeypatch.setitem(
+        sound_design.MOOD_ASSET_PATHS, sound_design.DEFAULT_MOOD,
+        {
+            "bgm": tmp_path / "missing.mp3",
+            "ambient": tmp_path / "missing2.mp3",
+            "stinger": tmp_path / "missing3.mp3",
+        },
+    )
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    with pytest.raises(FileNotFoundError, match="sound design"):
+        _validate_scene_assets([scene], sound_design_enabled=True)
+
+
+def test_validate_scene_assets_sound_design_disabled_skips_check(assets):
+    """[AC:8] sound_design_enabled=False: no mood-asset lookup even if files don't exist."""
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    _validate_scene_assets([scene], sound_design_enabled=False)  # must not raise
+
+
 def test_validate_character_path_set_but_missing(assets):
     """A set-but-missing character_path fails loudly (not silently dropped). [AC:1]"""
     scene = _scene(
@@ -1036,6 +1142,71 @@ async def test_character_overlay_filtergraph_renders(tmp_path):
     )
     assert rc == 0, f"layered filtergraph rejected by ffmpeg: {stderr[-500:]}"
     assert out.exists()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg or ffprobe not installed",
+)
+async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_path, monkeypatch):
+    """Real FFmpeg, both branches: sound-design-enabled `_compose_scene` must
+    finish quickly and produce a segment whose length matches the scene's
+    audio_duration. Regression guard: `-shortest` alone does not reliably
+    bound the infinitely-looped `-loop 1` background image against a
+    filter-graph-produced `[aout]` pad — verified to hang indefinitely on real
+    ffmpeg without an explicit `-t {duration}` cap. [AC:3,4]"""
+    import yt_flow.pipeline.nodes.sound_design as sound_design
+
+    bg = tmp_path / "bg.png"
+    rc, _ = await video._run_ffmpeg(
+        "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x36:r=25:d=1", "-frames:v", "1", str(bg),
+    )
+    assert rc == 0
+    narration_dur = 2.0
+    narration = tmp_path / "narr.mp3"
+    rc, _ = await video._run_ffmpeg(
+        "-y", "-f", "lavfi", "-i", f"sine=frequency=220:sample_rate=8000:duration={narration_dur}", str(narration),
+    )
+    assert rc == 0
+    subtitle = tmp_path / "sub.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\nhi\n\n", encoding="utf-8")
+
+    mood_paths = {}
+    for role, freq in (("bgm", 440), ("ambient", 330), ("stinger", 550)):
+        p = tmp_path / f"{role}.mp3"
+        rc, _ = await video._run_ffmpeg(
+            "-y", "-f", "lavfi", "-i", f"sine=frequency={freq}:sample_rate=8000:duration=1.0", str(p),
+        )
+        assert rc == 0
+        mood_paths[role] = p
+    monkeypatch.setitem(sound_design.MOOD_ASSET_PATHS, sound_design.DEFAULT_MOOD, mood_paths)
+
+    def _stream_duration(path: Path) -> float:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True, text=True,
+        )
+        return float(result.stdout.strip())
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    for label, scene_num, character in (("background-only", 1, None), ("character", 2, bg)):
+        scene = _scene(
+            scene_num, image=str(bg), audio=str(narration), subtitle=str(subtitle),
+            character=str(character) if character else None, audio_duration=narration_dur,
+        )
+        seg_path, _spec, _has_char = await asyncio.wait_for(
+            video._compose_scene(scene, scene_num, out_dir, sound_design_enabled=True),
+            timeout=15,
+        )
+        assert seg_path.exists()
+        seg_dur = _stream_duration(seg_path)
+        assert abs(seg_dur - narration_dur) < 0.5, (
+            f"{label} branch: segment duration {seg_dur:.2f}s should match "
+            f"narration ({narration_dur}s), not run away on the looped sound-design beds"
+        )
 
 
 # ── Story 1.13: LLM angle pre-selection integration ───────────────────────────

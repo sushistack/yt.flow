@@ -59,6 +59,13 @@ def test_langfuse_enabled_env_override(monkeypatch, raw, expected):
     assert Settings(_env_file=None).langfuse_enabled is expected
 
 
+def test_sound_design_enabled_defaults_true(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.delenv("YTFLOW_SOUND_DESIGN_ENABLED", raising=False)
+    from yt_flow.config import Settings
+    assert Settings(_env_file=None).sound_design_enabled is True
+
+
 def test_observe_is_noop_when_flag_off():
     """With the flag off, the observability seam's @observe runs the fn and
     get_client().update_current_span(...) never raises (no trace emitted).

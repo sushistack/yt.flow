@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import yt_flow.pipeline.nodes.scenario_chain as chain
+import yt_flow.pipeline.nodes.sound_design as sound_design
 
 CASSETTE_DIR = Path(__file__).parent.parent.parent / "fixtures" / "cassettes"
 
@@ -524,3 +525,39 @@ def test_build_scenes_single_empty_shot_falls_back_not_raises():
     scenes = chain.build_scenes(writing, visual_by_scene)
     assert len(scenes[0]["shots"]) == 1
     assert scenes[0]["shots"][0]["image_prompt"]
+
+
+# ── mood field (Story 7.1 AC:1) ────────────────────────────────────────────────
+
+
+_ONE_SHOT_VISUAL = {0: [{"image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]}
+
+
+def test_build_scenes_populates_mood_from_writing_scene():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": "escalation"}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
+    assert scenes[0]["mood"] == "escalation"
+
+
+@pytest.mark.parametrize("raw_mood", [None, ""])
+def test_build_scenes_missing_or_empty_mood_falls_back_to_default(raw_mood):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": raw_mood}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
+    assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD
+
+
+def test_build_scenes_stores_unrecognized_mood_verbatim_resolved_later():
+    """build_scenes only falls back on falsy values (`.get() or DEFAULT`); an unknown
+    but truthy mood string is stored as-is — resolve_mood normalizes it at the point
+    of use (sound_design/video.py), not here."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": "not-a-real-mood"}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
+    assert scenes[0]["mood"] == "not-a-real-mood"
+    assert sound_design.resolve_mood(scenes[0]["mood"]) == sound_design.DEFAULT_MOOD
+
+
+def test_build_scenes_no_mood_key_at_all_falls_back_to_default():
+    """Old checkpointed writing-stage output with no `mood` key must resume safely."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
+    assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD

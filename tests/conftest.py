@@ -15,6 +15,11 @@ os.environ.setdefault("YTFLOW_LANGFUSE_SECRET_KEY", "test-secret")
 # connection-error noise. Override with YTFLOW_LANGFUSE_ENABLED=true to exercise
 # the real @observe path. setdefault so an explicit ambient value still wins.
 os.environ.setdefault("YTFLOW_LANGFUSE_ENABLED", "false")
+# Sound design (Story 7.1) defaults ON in Settings, but the data/audio CC0 asset
+# library is a human sourcing/licensing step not yet done (see story Saved
+# Questions #2) — off by default in the suite so real-Settings() smoke/e2e tests
+# stay offline instead of hitting validate_mood_assets' fail-fast FileNotFoundError.
+os.environ.setdefault("YTFLOW_SOUND_DESIGN_ENABLED", "false")
 
 import pytest
 
