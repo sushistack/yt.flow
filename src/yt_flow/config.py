@@ -76,3 +76,7 @@ class Settings(BaseSettings):
     # video_node clamps duration to the accepted 1.5-2.0s range.
     chapter_cards: bool = True
     chapter_card_duration_sec: float = 1.75
+
+    # Sound design (Story 7.1): mood-driven BGM/ambient/stinger, ducked under
+    # narration. Opt out if the data/audio asset library isn't populated yet.
+    sound_design_enabled: bool = True

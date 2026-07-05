@@ -42,6 +42,7 @@ class SceneState(TypedDict):
     audio_duration: float | None
     word_timings: list[WordTiming]
     subtitle_path: str | None
+    mood: str  # one of sound_design.MOOD_VALUES; drives BGM/ambient/stinger selection
 
 
 class SearchResult(TypedDict):

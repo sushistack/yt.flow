@@ -14,6 +14,7 @@ import logging
 import re
 
 from yt_flow.domain.state import SceneState, ShotData
+from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD
 from yt_flow.services import prompt_service
 
 logger = logging.getLogger(__name__)
@@ -368,6 +369,7 @@ def build_scenes(writing: dict, visual_by_scene: dict) -> list:
                 audio_duration=None,
                 word_timings=[],
                 subtitle_path=None,
+                mood=str(writing_scene.get("mood") or DEFAULT_MOOD),
             )
         )
     return scenes

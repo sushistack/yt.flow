@@ -44,9 +44,15 @@ For each scene (8-12 total), include:
   "key_points": ["fact or detail to convey", "visual element to show"],
   "emotional_beat": "tension/mystery/horror/revelation/etc",
   "estimated_duration_sec": 45,
-  "fact_references": ["fact_key_1", "fact_key_2"]
+  "fact_references": ["fact_key_1", "fact_key_2"],
+  "mood": "dread/clinical/escalation/revelation"
 }
 ```
+
+`mood` drives the scene's background-music/ambient/stinger audio bed — a separate
+4-value axis from `emotional_beat`, not a synonym for it: `dread` (tense unease,
+default), `clinical` (calm Foundation-procedural tone), `escalation` (rising
+action/containment breach/chase), `revelation` (climax/dramatic reveal).
 
 ### Rules:
 1. Each scene's `key_points` must reference the Visual Identity Profile verbatim when the entity appears

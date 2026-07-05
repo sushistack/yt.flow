@@ -21,6 +21,12 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.pipeline.nodes.sound_design import (
+    build_sound_design_args,
+    build_sound_design_filter,
+    resolve_mood,
+    validate_mood_assets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +379,9 @@ def _record_trace(
         pass
 
 
-def _validate_scene_assets(scenes: list[SceneState]) -> None:
+def _validate_scene_assets(
+    scenes: list[SceneState], *, sound_design_enabled: bool = False,
+) -> None:
     """Raise before FFmpeg if required per-scene assets are missing. [AC:2]"""
     for scene in scenes:
         n = scene["scene_num"]
@@ -404,6 +412,10 @@ def _validate_scene_assets(scenes: list[SceneState]) -> None:
         dur = scene.get("audio_duration")
         if not isinstance(dur, (int, float)) or dur <= 0:
             raise ValueError(f"scene {n}: audio_duration must be a positive number, got {dur!r}")
+        # Sound design (Story 7.1): fail fast if the resolved mood's assets are missing,
+        # same up-front posture as the image/audio/subtitle checks above. [AC:5]
+        if sound_design_enabled:
+            validate_mood_assets(resolve_mood(scene.get("mood")))
 
 
 async def _run_ffmpeg(*args: str) -> tuple[int, str]:
@@ -432,9 +444,12 @@ async def _compose_scene(
     scene: SceneState,
     scene_index: int,
     out_dir: Path,
+    *,
+    sound_design_enabled: bool = False,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
-    transparent character composited on top with idle motion. [AC:1,3]
+    transparent character composited on top with idle motion, optionally with a
+    mood-driven BGM/ambient/stinger mix ducked under the narration. [AC:1,3] [Story 7.1]
 
     Returns (segment_path, effect_spec, character_overlaid).
     """
@@ -459,33 +474,71 @@ async def _compose_scene(
     if character_path:
         # Layered: zoompan the background, overlay the moving character, then burn
         # subtitles on top. Two looped image inputs (0=bg, 1=char) + audio (2).
-        filter_complex = (
+        inputs = [
+            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
+            "-loop", "1", "-framerate", str(FPS), "-i", str(character_path),
+            "-i", audio_path,
+        ]
+        video_chain = (
             f"[0:v]{zp_chain}[bg];"
             f"[1:v]{_character_scale_filter()}[char];"
             f"[bg][char]{_overlay_filter()}[ov];"
             f"[ov]subtitles='{sub}'[out]"
         )
-        rc, stderr = await _run_ffmpeg(
-            "-y",
-            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
-            "-loop", "1", "-framerate", str(FPS), "-i", str(character_path),
-            "-i", audio_path,
-            "-filter_complex", filter_complex,
-            "-map", "[out]", "-map", "2:a",
-            *_OUTPUT_ARGS,
-            str(seg_path),
-        )
+        video_map = "[out]"
+        narration_label = "[2:a]"
+        input_offset = 3
+        narration_map = "2:a"
     else:
         # Background-only (1.9b): zoompan already emits COMP_W x COMP_H, just burn SRT.
-        vf = f"{zp_chain},subtitles='{sub}'"
-        rc, stderr = await _run_ffmpeg(
-            "-y",
+        inputs = [
             "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
             "-i", audio_path,
-            "-vf", vf,
-            *_OUTPUT_ARGS,
-            str(seg_path),
+        ]
+        video_chain = f"[0:v]{zp_chain},subtitles='{sub}'[vout]"
+        video_map = "[vout]"
+        narration_label = "[1:a]"
+        input_offset = 2
+        narration_map = "1:a"
+
+    if sound_design_enabled:
+        # Hazard 1: -vf and -filter_complex are mutually exclusive in ffmpeg, so the
+        # background-only branch's video chain is folded into filter_complex here
+        # (labeled [vout]) instead of staying a -vf string. Hazard 2: input_offset/
+        # narration_label differ per branch — see class docstring in sound_design.py.
+        resolved_mood = resolve_mood(scene.get("mood"))
+        sound_args = build_sound_design_args(resolved_mood)
+        sound_fragment, audio_out_label = build_sound_design_filter(
+            resolved_mood, duration, narration_label, input_offset,
         )
+        ffmpeg_args = [
+            "-y", *inputs, *sound_args,
+            "-filter_complex", f"{video_chain};{sound_fragment}",
+            "-map", video_map, "-map", audio_out_label,
+            # -shortest alone doesn't reliably bound the infinite `-loop 1` video
+            # against a filter-graph-produced [aout] pad (verified against real
+            # ffmpeg: without -t, encoding never reaches EOF on the looped bgm/
+            # ambient beds). -t pins the segment to the scene's real duration.
+            "-t", str(duration),
+            *_OUTPUT_ARGS, str(seg_path),
+        ]
+    elif character_path:
+        ffmpeg_args = [
+            "-y", *inputs,
+            "-filter_complex", video_chain,
+            "-map", video_map, "-map", narration_map,
+            *_OUTPUT_ARGS, str(seg_path),
+        ]
+    else:
+        # Disabled = unchanged (AC:8): keep the pre-existing -vf path byte-for-byte.
+        vf = f"{zp_chain},subtitles='{sub}'"
+        ffmpeg_args = [
+            "-y", *inputs,
+            "-vf", vf,
+            *_OUTPUT_ARGS, str(seg_path),
+        ]
+
+    rc, stderr = await _run_ffmpeg(*ffmpeg_args)
     if rc != 0:
         raise RuntimeError(f"FFmpeg scene {n} failed (rc={rc}): {stderr[-500:]}")
     if not seg_path.exists():
@@ -636,7 +689,8 @@ async def video_node(state: PipelineState) -> dict:
         scenes = sorted(state.get("scenes", []), key=lambda sc: sc["scene_num"])
         if not scenes:  # explicit guard — don't rely on the join assert (stripped under -O)
             raise ValueError("no scenes to render")
-        _validate_scene_assets(scenes)
+        s = _settings()
+        _validate_scene_assets(scenes, sound_design_enabled=s.sound_design_enabled)
 
         # ── Story 1.13: LLM angle pre-selection ───────────────────────────
         angle_meta: dict = {}
@@ -674,13 +728,14 @@ async def video_node(state: PipelineState) -> dict:
 
         # ── Story 1.9/1.9b: FFmpeg composition ────────────────────────────
 
-        s = _settings()
         run_dir = Path(s.workspace_path) / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         for i, scene in enumerate(scenes):
-            seg_path, spec, has_char = await _compose_scene(scene, i, run_dir)
+            seg_path, spec, has_char = await _compose_scene(
+                scene, i, run_dir, sound_design_enabled=s.sound_design_enabled,
+            )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))
 
