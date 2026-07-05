@@ -11,7 +11,7 @@ baseline_commit: c1e94d1d9b444c0f93b3fe3b557c2d55f09c8969
 
 # Story 5.11: Segmentation-Failure Shot-Level Fallback
 
-Status: review
+Status: done
 
 ## Story
 
@@ -135,6 +135,14 @@ This is 5.7's own documented, deliberately-deferred gap (`data/workflows/README-
 - Architecture: `_bmad-output/planning-artifacts/architecture/architecture-yt.flow-2026-06-30/ARCHITECTURE-SPINE.md` AD-1, AD-4, AD-10, Consistency Conventions
 - Workflow docs: `data/workflows/README-layered-assets.md` "Fallback behavior" section (lines 207-227)
 
+### Review Findings
+
+- [x] [Review][Patch] Flat-fallback failure crashed the run with the wrong exception type and discarded the original segmentation error [`src/yt_flow/pipeline/nodes/image.py:249-269`]
+- [x] [Review][Patch] `request_count` trace metadata undercounted real ComfyUI submissions on the fallback path (only 1 counted per fallback shot, 2 actually made) [`src/yt_flow/pipeline/nodes/image.py:247-269`]
+- [x] [Review][Patch] Segmentation-failure warning log lacked `scene_num`, ambiguous across multi-scene runs with repeated `shot_id`s [`src/yt_flow/pipeline/nodes/image.py:250-253`]
+- [x] [Review/Defer] Broad `ComfyUIError` catch treats a transient/hung-ComfyUI timeout the same as a segmentation-specific failure, nearly doubling failure latency on a total outage [`src/yt_flow/pipeline/nodes/image.py:243-269`] — deferred, pre-existing design tradeoff explicitly accepted in this story's own Dev Notes ("no need to distinguish sub-cases," "document it but do not try to optimize it away")
+- [x] [Review/Defer] Opaque-character sub-case discards an already-successfully-rendered background and pays for a redundant full render via the flat fallback [`src/yt_flow/pipeline/nodes/image.py:177-215`] — deferred, fixing requires reintroducing the sub-case distinction this story's Dev Notes explicitly said not to make; minor GPU-time waste only, no correctness impact
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -174,3 +182,4 @@ Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story, in an isolated git worktr
 ## Change Log
 
 - 2026-07-05: Implemented per-shot flat-image fallback for segmentation-node ComfyUI errors in `image_node`; added `comfyui_flat_fallback_workflow_path` config, `layered_fallback` state field, `run_service`/frontend artifact exposure, and README update. Full regression suite green (557 passed, 1 pre-existing unrelated failure excluded) plus frontend tests/typecheck green. Live validation not practical per story's own guidance; synthetic test coverage is primary evidence. Status → review.
+- 2026-07-05: Code review (bmad-code-review, 3 parallel layers) found 8 raw findings across 3 sources, deduplicated to 5 real issues + 3 dismissed as noise. Applied 3 patches: (1) the fallback attempt is now wrapped in its own `try`/`except Exception`, re-raised as `ComfyUIError` chained (`raise ... from exc`) so a bad `comfyui_flat_fallback_workflow_path` (raises `ValueError`, not `ComfyUIError`) no longer crashes uncaught and both the original segmentation error and the fallback's own error are visible in the run's error message (fixes an AC2 gap: "the original error propagates" wasn't literally true before); (2) `request_count` now counts the failed layered attempt too, not just the fallback (was undercounting real ComfyUI submissions by 1 per fallback shot); (3) the warning log now includes `scene_num` alongside `shot_id`. Deferred 2 items to `deferred-work.md` (pre-accepted design tradeoffs per this story's own Dev Notes, not blocking): broad `ComfyUIError` catch doubling failure latency on a total ComfyUI outage, and the opaque-character sub-case wasting a redundant render by discarding an already-good background. Added 2 new regression tests (`test_segmentation_failure_bad_fallback_workflow_path_fails_gracefully`, plus assertions on the existing fallback-also-fails and fallback-count tests) — `tests/pipeline/nodes/test_image.py` 29 passed, plus `tests/pipeline`, `tests/api`, `tests/domain` all green. Status → done.
