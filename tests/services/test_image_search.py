@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from yt_flow.domain.state import SearchResult
-from yt_flow.services.image_search import DuckDuckGoImageSearch, _VQD_RE
+from yt_flow.services.image_search import DuckDuckGoImageSearch, ScpWikiImageFetch, _VQD_RE
 
 
 # ── Fake responses ───────────────────────────────────────────────────────────
@@ -108,4 +108,84 @@ class TestDuckDuckGoImageSearch:
             # Apply max_results=2
             limited = data["results"][:2]
             assert len(limited) == 2
+
+
+# ── ScpWikiImageFetch (Story 5.10, AC1-2) ────────────────────────────────────
+
+_PAGE_WITH_IMAGE = """
+<html><body>
+<div id="page-content">
+<div style="text-align: right;"><div class="page-rate-widget-box">rate</div></div>
+<p>Item #: SCP-096</p>
+<img src="https://scp-wiki.wdfiles.com/local--files/scp-096/shy-guy.jpg" alt="shy-guy.jpg" class="image" />
+</div>
+<div class="footer-wikiwalk-nav">nav</div>
+</body></html>
+"""
+
+_PAGE_NO_IMAGE = """
+<html><body>
+<div id="page-content">
+<p>Item #: SCP-173</p>
+</div>
+<div class="footer-wikiwalk-nav">nav</div>
+</body></html>
+"""
+
+
+class TestScpWikiImageFetch:
+    """AC1: SCP Wiki fetch is attempted before DuckDuckGo. AC2: falls back on any miss."""
+
+    @pytest.mark.asyncio
+    async def test_wiki_hit_extracts_image_url(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/scp-096"
+            return httpx.Response(200, text=_PAGE_WITH_IMAGE, request=request)
+
+        fetch = ScpWikiImageFetch(transport=httpx.MockTransport(handler))
+        result = await fetch.fetch("SCP-096")
+
+        assert result is not None
+        assert result.image_url == "https://scp-wiki.wdfiles.com/local--files/scp-096/shy-guy.jpg"
+        assert result.page_url == "https://scp-wiki.wikidot.com/scp-096"
+
+    @pytest.mark.asyncio
+    async def test_wiki_miss_no_image_element(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=_PAGE_NO_IMAGE, request=request)
+
+        fetch = ScpWikiImageFetch(transport=httpx.MockTransport(handler))
+        result = await fetch.fetch("SCP-173")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_wiki_miss_404(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, text="not found", request=request)
+
+        fetch = ScpWikiImageFetch(transport=httpx.MockTransport(handler))
+        result = await fetch.fetch("SCP-9999999")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_wiki_miss_connection_error(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        fetch = ScpWikiImageFetch(transport=httpx.MockTransport(handler))
+        result = await fetch.fetch("SCP-096")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_wiki_miss_unrecognized_structure(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html><body>no page-content div</body></html>", request=request)
+
+        fetch = ScpWikiImageFetch(transport=httpx.MockTransport(handler))
+        result = await fetch.fetch("SCP-096")
+
+        assert result is None
 

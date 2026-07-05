@@ -81,6 +81,12 @@ def fake_get_prompt(name: str, *, label: str | None = None) -> _FakePrompt:
     return _FakePrompt()
 
 
+# ── image_search.ScpWikiImageFetch.fetch (Story 5.10) ───────────────────────
+async def fake_wiki_fetch_miss(self, scp_id: str):
+    """Always misses — routes offline tests through the (also-faked) DuckDuckGo path."""
+    return None
+
+
 # ── image_search.DuckDuckGoImageSearch.search ────────────────────────────────
 async def fake_image_search(self, query: str, max_results: int = 10) -> list[SearchResult]:
     """3 canned SearchResults — never fetched for real (download is also faked)."""
@@ -126,6 +132,7 @@ def patch_character_reference_seams(monkeypatch) -> None:
     import yt_flow.services.character_service as character_service
     import yt_flow.services.image_search as image_search
 
+    monkeypatch.setattr(image_search.ScpWikiImageFetch, "fetch", fake_wiki_fetch_miss)
     monkeypatch.setattr(image_search.DuckDuckGoImageSearch, "search", fake_image_search)
     monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
                          fake_download_reference_image)

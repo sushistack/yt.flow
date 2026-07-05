@@ -3,7 +3,6 @@
 Architecture: services/ imports domain/ and db/. Must NOT import api/ or pipeline/. [AD-1]
 """
 
-import base64
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -88,7 +87,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         width: int = 1664,
         height: int = 928,
     ) -> bytes:
-        from yt_flow.services.comfyui_client import submit_and_fetch
+        from yt_flow.services.comfyui_client import submit_and_fetch, upload_image
 
         workflow = self._load_workflow()
         workflow = self._inject_prompt(workflow, prompt)
@@ -96,14 +95,15 @@ class ComfyUICharacterProvider(CharacterImageProvider):
 
         # Try i2i with reference image
         try:
-            ref_b64 = self._load_reference_b64(ref_image_path)
-            workflow = self._inject_reference_image(workflow, ref_b64)
+            ref_bytes = Path(ref_image_path).read_bytes()
+            uploaded_name = await upload_image(self._base_url, ref_bytes, Path(ref_image_path).name)
+            workflow = self._inject_reference_image(workflow, uploaded_name)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI i2i generation succeeded (%dx%d)", width, height)
             return result
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
-            # Fallback: remove reference image node and use t2i
+            # Fallback: bypass the reference-image conditioning and use t2i
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i fallback succeeded (%dx%d)", width, height)
@@ -119,12 +119,6 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             return json.loads(path.read_text())
         # Built-in minimal workflow
         return self._default_workflow()
-
-    @staticmethod
-    def _load_reference_b64(path: str) -> str:
-        """Read reference image and return base64-encoded data URI."""
-        raw = Path(path).read_bytes()
-        return base64.b64encode(raw).decode("ascii")
 
     def _inject_prompt(self, workflow: dict, prompt: str) -> dict:
         """Inject the generation prompt into the positive CLIP text encoder node.
@@ -155,21 +149,43 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         return workflow
 
     @staticmethod
-    def _inject_reference_image(workflow: dict, ref_b64: str) -> dict:
-        """Inject the reference image into the Load Image node for i2i."""
-        for node_id, node in workflow.items():
+    def _inject_reference_image(workflow: dict, image_name: str) -> dict:
+        """Inject the uploaded reference image's filename into the Load Image node.
+
+        ``image_name`` must already be an uploaded-to-ComfyUI filename (see
+        ``comfyui_client.upload_image``) — ``LoadImage.inputs.image`` resolves
+        against ComfyUI's input directory, it does not accept raw image bytes.
+        """
+        for node in workflow.values():
             if isinstance(node, dict) and node.get("class_type") == "LoadImage":
-                node["inputs"]["image"] = ref_b64
+                node["inputs"]["image"] = image_name
         return workflow
 
     @staticmethod
     def _remove_i2i_input(workflow: dict) -> dict:
-        """Convert i2i workflow to t2i by reconnecting KSampler latent to EmptyLatentImage.
+        """Convert i2i workflow to t2i by bypassing reference-image conditioning.
 
-        Finds the KSampler node and sets its ``latent_image`` input to point to
-        the EmptyLatentImage node instead of the VAE Encode (LoadImage) node.
+        IPAdapter-conditioned workflows (Story 5.10): the reference conditions the
+        model/cross-attention via an ``IPAdapter``/``IPAdapterAdvanced`` node, not
+        the sampler's starting latent — reconnect ``KSampler.model`` directly to
+        whatever fed the IPAdapter node, bypassing it.
+
+        Legacy VAEEncode-based i2i workflows (pre-5.10, kept for compatibility):
+        reconnect ``KSampler.latent_image`` to ``EmptyLatentImage`` instead.
         """
-        # Find the EmptyLatentImage node ID
+        for node_id, node in workflow.items():
+            if isinstance(node, dict) and node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced"):
+                upstream_model = node.get("inputs", {}).get("model")
+                if upstream_model is None:
+                    break
+                for sampler in workflow.values():
+                    if isinstance(sampler, dict) and sampler.get("class_type") == "KSampler":
+                        if sampler.get("inputs", {}).get("model") == [node_id, 0]:
+                            sampler["inputs"]["model"] = upstream_model
+                            logger.info("t2i fallback: KSampler model bypassed IPAdapter node %s", node_id)
+                return workflow
+
+        # Legacy shape: find the EmptyLatentImage node ID
         latent_node_id = None
         for node_id, node in workflow.items():
             if isinstance(node, dict) and node.get("class_type") == "EmptyLatentImage":
@@ -179,8 +195,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         if latent_node_id is None:
             return workflow  # No latent node to connect to — stay with i2i
 
-        # Find the KSampler and reconnect its latent_image to EmptyLatentImage
-        for node_id, node in workflow.items():
+        for node in workflow.values():
             if isinstance(node, dict) and node.get("class_type") == "KSampler":
                 if "latent_image" in node.get("inputs", {}):
                     node["inputs"]["latent_image"] = [latent_node_id, 0]

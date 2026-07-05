@@ -36,6 +36,18 @@ async def submit_and_fetch(
         return await _download(client, image_ref)
 
 
+async def upload_image(base_url: str, image_bytes: bytes, filename: str) -> str:
+    """Upload an image to ComfyUI's input directory for use in a ``LoadImage`` node.
+
+    ComfyUI's ``LoadImage`` node resolves ``inputs.image`` as a filename in its
+    input directory (optionally ``"name [subfolder]"``), not raw image bytes —
+    the image must be uploaded via ``POST /upload/image`` first. Returns the
+    string to set as ``LoadImage.inputs.image``.
+    """
+    async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
+        return await _upload(client, image_bytes, filename)
+
+
 async def submit_and_fetch_outputs(
     base_url: str,
     workflow: dict,
@@ -66,6 +78,25 @@ def _error_detail(resp: httpx.Response) -> str:
         return str(data.get("error") or data.get("node_errors") or data)
     except Exception:  # noqa: BLE001 — fall back to raw body on non-JSON errors
         return resp.text
+
+
+async def _upload(client: httpx.AsyncClient, image_bytes: bytes, filename: str) -> str:
+    try:
+        resp = await client.post(
+            "/upload/image",
+            files={"image": (filename, image_bytes, "image/png")},
+            data={"overwrite": "true"},
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise ComfyUIError(f"ComfyUI image upload failed: {exc}") from exc
+
+    data = resp.json()
+    name = data.get("name")
+    if not name:
+        raise ComfyUIError(f"ComfyUI upload response missing name: {data!r}")
+    subfolder = data.get("subfolder", "")
+    return f"{name} [{subfolder}]" if subfolder else name
 
 
 async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:

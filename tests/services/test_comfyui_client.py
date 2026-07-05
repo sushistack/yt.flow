@@ -100,3 +100,36 @@ async def test_download_raises_on_empty_body():
     async with _client(handler) as c:
         with pytest.raises(cc.ComfyUIError, match="empty body"):
             await cc._download(c, {"filename": "f.png"})
+
+
+# ── upload_image (Story 5.10 — LoadImage needs a real uploaded filename, not base64) ─
+
+async def test_upload_returns_bare_name_without_subfolder():
+    async def handler(req):
+        assert req.url.path == "/upload/image"
+        return httpx.Response(200, json={"name": "ref.png", "subfolder": "", "type": "input"})
+    async with _client(handler) as c:
+        assert await cc._upload(c, b"PNGBYTES", "ref.png") == "ref.png"
+
+
+async def test_upload_returns_bracketed_name_with_subfolder():
+    async def handler(req):
+        return httpx.Response(200, json={"name": "ref.png", "subfolder": "sub", "type": "input"})
+    async with _client(handler) as c:
+        assert await cc._upload(c, b"PNGBYTES", "ref.png") == "ref.png [sub]"
+
+
+async def test_upload_raises_on_http_error():
+    async def handler(req):
+        return httpx.Response(400, text="bad request")
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError, match="upload failed"):
+            await cc._upload(c, b"PNGBYTES", "ref.png")
+
+
+async def test_upload_raises_when_name_missing():
+    async def handler(req):
+        return httpx.Response(200, json={})
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError, match="missing name"):
+            await cc._upload(c, b"PNGBYTES", "ref.png")

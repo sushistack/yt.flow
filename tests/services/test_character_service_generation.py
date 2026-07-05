@@ -305,6 +305,51 @@ class TestProviderSelection:
         assert provider.supports_i2i is False
 
 
+# ── Reference image injection / t2i fallback (Story 5.10, AC7-9) ────────────
+
+
+class TestReferenceImageInjectionAndFallback:
+    """Exercises the real authored workflow's node shape offline (no live ComfyUI)."""
+
+    @pytest.fixture
+    def workflow(self):
+        import json
+        path = Path(__file__).resolve().parents[2] / "data" / "workflows" / "comfyui_character_multi_angle_api.json"
+        return json.loads(path.read_text())
+
+    def test_inject_reference_image_sets_uploaded_filename(self, workflow):
+        """AC7/AC9: LoadImage.inputs.image gets the uploaded filename, not base64."""
+        updated = ComfyUICharacterProvider._inject_reference_image(workflow, "ref_1.png [input]")
+        load_image_nodes = [n for n in updated.values() if n.get("class_type") == "LoadImage"]
+        assert len(load_image_nodes) == 1
+        assert load_image_nodes[0]["inputs"]["image"] == "ref_1.png [input]"
+
+    def test_remove_i2i_input_bypasses_ipadapter_node(self, workflow):
+        """AC9: t2i fallback reconnects KSampler.model around the IPAdapter node
+        (IPAdapter conditions the model, not the latent — the legacy latent
+        -reconnection logic would be a no-op for this workflow shape)."""
+        ipadapter_node_id = next(
+            nid for nid, n in workflow.items() if n.get("class_type") == "IPAdapterAdvanced"
+        )
+        upstream_model = workflow[ipadapter_node_id]["inputs"]["model"]
+        sampler_id = next(nid for nid, n in workflow.items() if n.get("class_type") == "KSampler")
+        assert workflow[sampler_id]["inputs"]["model"] == [ipadapter_node_id, 0]
+
+        updated = ComfyUICharacterProvider._remove_i2i_input(workflow)
+
+        assert updated[sampler_id]["inputs"]["model"] == upstream_model
+
+    def test_remove_i2i_input_legacy_shape_reconnects_latent(self):
+        """Legacy VAEEncode-i2i workflow shape (no IPAdapter node) still falls
+        back via the original latent-reconnection path."""
+        legacy_workflow = {
+            "3": {"class_type": "KSampler", "inputs": {"latent_image": ["99", 0], "model": ["4", 0]}},
+            "5": {"class_type": "EmptyLatentImage", "inputs": {"width": 512, "height": 512}},
+        }
+        updated = ComfyUICharacterProvider._remove_i2i_input(legacy_workflow)
+        assert updated["3"]["inputs"]["latent_image"] == ["5", 0]
+
+
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────
 
 

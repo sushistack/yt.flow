@@ -2,6 +2,7 @@
 AC: 2, 3, 4, 5
 """
 
+import httpx
 import pytest
 from sqlmodel import Session, select
 
@@ -13,6 +14,7 @@ from yt_flow.services.character_service import (
     _is_private_host,
     _validate_create,
 )
+from yt_flow.services.image_search import WikiImage
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -234,6 +236,23 @@ class _FakeImageSearch:
         return self._results[:max_results]
 
 
+class _FakeWikiFetch:
+    """Fake ScpWikiImageFetch — returns a canned WikiImage, or None to force DDG fallback."""
+
+    def __init__(self, wiki_image=None):
+        self._wiki_image = wiki_image
+
+    async def fetch(self, scp_id):
+        return self._wiki_image
+
+
+class _FakeWikiFetchRaises:
+    """Fake ScpWikiImageFetch whose fetch() itself errors (network blip, not a clean miss)."""
+
+    async def fetch(self, scp_id):
+        raise httpx.ConnectError("boom")
+
+
 class TestReferenceImageSearch:
     """AC4: search_references downloads with safety checks."""
 
@@ -278,6 +297,7 @@ class TestReferenceImageSearch:
                 {"url": "https://example.com/a.png", "thumbnail_url": "https://example.com/a_t.png", "title": "a"},
                 {"url": "https://example.com/b.png", "thumbnail_url": "https://example.com/b_t.png", "title": "b"},
             ]),
+            wiki_fetch=_FakeWikiFetch(),  # miss -> falls through to DDG fake below
         )
         svc.create_character("SCP-096", "Shy Guy")
 
@@ -290,6 +310,86 @@ class TestReferenceImageSearch:
 
         result = await svc.search_references("SCP-096", tmp_path, max_results=10)
         assert [r.url for r in result] == ["https://example.com/a.png", "https://example.com/b.png"]
+
+
+class TestWikiFirstReferenceSearch:
+    """AC1-3 (Story 5.10): SCP Wiki is tried first; DuckDuckGo is the fallback."""
+
+    @pytest.mark.asyncio
+    async def test_wiki_hit_downloads_and_persists_page_url_for_attribution(self, session, monkeypatch, tmp_path):
+        """AC1/AC3: a wiki hit downloads the image and stores the page URL (not the
+        asset URL) on the ReferenceImage record, for CC BY-SA provenance."""
+        svc = CharacterService(
+            session,
+            image_search=_FakeImageSearch([{"url": "https://ddg.example/should-not-be-used.png",
+                                             "thumbnail_url": "", "title": ""}]),
+            wiki_fetch=_FakeWikiFetch(WikiImage(
+                image_url="https://scp-wiki.wdfiles.com/local--files/scp-096/shy-guy.jpg",
+                page_url="https://scp-wiki.wikidot.com/scp-096",
+            )),
+        )
+        svc.create_character("SCP-096", "Shy Guy")
+
+        async def fake_download(self, url, refs_dir, num):
+            assert url == "https://scp-wiki.wdfiles.com/local--files/scp-096/shy-guy.jpg"
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            (refs_dir / f"ref_{num}.jpg").write_bytes(b"\xff\xd8")
+            return "jpg"
+
+        monkeypatch.setattr(CharacterService, "_download_reference_image", fake_download)
+
+        result = await svc.search_references("SCP-096", tmp_path, max_results=10)
+        assert len(result) == 1
+        assert result[0].url == "https://scp-wiki.wikidot.com/scp-096"
+
+    @pytest.mark.asyncio
+    async def test_wiki_download_error_falls_back_to_ddg(self, session, monkeypatch, tmp_path):
+        """AC2: if the wiki image itself fails to download, fall back to DuckDuckGo."""
+        svc = CharacterService(
+            session,
+            image_search=_FakeImageSearch([{"url": "https://ddg.example/fallback.png",
+                                             "thumbnail_url": "", "title": ""}]),
+            wiki_fetch=_FakeWikiFetch(WikiImage(
+                image_url="https://scp-wiki.wdfiles.com/local--files/scp-096/broken.jpg",
+                page_url="https://scp-wiki.wikidot.com/scp-096",
+            )),
+        )
+        svc.create_character("SCP-096", "Shy Guy")
+
+        async def fake_download(self, url, refs_dir, num):
+            if "wdfiles.com" in url:
+                raise ValueError("simulated download failure")
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            (refs_dir / f"ref_{num}.png").write_bytes(b"\x89PNG")
+            return "png"
+
+        monkeypatch.setattr(CharacterService, "_download_reference_image", fake_download)
+
+        result = await svc.search_references("SCP-096", tmp_path, max_results=10)
+        assert len(result) == 1
+        assert result[0].url == "https://ddg.example/fallback.png"
+
+    @pytest.mark.asyncio
+    async def test_wiki_fetch_error_falls_back_to_ddg(self, session, monkeypatch, tmp_path):
+        """AC2: if the wiki fetch itself raises, fall back to DuckDuckGo rather than
+        propagating — a transient network blip must not break reference provisioning."""
+        svc = CharacterService(
+            session,
+            image_search=_FakeImageSearch([{"url": "https://ddg.example/fallback.png",
+                                             "thumbnail_url": "", "title": ""}]),
+            wiki_fetch=_FakeWikiFetchRaises(),
+        )
+        svc.create_character("SCP-096", "Shy Guy")
+
+        async def fake_download(self, url, refs_dir, num):
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            (refs_dir / f"ref_{num}.png").write_bytes(b"\x89PNG")
+            return "png"
+
+        monkeypatch.setattr(CharacterService, "_download_reference_image", fake_download)
+
+        with pytest.raises(httpx.ConnectError):
+            await svc.search_references("SCP-096", tmp_path, max_results=10)
 
 
 # ── Layer-boundary test ──────────────────────────────────────────────────────

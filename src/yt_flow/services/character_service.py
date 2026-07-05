@@ -22,7 +22,7 @@ from yt_flow.db.models import Character as CharacterModel
 from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
-from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch
+from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
 
 logger = logging.getLogger(__name__)
 
@@ -129,10 +129,12 @@ class CharacterService:
         session: Session,
         image_search: ImageSearch | None = None,
         settings: Settings | None = None,
+        wiki_fetch: ScpWikiImageFetch | None = None,
     ) -> None:
         self._session = session
         self._image_search = image_search or DuckDuckGoImageSearch()
         self._settings = settings or Settings()
+        self._wiki_fetch = wiki_fetch or ScpWikiImageFetch()
 
     # ── CRUD ──────────────────────────────────────────────────────────────
 
@@ -297,10 +299,31 @@ class CharacterService:
         workspace_path: str | Path,
         scp_id: str,
     ) -> list[ReferenceImageModel]:
-        """Internal: search, download with safety checks, persist ReferenceImage records."""
+        """Internal: search, download with safety checks, persist ReferenceImage records.
+
+        Tries the SCP Wiki's official page image first (attributable, canonical source);
+        falls back to ``self._image_search`` (DuckDuckGo) unchanged on any wiki miss.
+        """
         safe_scp = _sanitize_scp_id(scp_id)
         refs_dir = Path(workspace_path) / safe_scp / "references"
         refs_dir.mkdir(parents=True, exist_ok=True)
+
+        wiki_image = await self._wiki_fetch.fetch(scp_id)
+        if wiki_image is not None:
+            try:
+                ext = await self._download_reference_image(wiki_image.image_url, refs_dir, 1)
+            except Exception as exc:
+                logger.info("SCP Wiki image download failed for %s: %s; falling back to search", scp_id, exc)
+            else:
+                record = ReferenceImageModel(
+                    character_id=character.id,
+                    url=wiki_image.page_url,  # AC3: page URL preserved for CC BY-SA attribution
+                    local_path=str(refs_dir / f"ref_1.{ext}"),
+                )
+                self._session.add(record)
+                self._session.commit()
+                logger.info("Downloaded SCP Wiki reference image for %s", scp_id)
+                return [record]
 
         results = await self._image_search.search(query=query, max_results=max_results)
         logger.info("Search returned %d results for %r", len(results), query)
