@@ -969,6 +969,14 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 5.7 완료 시점에 문서화된 미해결 결합: 레이어드 파이프라인의 세그멘테이션/인페인트 패스가 한 샷에서 실패하면 run 전체가 실패함. 샷 단위 graceful fallback으로 전환 — 실패한 샷만 레이어드를 포기하고 합성 전 플랫 프레임으로 컴포즈, run은 계속 진행, 경고를 state에 기록해 image 게이트 아티팩트 패널에서 사람이 확인 가능하게. AD-10(보조 실패 non-fatal)·5.8의 `fallback: true` 시맨틱과 일관되며, 결과가 마음에 안 들면 기존 2.4 스테이지 retry로 image 스테이지만 재시도하는 운영 흐름을 전제. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.12: 캐릭터 생성 프롬프트 콘텐츠 복구 (Vision 디스크립터 배선 + Langfuse 브레이스 버그)
+
+5.10 라이브 검증(2026-07-05, 신규 `SCP-1471` end-to-end run)에서 발견된, 워크플로우/메커니즘이 아니라 **프롬프트 콘텐츠** 계층의 결함 2건. (1) `CharacterService.enrich_descriptor_from_references`(1.11이 만든 Vision LLM 디스크립터 추출)가 `run_service._ensure_character_reference`(5.8의 자동 트리거)에서 한 번도 호출되지 않음 — 그 결과 자동 생성된 캐릭터의 `visual_descriptor`는 항상 빈 값이고, 캐릭터 정체성은 오직 IPAdapter의 이미지 컨디셔닝에만 의존, 프롬프트 텍스트에는 실제 레퍼런스 이미지에 대한 설명이 전혀 없음. (2) Langfuse Prompt Hub의 `"character-generation"` 프롬프트가 `{angle}` 싱글 브레이스 문법을 쓰는데 Langfuse SDK `TextPromptClient.compile()`은 `{{angle}}` 더블 브레이스만 치환 — 라이브 검증에서 4개 앵글 중 2쌍이 완전히 동일한(치환 안 된) 프롬프트 텍스트를 받아 바이트 단위로 동일한 이미지가 생성되는 것으로 재현 확인. `docs/PROMPT_POLICY.md` 절차(레포 파일이 source of truth, production/candidate 라벨만, Langfuse UI 직접 편집 금지)를 따라 프롬프트 콘텐츠를 수정. 선택 확장: DDG 폴백 후보 중 올바른 캐릭터를 Vision LLM으로 선별하는 단계(1.13의 앵글 선택 LLM과 유사) 추가 검토 — 위키가 주 소스가 된 이후 DDG는 폴백 경로일 때만 트리거되므로 낮은 우선순위. 5.10의 가드레일과 동일하게 `select_character_angles`의 tri-state 계약과 5.8의 롤백/동시성 계약은 건드리지 않음. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.13: 캐릭터 Vision LLM 프로바이더 교체 (DeepSeek → Qwen-VL)
+
+5.12 라이브 재검증(2026-07-05, 신규 `SCP-682`)에서 발견: `CharacterService.enrich_descriptor_from_references`(1.11)가 호출은 정상적으로 되지만(5.12가 배선 완료), 실제 DeepSeek 호출이 `400 Bad Request: unknown variant "image_url", expected "text"`로 실패 — 계정에 등록된 모델(`deepseek-v4-flash`, `deepseek-v4-pro`, `/models`로 라이브 확인)이 둘 다 텍스트 전용이며, DeepSeek 공식 호스팅 API 자체가 비전(이미지 입력) 엔드포인트를 제공하지 않음. 모델 이름 교체로 해결 불가 — 비전 지원 프로바이더로 교체 필요. 이 프로젝트가 Qwen TTS용으로 이미 보유한 DashScope 계정/키(`YTFLOW_QWEN_TTS_API_KEY`, `qwen_tts_endpoint` 패턴)로 Qwen-VL을 붙이면 신규 계정 없이 해결 가능. 범위는 `enrich_descriptor_from_references`의 HTTP 호출 + 모델/엔드포인트 설정에 한정 — ComfyUI/IPAdapter 캐릭터 생성 경로, `run_service._ensure_character_reference`의 배선(5.12에서 이미 완료), Langfuse 프롬프트 콘텐츠(5.12에서 이미 수정)는 건드리지 않음. DoD: 실제 레퍼런스 이미지로 `visual_descriptor`가 실제로 채워지는 것을 라이브로 검증 — 5.12가 프로바이더 결함으로 끝까지 확인하지 못했던 AC1 경로의 마지막 조각. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.

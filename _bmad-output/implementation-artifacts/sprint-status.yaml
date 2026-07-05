@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-05  # story 5-12-character-prompt-content-repair created → ready-for-dev; 5-10-entity-reference-pipeline-repair code review → done
+last_updated: 2026-07-05  # story 5-12/5-13 → done (bmad-code-review 공동 진행, findings 6건 일괄 수정, 회귀 그린)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -108,7 +108,8 @@ development_status:
   5-9-transition-audio-continuity: done  # depends on 5-1 — acrossfade를 adelay+amix(normalize=0)로 교체, 비디오 xfade offset 재사용으로 드리프트 없음; 코드 리뷰 완료(패치 6건 적용, 3건 보류)
   5-10-entity-reference-pipeline-repair: done  # 5-8 라이브 검증에서 발견된 블로커 2건 해결: SCP 위키 우선 fetch(+CC BY-SA 출처) 구현, comfyui_character_multi_angle_api.json(IPAdapter) 저작+라이브 검증; 부수 발견한 base64→파일명 주입 버그(1.12 소관, i2i 항상 실패)도 수정. 라이브 e2e 재검증 완료(신규 SCP-1471 run, 5게이트 전체 승인, character_path가 실제 앵글 이미지로 해석됨) — 5-8 AC1 낙관 경로 확인. 코드 리뷰 완료(패치 6건 적용: wiki-fetch 예외 미포착→DDG 폴백 실패 AC2 위반 수정, 업로드 content-type 하드코딩 수정, _remove_i2i_input 무음 no-op에 경고 로그 추가, seed=0 고정 수정, 로그 레벨 조정, _load_workflow CWD-상대경로 수정 / 5건 보류: 위키 이미지 휴리스틱 견고성, 위키 경로 단일후보 제약, 업로드 resp.json() 미포착, 업로드 크기 캡, scp_id 슬러그 정규화 불일치). 회귀 스위트 그린(626 passed, 무관 스킵 1건, 신규 테스트 4건 추가). 후속 이슈 2건 문서화(Vision LLM 디스크립터 미배선, Langfuse character-generation 프롬프트 브레이스 버그) — 5-12로 스토리화 완료
   5-11-segmentation-failure-shot-fallback: done  # 5-7 미해결 결합 해소 — 세그 실패 시 해당 샷만 플랫 폴백 + 경고, run은 계속 (AD-10); 코드 리뷰 완료(패치 3건 적용: 폴백-실패 시 원본 에러 보존+ValueError도 캐치, request_count 언더카운트 수정, 로그에 scene_num 추가 / 2건 보류: 타임아웃 지연 2배, opaque-character 재렌더 낭비); 회귀 스위트 그린, 프론트 테스트/타입체크 그린; 라이브 검증은 실전 세그멘테이션 크래시 재현 불가로 미실시(스토리 가이드에 따름)
-  5-12-character-prompt-content-repair: ready-for-dev  # 5-10 라이브 검증에서 발견: Vision LLM 디스크립터(1.11) 자동 배선 누락 + Langfuse character-generation 프롬프트 브레이스 문법 불일치(4앵글 전부 동일 미치환 텍스트 수신, 재현 확인); angle_selection 프롬프트도 동일 버그 의심(라이브 run에서 49샷 전부 front로 귀결) — 상세 스토리 파일 작성 완료(create-story)
+  5-12-character-prompt-content-repair: done  # Vision LLM 디스크립터 enrichment를 _ensure_character_reference에 배선(비치명적, 독립 try/except); character-generation + character-angle-selection 둘 다 동일 브레이스 버그로 확인, scripts/seed_character_prompts.py 신설(migrate_prompts.convert_placeholders 재사용) 후 candidate→production 승격(PROMPT_POLICY.md 준수, 캐릭터 프롬프트엔 미적용되는 2단계는 문서화된 사유로 대체 검증). 라이브 재검증(신규 SCP-682): 4앵글 이미지 전부 MD5 상이(기존 2/4 중복 해결), 앵글 선택이 서사 맥락에 맞게 4종 모두 분산 선택됨(기존 49/49 front 전부 해결, Story 1.13 로직 결함 아님 확인). Vision LLM enrichment는 라이브에서 실제 400 에러(deepseek-v4-flash가 image_url 미지원) — AC2 비치명적 계약이 실제 실패 상황에서도 정상 작동함을 증명, 별도 후속 이슈로 플래그(1.11 소관, 이 스토리 범위 아님). 코드 리뷰(5-13과 공동, bmad-code-review) 완료 — findings 4건 이 스토리 귀속 수정(seed 스크립트 except 범위 축소, PROMPT_POLICY.md 2개 규칙 정정, run_service.py 로그 오귀속 수정). 회귀 스위트 그린(628 passed, 기존 skip 1건)
+  5-13-character-vision-provider-swap: done  # DeepSeek 계정에 비전 모델이 없다는 5.12 발견을 해결: Qwen-VL(DashScope, qwen-vl-plus)로 프로바이더 교체. config.py에 character_vision_model/character_vision_api_key 신설, character_service.py의 HTTP 타겟만 교체(메시지 구성/예외 처리 무변경). 라이브 검증 완료(SCP-682 실제 참조 이미지로 실제 디스크립터 수신 — 5.12가 못 닫은 AC2 갭 해소). 코드 리뷰(5-12와 공동, bmad-code-review) 완료 — findings 2건 이 스토리 귀속 수정(AttributeError 미포착 추가, 엔드포인트/모델 회귀 테스트 추가). 회귀 스위트 그린(628 passed, 기존 skip 1건 유지)
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
