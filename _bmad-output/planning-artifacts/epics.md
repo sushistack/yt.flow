@@ -961,6 +961,14 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 5.1이 씬 경계를 `fadeblack` 암전으로 바꾸면서 오디오 crossfade(`acrossfade`)를 비디오 전환과 동일 `XFADE_DURATION`으로 묶어 유지했는데, 이로 인해 컷마다 나레이션 오디오 볼륨이 같이 페이드됨. 비디오 전환은 그대로 두고 오디오만 연속 재생 또는 무음 갭으로 분리.
 
+### Story 5.10: 엔티티 레퍼런스 파이프라인 복구 (SCP 위키 우선 + 캐릭터 워크플로우 저작)
+
+5.8 라이브 검증(2026-07-04)에서 발견된 기존 블로커 2건 수리. (1) 1.11의 `image_search.py`가 치는 DuckDuckGo 비공식 스크레이핑 엔드포인트(`i.js`)가 실환경에서 재현 가능하게 `403 Forbidden` — 검색 대신 **SCP 위키 공식 이미지 우선 fetch**(`scp_id`로 페이지 URL 결정적 도출, CC BY-SA 출처 메타데이터 보존)로 교체하고 이미지 검색은 위키에 이미지가 없을 때의 fallback으로 강등. (2) `Settings.character_comfyui_workflow_path` 기본값인 `data/workflows/comfyui_character_multi_angle_api.json`이 **디스크에 존재하지 않고**, `character_image_provider.py`의 내장 `_default_workflow()`도 실제 ComfyUI가 `prompt_outputs_failed_validation`으로 거부 — 1.12의 멀티앵글 캐릭터 생성은 실제 ComfyUI에서 한 번도 성공한 적 없음. 5.7이 레이어드 워크플로우를 검증한 방식대로, 이미 검증된 레이어드 SDXL 워크플로우에서 파생(동일 체크포인트/LoRA 노드 구조)해 레퍼런스 이미지 컨디셔닝(IPAdapter) + 앵글별 프롬프트 주입을 붙인 워크플로우 JSON을 저작하고 실제 로컬 ComfyUI로 4앵글 생성을 검증. DoD: 5.8 AC1의 낙관 경로(레퍼런스 확보 → 멀티앵글 생성 → 앵글 선택 → `character_path` 반영)를 실제 run에서 end-to-end 라이브 재검증. 주의: 5.8 리뷰가 추가한 실패-시-롤백(`delete_character`) 계약과 A/B 동시성 처리를 깨지 말 것. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.11: 세그멘테이션 실패 샷 단위 폴백
+
+5.7 완료 시점에 문서화된 미해결 결합: 레이어드 파이프라인의 세그멘테이션/인페인트 패스가 한 샷에서 실패하면 run 전체가 실패함. 샷 단위 graceful fallback으로 전환 — 실패한 샷만 레이어드를 포기하고 합성 전 플랫 프레임으로 컴포즈, run은 계속 진행, 경고를 state에 기록해 image 게이트 아티팩트 패널에서 사람이 확인 가능하게. AD-10(보조 실패 non-fatal)·5.8의 `fallback: true` 시맨틱과 일관되며, 결과가 마음에 안 들면 기존 2.4 스테이지 retry로 image 스테이지만 재시도하는 운영 흐름을 전제. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.

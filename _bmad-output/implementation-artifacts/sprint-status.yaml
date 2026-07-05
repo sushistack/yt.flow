@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-04  # 7-4-transition-variety → ready-for-dev
+# last_updated: 2026-07-05  # 7-4-transition-variety → ready-for-dev
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-04  # story 5-9-transition-audio-continuity → done (code review complete)
+last_updated: 2026-07-05  # story 5-11-segmentation-failure-shot-fallback → ready-for-dev
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -106,6 +106,8 @@ development_status:
   5-7-layered-background-double-exposure-fix: done  # ComfyUI 인페인트 패스로 배경에서 개체 제거; 코드리뷰 반영(전용 inpaint negative prompt 노드 추가, legacy rembg 워크플로우 경고, 합성 프레임 증거 추가, README fallback 문서 정정) + 회귀 테스트 추가. 세그멘테이션 실패 시 전체 run 실패로 전환되는 결합은 후속 결정 필요 항목으로 문서화(미해결)
   5-8-automatic-entity-reference-generation: done  # run_service.start_run 사전 그래프 단계로 자동 트리거 구현(AC2/AC3/AC4 라이브 검증); 코드리뷰 반영(non-fatal 보장 깨짐 수정, 전체 실패 시 영구 미제공 레코드 롤백, A/B 동시성 레이스 처리) + 회귀 테스트 3건 추가, 중복 monkeypatch 제거. AC1 낙관 경로는 DuckDuckGo 403 + 캐릭터 생성 ComfyUI 워크플로우 누락/부적합(1.12 소관, 미해결)으로 라이브 미검증 — 후속 스토리 필요
   5-9-transition-audio-continuity: done  # depends on 5-1 — acrossfade를 adelay+amix(normalize=0)로 교체, 비디오 xfade offset 재사용으로 드리프트 없음; 코드 리뷰 완료(패치 6건 적용, 3건 보류)
+  5-10-entity-reference-pipeline-repair: ready-for-dev  # 5-8 라이브 검증에서 발견된 블로커 2건: DDG 403 → SCP 위키 우선 fetch로 교체 + comfyui_character_multi_angle_api.json 저작/라이브 검증; DoD = 5-8 AC1 낙관 경로 라이브 재검증
+  5-11-segmentation-failure-shot-fallback: ready-for-dev  # 5-7 미해결 결합 해소 — 세그 실패 시 해당 샷만 플랫 폴백 + 경고, run은 계속 (AD-10)
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
@@ -114,7 +116,7 @@ development_status:
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress
-  7-1-sound-design: ready-for-dev  # SceneState.mood 필드 신설(오너) — 7-2/7-4 선행 조건
+  7-1-sound-design: done  # 전체 AC1-12 완료; CC0 에셋 12개 소싱+검증(2건 무음버그+2건 저음편중 트랙 교체), 실 2씬 라이브 검증 Jay 청취 승인
   7-2-post-fx-color-grade: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 merged
   7-3-character-parallax: ready-for-dev  # depends on 5-3 (motion system); mood 무관, 5-3 라이브 QA 디퍼럴 해소
   7-4-transition-variety: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 lands (SceneState.mood/resolve_mood)
