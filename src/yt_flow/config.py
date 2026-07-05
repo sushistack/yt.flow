@@ -91,3 +91,7 @@ class Settings(BaseSettings):
     # Sound design (Story 7.1): mood-driven BGM/ambient/stinger, ducked under
     # narration. Opt out if the data/audio asset library isn't populated yet.
     sound_design_enabled: bool = True
+
+    # Post-processing filters (Story 7.2): mood-driven color grade + constant
+    # vignette/film-grain on every scene and chapter card.
+    post_fx_enabled: bool = True

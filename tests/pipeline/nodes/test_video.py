@@ -16,6 +16,8 @@ import pytest
 
 import yt_flow.pipeline.nodes.video as video
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.pipeline.nodes.color_grade import MOOD_GRADE_PARAMS
+from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD
 from yt_flow.pipeline.nodes.video import (
     XFADE_DURATION,
     EffectSpec,
@@ -34,16 +36,18 @@ from yt_flow.pipeline.nodes.video import (
 
 def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
-    sound_design_enabled: bool = False,
+    sound_design_enabled: bool = False, post_fx_enabled: bool = False,
 ):
-    # ponytail: fake settings default cards/sound-design OFF so pre-existing tests
-    # (written before Story 5.1/7.1) don't need touching; the real Settings()
-    # default is True for both — see test_sound_design_enabled_defaults_true.
+    # ponytail: fake settings default cards/sound-design/post-fx OFF so
+    # pre-existing tests (written before Story 5.1/7.1/7.2) don't need
+    # touching; the real Settings() default is True for all three — see
+    # test_config_chapter_cards_default_true / test_config_post_fx_enabled_default_true.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
         chapter_card_duration_sec=chapter_card_duration_sec,
         sound_design_enabled=sound_design_enabled,
+        post_fx_enabled=post_fx_enabled,
     )
 
 
@@ -913,6 +917,154 @@ async def test_video_node_no_character_uses_vf_fallback(monkeypatch, tmp_path, a
     assert captured_vf, "background-only shot must use -vf"
     assert "overlay=" not in captured_vf[0]
     assert "zoompan" in captured_vf[0]
+
+
+# ── Post-processing filters integration (Story 7.2) ────────────────────────────
+
+
+async def test_video_node_character_post_fx_placement(monkeypatch, tmp_path, assets):
+    """Post filter sits after overlay, before subtitles, on the layered path. [AC:4,6]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, post_fx_enabled=True))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image,
+        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
+        mood="dread",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    p = MOOD_GRADE_PARAMS["dread"]
+    assert f"eq=saturation={p['saturation']}" in fc
+    assert "vignette=angle=PI/5" in fc
+    assert "noise=alls=8:allf=t+u" in fc
+    assert fc.index("overlay=") < fc.index("eq=saturation=") < fc.index("subtitles=")
+
+
+async def test_video_node_background_only_post_fx_placement(monkeypatch, tmp_path, assets):
+    """Post filter sits between zoompan and subtitles on the background-only path. [AC:5,6]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, post_fx_enabled=True))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="clinical")
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    vf = captured_vf[0]
+    p = MOOD_GRADE_PARAMS["clinical"]
+    assert f"eq=saturation={p['saturation']}" in vf
+    assert vf.index("zoompan") < vf.index("eq=saturation=") < vf.index("subtitles=")
+
+
+async def test_video_node_post_fx_disabled_no_fragment(monkeypatch, tmp_path, assets):
+    """post_fx_enabled=False: today's ungraded output, no eq/vignette/noise. [AC:8]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, post_fx_enabled=False))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread")
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    vf = captured_vf[0]
+    assert "eq=" not in vf
+    assert "vignette=" not in vf
+    assert "noise=" not in vf
+
+
+async def test_video_node_post_fx_unknown_mood_falls_back(monkeypatch, tmp_path, assets):
+    """Missing mood key (pre-mood checkpointed scene) still renders via DEFAULT_MOOD. [AC:9]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, post_fx_enabled=True))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)  # no mood key
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    p = MOOD_GRADE_PARAMS[DEFAULT_MOOD]
+    assert f"eq=saturation={p['saturation']}" in captured_vf[0]
+
+
+async def test_chapter_card_post_fx_placement(monkeypatch, tmp_path):
+    """Chapter card's post filter sits before drawtext. [AC:7]"""
+    captured: list[tuple] = []
+
+    async def _fake(*args):
+        captured.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    await video._compose_chapter_card(
+        "- 1 -", 1, tmp_path, 1.75, mood="escalation", post_fx_enabled=True,
+    )
+
+    args = list(captured[0])
+    vf = args[args.index("-vf") + 1]
+    p = MOOD_GRADE_PARAMS["escalation"]
+    assert f"eq=saturation={p['saturation']}" in vf
+    assert vf.index("eq=saturation=") < vf.index("drawtext=")
+
+
+async def test_chapter_card_post_fx_disabled_no_fragment(monkeypatch, tmp_path):
+    """post_fx_enabled=False (default): card renders exactly today's vf. [AC:8]"""
+    captured: list[tuple] = []
+
+    async def _fake(*args):
+        captured.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    await video._compose_chapter_card("- 1 -", 1, tmp_path, 1.75)
+
+    args = list(captured[0])
+    vf = args[args.index("-vf") + 1]
+    assert "eq=" not in vf
+    assert vf.startswith("drawtext=")
+
+
+async def test_video_node_chapter_card_uses_upcoming_scene_mood(monkeypatch, tmp_path, assets):
+    """[AC:7] The card between scene 1 and 2 is graded to scene 2's mood, not scene 1's."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=True, post_fx_enabled=True),
+    )
+    calls: list[tuple] = []
+
+    async def _rec(*args):
+        calls.append(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _rec)
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+
+    scene1 = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread")
+    scene2 = _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation")
+    out = await video_node(_state([scene1, scene2]))
+
+    assert out.get("error") is None
+    card_call = next(c for c in calls if "drawtext=" in c[c.index("-vf") + 1])
+    vf = card_call[card_call.index("-vf") + 1]
+    p = MOOD_GRADE_PARAMS["revelation"]
+    assert f"eq=saturation={p['saturation']}" in vf and f"gamma={p['gamma']}" in vf
+
+
+def test_config_post_fx_enabled_default_true():
+    """Settings.post_fx_enabled defaults true, per AC:8."""
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["post_fx_enabled"].default is True
 
 
 # ── Sound design integration (Story 7.1) ───────────────────────────────────────

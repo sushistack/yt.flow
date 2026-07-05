@@ -21,6 +21,7 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     build_sound_design_args,
     build_sound_design_filter,
@@ -446,10 +447,13 @@ async def _compose_scene(
     out_dir: Path,
     *,
     sound_design_enabled: bool = False,
+    post_fx_enabled: bool = False,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
     transparent character composited on top with idle motion, optionally with a
-    mood-driven BGM/ambient/stinger mix ducked under the narration. [AC:1,3] [Story 7.1]
+    mood-driven BGM/ambient/stinger mix ducked under the narration, optionally
+    with a mood-driven color grade + constant vignette/grain applied before
+    subtitle burn-in. [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9]
 
     Returns (segment_path, effect_spec, character_overlaid).
     """
@@ -470,6 +474,11 @@ async def _compose_scene(
     spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
+    mood = scene.get("mood")
+    # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
+    # so every chain below degrades to today's byte-for-byte ungraded output.
+    post_frag = f",{build_post_filter(mood)}" if post_fx_enabled else ""
+    post_label = f"{build_post_filter(mood)}[graded];[graded]" if post_fx_enabled else ""
 
     if character_path:
         # Layered: zoompan the background, overlay the moving character, then burn
@@ -483,7 +492,7 @@ async def _compose_scene(
             f"[0:v]{zp_chain}[bg];"
             f"[1:v]{_character_scale_filter()}[char];"
             f"[bg][char]{_overlay_filter()}[ov];"
-            f"[ov]subtitles='{sub}'[out]"
+            f"[ov]{post_label}subtitles='{sub}'[out]"
         )
         video_map = "[out]"
         narration_label = "[2:a]"
@@ -495,7 +504,7 @@ async def _compose_scene(
             "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
             "-i", audio_path,
         ]
-        video_chain = f"[0:v]{zp_chain},subtitles='{sub}'[vout]"
+        video_chain = f"[0:v]{zp_chain}{post_frag},subtitles='{sub}'[vout]"
         video_map = "[vout]"
         narration_label = "[1:a]"
         input_offset = 2
@@ -530,8 +539,9 @@ async def _compose_scene(
             *_OUTPUT_ARGS, str(seg_path),
         ]
     else:
-        # Disabled = unchanged (AC:8): keep the pre-existing -vf path byte-for-byte.
-        vf = f"{zp_chain},subtitles='{sub}'"
+        # Sound design disabled (AC:8): keep the pre-existing -vf path, still
+        # carrying post_frag (empty string when post_fx_enabled=False too).
+        vf = f"{zp_chain}{post_frag},subtitles='{sub}'"
         ffmpeg_args = [
             "-y", *inputs,
             "-vf", vf,
@@ -551,9 +561,15 @@ async def _compose_chapter_card(
     index: int,
     out_dir: Path,
     duration: float,
+    *,
+    mood: str | None = None,
+    post_fx_enabled: bool = False,
 ) -> Path:
     """Render a black title-card segment: color bg + centered drawtext + silent
     audio, fading in/out at its own edges. [Story 5.1 AC:2,5]
+
+    `mood` grades the card to the *upcoming* scene's mood, applied before
+    drawtext so the label text isn't grained. [Story 7.2 AC:7,8]
 
     Matches _compose_scene's output contract (COMP_W x COMP_H, FPS, H.264/AAC,
     yuv420p, has an audio stream) so _join_with_xfade can treat it as an
@@ -565,7 +581,9 @@ async def _compose_chapter_card(
     font = _escape_subtitles_path(Path(_drawtext_font()))
     textfile = _escape_subtitles_path(label_file)
     fade_out_start = max(0.0, duration - CARD_FADE_DURATION)
+    post_frag = f"{build_post_filter(mood)}," if post_fx_enabled else ""
     vf = (
+        f"{post_frag}"
         f"drawtext=fontfile='{font}':textfile='{textfile}':"
         f"fontcolor=white:fontsize={CARD_FONT_SIZE}:x=(w-text_w)/2:y=(h-text_h)/2,"
         f"fade=t=in:st=0:d={CARD_FADE_DURATION},"
@@ -734,7 +752,9 @@ async def video_node(state: PipelineState) -> dict:
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         for i, scene in enumerate(scenes):
             seg_path, spec, has_char = await _compose_scene(
-                scene, i, run_dir, sound_design_enabled=s.sound_design_enabled,
+                scene, i, run_dir,
+                sound_design_enabled=s.sound_design_enabled,
+                post_fx_enabled=s.post_fx_enabled,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))
@@ -755,7 +775,11 @@ async def video_node(state: PipelineState) -> dict:
                 join_segments.append((seg_path, duration))
                 if chapter_cards_enabled and i < len(segs_with_specs) - 1:
                     label = _card_label(scenes[i + 1])
-                    card_path = await _compose_chapter_card(label, i + 1, run_dir, card_duration)
+                    upcoming_mood = scenes[i + 1].get("mood")
+                    card_path = await _compose_chapter_card(
+                        label, i + 1, run_dir, card_duration,
+                        mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
+                    )
                     join_segments.append((card_path, card_duration))
                     card_count += 1
             await _join_with_xfade(join_segments, output)
