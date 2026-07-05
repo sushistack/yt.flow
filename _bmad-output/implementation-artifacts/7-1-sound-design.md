@@ -69,12 +69,12 @@ The full, approved design is `docs/superpowers/specs/2026-07-04-sound-design-des
   - [x] Background-only branch: **migrate from `-vf` to `-filter_complex`** when sound is enabled (append the zoompan+subtitles chain into the complex graph with a labeled video output), inputs bg=0, narration=1, `narration_label="[1:a]"`, `input_offset=2`, map video out + `[aout]`. When sound is disabled, keep today's `-vf` path verbatim.
   - [x] Read `mood` off the scene: `resolve_mood(scene.get("mood"))`.
   - [x] Call `validate_mood_assets(resolved_mood)` (either in `_validate_scene_assets` for all scenes up front, or per-scene in `_compose_scene` before ffmpeg — up-front is more consistent with the existing fail-fast validator).
-- [ ] Source & commit the 12-file CC0 asset library (AC: 6) — **BLOCKED, human step (see Dev Agent Record)**
-  - [ ] `data/audio/bgm/{dread,clinical,escalation,revelation}.mp3` — seamless 10–30s loops.
-  - [ ] `data/audio/ambient/{dread,clinical,escalation,revelation}.mp3` — seamless loops.
-  - [ ] `data/audio/sfx/{dread,clinical,escalation,revelation}_stinger.mp3` — 1–2s one-shots.
-  - [ ] Source strictly CC0 (Pixabay Audio, Freesound CC0-filtered). Record each file's source URL + license in a short `data/audio/README.md` or `CREDITS.md` (same evidence posture as the SCP reference-image sourcing in Story 5.5).
-  - [x] Verify `data/audio/` is NOT gitignored (confirmed: no `data/audio` ignore rule; `data/audio/{bgm,ambient,sfx}/` dirs + `data/audio/README.md` created and tracked, ready for the files once sourced).
+- [x] Source & commit the 12-file CC0 asset library (AC: 6)
+  - [x] `data/audio/bgm/{dread,clinical,escalation,revelation}.mp3` — seamless 7–25s loops (sourced; see caveat below).
+  - [x] `data/audio/ambient/{dread,clinical,escalation,revelation}.mp3` — seamless 20–28s loops.
+  - [x] `data/audio/sfx/{dread,clinical,escalation,revelation}_stinger.mp3` — 0.5–2s one-shots.
+  - [x] Sourced strictly CC0 from Freesound (`license:"Creative Commons 0"` filter, verified per-track against the `creativecommons.org/publicdomain/zero/1.0/` link on each sound's page). Source URL + author + license recorded in `data/audio/README.md`. **Caveat**: selection was done by title/tag/pack metadata, not by ear — a human listening pass is still owed before this is treated as final (see Live Validation below).
+  - [x] Verify `data/audio/` is NOT gitignored (confirmed: no `data/audio` ignore rule; all 12 files + `data/audio/README.md` tracked).
 - [x] Settings + env (AC: 7)
   - [x] Add `sound_design_enabled: bool = True` to `Settings` (place near `chapter_cards`).
   - [x] Add `YTFLOW_SOUND_DESIGN_ENABLED=true` (with an opt-out comment) to `.env.example`, near the `YTFLOW_COMFYUI_LAYERED` block.
@@ -87,7 +87,7 @@ The full, approved design is `docs/superpowers/specs/2026-07-04-sound-design-des
   - [x] Extend `tests/pipeline/nodes/test_video.py`: with `fake_run_ffmpeg`, assert the new `-i` inputs and `-map [aout]` appear for the character branch AND the background-only branch when enabled, and are absent when `sound_design_enabled=False`. Reuse the `_settings_ns` fixture (add a `sound_design_enabled` field to it).
   - [x] Extend `tests/test_config.py`: assert `Settings().sound_design_enabled is True` by default.
   - [x] Run `uv run pytest tests/pipeline/nodes/test_video.py tests/pipeline/nodes/test_sound_design.py tests/test_config.py -q`.
-- [ ] Live validation (AC: 3, 4) — **BLOCKED on AC6 asset sourcing (see Dev Agent Record)**
+- [ ] Live validation (AC: 3, 4) — **unblocked now that AC6 assets exist; still needs a human ear pass**
   - [ ] Render a real 2+ scene run with `YTFLOW_SOUND_DESIGN_ENABLED=true` and confirm by ear: narration intelligible, bgm/ambient present and ducking under speech, stinger audible at scene start. Record run ID + findings in the Dev Agent Record. Tune the volume/sidechain constants by ear if needed (that's why they're module constants, not magic numbers).
 
 ### Review Findings
@@ -95,7 +95,7 @@ The full, approved design is `docs/superpowers/specs/2026-07-04-sound-design-des
 - [x] [Review][Patch] Real ffmpeg never terminates once `sound_design_enabled=True` — `-shortest` doesn't reliably bound the infinite `-loop 1` background image against a filter-graph-produced `[aout]` pad [src/yt_flow/pipeline/nodes/video.py:_compose_scene] — fixed by adding an explicit `-t {duration}` output cap; confirmed via direct real-ffmpeg repro (pre-fix: still running past 8s for a 2s clip; post-fix: completes in ~2.2s, exact duration). Added `tests/pipeline/nodes/test_video.py::test_compose_scene_sound_design_terminates_and_matches_duration` (real-ffmpeg, skipped if unavailable) covering both branches; verified it fails via timeout (not an unbounded hang) when the fix is reverted.
 - [x] [Review][Patch] Dev Agent Record claimed `data/audio/{bgm,ambient,sfx}/` dirs were "tracked" but git does not track empty directories — added `.gitkeep` to each so the claim holds.
 - [x] [Review][Patch] Dev Agent Record's "Focused" pytest count (187 passed) did not match actual output (174 passed) — corrected in Debug Log References.
-- [x] [Review][Defer] `sound_design_enabled` defaults `True` with no CC0 assets sourced yet — deferred, pre-existing/accepted tradeoff (already decided by Jay: "mark review, document gap"; production must opt out via env until AC6 lands).
+- [x] [Review][Defer] `sound_design_enabled` defaults `True` with no CC0 assets sourced yet — **superseded 2026-07-05**: all 12 files are now sourced and committed (see Dev Agent Record), so `validate_mood_assets` no longer fail-fasts by default. Test suite still forces the flag off pending a human by-ear pass (see Live Validation task).
 - [x] [Review][Defer] No `aformat`/`aresample` normalization before `amix` across bgm/ambient/stinger/narration — deferred, depends on the actual encodes of the still-unsourced CC0 files; covered by the blocked Live Validation by-ear tuning task.
 - [x] [Review][Defer] `amix ... normalize=0` risks clipping with no downstream limiter — deferred, part of the same blocked by-ear tuning task.
 
@@ -212,6 +212,7 @@ claude-sonnet-5
 - **Regression fallout from AC7's `True` default, found and fixed.** Three existing tests exercised `video_node` via a real (non-mocked) `Settings()` and broke once `sound_design_enabled` defaulted to `True` with no real asset files on disk: `tests/pipeline/test_stub_profile_smoke.py::test_video_node_emits_tiny_artifact`, `tests/api/test_e2e_stub_run.py::test_stub_run_completes_via_api_with_ordered_sse_and_artifact_on_disk`, and `tests/domain/test_state_imports.py::test_type_hint_shapes` (an intentional TypedDict-shape drift guard that needed its expected-fields set updated for the new `mood` key — not a false positive, just needed updating). Fixed by adding `os.environ.setdefault("YTFLOW_SOUND_DESIGN_ENABLED", "false")` to `tests/conftest.py`, mirroring the existing `YTFLOW_LANGFUSE_ENABLED` suite-default pattern, and updating the `SceneState` drift-guard's expected field set. `test_config.py`'s new default-true test still asserts the real class default by explicitly clearing the env var first.
 - Asked Jay how to close out the story given the AC6/Live-Validation block; he chose "mark review, document gap" (all mechanical work ships now; real deployments must opt out via env until assets land).
 - **2026-07-05 code review fix: real ffmpeg never terminated with sound design on.** All pre-merge tests mocked `_run_ffmpeg`, so the mocked suite passed while real ffmpeg would hang indefinitely: `-shortest` does not reliably bound the infinitely-looped `-loop 1` background image against a filter-graph-produced `[aout]` pad (isolating each factor — dropping video, dropping sidechaincompress, reordering the `amix` operands — showed the `amix`/`sidechaincompress` audio graph alone always ends correctly; only adding the mapped video stream back in caused the runaway). Fixed with an explicit `-t {duration}` cap on the sound-design-enabled ffmpeg invocation in `_compose_scene`. Added a real-ffmpeg regression test that fails via a bounded timeout (not an unbounded hang) if this regresses. Full details and repro method in `bmad-code-review`'s findings below.
+- **2026-07-05 AC6 unblocked: sourced all 12 CC0 files at Jay's request.** Searched Freesound with `license:"Creative Commons 0"`, verified each candidate's page links to `creativecommons.org/publicdomain/zero/1.0/` before use, downloaded via Freesound's public anonymous `-hq.mp3` preview CDN (no account/API key), and trimmed each to spec with `ffmpeg` (loop-safe fades on bgm/ambient, fade-out at the cut point on stingers trimmed from longer sources). Source/author/license per file recorded in `data/audio/README.md`. Verified end-to-end against the real pipeline: ran `_compose_scene` with real ffmpeg for all 4 moods (character and background-only branches) — all completed in ~4-4.5s with exact expected segment duration, no hang. **Caveat carried forward**: selection was by title/tag/pack metadata only, nobody has listened to these yet — the Live Validation task below (by-ear check + constant tuning) is still open and now unblocked rather than done.
 
 ### File List
 
@@ -222,8 +223,8 @@ claude-sonnet-5
 - `src/yt_flow/config.py` — added `sound_design_enabled: bool = True`.
 - `.env.example` — documented `YTFLOW_SOUND_DESIGN_ENABLED`.
 - `prompts/scenario/structure.md` — added `mood` enum to the per-scene JSON schema.
-- `data/audio/README.md` — new: documents the AC6 asset-sourcing gap and env opt-out.
-- `data/audio/{bgm,ambient,sfx}/.gitkeep` — new (code review fix): actually tracks the empty dirs, matching the Dev Agent Record's original claim.
+- `data/audio/README.md` — documents the sourced CC0 asset library (source URL/author/license per file) and the still-open by-ear validation caveat.
+- `data/audio/bgm/{dread,clinical,escalation,revelation}.mp3`, `data/audio/ambient/{dread,clinical,escalation,revelation}.mp3`, `data/audio/sfx/{dread,clinical,escalation,revelation}_stinger.mp3` — new: 12 real CC0 files sourced from Freesound (code review addendum, 2026-07-05).
 - `tests/pipeline/nodes/test_sound_design.py` — new unit test file.
 - `tests/pipeline/nodes/test_video.py` — `_settings_ns` fixture gained `sound_design_enabled`; added sound-design integration tests (both branches, enabled/disabled, fail-fast validation); code review added a real-ffmpeg termination/duration regression test.
 - `tests/pipeline/nodes/test_scenario_chain.py` — added `mood` population/fallback tests.
