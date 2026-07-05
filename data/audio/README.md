@@ -28,18 +28,33 @@ relying on this for a real release, and re-tune `BGM_VOLUME` /
 `SIDECHAIN_*` in `sound_design.py` by ear per the still-open Live Validation
 task.
 
+**2026-07-05 fix**: the first trim pass had a real bug — `ffmpeg -i in.mp3 -ss
+X -t Y -af "afade=...st=Z..."` (seek placed *after* `-i`) resolves `afade`'s
+`st=` against the *original* source timeline, not the trimmed clip's own
+timeline. Where `Z` landed before the seek point `X`, the fade-out had
+already "completed" before the clip even starts, silencing the entire
+trimmed output. This affected `bgm/revelation.mp3` (13s of dead air at the
+start), `ambient/clinical.mp3` (second half silent), and
+`ambient/revelation.mp3` (100% silent). Separately, `sfx/dread_stinger.mp3`
+grabbed silence because the actual hit in the source sound doesn't start at
+t=0. Fixed by moving `-ss` *before* `-i` (true input seek, resets PTS to 0)
+and, for the stinger, finding the actual onset first. All 12 files re-swept
+with `ffmpeg ... -af silencedetect=noise=-35dB:d=0.3` — zero unexpected
+silence remains (the one silence event on `clinical_stinger.mp3` is the
+natural tail after its 0.16s beep, not a defect).
+
 | Mood | Role | File | Title | Author | Source |
 |---|---|---|---|---|---|
 | dread | bgm | `bgm/dread.mp3` | Drone Loop (Fixed) | Fission9 | https://freesound.org/people/Fission9/sounds/567220/ |
 | dread | ambient | `ambient/dread.mp3` | Paranoia | Fission9 | https://freesound.org/people/Fission9/sounds/490958/ |
-| dread | stinger | `sfx/dread_stinger.mp3` | HorrorSting1.mp3 (trimmed to 1.8s) | shelbyshark | https://freesound.org/people/shelbyshark/sounds/513332/ |
+| dread | stinger | `sfx/dread_stinger.mp3` | HorrorSting1.mp3 (onset trimmed to 1.8s) | shelbyshark | https://freesound.org/people/shelbyshark/sounds/513332/ |
 | clinical | bgm | `bgm/clinical.mp3` | Facility Hum Ambience Loopable | aSuperiorPotato | https://freesound.org/people/aSuperiorPotato/sounds/619320/ |
 | clinical | ambient | `ambient/clinical.mp3` | Meditate Calm Scape (trimmed to 20s) | szegvari | https://freesound.org/people/szegvari/sounds/580073/ |
 | clinical | stinger | `sfx/clinical_stinger.mp3` | Beep Space Button | GameAudio | https://freesound.org/people/GameAudio/sounds/220206/ |
 | escalation | bgm | `bgm/escalation.mp3` | Intense loop | nicorico_120 | https://freesound.org/people/nicorico_120/sounds/808224/ |
 | escalation | ambient | `ambient/escalation.mp3` | Emergency Siren (trimmed to 28s) | onderwish | https://freesound.org/people/onderwish/sounds/470504/ |
 | escalation | stinger | `sfx/escalation_stinger.mp3` | Klaxon off axis short.wav | jameswrowles | https://freesound.org/people/jameswrowles/sounds/514982/ |
-| revelation | bgm | `bgm/revelation.mp3` | Slow building synth - Riser Uplifter.wav (trimmed to 25s) | WelvynZPorterSamples | https://freesound.org/people/WelvynZPorterSamples/sounds/621849/ |
+| revelation | bgm | `bgm/revelation.mp3` | Slow building synth - Riser Uplifter.wav (build-up skipped, trimmed to 19s) | WelvynZPorterSamples | https://freesound.org/people/WelvynZPorterSamples/sounds/621849/ |
 | revelation | ambient | `ambient/revelation.mp3` | Em Pentatonic Pads 80bpm.WAV (trimmed to 22s) | BuytheField | https://freesound.org/people/BuytheField/sounds/436130/ |
 | revelation | stinger | `sfx/revelation_stinger.mp3` | Shock Stab 12 (trimmed to 2s) | nomiqbomi | https://freesound.org/people/nomiqbomi/sounds/578382/ |
 
