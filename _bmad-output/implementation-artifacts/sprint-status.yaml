@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-05  # story 5-12/5-13 → done (bmad-code-review 공동 진행, findings 6건 일괄 수정, 회귀 그린)
+last_updated: 2026-07-06  # story 7-2 → done (코드리뷰 완료, 패치 3건 적용)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -119,7 +119,7 @@ development_status:
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress
   7-1-sound-design: done  # 전체 AC1-12 완료; CC0 에셋 12개 소싱+검증(2건 무음버그+2건 저음편중 트랙 교체), 실 2씬 라이브 검증 Jay 청취 승인
-  7-2-post-fx-color-grade: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 merged
+  7-2-post-fx-color-grade: done  # color_grade.py 신설(pure function, eq/vignette/noise) + video.py _compose_scene/_compose_chapter_card 배선(mood-driven grade, post_fx_enabled 토글); 코드리뷰 패치 3건 적용(MOOD_GRADE_PARAMS↔MOOD_VALUES 불변식, build_post_filter 중복호출 제거, 7.1+7.2 교차 테스트 2건 추가); 회귀 스위트 그린(645 passed, 기존 skip 1건 유지)
   7-3-character-parallax: ready-for-dev  # depends on 5-3 (motion system); mood 무관, 5-3 라이브 QA 디퍼럴 해소
   7-4-transition-variety: ready-for-dev  # depends on 7-1 (mood) — BLOCKED until 7-1 lands (SceneState.mood/resolve_mood)
   7-5-kinetic-subtitles: ready-for-dev  # mood 무관, subtitle.py만

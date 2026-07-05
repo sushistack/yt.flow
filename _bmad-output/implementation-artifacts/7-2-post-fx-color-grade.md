@@ -1,6 +1,10 @@
+---
+baseline_commit: 382d6e78c2c100f27bac0ad1f8421bdb1607ee07
+---
+
 # Story 7.2: 후처리 필터 (색보정 + 비네트 + 필름 그레인)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,28 +42,28 @@ so that **the footage reads as graded, textured video that reinforces the SCP mo
 
 ## Tasks / Subtasks
 
-- [ ] **Task 0 — Verify blocking dependency (AC: all)**
-  - [ ] Confirm Story 7.1 is merged: `sound_design.py` exists with `resolve_mood`/`MOOD_VALUES`/`DEFAULT_MOOD`, and `SceneState.mood` is present in `state.py`. If not, HALT and report.
-- [ ] **Task 1 — Create `color_grade.py` (AC: 1,2,3,9,10)**
-  - [ ] New file `src/yt_flow/pipeline/nodes/color_grade.py`, `from yt_flow.pipeline.nodes.sound_design import resolve_mood`.
-  - [ ] Define `VIGNETTE_ANGLE = "PI/5"`, `GRAIN_STRENGTH = 8`, `MOOD_GRADE_PARAMS` (4 moods, exact values from spec#L54-L59).
-  - [ ] Implement `build_post_filter(mood: str | None) -> str` per spec#L62-L66.
-  - [ ] Add a `# ponytail:` note: extract to a shared `mood.py` only if a *third* consumer needs the taxonomy; two consumers importing from the owner is not worth a new file. [Source: spec#L69-L73]
-- [ ] **Task 2 — Wire post filter into `_compose_scene` (AC: 4,5,6,8,9)**
-  - [ ] Resolve `mood = scene.get("mood")` at the top of `_compose_scene`.
-  - [ ] Read `post_fx_enabled` off the resolved `Settings` (see Dev Notes: `_compose_scene` currently has no `Settings` handle — thread it in, mirroring how the compose loop calls `_settings()` at `video.py:654`).
-  - [ ] Layered path (`video.py:462-467`): when enabled, insert `[ov]{build_post_filter(mood)}[graded];[graded]subtitles='{sub}'[out]` and remap `-map [out]` still to the final label. When disabled, keep today's chain unchanged.
-  - [ ] Background-only path (`video.py:480`): when enabled, `vf = f"{zp_chain},{build_post_filter(mood)},subtitles='{sub}'"`; when disabled, unchanged.
-- [ ] **Task 3 — Grade chapter cards (AC: 7,8)**
-  - [ ] Add `mood: str | None` param to `_compose_chapter_card` (`video.py:496`).
-  - [ ] When `post_fx_enabled`, prepend `f"{build_post_filter(mood)},"` before the `drawtext=` fragment in the card `vf` (`video.py:515-520`).
-  - [ ] At the call site (`video.py:680`), pass `scenes[i + 1].get("mood")` (upcoming scene) alongside the existing `_card_label(scenes[i + 1])`.
-- [ ] **Task 4 — Settings (AC: 8)**
-  - [ ] Add `post_fx_enabled: bool = True` to `src/yt_flow/config.py` near `chapter_cards` (`config.py:75-78`), with a matching one-line comment.
-- [ ] **Task 5 — Tests (AC: 11)**
-  - [ ] New `tests/pipeline/nodes/test_color_grade.py`: pure-function assertions on `build_post_filter` for all 4 moods + `None`/unknown fallback.
-  - [ ] Extend `tests/pipeline/nodes/test_video.py`: capture-`filter_complex` tests (pattern at `test_video.py:307-320`) for layered + bg-only post-filter placement, chapter-card placement, and `post_fx_enabled=False` absence.
-  - [ ] Run `pytest tests/pipeline/nodes/test_color_grade.py tests/pipeline/nodes/test_video.py` and confirm green.
+- [x] **Task 0 — Verify blocking dependency (AC: all)**
+  - [x] Confirm Story 7.1 is merged: `sound_design.py` exists with `resolve_mood`/`MOOD_VALUES`/`DEFAULT_MOOD`, and `SceneState.mood` is present in `state.py`. If not, HALT and report.
+- [x] **Task 1 — Create `color_grade.py` (AC: 1,2,3,9,10)**
+  - [x] New file `src/yt_flow/pipeline/nodes/color_grade.py`, `from yt_flow.pipeline.nodes.sound_design import resolve_mood`.
+  - [x] Define `VIGNETTE_ANGLE = "PI/5"`, `GRAIN_STRENGTH = 8`, `MOOD_GRADE_PARAMS` (4 moods, exact values from spec#L54-L59).
+  - [x] Implement `build_post_filter(mood: str | None) -> str` per spec#L62-L66.
+  - [x] Add a `# ponytail:` note: extract to a shared `mood.py` only if a *third* consumer needs the taxonomy; two consumers importing from the owner is not worth a new file. [Source: spec#L69-L73]
+- [x] **Task 2 — Wire post filter into `_compose_scene` (AC: 4,5,6,8,9)**
+  - [x] Resolve `mood = scene.get("mood")` at the top of `_compose_scene`.
+  - [x] Read `post_fx_enabled` (see Dev Agent Record: threaded as an explicit `post_fx_enabled` kwarg from the compose loop's `s = _settings()`, matching the existing `sound_design_enabled` parameter-threading pattern rather than reading `_settings()` inside `_compose_scene`).
+  - [x] Layered path: when enabled, insert `[ov]{build_post_filter(mood)}[graded];[graded]subtitles='{sub}'[out]` and remap `-map [out]` still to the final label. When disabled, keep today's chain unchanged.
+  - [x] Background-only path: when enabled, post filter inserted between zoompan and `subtitles=`; when disabled, unchanged.
+- [x] **Task 3 — Grade chapter cards (AC: 7,8)**
+  - [x] Add `mood: str | None` param to `_compose_chapter_card`.
+  - [x] When `post_fx_enabled`, prepend `f"{build_post_filter(mood)},"` before the `drawtext=` fragment in the card `vf`.
+  - [x] At the call site, pass `scenes[i + 1].get("mood")` (upcoming scene) alongside the existing `_card_label(scenes[i + 1])`.
+- [x] **Task 4 — Settings (AC: 8)**
+  - [x] Add `post_fx_enabled: bool = True` to `src/yt_flow/config.py` near `chapter_cards`/`sound_design_enabled`, with a matching one-line comment.
+- [x] **Task 5 — Tests (AC: 11)**
+  - [x] New `tests/pipeline/nodes/test_color_grade.py`: pure-function assertions on `build_post_filter` for all 4 moods + `None`/unknown fallback.
+  - [x] Extend `tests/pipeline/nodes/test_video.py`: capture-`filter_complex`/`-vf` tests for layered + bg-only post-filter placement, chapter-card placement (incl. upcoming-scene mood wiring), and `post_fx_enabled=False` absence (scene + card).
+  - [x] Run `pytest tests/pipeline/nodes/test_color_grade.py tests/pipeline/nodes/test_video.py` and confirm green (112 passed). Full suite also green (643 passed, 1 skipped).
 
 ## Dev Notes
 
@@ -132,8 +136,38 @@ Add `post_fx_enabled: bool = True` in the same block with a one-line comment. Th
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+None — implementation went green on first test run, no debugging required.
 
 ### Completion Notes List
 
+- Task 0: confirmed Story 7.1 already `done` in sprint-status; verified `sound_design.py` exports `resolve_mood`/`MOOD_VALUES`/`DEFAULT_MOOD` and `SceneState.mood: str` exists at `state.py:46`. Unblocked, proceeded without HALT.
+- Deviation from Dev Notes' suggested implementation, noted here for the record: Task 2's Dev Notes suggested reading `post_fx_enabled` via an in-function `_settings()` call inside `_compose_scene`. By the time 7.2 started, Story 7.1 had already changed `_compose_scene` to receive `sound_design_enabled` as an explicit keyword parameter threaded from the compose loop's `s = _settings()` (not read internally) — the Dev Notes predate that refactor and describe a `_settings()`-in-function shape that no longer matches the code. Followed the codebase's current, actual pattern instead: added `post_fx_enabled` as an explicit kwarg to both `_compose_scene` and `_compose_chapter_card`, threaded from the compose loop, consistent with `sound_design_enabled`. Functionally equivalent to the spec/AC; only the internal wiring mechanism differs from the stale Dev Notes snippet.
+- `color_grade.py` implemented as a pure function module per spec, with the required `# ponytail:` note on not extracting a shared `mood.py` until a 3rd consumer exists.
+- `_compose_scene`: precomputed two conditional fragments (`post_frag` for comma-chained placement, `post_label` for the layered filter-graph's labeled placement) once per call, reused across the sound-design-enabled/disabled and character/no-character branches — avoids duplicating the `build_post_filter` call or the enable/disable branching four times.
+- `_compose_chapter_card` gained `mood`/`post_fx_enabled` keyword params with defaults (`None`/`False`) so existing direct-call tests and the real-ffmpeg integration test needed no changes beyond what Story 7.2 explicitly required.
+- Chapter-card mood wiring: compose loop now resolves `scenes[i + 1].get("mood")` at the existing chapter-card call site, alongside the existing `_card_label(scenes[i + 1])` — the card is graded to the *upcoming* scene per AC:7.
+- Tests: added `tests/pipeline/nodes/test_color_grade.py` (pure-function, all 4 moods + None/empty/unknown fallback) and extended `tests/pipeline/nodes/test_video.py` with placement tests for the layered path, background-only path, chapter cards (including upcoming-scene-mood wiring and the post_fx-disabled case for both scenes and cards), and a `Settings.post_fx_enabled` default-true test mirroring the existing `chapter_cards` one.
+- Full regression suite green: 643 passed, 1 skipped (`test_tts.py` real-Qwen-TTS smoke test, gated behind `YTFLOW_QWEN_TTS_SMOKE=1` — pre-existing, unrelated to this story). `ruff check` clean on all touched files.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/color_grade.py` (new)
+- `src/yt_flow/pipeline/nodes/video.py` (modified)
+- `src/yt_flow/config.py` (modified)
+- `tests/pipeline/nodes/test_color_grade.py` (new)
+- `tests/pipeline/nodes/test_video.py` (modified)
+
+### Review Findings
+
+Reviewed via Blind Hunter (diff-only adversarial), Edge Case Hunter (diff + project read), and Acceptance Auditor (diff + spec, ran the test suite and ruff independently — confirmed the Dev Agent Record's "643 passed, 1 skipped" and "ruff clean" claims are true, not just plausible). No AC violations found.
+
+- [x] [Review][Patch] `MOOD_GRADE_PARAMS[resolve_mood(mood)]` has no guard tying its key set to `sound_design.MOOD_VALUES` — a future taxonomy change would raise an uncaught `KeyError` in production rendering instead of degrading gracefully [src/yt_flow/pipeline/nodes/color_grade.py]
+- [x] [Review][Patch] `_compose_scene` calls `build_post_filter(mood)` twice unconditionally (once for `post_frag`, once for `post_label`) even though only one of the two is ever used per branch [src/yt_flow/pipeline/nodes/video.py:480-481]
+- [x] [Review][Patch] No test exercises `sound_design_enabled=True` together with `post_fx_enabled=True` (code path confirmed correct by inspection — `video_chain` is built with the post filter before the sound-design branch — but the intersection was untested) [tests/pipeline/nodes/test_video.py]
+- [x] [Review][Defer] Pre-existing duplication in `_compose_scene`'s no-sound-design/no-character branch (`video_chain` and `vf` recompute the same `{zp_chain}{post_frag},subtitles=...` expression) predates Story 7.2 (inherited from the 7.1 `-vf`/`-filter_complex` split); 7.2 just threaded `post_frag` through both copies consistently — deferred, not caused by this change [src/yt_flow/pipeline/nodes/video.py]
+
+Dismissed as noise (9): substring-only test assertions (matches existing project-wide `_run_ffmpeg` monkeypatch convention, not a 7.2-specific gap); ungraded assumption about the chapter card "still reading as black" (spec explicitly calls the grain-on-card effect intended); the `[graded]` intermediate label in the layered path (this exact string shape is AC4-mandated, not incidental complexity); `post_frag` reused as a name with opposite comma placement across two functions (local-scope only, no collision risk); unexplained magic constants (values and rationale are traced to the design doc in Dev Notes); missing chapter-card `mood=None`+`post_fx_enabled=True` test (already covered at the unit level by `test_build_post_filter_falls_back_to_default_mood`, wiring already proven by the explicit-mood card test); `post_fx_enabled` defaulting `True` with no ramp/rollback (AC8 explicitly requires default `True`, same precedent as `chapter_cards`); integration test not re-asserting internal filter ordering (already owned by the `color_grade` unit test, correctly not duplicated); design-doc vs. story wording divergence on `.get("mood")` vs. direct key access (informational, story's AC9 leniency requirement correctly wins, no code change needed).
