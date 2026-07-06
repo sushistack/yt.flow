@@ -23,6 +23,7 @@ from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
+    MOOD_VALUES,
     build_sound_design_args,
     build_sound_design_filter,
     resolve_mood,
@@ -76,6 +77,9 @@ MOOD_XFADE_MAP: dict[str, str] = {
     "escalation": "wipeleft",   # directional/kinetic
     "revelation": "fadewhite",
 }
+# resolve_mood only guarantees a MOOD_VALUES member; keep this dict's keys in
+# sync or an unmapped mood raises KeyError mid-render.
+assert set(MOOD_XFADE_MAP) == set(MOOD_VALUES)
 
 
 def resolve_transition(mood: str | None) -> str:

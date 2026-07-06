@@ -495,8 +495,7 @@ async def test_join_with_xfade_per_boundary_transition(monkeypatch, tmp_path):
     await _join_with_xfade(segs, tmp_path / "out.mp4")
 
     fc = captured_filter[0]
-    assert "xfade=transition=wipeleft" in fc
-    assert "xfade=transition=fadewhite" in fc
+    assert re.findall(r"transition=(\w+)", fc) == ["wipeleft", "fadewhite"]
 
 
 # ── _validate_scene_assets ────────────────────────────────────────────────────
@@ -1826,6 +1825,33 @@ async def test_video_node_mood_varied_scene_transition(monkeypatch, tmp_path, as
     assert out.get("error") is None
     join_filter = captured_filter[-1]
     assert "xfade=transition=wipeleft" in join_filter
+
+
+async def test_video_node_multiple_mood_boundaries_each_independent(monkeypatch, tmp_path, assets):
+    """[AC:1,3,4] No cards, 3 scenes: two distinct scene-to-scene boundaries each
+    resolve to their own entering scene's mood transition, independently."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, transition_variety_enabled=True))
+    captured_filter: list[str] = []
+
+    async def _fake(*args):
+        args_list = list(args)
+        if "-filter_complex" in args_list:
+            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread"),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
+        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    join_filter = captured_filter[-1]
+    assert re.findall(r"transition=(\w+)", join_filter) == ["wipeleft", "fadewhite"]
 
 
 async def test_video_node_card_adjacency_forces_fadeblack(monkeypatch, tmp_path, assets):
