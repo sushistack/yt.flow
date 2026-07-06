@@ -178,3 +178,7 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 ## Deferred from: code review of story-7.4 (2026-07-06)
 
 - ~~**`preceded_by_card = chapter_cards_enabled and i > 0` assumes every scene but the first is preceded by a card whenever `chapter_cards_enabled` is true**~~ **(Resolved 2026-07-06: `preceded_by_card` removed entirely as part of the AC5 amendment — cards no longer get a fadeblack exemption, so this assumption no longer exists in the code.)**
+
+## Deferred from: code review of subtitle word/segment fallback fix (2026-07-06)
+
+- **Partial-usable `word_segments` still drops words instead of falling back** [src/yt_flow/pipeline/nodes/subtitle.py `_words_or_segments`] — this fix (see spec-subtitle-word-segment-fallback.md) only closes the fully-empty case (no word has usable `start`/`end`). If even one word lacks `start`/`end` while others have it, `usable` is non-empty/truthy so the function returns the partial word list, silently dropping the unusable words rather than falling back to the presumably-complete `segments`. Pre-existing behavior (identical filter logic existed before this fix), not a regression, but still untested and still live. Reproduce only with a live WhisperX model; narrow further if a real run surfaces missing words mid-cue.

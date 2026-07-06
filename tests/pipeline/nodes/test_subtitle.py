@@ -20,6 +20,7 @@ from yt_flow.pipeline.nodes.subtitle import (
     _get_aligner,
     _group_words,
     _word_timings_to_segments,
+    _words_or_segments,
     build_ass_events,
     format_ass,
     format_srt,
@@ -259,6 +260,38 @@ def test_build_ass_events_clamps_negative_duration_to_zero():
     t = [{"word": "oops", "start_sec": 1.0, "end_sec": 0.5}]
     out = build_ass_events(t)
     assert "{\\k0}oops " in out
+
+
+# ── _words_or_segments (WhisperX word/segment fallback) ───────────────────────
+
+
+def test_words_or_segments_prefers_usable_words():
+    aligned = {
+        "word_segments": [{"start": 0.0, "end": 0.5, "word": "hi"}],
+        "segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}],
+    }
+    out = subtitle._words_or_segments(aligned)
+    assert out == [{"start_sec": 0.0, "end_sec": 0.5, "text": "hi"}]
+
+
+def test_words_or_segments_falls_back_when_words_lack_start_end():
+    # word_segments is non-empty but no word has usable start/end keys
+    aligned = {
+        "word_segments": [{"word": "hi"}, {"word": "there"}],
+        "segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}],
+    }
+    out = subtitle._words_or_segments(aligned)
+    assert out == [{"start_sec": 0.0, "end_sec": 1.0, "text": "hi there"}]
+
+
+def test_words_or_segments_falls_back_when_no_words_at_all():
+    aligned = {"segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}]}
+    out = subtitle._words_or_segments(aligned)
+    assert out == [{"start_sec": 0.0, "end_sec": 1.0, "text": "hi there"}]
+
+
+def test_words_or_segments_empty_when_nothing_usable():
+    assert subtitle._words_or_segments({}) == []
 
 
 # ── _get_aligner ─────────────────────────────────────────────────────────────

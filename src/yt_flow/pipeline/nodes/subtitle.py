@@ -64,12 +64,17 @@ class WhisperXAligner:
             [{"text": transcript, "start": 0.0, "end": last_end}],
             align_model, meta, audio, self._device,
         )
-        words = aligned.get("word_segments", [])
-        if words:
-            return [{"start_sec": w["start"], "end_sec": w["end"], "text": w["word"]}
-                    for w in words if "start" in w and "end" in w]
-        return [{"start_sec": s["start"], "end_sec": s["end"], "text": s["text"]}
-                for s in aligned.get("segments", [])]
+        return _words_or_segments(aligned)
+
+
+def _words_or_segments(aligned: dict) -> list[AlignmentSegment]:
+    """Prefer word-level timing; fall back to segment-level if no word has usable start/end."""
+    usable = [{"start_sec": w["start"], "end_sec": w["end"], "text": w["word"]}
+              for w in aligned.get("word_segments", []) if "start" in w and "end" in w]
+    if usable:
+        return usable
+    return [{"start_sec": s["start"], "end_sec": s["end"], "text": s["text"]}
+            for s in aligned.get("segments", [])]
 
 
 def _get_aligner(s: Settings) -> SubtitleAligner:
