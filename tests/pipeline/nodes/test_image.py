@@ -819,6 +819,85 @@ async def test_resume_skipped_count_in_trace(monkeypatch, tmp_path):
     assert captured["request_count"] == 3  # S001 skip=0, S002 fallback=2, S003 normal=1
 
 
+def _non_layered_resume_settings(tmp_path):
+    return FakeSettings(mock=False, workflow_path=_wf_file(tmp_path))
+
+
+def _write_complete_flat_shot(d, base, image_prompt, negative_prompt):
+    (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}_done.json").write_text(
+        json.dumps({"image_prompt": image_prompt, "negative_prompt": negative_prompt})
+    )
+
+
+async def test_non_layered_resume_skips_complete_shot(monkeypatch, tmp_path):
+    """AC3: non-layered mode skips a shot whose .png (>1KB) + matching sidecar exist."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _non_layered_resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_flat_shot(d, "scene_001_S001", "a dark room", "blurry")
+
+    call_count = 0
+
+    async def fake_fetch(url, workflow):
+        nonlocal call_count
+        call_count += 1
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 2  # only S002/S003 submitted
+
+    s001 = [s for scene in out["scenes"] for s in scene["shots"]][0]
+    assert s001["layered_fallback"] is False
+    assert s001["image_path"] == "workspace/run-img-1/images/scene_001_S001.png"
+
+
+async def test_non_layered_resume_regenerates_on_missing_sidecar(monkeypatch, tmp_path):
+    """AC3: a .png on disk without a matching sidecar regenerates (no false resume)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _non_layered_resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    (d / "scene_001_S001.png").write_bytes(RGB_PNG + b"\x00" * 1200)  # no sidecar
+
+    call_count = 0
+
+    async def fake_fetch(url, workflow):
+        nonlocal call_count
+        call_count += 1
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3  # every shot regenerates
+
+
+async def test_health_check_called_once_across_multiple_shots(monkeypatch, tmp_path):
+    """AC4 dedup: the lazy health_checked flag fires check_health once per image_node
+    call, not once per shot needing generation."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+
+    health_calls = 0
+
+    async def count_health(*a, **k):
+        nonlocal health_calls
+        health_calls += 1
+    monkeypatch.setattr(img.comfyui_client, "check_health", count_health)
+
+    async def fake_outputs(url, workflow, node_ids):
+        return {"9": RGB_PNG, "10": RGBA_PNG}
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())  # no pre-existing files → all 3 shots generate
+    assert out.get("error") is None
+    assert health_calls == 1
+
+
 async def test_non_layered_trace_has_zero_layered_counts(monkeypatch, tmp_path):
     """Non-layered mode: layered fields are present but zeroed."""
     _mock_settings(monkeypatch, tmp_path)
