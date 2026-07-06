@@ -174,3 +174,7 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 ## Deferred from: code review of story-7.3 (2026-07-06)
 
 - **`_character_spec` does not runtime-clamp the derived character zoom to `CHAR_MAX_ZOOM`** [src/yt_flow/pipeline/nodes/video.py:169] — the off-frame box invariant (`CHAR_MAX_W/H`) is sized assuming `bg_spec.end_zoom <= ZOOM_IN_MAX`. Today `select_effect` guarantees that ceiling, so it is safe. If a future direction/config ever raises the background zoom above `ZOOM_IN_MAX` without updating the box math, the amplified character zoom would exceed `CHAR_MAX_ZOOM` and silently overflow the motion-safe frame with no runtime guard. Add an `assert`/clamp in `_character_spec` if the background zoom ceiling is ever made variable. [sources: blind B7 + edge E4]
+
+## Deferred from: code review of story-7.4 (2026-07-06)
+
+- **`preceded_by_card = chapter_cards_enabled and i > 0` assumes every scene but the first is preceded by a card whenever `chapter_cards_enabled` is true** [src/yt_flow/pipeline/nodes/video.py — `video_node`'s join-segment construction] — currently accurate because card insertion in that loop is unconditional (`if chapter_cards_enabled and i < len(segs_with_specs) - 1`). If card insertion ever becomes conditional (e.g. skipped for a scene under `MIN_CARD_DURATION`), this flag would silently misclassify a boundary as "card-protected" when no card was actually rendered there, defeating the AC5 card-adjacency guarantee. No such conditional exists today. [source: blind]

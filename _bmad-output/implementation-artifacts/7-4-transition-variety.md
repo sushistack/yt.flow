@@ -1,6 +1,10 @@
+---
+baseline_commit: e7c5ebfb438e426729a5f8f68aea48f475faa1f0
+---
+
 # Story 7.4: Transition Variety (mood-driven xfade type)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -42,30 +46,30 @@ This story's contract with 7.1 (from [2026-07-04-sound-design-design.md](../../d
 
 ## Tasks / Subtasks
 
-- [ ] **Task 0 — Verify 7.1 landed (AC: blocking dep)**
-  - [ ] Run the two `grep` checks in the Blocking Dependency section. If `mood`/`sound_design` absent → HALT and report.
-- [ ] **Task 1 — Config flag (AC: 6)**
-  - [ ] Add `transition_variety_enabled: bool = True` to `Settings` in [config.py](../../src/yt_flow/config.py), near the Chapter-card block (lines 75–78), with a one-line comment referencing Story 7.4.
-- [ ] **Task 2 — `resolve_transition` + `MOOD_XFADE_MAP` (AC: 1, 2)**
-  - [ ] Add `MOOD_XFADE_MAP: dict[str, str]` and `def resolve_transition(mood: str | None) -> str` to [video.py](../../src/yt_flow/pipeline/nodes/video.py), beside the existing `XFADE_TRANSITION`/`XFADE_DURATION` constants (lines 60–62).
-  - [ ] Import `resolve_mood` from `yt_flow.pipeline.nodes.sound_design` (7.1's module). Follow the existing top-of-file import style at [video.py:22-23](../../src/yt_flow/pipeline/nodes/video.py#L22).
-  - [ ] Keep `XFADE_TRANSITION = "fadeblack"` — it remains the card transition and the `enabled=False` fallback value. Do not delete it.
-- [ ] **Task 3 — `_join_with_xfade` 3-tuple signature (AC: 3)**
-  - [ ] Change signature to `segments: list[tuple[Path, float, str]]`.
-  - [ ] In the loop, unpack the third element and use `transition = segments[i + 1][2]` for boundary `i` (the entering segment announces its cut-in). Replace the hardcoded `XFADE_TRANSITION` in the `xfade=transition=...` f-string with this per-boundary value.
-  - [ ] Update the `for path, _ in segments` input-args loop to `for path, _, _ in segments`.
-  - [ ] Preserve the running-offset math and the acrossfade line **exactly** — this is the #1 xfade bug source (see the docstring at [video.py:541-548](../../src/yt_flow/pipeline/nodes/video.py#L541)).
-- [ ] **Task 4 — `video_node` builds tuples with card-adjacency guard (AC: 4, 5, 6)**
-  - [ ] In the `else` branch that builds `join_segments` ([video.py:674-683](../../src/yt_flow/pipeline/nodes/video.py#L674)), change to 3-tuples.
-  - [ ] Gate on the config flag: when `transition_variety_enabled` is `False`, every scene tuple's transition is `XFADE_TRANSITION` ("fadeblack").
-  - [ ] Apply the card-adjacency rule (see Dev Notes): a scene tuple that is immediately preceded by a card must use `"fadeblack"`, not its mood transition. Card tuples are always `"fadeblack"`.
-- [ ] **Task 5 — Tests (AC: 7)**
-  - [ ] Update the 5 existing `_join_with_xfade` tests in [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py) (lines ~296–375) to pass 3-tuples `(path, dur, "fadeblack")`.
-  - [ ] Add `test_resolve_transition_*`: all 4 moods map correctly + `None`/`"garbage"` → `"fadeblack"` (via `dread`).
-  - [ ] Add a test asserting a mood-varied scene boundary produces its expected transition name in `filter_complex` (e.g. an `escalation` scene → `transition=wipeleft`).
-  - [ ] Add a card-adjacency test: with chapter cards enabled and scenes of varied moods, every `transition=` token in the filtergraph is `fadeblack`.
-  - [ ] Add an `enabled=False` test: mood-varied scenes, flag off → all boundaries `fadeblack`.
-  - [ ] Run: `PYTHONPATH=$PWD/src python -m pytest tests/pipeline/nodes/test_video.py -q`
+- [x] **Task 0 — Verify 7.1 landed (AC: blocking dep)**
+  - [x] Run the two `grep` checks in the Blocking Dependency section. If `mood`/`sound_design` absent → HALT and report.
+- [x] **Task 1 — Config flag (AC: 6)**
+  - [x] Add `transition_variety_enabled: bool = True` to `Settings` in [config.py](../../src/yt_flow/config.py), near the Chapter-card block (lines 75–78), with a one-line comment referencing Story 7.4.
+- [x] **Task 2 — `resolve_transition` + `MOOD_XFADE_MAP` (AC: 1, 2)**
+  - [x] Add `MOOD_XFADE_MAP: dict[str, str]` and `def resolve_transition(mood: str | None) -> str` to [video.py](../../src/yt_flow/pipeline/nodes/video.py), beside the existing `XFADE_TRANSITION`/`XFADE_DURATION` constants (lines 60–62).
+  - [x] Import `resolve_mood` from `yt_flow.pipeline.nodes.sound_design` (7.1's module). Follow the existing top-of-file import style at [video.py:22-23](../../src/yt_flow/pipeline/nodes/video.py#L22).
+  - [x] Keep `XFADE_TRANSITION = "fadeblack"` — it remains the card transition and the `enabled=False` fallback value. Do not delete it.
+- [x] **Task 3 — `_join_with_xfade` 3-tuple signature (AC: 3)**
+  - [x] Change signature to `segments: list[tuple[Path, float, str]]`.
+  - [x] In the loop, unpack the third element and use `transition = segments[i + 1][2]` for boundary `i` (the entering segment announces its cut-in). Replace the hardcoded `XFADE_TRANSITION` in the `xfade=transition=...` f-string with this per-boundary value.
+  - [x] Update the `for path, _ in segments` input-args loop to `for path, _, _ in segments`.
+  - [x] Preserve the running-offset math and the acrossfade line **exactly** — this is the #1 xfade bug source (see the docstring at [video.py:541-548](../../src/yt_flow/pipeline/nodes/video.py#L541)).
+- [x] **Task 4 — `video_node` builds tuples with card-adjacency guard (AC: 4, 5, 6)**
+  - [x] In the `else` branch that builds `join_segments` ([video.py:674-683](../../src/yt_flow/pipeline/nodes/video.py#L674)), change to 3-tuples.
+  - [x] Gate on the config flag: when `transition_variety_enabled` is `False`, every scene tuple's transition is `XFADE_TRANSITION` ("fadeblack").
+  - [x] Apply the card-adjacency rule (see Dev Notes): a scene tuple that is immediately preceded by a card must use `"fadeblack"`, not its mood transition. Card tuples are always `"fadeblack"`.
+- [x] **Task 5 — Tests (AC: 7)**
+  - [x] Update the 5 existing `_join_with_xfade` tests in [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py) (lines ~296–375) to pass 3-tuples `(path, dur, "fadeblack")`.
+  - [x] Add `test_resolve_transition_*`: all 4 moods map correctly + `None`/`"garbage"` → `"fadeblack"` (via `dread`).
+  - [x] Add a test asserting a mood-varied scene boundary produces its expected transition name in `filter_complex` (e.g. an `escalation` scene → `transition=wipeleft`).
+  - [x] Add a card-adjacency test: with chapter cards enabled and scenes of varied moods, every `transition=` token in the filtergraph is `fadeblack`.
+  - [x] Add an `enabled=False` test: mood-varied scenes, flag off → all boundaries `fadeblack`.
+  - [x] Run: `PYTHONPATH=$PWD/src python -m pytest tests/pipeline/nodes/test_video.py -q`
 
 ## Dev Notes
 
@@ -163,8 +167,43 @@ All 4 values are ffmpeg built-in `xfade` transition names — **zero new depende
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- `PYTHONPATH=$PWD/src python -m pytest tests/pipeline/nodes/test_video.py -q` → 131 passed
+- `PYTHONPATH=$PWD/src python -m pytest -q` (full regression) → 669 passed, 1 skipped (pre-existing ffmpeg-integration skip), 193s
+- `ruff check src/yt_flow/pipeline/nodes/video.py src/yt_flow/config.py tests/pipeline/nodes/test_video.py` → All checks passed
 
 ### Completion Notes List
 
+- Blocking dependency verified: Story 7.1 landed (`SceneState.mood`, `sound_design.resolve_mood/MOOD_VALUES/DEFAULT_MOOD` all present) — proceeded without HALT.
+- Implemented exactly per Dev Notes recommended code: `MOOD_XFADE_MAP`/`resolve_transition` beside the existing xfade constants, `_join_with_xfade` migrated to 3-tuples with `segments[i+1][2]` as the per-boundary transition, `video_node`'s `join_segments` construction gated on `transition_variety_enabled` with the card-adjacency guard (`preceded_by_card = chapter_cards_enabled and i > 0`).
+- `resolve_mood` was already imported in video.py (added by 7.2/7.3 for other mood-driven features), so no new import was needed.
+- The story's Task 5 said "5 existing tests" needed 2-tuple→3-tuple migration; actual count was 7 call sites across 7 test functions (including one integration test gated on `ffmpeg`/`ffprobe` availability) — all updated.
+- Updated the `# ponytail:` comment on `XFADE_TRANSITION` (video.py) since the "second type until wanted" it deferred now exists via `MOOD_XFADE_MAP`.
+- `_settings_ns` test helper extended with `transition_variety_enabled` kwarg (default `False`, matching the existing off-by-default pattern for pre-7.4 tests) per Dev Notes testing-standards guidance.
+- Added 4 new node-level/unit test groups: `resolve_transition` mapping (4 moods + None/garbage fallback), per-boundary transition in `_join_with_xfade`'s filtergraph, card-adjacency all-fadeblack guarantee, and `transition_variety_enabled=False` all-fadeblack path — plus the `Settings.transition_variety_enabled` default-true config test.
+- No scope deviations: no new files, no duration-by-mood variation, no second card mapping table, audio path untouched.
+
 ### File List
+
+- `src/yt_flow/config.py` — added `transition_variety_enabled: bool = True`
+- `src/yt_flow/pipeline/nodes/video.py` — added `MOOD_XFADE_MAP`/`resolve_transition`; migrated `_join_with_xfade` to 3-tuple segments; updated `video_node`'s `join_segments` construction with card-adjacency guard; updated `XFADE_TRANSITION` ponytail comment
+- `tests/pipeline/nodes/test_video.py` — migrated 7 existing `_join_with_xfade` call sites to 3-tuples; extended `_settings_ns` with `transition_variety_enabled`; added `resolve_transition`/`MOOD_XFADE_MAP` import; added tests for mood mapping, per-boundary filtergraph transition, card-adjacency guarantee, variety-disabled path, and config default
+
+### Review Findings
+
+Reviewed via Blind Hunter (diff-only adversarial), Edge Case Hunter (diff + project read), and Acceptance Auditor (diff + spec). No AC violations found — all 7 ACs traced and satisfied.
+
+- [x] [Review][Patch] `MOOD_XFADE_MAP[resolve_mood(mood)]` has no guard tying its key set to `sound_design.MOOD_VALUES` — same class of bug already fixed once in Story 7.2's `color_grade.MOOD_GRADE_PARAMS`; a future taxonomy change would raise an uncaught `KeyError` mid-render instead of degrading gracefully [src/yt_flow/pipeline/nodes/video.py]
+- [x] [Review][Patch] `test_join_with_xfade_per_boundary_transition` only asserts substring containment (`"xfade=transition=wipeleft" in fc`), not positional order — a bug that swapped which boundary gets which transition would still pass [tests/pipeline/nodes/test_video.py]
+- [x] [Review][Patch] No test exercises two distinct mood-driven boundaries in the same multi-scene `video_node` run — the only config where mood-driven transitions actually surface (`chapter_cards` off) had just one such boundary covered [tests/pipeline/nodes/test_video.py]
+- [x] [Review][Defer] `preceded_by_card = chapter_cards_enabled and i > 0` assumes a card is inserted before every scene but the first whenever `chapter_cards_enabled` is true; nothing enforces this if card insertion ever becomes conditional (e.g. skipped for scenes under `MIN_CARD_DURATION`) — no such conditional exists today, pre-existing structural assumption, not caused by this change [src/yt_flow/pipeline/nodes/video.py]
+
+Dismissed as noise (9): feature is a no-op whenever the also-default-on `chapter_cards` is enabled — this is the spec's own stated design intent (Dev Notes: "with cards on there are none"), not a defect, flagged to Jay separately as a product note; `resolve_transition` missing a docstring (one-line pure function, self-documented by the dict above it); `revelation → fadewhite` mapping lacking inline rationale (illustrative pick, spec says "ship as-is, tune later"); segments tuple growing 2→3 without a `NamedTuple` (matches existing plain-tuple style, no new abstraction per Ponytail); general "this is speculative complexity" critique (directly spec-mandated AC1-7, zero new dependencies); `variety` local variable naming (cosmetic); scattered indexing-convention comments across 3 places (each comment is locally correct, not a defect); `transition_variety_enabled` defaulting `True` on introduction (matches existing precedent for `sound_design_enabled`/`post_fx_enabled`/`parallax_enabled`, spec AC:6 mandates default `True`); dead `resolve_transition` call for `segments[0]` (harmless — becomes moot once the `MOOD_XFADE_MAP`/`MOOD_VALUES` invariant guard above is added).
+
+## Change Log
+
+- 2026-07-06: Implemented Story 7.4 (mood-driven xfade transition type). All 7 tasks complete, all ACs satisfied. Full regression suite green (669 passed, 1 pre-existing skip). Status → review.
+- 2026-07-06: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor). No AC violations. 3 patches applied: `MOOD_XFADE_MAP`↔`MOOD_VALUES` invariant guard, positional assertion in the per-boundary xfade test, a multi-boundary `video_node` test. 1 item deferred (pre-existing card-insertion assumption). Full regression green (680 passed, 1 pre-existing skip), ruff clean. Status → done.
