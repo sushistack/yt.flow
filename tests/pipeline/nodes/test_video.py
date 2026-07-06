@@ -22,6 +22,8 @@ from yt_flow.pipeline.nodes.video import (
     XFADE_DURATION,
     EffectSpec,
     _character_scale_filter,
+    _character_spec,
+    _character_zoom_filter,
     _join_with_xfade,
     _overlay_filter,
     _validate_scene_assets,
@@ -37,17 +39,20 @@ from yt_flow.pipeline.nodes.video import (
 def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
+    parallax_enabled: bool = False,
 ):
-    # ponytail: fake settings default cards/sound-design/post-fx OFF so
-    # pre-existing tests (written before Story 5.1/7.1/7.2) don't need
-    # touching; the real Settings() default is True for all three — see
-    # test_config_chapter_cards_default_true / test_config_post_fx_enabled_default_true.
+    # ponytail: fake settings default cards/sound-design/post-fx/parallax OFF so
+    # pre-existing tests (written before Story 5.1/7.1/7.2/7.3) don't need
+    # touching; the real Settings() default is True for all four — see
+    # test_config_chapter_cards_default_true / test_config_post_fx_enabled_default_true
+    # / test_config_parallax_enabled_default_true.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
         chapter_card_duration_sec=chapter_card_duration_sec,
         sound_design_enabled=sound_design_enabled,
         post_fx_enabled=post_fx_enabled,
+        parallax_enabled=parallax_enabled,
     )
 
 
@@ -843,17 +848,151 @@ def test_overlay_filter_eval_frame_not_init():
 
 
 def test_character_scale_filter_downscale_only_within_motion_box():
-    """Character is capped to COMP minus sway/bob amplitude, downscale-only, AR-preserved.
+    """Character is capped to the motion-safe box, downscale-only, AR-preserved.
 
-    The box guarantees the centered overlay's full sine excursion stays on-frame:
-    max width COMP_W-2*SWAY_AMPLITUDE ⇒ min centre offset ≥ SWAY_AMPLITUDE. [review:1.9c]
+    The box reserves room for the peak parallax zoom *and* the full sine excursion:
+    the cap is (COMP-2*amp)/CHAR_MAX_ZOOM (Story 7.3 AC:4), so a capped character
+    zoomed to its peak lands back inside COMP minus sway/bob. [review:1.9c]
     """
     f = _character_scale_filter()
     assert "scale=" in f
     assert "force_original_aspect_ratio=decrease" in f   # never distort
     assert "min(iw" in f and "min(ih" in f               # never upscale a small cutout
-    assert str(video.COMP_W - 2 * video.SWAY_AMPLITUDE) in f
-    assert str(video.COMP_H - 2 * video.BOB_AMPLITUDE) in f
+    assert str(video.CHAR_MAX_W) in f
+    assert str(video.CHAR_MAX_H) in f
+
+
+# ── Character parallax (Story 7.3) ────────────────────────────────────────────
+
+
+def test_character_spec_in_center_amplifies_zoom():
+    """in-center 1.0→1.15 background ⇒ character 1.0→1.195 (delta ×1.3). [AC:1]"""
+    bg = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    ch = _character_spec(bg)
+    assert ch.direction == "in-center"                 # pass-through
+    assert ch.start_zoom == pytest.approx(1.0)
+    assert ch.end_zoom == pytest.approx(1.0 + (video.ZOOM_IN_MAX - 1.0) * video.CHAR_DEPTH_FACTOR)
+    assert ch.end_zoom == pytest.approx(1.195)
+
+
+def test_character_spec_out_center_amplifies_zoom():
+    """out-center 1.15→1.0 background ⇒ character 1.195→1.0. [AC:1]"""
+    bg = EffectSpec(direction="out-center", start_zoom=video.ZOOM_IN_MAX, end_zoom=1.0)
+    ch = _character_spec(bg)
+    assert ch.direction == "out-center"
+    assert ch.start_zoom == pytest.approx(1.195)
+    assert ch.end_zoom == pytest.approx(1.0)
+
+
+def test_character_spec_static_stays_tiny():
+    """static 1.0→1.005 ⇒ character 1.0→1.0065 — tiny after amplification, no special-case. [AC:1]"""
+    bg = select_effect(_shot(camera_movement="static"), 0)  # 1.0→1.005 in-center
+    ch = _character_spec(bg)
+    assert ch.start_zoom == pytest.approx(1.0)
+    assert ch.end_zoom == pytest.approx(1.0065)
+
+
+def test_character_spec_direction_passthrough():
+    """Direction is copied verbatim from the background (parallax needs same direction). [AC:1]"""
+    for d in video._DIRECTION_POOL:
+        bg = EffectSpec(direction=d, start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+        assert _character_spec(bg).direction == d
+
+
+def test_character_zoom_filter_uses_scale_eval_frame():
+    """Character zoom is a time-varying scale (not zoompan) with eval=frame. [AC:2]"""
+    ch = _character_spec(EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX))
+    f = _character_zoom_filter(ch, duration=2.0)
+    assert "scale=" in f
+    assert "eval=frame" in f
+    assert "zoompan" not in f          # crop-free near plane
+    assert "iw*" in f and "ih*" in f   # both axes ramp
+
+
+def test_overlay_filter_parallax_off_is_unchanged():
+    """spec=None ⇒ exact fixed-size sway/bob-only string (parallax off). [AC:5]"""
+    f = _overlay_filter()
+    assert "overlay=" in f and "eval=frame" in f
+    assert f.count("sin(t*") == 2      # only the two idle sines
+    assert "t/" not in f               # no duration-ramped pan term
+
+
+def test_overlay_filter_parallax_pan_adds_term_over_sines():
+    """spec=pan-right ⇒ a macro pan term rides on top of the sway/bob sines. [AC:3]"""
+    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX))
+    f = _overlay_filter(ch, duration=2.0)
+    assert f.count("sin(t*") == 2                       # sway/bob preserved
+    assert f"({-video.CHAR_PAN_AMPLITUDE_PX})*t/2.0" in f   # pan-right drifts -x on-screen
+    assert f != _overlay_filter()                       # differs from parallax-off
+
+
+def test_overlay_filter_center_directions_contribute_zero_pan():
+    """in-center/out-center have no apparent drift ⇒ overlay == parallax-off string. [AC:3]"""
+    for d in ("in-center", "out-center"):
+        ch = _character_spec(EffectSpec(direction=d, start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX))
+        assert _overlay_filter(ch, duration=2.0) == _overlay_filter()
+
+
+def test_char_max_box_reserves_zoom_growth():
+    """[AC:8] The shrunk box, zoomed to its peak, must land within the frame with room
+    left for BOTH the sway/bob sines AND the macro pan ramp — the worst-case corner
+    (peak zoom + sway peak + full pan, e.g. pan-* directions) stays on-screen by
+    construction, so off-frame prevention doesn't depend on a visual eyeball. [review:D1]"""
+    assert video.CHAR_MAX_W * video.CHAR_MAX_ZOOM <= (
+        video.COMP_W - 2 * (video.SWAY_AMPLITUDE + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
+    )
+    assert video.CHAR_MAX_H * video.CHAR_MAX_ZOOM <= (
+        video.COMP_H - 2 * (video.BOB_AMPLITUDE + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
+    )
+
+
+def test_config_parallax_enabled_default_true():
+    """Settings.parallax_enabled defaults true, per AC:5."""
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["parallax_enabled"].default is True
+
+
+async def test_video_node_parallax_on_adds_char_zoom_and_pan(monkeypatch, tmp_path, assets):
+    """parallax_enabled=True: character stream gets a scale-zoom ramp + the overlay
+    carries a pan term, on top of the existing scale-cap + sway/bob. [AC:2,3,5]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, parallax_enabled=True))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image, character=assets.character,
+        audio=assets.audio, subtitle=assets.subtitle, camera_movement="pan right",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    # character chain = scale-cap , scale-zoom(eval=frame) → two scale= on the [char] branch
+    char_branch = fc.split("[char]")[0].split("[bg];")[-1]
+    assert char_branch.count("scale=") == 2
+    assert "eval=frame" in char_branch
+    # overlay carries the pan term for pan-right
+    assert f"({-video.CHAR_PAN_AMPLITUDE_PX})*t/" in fc
+
+
+async def test_video_node_parallax_off_no_char_zoom(monkeypatch, tmp_path, assets):
+    """parallax_enabled=False: today's behavior — single scale-cap, no zoom ramp, no pan. [AC:5]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, parallax_enabled=False))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scene = _scene(
+        1, image=assets.image, background=assets.image, character=assets.character,
+        audio=assets.audio, subtitle=assets.subtitle, camera_movement="pan right",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    char_branch = fc.split("[char]")[0].split("[bg];")[-1]
+    assert char_branch.count("scale=") == 1   # only the cap, no zoom ramp
+    assert "t/" not in fc.split("[ov]")[0]     # no pan-term ramp in the overlay
 
 
 async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, assets):

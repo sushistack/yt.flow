@@ -95,3 +95,8 @@ class Settings(BaseSettings):
     # Post-processing filters (Story 7.2): mood-driven color grade + constant
     # vignette/film-grain on every scene and chapter card.
     post_fx_enabled: bool = True
+
+    # Character parallax (Story 7.3): couple the near-plane character's zoom/pan to
+    # the background's EffectSpec, amplified by CHAR_DEPTH_FACTOR, for a real
+    # multiplane depth cue. When false, character reverts to fixed-size sway/bob only.
+    parallax_enabled: bool = True

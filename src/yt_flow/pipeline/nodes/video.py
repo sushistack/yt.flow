@@ -84,12 +84,30 @@ SWAY_FREQ = 0.8       # rad/s
 BOB_AMPLITUDE = 8     # px, y-axis breathing/bob
 BOB_FREQ = 1.2        # rad/s
 
+# ── Parallax constants (Story 7.3) ────────────────────────────────────────────
+# Character (near plane) zoom/pan is derived from the background (far plane)
+# EffectSpec, amplified so it reads as depth rather than two unrelated animations.
+# ponytail: fixed module constants tuned via live-render QA (same iteration style
+# as ZOOM_IN_MAX's 1.08→1.15 history), not per-scene config.
+CHAR_DEPTH_FACTOR = 1.3        # zoom-delta amplification for the near plane
+CHAR_PAN_AMPLITUDE_PX = 12     # ponytail: eyeball-tuned; per-direction sign live-verified (AC:7/Task 8)
+
+# Peak character zoom = the amplified in-center push-in. The motion-safe box below
+# must reserve room for THIS before sway/bob, or the character grows ~19.5% past
+# frame edges at the in-center peak (Story 7.3 AC:4).
+CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR
+
 # Motion-safe character box: shrink an oversized character to leave room for the
-# full sway/bob excursion, so idle motion can never push it off-frame and a
-# mis-sized ComfyUI asset (character bytes are written raw, never scaled upstream)
-# can't overflow. Sized so the centered overlay + max sine offset stays on-frame.
-CHAR_MAX_W = COMP_W - 2 * SWAY_AMPLITUDE
-CHAR_MAX_H = COMP_H - 2 * BOB_AMPLITUDE
+# peak parallax zoom *and* the full sway/bob excursion *and* the macro pan drift,
+# so no combination of depth-zoom + idle motion + parallax pan can push it
+# off-frame and a mis-sized ComfyUI asset (character bytes are written raw, never
+# scaled upstream) can't overflow. Dividing by CHAR_MAX_ZOOM means a character
+# capped here then zoomed to its peak lands back inside the frame; reserving
+# SWAY/BOB *and* CHAR_PAN_AMPLITUDE_PX per side means the worst-case corner
+# (peak zoom + sway peak + full pan ramp, e.g. pan-* directions) still stays on
+# screen by construction — not by eyeball (Story 7.3 AC:4/AC:8 regression invariant).
+CHAR_MAX_W = (COMP_W - 2 * (SWAY_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
+CHAR_MAX_H = (COMP_H - 2 * (BOB_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
 
 
 # ── EffectSpec dataclass ──────────────────────────────────────────────────────
@@ -149,6 +167,21 @@ def select_effect(shot: ShotData, scene_index: int) -> EffectSpec:
     if direction == "out-center":
         return EffectSpec(direction=direction, start_zoom=ZOOM_IN_MAX, end_zoom=1.0)
     return EffectSpec(direction=direction, start_zoom=1.0, end_zoom=ZOOM_IN_MAX)
+
+
+def _character_spec(bg_spec: EffectSpec) -> EffectSpec:
+    """Derive the near-plane character spec from the far-plane background spec. [AC:1]
+
+    Same ``direction`` (parallax needs both planes moving the *same* way, only at
+    different magnitude); the zoom deviation from 1.0 is amplified by
+    CHAR_DEPTH_FACTOR. Direction-agnostic and no special-casing — 'static'
+    (1.0→1.005) stays tiny after amplification.
+    """
+    return EffectSpec(
+        direction=bg_spec.direction,
+        start_zoom=1.0 + (bg_spec.start_zoom - 1.0) * CHAR_DEPTH_FACTOR,
+        end_zoom=1.0 + (bg_spec.end_zoom - 1.0) * CHAR_DEPTH_FACTOR,
+    )
 
 
 # ── Filtergraph builders ──────────────────────────────────────────────────────
@@ -230,16 +263,59 @@ def _zoompan_filter(spec: EffectSpec, duration: float) -> str:
     )
 
 
-def _overlay_filter() -> str:
-    """Character sway+bob idle-motion overlay, centered on the background. [AC:1,2]
+# Direction → (x_sign, y_sign) for the character's macro pan, in *apparent
+# on-screen* space: the character drifts WITH the background's visible motion,
+# which is the OPPOSITE sign of the background's crop-window expression (see
+# _zoompan_filter — a crop moving right makes content appear to move left).
+# in-center/out-center/static contribute zero pan (default). Story 7.3 AC:3/AC:7 —
+# ponytail: provisional signs, live-verified per direction in Task 8.
+_PAN_SIGN: dict[str, tuple[int, int]] = {
+    "pan-right": (-1, 0),
+    "pan-left": (1, 0),
+    "pan-up": (0, -1),
+    "pan-down": (0, 1),
+    "pan-up-right": (-1, -1),
+    "pan-up-left": (1, -1),
+    "pan-down-right": (-1, 1),
+    "pan-down-left": (1, 1),
+}
+
+
+def _character_zoom_filter(spec: EffectSpec, duration: float) -> str:
+    """Time-varying scale for the character (near plane). [AC:2]
+
+    ``scale`` (not ``zoompan``): the character is a transparent PNG composited via
+    ``overlay`` and needs no crop, and zoompan's alpha handling is unreliable here.
+    ``eval=frame`` so ``t`` advances per frame — the same requirement
+    ``_overlay_filter`` documents for its sines. Zoom ramps linearly start→end.
+    """
+    lo, hi = spec.start_zoom, spec.end_zoom
+    z = f"({lo}+({hi}-{lo})*t/{duration})"
+    return f"scale=w='iw*{z}':h='ih*{z}':eval=frame"
+
+
+def _overlay_filter(spec: EffectSpec | None = None, duration: float | None = None) -> str:
+    """Character overlay, centered on the background, with idle motion. [AC:1,2,3]
 
     ``eval=frame`` is REQUIRED and set explicitly: under the ``eval=init`` default
     for *some* builds the ``t``/``n`` timeline vars collapse to NAN and the
     character freezes. Two sines (x sway, y bob) at different freq/amplitude give
     the subtle "alive" drift without rigging.
+
+    When ``spec`` is given (parallax on, Story 7.3), a direction-derived macro pan
+    term rides *on top of* the sway/bob sines — a slow shot-duration-scale depth
+    drift, ramped linearly like the zoom. ``spec=None`` reverts to the exact
+    fixed-size sway/bob-only string (parallax off). The centering base stays
+    correct under ``eval=frame`` even as the character scales.
     """
     x = f"(main_w-overlay_w)/2 + sin(t*{SWAY_FREQ})*{SWAY_AMPLITUDE}"
     y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ})*{BOB_AMPLITUDE}"
+    if spec is not None and duration:
+        sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
+        if sx:
+            x += f" + ({sx * CHAR_PAN_AMPLITUDE_PX})*t/{duration}"
+        if sy:
+            y += f" + ({sy * CHAR_PAN_AMPLITUDE_PX})*t/{duration}"
     return f"overlay=x='{x}':y='{y}':eval=frame"
 
 
@@ -448,6 +524,7 @@ async def _compose_scene(
     *,
     sound_design_enabled: bool = False,
     post_fx_enabled: bool = False,
+    parallax_enabled: bool = False,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
     transparent character composited on top with idle motion, optionally with a
@@ -489,10 +566,22 @@ async def _compose_scene(
             "-loop", "1", "-framerate", str(FPS), "-i", str(character_path),
             "-i", audio_path,
         ]
+        # Parallax (Story 7.3): couple the character's zoom/pan to the background's
+        # spec, amplified. Off → today's fixed-size, sway/bob-only overlay.
+        if parallax_enabled:
+            char_spec = _character_spec(spec)
+            char_chain = (
+                f"{_character_scale_filter()},"
+                f"{_character_zoom_filter(char_spec, duration)}"
+            )
+            overlay = _overlay_filter(char_spec, duration)
+        else:
+            char_chain = _character_scale_filter()
+            overlay = _overlay_filter()
         video_chain = (
             f"[0:v]{zp_chain}[bg];"
-            f"[1:v]{_character_scale_filter()}[char];"
-            f"[bg][char]{_overlay_filter()}[ov];"
+            f"[1:v]{char_chain}[char];"
+            f"[bg][char]{overlay}[ov];"
             f"[ov]{post_label}subtitles='{sub}'[out]"
         )
         video_map = "[out]"
@@ -756,6 +845,7 @@ async def video_node(state: PipelineState) -> dict:
                 scene, i, run_dir,
                 sound_design_enabled=s.sound_design_enabled,
                 post_fx_enabled=s.post_fx_enabled,
+                parallax_enabled=s.parallax_enabled,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))

@@ -170,3 +170,7 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 ## Deferred from: code review of story-7.2 (2026-07-06)
 
 - **Pre-existing duplication in `_compose_scene`'s no-sound-design/no-character branch** [src/yt_flow/pipeline/nodes/video.py] — `video_chain` (built once per call) and the `else` branch's `vf` recompute the identical `{zp_chain}{post_frag},subtitles=...` expression. Predates Story 7.2 (inherited from the 7.1 `-vf`/`-filter_complex` mutual-exclusivity split); 7.2 only threaded `post_frag` through both copies consistently rather than introducing the duplication. Worth collapsing into one computed string if `_compose_scene` is revisited.
+
+## Deferred from: code review of story-7.3 (2026-07-06)
+
+- **`_character_spec` does not runtime-clamp the derived character zoom to `CHAR_MAX_ZOOM`** [src/yt_flow/pipeline/nodes/video.py:169] — the off-frame box invariant (`CHAR_MAX_W/H`) is sized assuming `bg_spec.end_zoom <= ZOOM_IN_MAX`. Today `select_effect` guarantees that ceiling, so it is safe. If a future direction/config ever raises the background zoom above `ZOOM_IN_MAX` without updating the box math, the amplified character zoom would exceed `CHAR_MAX_ZOOM` and silently overflow the motion-safe frame with no runtime guard. Add an `assert`/clamp in `_character_spec` if the background zoom ceiling is ever made variable. [sources: blind B7 + edge E4]

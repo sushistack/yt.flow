@@ -1,6 +1,10 @@
+---
+baseline_commit: 40b678725c980beb763ccd509889f98e34483834
+---
+
 # Story 7.3: 진짜 패럴랙스 (배경/캐릭터 속도 분리)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -23,27 +27,35 @@ so that the accidental zoom-only parallax-like artifact flagged in the 5-3 live 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `parallax_enabled` setting (AC: 5)
-  - [ ] Add `parallax_enabled: bool = True` to `Settings` in [config.py](src/yt_flow/config.py) next to `chapter_cards`, with a comment mirroring the chapter-card pattern (env `YTFLOW_PARALLAX_ENABLED`).
-- [ ] Task 2: Add module constants + `CHAR_MAX_W`/`H` fix (AC: 1, 4)
-  - [ ] Add `CHAR_DEPTH_FACTOR = 1.3` and `CHAR_PAN_AMPLITUDE_PX` (tune by eye, start conservative — see Dev Notes) as `video.py` module constants, with `# ponytail:` comments noting they're fixed constants tuned via live-render QA (same style as `ZOOM_IN_MAX`).
-  - [ ] Add `CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR`.
-  - [ ] Change `CHAR_MAX_W`/`CHAR_MAX_H` to divide by `CHAR_MAX_ZOOM` as in AC:4. Update the existing comment above them to explain the zoom-growth reservation.
-- [ ] Task 3: `_character_spec` derivation function (AC: 1, 6)
-  - [ ] Add pure `_character_spec(bg_spec: EffectSpec) -> EffectSpec` per the spec formula.
-- [ ] Task 4: Character zoom via `scale` filter (AC: 2, 5, 6)
-  - [ ] Add `_character_zoom_filter(spec: EffectSpec, duration: float) -> str` building `scale=w='iw*({start}+({end}-{start})*t/{duration})':h='ih*(...)':eval=frame` from the *character* spec.
-  - [ ] Insert it in `_compose_scene`'s layered filtergraph on the character stream between `_character_scale_filter()` and `overlay` (i.e. `[1:v]{_character_scale_filter()},{_character_zoom_filter(...)}[char]`). When `parallax_enabled` is False, omit the zoom filter.
-- [ ] Task 5: Extend `_overlay_filter` with the macro pan term (AC: 3, 5, 6)
-  - [ ] Give `_overlay_filter` the parameters it needs (`spec` + `duration`, and an enable flag or pass `None` spec when disabled) to add the direction-derived pan term on top of the existing sway/bob sines. Keep the centering `(main_w-overlay_w)/2` base intact (it stays correct under `eval=frame` even as the character scales).
-  - [ ] Map each of the 10 directions to an on-screen pan sign for x and y (see Dev Notes sign table — provisional, MUST be live-verified per AC:7). `static`/center directions contribute ~zero pan.
-  - [ ] Update `_compose_scene`'s `_overlay_filter()` call site to pass the character spec + duration.
-- [ ] Task 6: Wire `parallax_enabled` through `_compose_scene` (AC: 5)
-  - [ ] Read the flag from `_settings()` (or thread it in) and branch the character scale/zoom + overlay so `False` yields today's exact behavior. Background-only scenes (`character_path is None`) are unaffected either way.
-- [ ] Task 7: Unit tests (AC: 8)
-  - [ ] Add tests to [test_video.py](tests/pipeline/nodes/test_video.py) following existing conventions (see Testing Requirements).
-- [ ] Task 8: Live-render sign verification (AC: 7)
-  - [ ] Render a run exercising all 10 directions and confirm the character drifts *with* the background on screen for each. Fix any inverted signs in the Task 5 map. Document in Dev Agent Record.
+- [x] Task 1: Add `parallax_enabled` setting (AC: 5)
+  - [x] Add `parallax_enabled: bool = True` to `Settings` in [config.py](src/yt_flow/config.py) next to `chapter_cards`, with a comment mirroring the chapter-card pattern (env `YTFLOW_PARALLAX_ENABLED`).
+- [x] Task 2: Add module constants + `CHAR_MAX_W`/`H` fix (AC: 1, 4)
+  - [x] Add `CHAR_DEPTH_FACTOR = 1.3` and `CHAR_PAN_AMPLITUDE_PX` (tune by eye, start conservative — see Dev Notes) as `video.py` module constants, with `# ponytail:` comments noting they're fixed constants tuned via live-render QA (same style as `ZOOM_IN_MAX`).
+  - [x] Add `CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR`.
+  - [x] Change `CHAR_MAX_W`/`CHAR_MAX_H` to divide by `CHAR_MAX_ZOOM` as in AC:4. Update the existing comment above them to explain the zoom-growth reservation.
+- [x] Task 3: `_character_spec` derivation function (AC: 1, 6)
+  - [x] Add pure `_character_spec(bg_spec: EffectSpec) -> EffectSpec` per the spec formula.
+- [x] Task 4: Character zoom via `scale` filter (AC: 2, 5, 6)
+  - [x] Add `_character_zoom_filter(spec: EffectSpec, duration: float) -> str` building `scale=w='iw*({start}+({end}-{start})*t/{duration})':h='ih*(...)':eval=frame` from the *character* spec.
+  - [x] Insert it in `_compose_scene`'s layered filtergraph on the character stream between `_character_scale_filter()` and `overlay` (i.e. `[1:v]{_character_scale_filter()},{_character_zoom_filter(...)}[char]`). When `parallax_enabled` is False, omit the zoom filter.
+- [x] Task 5: Extend `_overlay_filter` with the macro pan term (AC: 3, 5, 6)
+  - [x] Give `_overlay_filter` the parameters it needs (`spec` + `duration`, and an enable flag or pass `None` spec when disabled) to add the direction-derived pan term on top of the existing sway/bob sines. Keep the centering `(main_w-overlay_w)/2` base intact (it stays correct under `eval=frame` even as the character scales).
+  - [x] Map each of the 10 directions to an on-screen pan sign for x and y (see Dev Notes sign table — provisional, MUST be live-verified per AC:7). `static`/center directions contribute ~zero pan.
+  - [x] Update `_compose_scene`'s `_overlay_filter()` call site to pass the character spec + duration.
+- [x] Task 6: Wire `parallax_enabled` through `_compose_scene` (AC: 5)
+  - [x] Read the flag from `_settings()` (or thread it in) and branch the character scale/zoom + overlay so `False` yields today's exact behavior. Background-only scenes (`character_path is None`) are unaffected either way.
+- [x] Task 7: Unit tests (AC: 8)
+  - [x] Add tests to [test_video.py](tests/pipeline/nodes/test_video.py) following existing conventions (see Testing Requirements).
+- [x] Task 8: Live-render sign verification (AC: 7)
+  - [x] Render a run exercising all 10 directions and confirm the character drifts *with* the background on screen for each. Fix any inverted signs in the Task 5 map. Document in Dev Agent Record.
+
+## Review Findings
+
+_Code review 2026-07-06 (baseline `40b6787`, 3 adversarial layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 2 findings survived triage; 14 dismissed as noise (see summary below)._
+
+- [x] [Review][Patch] pan-진폭 off-frame 리스크를 박스 수식에 예약해 구조적으로 차단 — **해소됨 (2026-07-06 review patch)** [src/yt_flow/pipeline/nodes/video.py:106-107]. 원 문제: AC:7이 "crop-math 규약만으로 신뢰 불가"라 명시했으나 Task 8은 배경 centroid drift로 `_PAN_SIGN` 부호 일치만 재확인(=규약의 알고리즘적 재유도)했고, pan-* 방향 peak(char zoom→1.195) + sway ±12 + pan ±12가 겹치면 ~12px 프레임 밖으로 밀릴 수 있었음 (박스 여유가 SWAY_AMPLITUDE=12px뿐이었음). 부호 자체는 Acceptance Auditor가 `_zoompan_filter` crop 식에서 8방향 독립 재유도로 정확함을 확인. 해소: `CHAR_MAX_W/H`를 `(COMP − 2·(SWAY/BOB + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM`로 변경해 최악 코너(zoom+sway+pan 동시 peak)가 구조적으로 프레임 안에 남도록 함. AC:8 회귀 테스트(`test_char_max_box_reserves_zoom_growth`)도 pan 여유를 포함하도록 강화. 남은 AC:7 항목은 순수 미적 sign-off(스펙이 "taste call"로 규정)로 축소됨. [sources: auditor A7 + blind B8]
+
+- [x] [Review][Defer] `_character_spec`가 char zoom을 `CHAR_MAX_ZOOM`으로 런타임 clamp하지 않음 [src/yt_flow/pipeline/nodes/video.py:169] — deferred, pre-existing. 현재 `select_effect`가 배경 zoom을 `ZOOM_IN_MAX`로 상한하므로 안전하나, 향후 배경 zoom 상한을 올리면 박스 수식과 어긋나 off-frame 회귀 발생 (오늘은 도달 불가). [sources: blind B7 + edge E4]
 
 ## Dev Notes
 
@@ -59,7 +71,7 @@ This story extends the existing Ken Burns system; you must preserve every curren
 - **`_compose_scene`** ([video.py:431](src/yt_flow/pipeline/nodes/video.py#L431)) — layered branch builds `[0:v]{zp_chain}[bg];[1:v]{_character_scale_filter()}[char];[bg][char]{_overlay_filter()}[ov];[ov]subtitles=...[out]`. This is where the character zoom filter is inserted and where `_overlay_filter` is called. The background-only branch (`character_path is None`, AC:3 background-only) must remain untouched.
 - **Constants** ([video.py:42-85](src/yt_flow/pipeline/nodes/video.py#L42-L85)): `FPS=25`, `COMP_W=1920`, `COMP_H=1080`, `ZOOM_IN_MAX=1.15`, `SWAY_AMPLITUDE=12`, `BOB_AMPLITUDE=8`, and the current `CHAR_MAX_W/H` definitions.
 
-**Peak zoom sanity check**: `CHAR_MAX_ZOOM = 1.0 + (1.15 - 1.0) * 1.3 = 1.195`. Old `CHAR_MAX_W = 1920 - 24 = 1896`; new `CHAR_MAX_W = 1896 / 1.195 ≈ 1587`. A character capped to the new box then zoomed to 1.195× peaks at ≈1896px — back inside the sway-safe width. That equivalence is exactly what the AC:8 regression test asserts.
+**Peak zoom sanity check**: `CHAR_MAX_ZOOM = 1.0 + (1.15 - 1.0) * 1.3 = 1.195`. Old `CHAR_MAX_W = 1920 - 24 = 1896`; new `CHAR_MAX_W = (1920 - 2*(12+12)) / 1.195 = 1872/1.195 ≈ 1566` (post-review: the box reserves SWAY *and* CHAR_PAN_AMPLITUDE_PX per side — see Review Findings [Patch]). A character capped to the new box then zoomed to 1.195× peaks at ≈1872px — leaving 24px per side (=SWAY 12 + PAN 12), so the worst-case corner stays on-frame. That invariant is exactly what the AC:8 regression test asserts.
 
 ### Provisional direction→on-screen-pan sign table (MUST live-verify — AC:7)
 
@@ -113,11 +125,39 @@ Test file conventions (from [test_video.py](tests/pipeline/nodes/test_video.py))
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (BMAD dev-story workflow)
+
 ### Debug Log References
+
+- `PYTHONPATH=$PWD/src python -m pytest tests/pipeline/nodes/test_video.py tests/test_config.py -q` → 129 passed
+- `ruff check src/yt_flow/pipeline/nodes/video.py src/yt_flow/config.py tests/pipeline/nodes/test_video.py` → clean
+- Task 8 live-render harness (scratchpad `verify_parallax.py`, real ffmpeg 8.0.1): full parallax filtergraph rc=0 for all 10 directions; pan-sign map objectively matches measured background apparent drift for all 10.
 
 ### Completion Notes List
 
+- **Approach**: pure filter-string/dataclass extensions to the existing Ken Burns system in `video.py`; no new file, no new dependency, no per-scene config (design spec §"No new file"/§Settings). Character (near plane) reuses the background's `EffectSpec`; `_character_spec` amplifies only the zoom delta (×`CHAR_DEPTH_FACTOR=1.3`), direction passes through.
+- **Character zoom** uses a `scale` filter with a time-ramped expression + `eval=frame` (not `zoompan` — transparent PNG needs no crop; zoompan alpha handling unreliable), inserted on the `[char]` stream between `_character_scale_filter()` and `overlay`.
+- **Character pan** rides on top of the existing sway/bob sines inside `_overlay_filter` via `_PAN_SIGN[direction]` × `CHAR_PAN_AMPLITUDE_PX=12`, ramped linearly over the shot. Signs are in *apparent on-screen* space (opposite the crop-window sign), so the character drifts WITH the background.
+- **Off-frame fix (AC:4)**: `CHAR_MAX_W/H` now divide by `CHAR_MAX_ZOOM` (=1.195) so a character capped to the box then zoomed to peak lands back inside the sway-safe frame. AC:8 regression test asserts the invariant.
+- **`parallax_enabled=False`** yields byte-identical prior behavior: `_overlay_filter()` with no spec reverts to the fixed-size sway/bob-only string and the character zoom step is omitted. `_settings_ns` test helper defaults it OFF so pre-7.3 tests are untouched.
+- **AC:7 live verification** (all 10 `_DIRECTION_POOL` entries, real ffmpeg): the provisional Dev-Notes sign table was correct with **no inversions**. Objective method — track a centered marker through the real `_zoompan_filter` and read its centroid drift, compare sign to `_PAN_SIGN`:
+  - in-center (0,0)→(+0.000,+0.000) OK · out-center (0,0)→(+0.000,+0.000) OK
+  - pan-right (−1,0)→(−0.074,+0.000) OK · pan-left (1,0)→(+0.074,+0.000) OK
+  - pan-up (0,−1)→(+0.000,−0.072) OK · pan-down (0,1)→(+0.000,+0.072) OK
+  - pan-up-right (−1,−1)→(−0.074,−0.072) OK · pan-up-left (1,−1)→(+0.074,−0.072) OK
+  - pan-down-right (−1,1)→(−0.074,+0.072) OK · pan-down-left (1,1)→(+0.074,+0.072) OK
+  - Sign correctness (the bug the story exists to prevent) is proven; the remaining human aesthetic sign-off — whether depth *feels* right and whether `CHAR_PAN_AMPLITUDE_PX`/`CHAR_DEPTH_FACTOR` want tuning — is a taste call for a real SCP render, same iteration style as `ZOOM_IN_MAX`'s history.
+
 ### File List
+
+- `src/yt_flow/config.py` — added `parallax_enabled: bool = True` setting.
+- `src/yt_flow/pipeline/nodes/video.py` — parallax constants (`CHAR_DEPTH_FACTOR`, `CHAR_PAN_AMPLITUDE_PX`, `CHAR_MAX_ZOOM`), `CHAR_MAX_W/H` zoom-growth fix, `_character_spec`, `_character_zoom_filter`, `_PAN_SIGN`, extended `_overlay_filter(spec, duration)`, `_compose_scene` parallax branch + `parallax_enabled` param, `video_node` flag wiring.
+- `tests/pipeline/nodes/test_video.py` — `_settings_ns` gains `parallax_enabled`; updated `test_character_scale_filter_downscale_only_within_motion_box`; new Story 7.3 tests (`_character_spec` math ×4, `_character_zoom_filter`, `_overlay_filter` on/off/center, box regression, config default, 2 video_node integration).
+
+## Change Log
+
+- 2026-07-06 — Implemented real character parallax: near-plane zoom (`_character_spec` + `_character_zoom_filter`) and macro pan (`_PAN_SIGN` in `_overlay_filter`) coupled to the background `EffectSpec`, `CHAR_MAX_W/H` zoom-growth off-frame fix, `parallax_enabled` toggle. 14 new unit tests + AC:7 live sign-verification across all 10 directions (no inversions). Status → review.
+- 2026-07-06 — Code review (3 adversarial layers). 1 decision-needed resolved via patch, 1 deferred, 14 dismissed. Patch: `CHAR_MAX_W/H` now reserve `CHAR_PAN_AMPLITUDE_PX` per side in addition to sway/bob, closing a ~12px off-frame risk at simultaneous zoom+sway+pan peak that AC:4's box math had left to visual QA; AC:8 regression test strengthened to cover the pan margin. 129 tests pass, ruff clean. Status → done.
 
 ## References
 
