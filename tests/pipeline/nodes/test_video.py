@@ -1854,9 +1854,10 @@ async def test_video_node_multiple_mood_boundaries_each_independent(monkeypatch,
     assert re.findall(r"transition=(\w+)", join_filter) == ["wipeleft", "fadewhite"]
 
 
-async def test_video_node_card_adjacency_forces_fadeblack(monkeypatch, tmp_path, assets):
-    """[AC:5] Cards on + varied moods: every join boundary is still fadeblack
-    because every scene after the first is preceded by a card."""
+async def test_video_node_card_adjacency_uses_mood_transition(monkeypatch, tmp_path, assets):
+    """[AC:5, revised 2026-07-06] Cards on + varied moods: card boundaries are
+    mood-driven too (no more fadeblack lock) — a card's transition follows the
+    same upcoming-scene mood that already drives its color grade (Story 7.2)."""
     monkeypatch.setattr(
         video, "_settings",
         lambda: _settings_ns(tmp_path, chapter_cards=True, transition_variety_enabled=True),
@@ -1875,17 +1876,18 @@ async def test_video_node_card_adjacency_forces_fadeblack(monkeypatch, tmp_path,
 
     scenes = [
         _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
-        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
-        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="clinical"),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="clinical"),
+        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
     ]
     out = await video_node(_state(scenes))
 
     assert out.get("error") is None
     join_filter = captured_filter[-1]
-    assert "wipeleft" not in join_filter
-    assert "fadewhite" not in join_filter
-    for match in re.findall(r"transition=(\w+)", join_filter):
-        assert match == "fadeblack"
+    # scene0->card0 and card0->scene1 both announce card0's mood (clinical);
+    # scene1->card1 and card1->scene2 both announce card1's mood (revelation).
+    assert re.findall(r"transition=(\w+)", join_filter) == [
+        "fadeblack", "fadeblack", "fadewhite", "fadewhite",
+    ]
 
 
 async def test_video_node_transition_variety_disabled_all_fadeblack(monkeypatch, tmp_path, assets):

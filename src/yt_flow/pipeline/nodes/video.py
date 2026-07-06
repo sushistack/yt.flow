@@ -884,13 +884,9 @@ async def video_node(state: PipelineState) -> dict:
             variety = s.transition_variety_enabled
             join_segments: list[tuple[Path, float, str]] = []
             for i, (seg_path, duration, _, _) in enumerate(segs_with_specs):
-                # Story 7.4: a scene preceded by a card stays fadeblack — only
-                # scene-to-scene boundaries (no card on either side) are mood-driven.
-                preceded_by_card = chapter_cards_enabled and i > 0
-                if variety and not preceded_by_card:
-                    transition = resolve_transition(scenes[i].get("mood"))
-                else:
-                    transition = XFADE_TRANSITION
+                # Story 7.4 (revised 2026-07-06): cards are mood-driven too, same
+                # as their own color grade — no more card-adjacency fadeblack lock.
+                transition = resolve_transition(scenes[i].get("mood")) if variety else XFADE_TRANSITION
                 join_segments.append((seg_path, duration, transition))
                 if chapter_cards_enabled and i < len(segs_with_specs) - 1:
                     label = _card_label(scenes[i + 1])
@@ -899,7 +895,8 @@ async def video_node(state: PipelineState) -> dict:
                         label, i + 1, run_dir, card_duration,
                         mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
                     )
-                    join_segments.append((card_path, card_duration, XFADE_TRANSITION))
+                    card_transition = resolve_transition(upcoming_mood) if variety else XFADE_TRANSITION
+                    join_segments.append((card_path, card_duration, card_transition))
                     card_count += 1
             await _join_with_xfade(join_segments, output)
 

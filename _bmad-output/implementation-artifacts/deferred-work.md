@@ -177,4 +177,4 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 ## Deferred from: code review of story-7.4 (2026-07-06)
 
-- **`preceded_by_card = chapter_cards_enabled and i > 0` assumes every scene but the first is preceded by a card whenever `chapter_cards_enabled` is true** [src/yt_flow/pipeline/nodes/video.py — `video_node`'s join-segment construction] — currently accurate because card insertion in that loop is unconditional (`if chapter_cards_enabled and i < len(segs_with_specs) - 1`). If card insertion ever becomes conditional (e.g. skipped for a scene under `MIN_CARD_DURATION`), this flag would silently misclassify a boundary as "card-protected" when no card was actually rendered there, defeating the AC5 card-adjacency guarantee. No such conditional exists today. [source: blind]
+- ~~**`preceded_by_card = chapter_cards_enabled and i > 0` assumes every scene but the first is preceded by a card whenever `chapter_cards_enabled` is true**~~ **(Resolved 2026-07-06: `preceded_by_card` removed entirely as part of the AC5 amendment — cards no longer get a fadeblack exemption, so this assumption no longer exists in the code.)**
