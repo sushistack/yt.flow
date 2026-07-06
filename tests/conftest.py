@@ -58,6 +58,7 @@ def stub_profile(monkeypatch):
     monkeypatch.setattr(tts, "_synthesize", fakes.fake_synthesize)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)
+    monkeypatch.setattr(comfyui_client, "check_health", fakes.fake_check_health)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
     fakes.patch_character_reference_seams(monkeypatch)
     return fakes

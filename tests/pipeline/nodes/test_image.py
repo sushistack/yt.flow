@@ -104,6 +104,18 @@ def _quiet_trace(monkeypatch):
     monkeypatch.setattr(img, "_record_trace", lambda **kw: None)
 
 
+@pytest.fixture(autouse=True)
+def _no_health_check(monkeypatch):
+    """Story 5.14: real mode now health-checks before the first submission.
+
+    Default it to a no-op so existing (pre-5.14) real-mode tests don't hit
+    live HTTP; the health-check-specific tests below override this per-test.
+    """
+    async def ok(*a, **k):
+        return None
+    monkeypatch.setattr(img.comfyui_client, "check_health", ok)
+
+
 # ── Prompt injection (AC1) — pure, no ComfyUI ───────────────────────────────
 
 def test_inject_prompts_targets_nodes_6_and_7():
@@ -588,6 +600,223 @@ async def test_layered_trace_includes_layered_metadata(monkeypatch, tmp_path):
     assert captured["layered_assets_enabled"] is True
     assert captured["background_count"] == 3   # one per shot
     assert captured["character_count"] == 3    # character fixture present
+
+
+# ── Shot-level resume + health check (Story 5.14) ───────────────────────────
+
+def _resume_settings(tmp_path):
+    return FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), layered=True,
+                         bg_node="9", char_node="10")
+
+
+def _write_complete_layered_shot(d, base, image_prompt, negative_prompt):
+    (d / f"{base}_background.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}_character.png").write_bytes(RGBA_PNG + b"\x00" * 1200)
+    (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}_done.json").write_text(
+        json.dumps({"image_prompt": image_prompt, "negative_prompt": negative_prompt})
+    )
+
+
+async def test_layered_resume_skips_complete_shots(monkeypatch, tmp_path):
+    """AC1: a shot with complete img+bg+char (>1KB) + matching sidecar is skipped —
+    zero ComfyUI submissions for it, existing paths reused, layered_fallback False."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    base = "scene_001_S001"
+    _write_complete_layered_shot(d, base, "a dark room", "blurry")
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        return {"9": RGB_PNG, "10": RGBA_PNG}
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 2  # only S002/S003 submitted
+
+    s001 = [s for scene in out["scenes"] for s in scene["shots"]][0]
+    assert s001["layered_fallback"] is False
+    assert s001["background_path"] == f"workspace/run-img-1/images/{base}_background.png"
+    assert s001["character_path"] == f"workspace/run-img-1/images/{base}_character.png"
+    assert s001["image_path"] == f"workspace/run-img-1/images/{base}.png"
+
+
+async def test_resume_regenerates_on_prompt_mismatch(monkeypatch, tmp_path):
+    """AC2: sidecar present but prompts differ (retry after a prompt edit) → regenerate."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_layered_shot(d, "scene_001_S001", "OLD PROMPT", "blurry")
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        return {"9": RGB_PNG, "10": RGBA_PNG}
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3  # stale sidecar rejected — all shots regenerate
+
+
+async def test_resume_regenerates_background_only_remnant(monkeypatch, tmp_path):
+    """AC2: crash remnant / 5-11 fallback leftover (bg only, no char, no sidecar) regenerates."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    base = "scene_001_S001"
+    (d / f"{base}_background.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    # no character file, no sidecar
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        return {"9": RGB_PNG, "10": RGBA_PNG}
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3
+
+
+async def test_resume_regenerates_undersized_files(monkeypatch, tmp_path):
+    """AC2: matching sidecar but bg ≤1KB (truncated write) → regenerates."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    base = "scene_001_S001"
+    (d / f"{base}_background.png").write_bytes(RGB_PNG)  # under the 1KB floor
+    (d / f"{base}_character.png").write_bytes(RGBA_PNG + b"\x00" * 1200)
+    (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}_done.json").write_text(json.dumps({"image_prompt": "a dark room", "negative_prompt": "blurry"}))
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        return {"9": RGB_PNG, "10": RGBA_PNG}
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3
+
+
+async def test_full_resume_completes_with_comfyui_down(monkeypatch, tmp_path):
+    """AC4 payoff: if every shot is already complete on disk, the node never touches
+    ComfyUI at all — even a dead server doesn't fail a fully-resumed retry."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    for base, prompt, neg in [
+        ("scene_001_S001", "a dark room", "blurry"),
+        ("scene_001_S002", "an agent", "text"),
+        ("scene_002_S003", "a corridor", "watermark"),
+    ]:
+        _write_complete_layered_shot(d, base, prompt, neg)
+
+    async def boom_health(*a, **k):
+        raise AssertionError("check_health must not be called when every shot is resumed")
+
+    async def boom_outputs(*a, **k):
+        raise AssertionError("submit_and_fetch_outputs must not be called when every shot is resumed")
+
+    async def boom_fetch(*a, **k):
+        raise AssertionError("submit_and_fetch must not be called when every shot is resumed")
+    monkeypatch.setattr(img.comfyui_client, "check_health", boom_health)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", boom_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", boom_fetch)
+
+    captured = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert captured["skipped_count"] == 3
+    assert captured["request_count"] == 0
+
+
+async def test_health_check_failure_fails_fast(monkeypatch, tmp_path):
+    """AC4: unreachable ComfyUI fails the whole stage before any submission — AD-10 contract."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+
+    async def dead(*a, **k):
+        raise ComfyUIError("ComfyUI unreachable at http://comfy.test:8188: refused")
+
+    async def boom_outputs(*a, **k):
+        raise AssertionError("submit_and_fetch_outputs must not be called after a failed health check")
+
+    async def boom_fetch(*a, **k):
+        raise AssertionError("submit_and_fetch must not be called after a failed health check")
+    monkeypatch.setattr(img.comfyui_client, "check_health", dead)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", boom_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", boom_fetch)
+
+    out = await img.image_node(_state())
+    assert "scenes" not in out
+    assert out["error"] and "stage=image" in out["error"] and "run-img-1" in out["error"]
+
+
+async def test_mock_mode_never_checks_health(monkeypatch, tmp_path):
+    """AC4: mock mode never checks health (no HTTP client instantiated at all)."""
+    _mock_settings(monkeypatch, tmp_path)
+
+    async def boom(*a, **k):
+        raise AssertionError("check_health must not be called in mock mode")
+    monkeypatch.setattr(img.comfyui_client, "check_health", boom)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+
+
+async def test_resume_skipped_count_in_trace(monkeypatch, tmp_path):
+    """AC6: skipped_count appears in trace metadata; request_count still counts only
+    real submissions — one resumed shot (0), one fallback-degraded shot (2), one
+    normal success (1)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_layered_shot(d, "scene_001_S001", "a dark room", "blurry")
+
+    call_count = 0
+
+    async def fake_outputs(url, workflow, node_ids):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:  # S002: segmentation fails, falls back
+            raise ComfyUIError("segmentation node crashed")
+        return {"9": RGB_PNG, "10": RGBA_PNG}  # S003: succeeds normally
+
+    async def fake_fetch(url, workflow):
+        return b"\x89PNG flat fallback bytes"
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch_outputs", fake_outputs)
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    captured = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert captured["skipped_count"] == 1
+    assert captured["request_count"] == 3  # S001 skip=0, S002 fallback=2, S003 normal=1
 
 
 async def test_non_layered_trace_has_zero_layered_counts(monkeypatch, tmp_path):

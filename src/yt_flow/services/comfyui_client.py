@@ -14,9 +14,51 @@ import mimetypes
 
 import httpx
 
+# Story 5.14: bounded retry for connection-class failures only (DNS, refused,
+# transport timeout). Validation errors (HTTP 400) and generation-timeout are
+# never retried here. ponytail: module constants, no Settings field — no
+# anticipated second value.
+CONNECT_ATTEMPTS = 3
+CONNECT_RETRY_DELAY = 2.0
+
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
+
+
+async def _request_with_retry(request_coro):
+    """Retry a single HTTP call up to CONNECT_ATTEMPTS times on transport failure.
+
+    Only ``httpx.TransportError`` (connection refused, DNS failure, transport
+    timeout) is retried; validation (``HTTPStatusError``) and everything else
+    pass straight through unretried. [AC5]
+    """
+    last_exc: httpx.TransportError | None = None
+    for attempt in range(CONNECT_ATTEMPTS):
+        try:
+            return await request_coro()
+        except httpx.TransportError as exc:
+            last_exc = exc
+            if attempt + 1 < CONNECT_ATTEMPTS:
+                await asyncio.sleep(CONNECT_RETRY_DELAY)
+    raise ComfyUIError(
+        f"ComfyUI connection failed after {CONNECT_ATTEMPTS} attempts: {last_exc}"
+    ) from last_exc
+
+
+async def check_health(base_url: str) -> None:
+    """Verify ComfyUI is reachable before submitting shots. [AC4]
+
+    ``GET /system_stats`` with the same bounded transport retry as prompt
+    submission. Raises :class:`ComfyUIError` on final failure so callers can
+    fail fast without submitting anything.
+    """
+    async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(5.0)) as client:
+        try:
+            resp = await _request_with_retry(lambda: client.get("/system_stats"))
+            resp.raise_for_status()
+        except (httpx.HTTPError, ComfyUIError) as exc:
+            raise ComfyUIError(f"ComfyUI unreachable at {base_url}: {exc}") from exc
 
 
 async def submit_and_fetch(
@@ -103,7 +145,7 @@ async def _upload(client: httpx.AsyncClient, image_bytes: bytes, filename: str) 
 
 async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
     try:
-        resp = await client.post("/prompt", json={"prompt": workflow})
+        resp = await _request_with_retry(lambda: client.post("/prompt", json={"prompt": workflow}))
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         # ComfyUI returns HTTP 400 with {"error", "node_errors"} on validation failure.

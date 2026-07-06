@@ -47,6 +47,11 @@ async def fake_submit_and_fetch_outputs(base_url, workflow, output_node_ids, **k
     return {node_id: TINY_PNG for node_id in output_node_ids}
 
 
+async def fake_check_health(base_url) -> None:
+    """Story 5.14: stub-profile ComfyUI is always "reachable" — no real HTTP."""
+    return None
+
+
 # ── tts._synthesize ─────────────────────────────────────────────────────────
 async def fake_synthesize(text: str, s, path: Path) -> None:
     """Write a tiny valid mono WAV instead of calling Qwen + downloading audio."""

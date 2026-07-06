@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # config-pinned so the judge can be swapped independently of the content generator.
     deepseek_judge_model: str = "deepseek-v4-flash"
 
-    # ComfyUI image generation (Story 1.6). Reachability is checked at image_node
-    # entry, not app startup. In mock mode the HTTP client is never instantiated.
+    # ComfyUI image generation (Story 1.6). Reachability is checked lazily before
+    # the first ComfyUI submission in image_node (Story 5.14), not app startup —
+    # a fully-resumed retry never touches HTTP. Mock mode never instantiates the
+    # HTTP client.
     comfyui_url: str = "http://127.0.0.1:8188"
     comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
     comfyui_mock: bool = False

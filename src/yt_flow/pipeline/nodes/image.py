@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 POSITIVE_NODE = "6"
 NEGATIVE_NODE = "7"
 
+# Story 5.14: integrity floor for resume — matches the E2E baseline's deterministic
+# image-gate check ("0-byte/placeholder ≤1KB"). ponytail: module constant, no config.
+MIN_VALID_IMAGE_BYTES = 1024
+
 # ponytail: mock fixtures live in the test tree per the story contract; a module
 # constant keeps the node dependency-free and lets tests monkeypatch the source.
 MOCK_FIXTURES_DIR = Path("tests/fixtures/images")
@@ -117,6 +121,60 @@ def _has_alpha(png_bytes: bytes) -> bool:
     return png_bytes[25] in (4, 6)
 
 
+def _shot_base(scene_num: int, shot: ShotData) -> str:
+    return f"scene_{scene_num:03d}_{shot['shot_id']}"
+
+
+def _sidecar_path(out_dir: Path, scene_num: int, shot: ShotData) -> Path:
+    return out_dir / f"{_shot_base(scene_num, shot)}_done.json"
+
+
+def _write_sidecar(out_dir: Path, scene_num: int, shot: ShotData) -> None:
+    """Completion sentinel, written last after all of the shot's image files.
+
+    Records the prompts so a later retry can tell a stale (post-prompt-edit)
+    output from a genuinely complete one. [AC1, AC2]
+    """
+    _sidecar_path(out_dir, scene_num, shot).write_text(
+        json.dumps({"image_prompt": shot["image_prompt"], "negative_prompt": shot["negative_prompt"]}),
+        encoding="utf-8",
+    )
+
+
+def _existing_complete_shot(
+    out_dir: Path, scene_num: int, shot: ShotData, layered: bool
+) -> dict[str, str] | None:
+    """Return existing output paths iff a prior attempt fully completed this shot.
+
+    Pure file/sidecar check only — no mock/real branch, no ``ShotData`` fields
+    (retry re-enters with state paths nulled, so disk is the only truth). [AC1-3]
+    """
+    try:
+        sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if sidecar.get("image_prompt") != shot["image_prompt"] \
+            or sidecar.get("negative_prompt") != shot["negative_prompt"]:
+        return None
+
+    base = _shot_base(scene_num, shot)
+    img_dest = out_dir / f"{base}.png"
+    if not img_dest.is_file():
+        return None
+
+    if not layered:
+        if img_dest.stat().st_size <= MIN_VALID_IMAGE_BYTES:
+            return None
+        return {"image_path": str(img_dest)}
+
+    bg_dest = out_dir / f"{base}_background.png"
+    char_dest = out_dir / f"{base}_character.png"
+    if not (bg_dest.is_file() and bg_dest.stat().st_size > MIN_VALID_IMAGE_BYTES
+            and char_dest.is_file() and char_dest.stat().st_size > MIN_VALID_IMAGE_BYTES):
+        return None
+    return {"image_path": str(img_dest), "background_path": str(bg_dest), "character_path": str(char_dest)}
+
+
 def _record_trace(
     *,
     comfyui_url,
@@ -128,6 +186,7 @@ def _record_trace(
     background_count=0,
     character_count=0,
     fallback_count=0,
+    skipped_count=0,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -142,6 +201,7 @@ def _record_trace(
                 "background_count": background_count,
                 "character_count": character_count,
                 "fallback_count": fallback_count,
+                "skipped_count": skipped_count,
                 "latency_ms": latency_ms,
                 **({"error": repr(error)} if error is not None else {}),
             },
@@ -154,7 +214,7 @@ async def _generate_layered_shot(
     s: Settings, out_dir: Path, scene_num: int, shot: ShotData, template: dict | None
 ) -> tuple[str, str | None, str]:
     """Generate background + optional character for one shot; return (bg, char, image) paths."""
-    base = f"scene_{scene_num:03d}_{shot['shot_id']}"
+    base = _shot_base(scene_num, shot)
     bg_dest = out_dir / f"{base}_background.png"
     char_dest = out_dir / f"{base}_character.png"
     img_dest = out_dir / f"{base}.png"
@@ -205,7 +265,7 @@ async def _generate_flat_fallback_shot(
     uses) and writes into the layered naming convention so ``video.py``'s
     background-only path (``character_path is None``) needs no changes.
     """
-    base = f"scene_{scene_num:03d}_{shot['shot_id']}"
+    base = _shot_base(scene_num, shot)
     bg_dest = out_dir / f"{base}_background.png"
     img_dest = out_dir / f"{base}.png"
     wf = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"])
@@ -225,6 +285,8 @@ async def image_node(state: PipelineState) -> dict:
     background_count = 0
     character_count = 0
     fallback_count = 0
+    skipped_count = 0
+    health_checked = False  # Story 5.14: lazy — never touched at all if every shot resumes
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
@@ -236,6 +298,26 @@ async def image_node(state: PipelineState) -> dict:
         for scene in state.get("scenes", []):
             new_shots: list[ShotData] = []
             for shot in scene["shots"]:
+                existing = _existing_complete_shot(out_dir, scene["scene_num"], shot, s.comfyui_layered)
+                if existing is not None:
+                    skipped_count += 1
+                    image_count += 1
+                    if s.comfyui_layered:
+                        background_count += 1
+                        character_count += 1
+                    new_shots.append({
+                        **shot,
+                        "image_path": existing["image_path"],
+                        "background_path": existing.get("background_path"),
+                        "character_path": existing.get("character_path"),
+                        "layered_fallback": False,
+                    })
+                    continue
+
+                if not s.comfyui_mock and not health_checked:
+                    await comfyui_client.check_health(s.comfyui_url)
+                    health_checked = True
+
                 if s.comfyui_layered:
                     wf = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"]) \
                         if template is not None else None
@@ -273,6 +355,9 @@ async def image_node(state: PipelineState) -> dict:
                     background_count += 1
                     if char_path is not None:
                         character_count += 1
+                        # Fallback shots never reach here (char_path is always None on
+                        # that path) — no sidecar means a fresh layered chance next retry.
+                        _write_sidecar(out_dir, scene["scene_num"], shot)
                     new_shots.append({
                         **shot,
                         "image_path": img_path,
@@ -281,7 +366,7 @@ async def image_node(state: PipelineState) -> dict:
                         "layered_fallback": layered_fallback,
                     })
                 else:
-                    dest = out_dir / f"scene_{scene['scene_num']:03d}_{shot['shot_id']}.png"
+                    dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                     if s.comfyui_mock:
                         shutil.copyfile(_mock_source(), dest)
                     else:
@@ -292,6 +377,7 @@ async def image_node(state: PipelineState) -> dict:
                         dest.write_bytes(image_bytes)
                         request_count += 1
                     image_count += 1
+                    _write_sidecar(out_dir, scene["scene_num"], shot)
                     # Copy the shot; set only image_path — never mutate the input state. [AD-4]
                     new_shots.append({
                         **shot,
@@ -302,12 +388,17 @@ async def image_node(state: PipelineState) -> dict:
                     })
             new_scenes.append({**scene, "shots": new_shots})
 
+        if skipped_count > 0:
+            logger.info(
+                "image stage resume: skipped %d complete shot(s), generated %d",
+                skipped_count, image_count - skipped_count,
+            )
         _record_trace(
             comfyui_url=s.comfyui_url, workflow_path=s.comfyui_workflow_path,
             request_count=request_count, image_count=image_count,
             layered_assets_enabled=s.comfyui_layered,
             background_count=background_count, character_count=character_count,
-            fallback_count=fallback_count,
+            fallback_count=fallback_count, skipped_count=skipped_count,
             latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None}
@@ -318,7 +409,7 @@ async def image_node(state: PipelineState) -> dict:
             request_count=request_count, image_count=image_count,
             layered_assets_enabled=s.comfyui_layered if s else False,
             background_count=background_count, character_count=character_count,
-            fallback_count=fallback_count,
+            fallback_count=fallback_count, skipped_count=skipped_count,
             latency_ms=_ms(t0), error=exc,
         )
         return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}"}
