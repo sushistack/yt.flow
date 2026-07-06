@@ -15,9 +15,9 @@ import mimetypes
 import httpx
 
 # Story 5.14: bounded retry for connection-class failures only (DNS, refused,
-# transport timeout). Validation errors (HTTP 400) and generation-timeout are
-# never retried here. ponytail: module constants, no Settings field — no
-# anticipated second value.
+# transport timeout). Any non-2xx response (validation rejection, 5xx) and
+# generation-timeout are never retried here. ponytail: module constants, no
+# Settings field — no anticipated second value.
 CONNECT_ATTEMPTS = 3
 CONNECT_RETRY_DELAY = 2.0
 
