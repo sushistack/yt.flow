@@ -61,12 +61,25 @@ _DIRECTION_POOL = [
     "pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left",
 ]
 
-# xfade defaults — single type until a second is actually wanted
-# ponytail: single crossfade type, constants not per-scene config
+# xfade defaults
 # fadeblack (Story 5.1): scene boundaries cut to black, never blend two scene
 # images together — plain "fade" showed both images overlapped mid-transition.
+# Also the card transition and the transition_variety_enabled=False fallback (Story 7.4).
 XFADE_TRANSITION = "fadeblack"
-XFADE_DURATION = 0.5  # seconds
+XFADE_DURATION = 0.5  # seconds — constant across all moods (Story 7.4 AC:2)
+
+# Mood-driven transition type (Story 7.4): only the xfade *type* varies by mood,
+# duration stays constant. Values are ffmpeg built-in xfade transition names.
+MOOD_XFADE_MAP: dict[str, str] = {
+    "dread": "fadeblack",       # unchanged — Story 5.1 found plain "fade" overlapped both images
+    "clinical": "fadeblack",    # keep the calmer moods on the proven default
+    "escalation": "wipeleft",   # directional/kinetic
+    "revelation": "fadewhite",
+}
+
+
+def resolve_transition(mood: str | None) -> str:
+    return MOOD_XFADE_MAP[resolve_mood(mood)]
 
 # ── Chapter-card constants (Story 5.1) ─────────────────────────────────────────
 MIN_CARD_DURATION = 1.5
@@ -696,12 +709,14 @@ async def _compose_chapter_card(
 
 
 async def _join_with_xfade(
-    segments: list[tuple[Path, float]],
+    segments: list[tuple[Path, float, str]],
     output: Path,
 ) -> None:
     """Join scenes with xfade (video) + delayed overlay-mix (audio). [AC:2] [Story 5.9 AC:1-3]
 
-    segments: list of (path, duration_seconds).
+    segments: list of (path, duration_seconds, transition). transition is the
+    xfade type used *entering* that segment (Story 7.4) — boundary i uses
+    segments[i+1][2], i.e. the next segment announces its own cut-in.
     xfade offset is measured on the *combined* prior output, so it accumulates:
     the transition after segment i begins at Σ(dur_0..i) − (i+1)·XFADE_DURATION,
     which is XFADE_DURATION before the running combined length ends. This is the
@@ -734,13 +749,14 @@ async def _join_with_xfade(
     running_offset = 0.0
     v_prev = "[0:v]"
 
-    for i, (_, dur) in enumerate(segments):
+    for i, (_, dur, _) in enumerate(segments):
         if i < n - 1:
+            transition = segments[i + 1][2]
             running_offset += dur
             offset = running_offset - (i + 1) * XFADE_DURATION
             v_out = f"[vx{i}]" if i < n - 2 else "[vout]"
             v_parts.append(
-                f"{v_prev}[{i+1}:v]xfade=transition={XFADE_TRANSITION}"
+                f"{v_prev}[{i+1}:v]xfade=transition={transition}"
                 f":duration={XFADE_DURATION}:offset={offset:.4f}{v_out}"
             )
             v_prev = v_out
@@ -763,7 +779,7 @@ async def _join_with_xfade(
 
     # Build input args: one -i per segment
     input_args: list[str] = []
-    for path, _ in segments:
+    for path, _, _ in segments:
         input_args += ["-i", str(path)]
 
     rc, stderr = await _run_ffmpeg(
@@ -861,9 +877,17 @@ async def video_node(state: PipelineState) -> dict:
         if len(segs) == 1:
             segs[0].replace(output)  # replace: atomic overwrite, cross-platform
         else:  # 2+ scenes: xfade join (label wiring handles n>=2 uniformly)
-            join_segments: list[tuple[Path, float]] = []
+            variety = s.transition_variety_enabled
+            join_segments: list[tuple[Path, float, str]] = []
             for i, (seg_path, duration, _, _) in enumerate(segs_with_specs):
-                join_segments.append((seg_path, duration))
+                # Story 7.4: a scene preceded by a card stays fadeblack — only
+                # scene-to-scene boundaries (no card on either side) are mood-driven.
+                preceded_by_card = chapter_cards_enabled and i > 0
+                if variety and not preceded_by_card:
+                    transition = resolve_transition(scenes[i].get("mood"))
+                else:
+                    transition = XFADE_TRANSITION
+                join_segments.append((seg_path, duration, transition))
                 if chapter_cards_enabled and i < len(segs_with_specs) - 1:
                     label = _card_label(scenes[i + 1])
                     upcoming_mood = scenes[i + 1].get("mood")
@@ -871,7 +895,7 @@ async def video_node(state: PipelineState) -> dict:
                         label, i + 1, run_dir, card_duration,
                         mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
                     )
-                    join_segments.append((card_path, card_duration))
+                    join_segments.append((card_path, card_duration, XFADE_TRANSITION))
                     card_count += 1
             await _join_with_xfade(join_segments, output)
 

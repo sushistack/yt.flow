@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     chapter_cards: bool = True
     chapter_card_duration_sec: float = 1.75
 
+    # Transition variety (Story 7.4): scene-to-scene xfade type driven by the
+    # upcoming scene's mood. When false, every boundary is "fadeblack" (today's behavior).
+    transition_variety_enabled: bool = True
+
     # Sound design (Story 7.1): mood-driven BGM/ambient/stinger, ducked under
     # narration. Opt out if the data/audio asset library isn't populated yet.
     sound_design_enabled: bool = True
