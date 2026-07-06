@@ -15,8 +15,13 @@ import pytest
 import yt_flow.pipeline.nodes.subtitle as subtitle
 from yt_flow.pipeline.nodes.subtitle import (
     AlignmentSegment,
+    PLAY_RES_X,
+    PLAY_RES_Y,
     _get_aligner,
+    _group_words,
     _word_timings_to_segments,
+    build_ass_events,
+    format_ass,
     format_srt,
     subtitle_node,
 )
@@ -25,13 +30,14 @@ from yt_flow.pipeline.nodes.subtitle import (
 # ── Fakes / helpers ───────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path, aligner="whisperx"):
+def _settings_ns(tmp_path, aligner="whisperx", kinetic_subtitles_enabled=True):
     return SimpleNamespace(
         aligner=aligner,
         aligner_model="base",
         aligner_device="cpu",
         aligner_compute_type="int8",
         workspace_path=str(tmp_path),
+        kinetic_subtitles_enabled=kinetic_subtitles_enabled,
     )
 
 
@@ -179,6 +185,82 @@ def test_word_timings_to_segments_monotonic():
         prev_end = s["end_sec"]
 
 
+# ── _group_words / ASS karaoke ────────────────────────────────────────────────
+
+
+def test_group_words_matches_word_timings_to_segments_boundaries():
+    words = ["longword1", "longword2", "longword3", "longword4", "longword5"]
+    t = _timings(words, duration=5.0)
+    groups = _group_words(t, max_chars=20)
+    segs = _word_timings_to_segments(t, max_chars=20)
+    assert len(groups) == len(segs)
+    for group, seg in zip(groups, segs):
+        assert seg["start_sec"] == group[0]["start_sec"]
+        assert seg["end_sec"] == group[-1]["end_sec"]
+        assert seg["text"] == " ".join(w["word"] for w in group)
+
+
+def test_group_words_empty():
+    assert _group_words([]) == []
+
+
+@pytest.fixture(autouse=True)
+def _fake_ass_font(monkeypatch):
+    monkeypatch.setattr(subtitle, "_ass_font_family", lambda: "DejaVu Sans")
+
+
+def test_build_ass_events_k_duration_matches_word_span():
+    t = _timings(["격리", "절차"], duration=2.0)  # 1.0s each word
+    out = build_ass_events(t)
+    assert "{\\k100}격리 " in out
+    assert "{\\k100}절차 " in out
+
+
+def test_build_ass_events_cue_boundaries_match_segments():
+    words = ["longword1", "longword2", "longword3", "longword4", "longword5"]
+    t = _timings(words, duration=5.0)
+    events = build_ass_events(t, max_chars=20)
+    segs = _word_timings_to_segments(t, max_chars=20)
+    assert events.count("Dialogue:") == len(segs)
+
+
+def test_build_ass_events_empty_returns_empty():
+    assert build_ass_events([]) == ""
+
+
+def test_format_ass_header_has_play_res():
+    out = format_ass(_timings(["hi"]))
+    assert f"PlayResX: {PLAY_RES_X}" in out
+    assert f"PlayResY: {PLAY_RES_Y}" in out
+    assert PLAY_RES_X == 1920
+    assert PLAY_RES_Y == 1080
+
+
+def test_format_ass_includes_events():
+    out = format_ass(_timings(["hello", "world"]))
+    assert "Dialogue:" in out
+    assert "{\\k" in out
+
+
+def test_build_ass_events_second_boundary_carries_not_overflows():
+    t = [{"word": "hi", "start_sec": 0.0, "end_sec": 59.999}]
+    out = build_ass_events(t)
+    assert "0:01:00.00" in out
+    assert ".100" not in out
+
+
+def test_build_ass_events_escapes_brace_and_backslash_in_word():
+    t = [{"word": "a{b}c\\d", "start_sec": 0.0, "end_sec": 1.0}]
+    out = build_ass_events(t)
+    assert "{\\k100}abcd " in out
+
+
+def test_build_ass_events_clamps_negative_duration_to_zero():
+    t = [{"word": "oops", "start_sec": 1.0, "end_sec": 0.5}]
+    out = build_ass_events(t)
+    assert "{\\k0}oops " in out
+
+
 # ── _get_aligner ─────────────────────────────────────────────────────────────
 
 
@@ -244,6 +326,50 @@ async def test_subtitle_node_creates_srt_files(monkeypatch, tmp_path, audio_file
     assert "run-abc" in str(srt_path)
     text = srt_path.read_text(encoding="utf-8")
     assert "00:" in text  # has timestamps
+
+
+# ── subtitle_node: kinetic (.ass) branching ───────────────────────────────────
+
+
+async def test_subtitle_node_writes_ass_when_flag_on_and_word_timings(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=True))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+    monkeypatch.setattr(subtitle, "_ass_font_family", lambda: "DejaVu Sans")
+
+    wt = _timings(["격리", "절차", "시작"])
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=wt)]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    ass_path = Path(out["scenes"][0]["subtitle_path"])
+    assert ass_path.exists()
+    assert ass_path.suffix == ".ass"
+    assert "Dialogue:" in ass_path.read_text(encoding="utf-8")
+
+
+async def test_subtitle_node_writes_srt_when_no_word_timings_even_if_flag_on(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=True))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    scenes = [_scene(1, "격리 절차", audio_path=audio_file, word_timings=[])]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    path = Path(out["scenes"][0]["subtitle_path"])
+    assert path.suffix == ".srt"
+
+
+async def test_subtitle_node_writes_srt_when_flag_off_even_with_word_timings(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=False))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    wt = _timings(["격리", "절차"])
+    scenes = [_scene(1, "격리 절차", audio_path=audio_file, word_timings=wt)]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    path = Path(out["scenes"][0]["subtitle_path"])
+    assert path.suffix == ".srt"
 
 
 async def test_subtitle_node_updates_subtitle_path(monkeypatch, tmp_path, audio_file):

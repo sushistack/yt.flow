@@ -6,6 +6,8 @@ otherwise. Layer rule: imports domain and config only; no db/, api/, services/. 
 """
 
 import asyncio
+import functools
+import subprocess
 import time
 from pathlib import Path
 from typing import Protocol, TypedDict
@@ -96,30 +98,34 @@ def format_srt(segments: list[AlignmentSegment]) -> str:
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def _word_timings_to_segments(timings: list[WordTiming], max_chars: int = 40) -> list[AlignmentSegment]:
-    """Group word-level timings into readable SRT cues (≤ max_chars per cue)."""
+def _group_words(timings: list[WordTiming], max_chars: int = 40) -> list[list[WordTiming]]:
+    """Batch word-level timings into cues (≤ max_chars per cue). Shared by the SRT and ASS paths [AC:3]."""
     if not timings:
         return []
-    segments: list[AlignmentSegment] = []
+    groups: list[list[WordTiming]] = []
     batch: list[WordTiming] = []
     for wt in timings:
         candidate = (" ".join(t["word"] for t in batch) + " " + wt["word"]).strip()
         if batch and len(candidate) > max_chars:
-            segments.append({
-                "start_sec": batch[0]["start_sec"],
-                "end_sec": batch[-1]["end_sec"],
-                "text": " ".join(t["word"] for t in batch),
-            })
+            groups.append(batch)
             batch = [wt]
         else:
             batch.append(wt)
     if batch:
-        segments.append({
-            "start_sec": batch[0]["start_sec"],
-            "end_sec": batch[-1]["end_sec"],
-            "text": " ".join(t["word"] for t in batch),
-        })
-    return segments
+        groups.append(batch)
+    return groups
+
+
+def _word_timings_to_segments(timings: list[WordTiming], max_chars: int = 40) -> list[AlignmentSegment]:
+    """Group word-level timings into readable SRT cues (≤ max_chars per cue)."""
+    return [
+        {
+            "start_sec": group[0]["start_sec"],
+            "end_sec": group[-1]["end_sec"],
+            "text": " ".join(t["word"] for t in group),
+        }
+        for group in _group_words(timings, max_chars)
+    ]
 
 
 def _validate_segments(segments: list[AlignmentSegment], audio_duration: float | None, scene_num: int) -> None:
@@ -138,6 +144,98 @@ def _validate_segments(segments: list[AlignmentSegment], audio_duration: float |
         raise ValueError(
             f"scene {scene_num}: last cue end {prev_end:.3f} exceeds audio duration {audio_duration:.3f}"
         )
+
+
+# ── ASS karaoke utilities (Story 7.5) ──────────────────────────────────────────
+
+SUBTITLE_FONT_SIZE = 48
+SUBTITLE_OUTLINE_WIDTH = 2
+# ASS \k sweeps a word from SecondaryColour to PrimaryColour — the reverse of what
+# the names suggest. Named for what they *are*, not the ASS field they map to
+# (PrimaryColour=_HIGHLIGHT_COLOR, SecondaryColour=_BASE_COLOR); see AC:5 gotcha.
+_HIGHLIGHT_COLOR = "&H0000D7FF"  # amber — already-spoken/highlighted word
+_BASE_COLOR = "&H00FFFFFF"  # white — not-yet-spoken word
+
+# ponytail: must match video.COMP_W/COMP_H (compositor resolution) — kept local
+# to avoid importing video.py (would pull ffmpeg/subprocess into this layer).
+PLAY_RES_X = 1920
+PLAY_RES_Y = 1080
+
+
+@functools.lru_cache(maxsize=1)
+def _ass_font_family() -> str:
+    """Resolve a Korean-capable ASS font family via fontconfig. [AC:8]
+
+    ASS styles reference fontconfig *family names*, not file paths, so this
+    mirrors video.py's `_drawtext_font()` fc-match pattern but requests
+    `%{family}` instead of `%{file}`.
+    """
+    for family in ("Noto Sans CJK KR", "DejaVu Sans"):
+        try:
+            result = subprocess.run(
+                ["fc-match", "--format=%{family}", family],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        resolved = result.stdout.strip()
+        if resolved:
+            return resolved
+    raise RuntimeError("no ASS font family resolved via fc-match (Noto Sans CJK KR / DejaVu Sans)")
+
+
+def _ass_header() -> str:
+    family = _ass_font_family()
+    return (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        f"PlayResX: {PLAY_RES_X}\n"
+        f"PlayResY: {PLAY_RES_Y}\n"
+        "\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Default,{family},{SUBTITLE_FONT_SIZE},{_HIGHLIGHT_COLOR},{_BASE_COLOR},"
+        f"&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,{SUBTITLE_OUTLINE_WIDTH},0,2,10,10,30,1\n"
+        "\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+
+
+def _ass_time(sec: float) -> str:
+    """ASS timestamp: H:MM:SS.cc (centiseconds) — distinct from SRT's HH:MM:SS,mmm."""
+    total_cs = round(max(sec, 0.0) * 100)
+    cs, total_s = total_cs % 100, total_cs // 100
+    s, total_m = total_s % 60, total_s // 60
+    m, h = total_m % 60, total_m // 60
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def _escape_ass_word(word: str) -> str:
+    """Strip characters that would break out of a `{\\k..}` override block."""
+    return word.replace("\\", "").replace("{", "").replace("}", "")
+
+
+def build_ass_events(timings: list[WordTiming], max_chars: int = 40) -> str:
+    """One Dialogue line per cue, with a `{\\k<cs>}word ` karaoke run per word. [AC:1,2,3]"""
+    lines: list[str] = []
+    for group in _group_words(timings, max_chars):
+        text = "".join(
+            f"{{\\k{max(0, round((wt['end_sec'] - wt['start_sec']) * 100))}}}{_escape_ass_word(wt['word'])} "
+            for wt in group
+        )
+        lines.append(
+            f"Dialogue: 0,{_ass_time(group[0]['start_sec'])},{_ass_time(group[-1]['end_sec'])},"
+            f"Default,,0,0,0,,{text}"
+        )
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def format_ass(timings: list[WordTiming], max_chars: int = 40) -> str:
+    """Full .ass file: header + karaoke events."""
+    return _ass_header() + build_ass_events(timings, max_chars)
 
 
 # ── Observability ─────────────────────────────────────────────────────────────
@@ -200,8 +298,14 @@ async def subtitle_node(state: PipelineState) -> dict:
                 raise ValueError(f"scene {n}: aligner returned no segments for non-empty narration")
             _validate_segments(segments, scene.get("audio_duration"), n)
 
-            path = subtitle_dir / f"scene_{n:03d}.srt"
-            path.write_text(format_srt(segments), encoding="utf-8")
+            # Kinetic (.ass) requires real per-word timing; the aligner fallback is
+            # segment-level only, so it always takes the .srt path [Story 7.5 AC:6]
+            if s.kinetic_subtitles_enabled and timings:
+                path = subtitle_dir / f"scene_{n:03d}.ass"
+                path.write_text(format_ass(timings), encoding="utf-8")
+            else:
+                path = subtitle_dir / f"scene_{n:03d}.srt"
+                path.write_text(format_srt(segments), encoding="utf-8")
             new_scenes.append({**scene, "subtitle_path": str(path)})
 
         _record_trace(run_id=run_id, scene_count=len(new_scenes), latency_ms=_ms(t0))

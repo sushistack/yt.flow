@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     aligner_device: str = "cpu"
     aligner_compute_type: str = "int8"
 
+    # Kinetic (.ass karaoke) subtitles (Story 7.5). Falls back to plain .srt
+    # when off or when a scene has no per-word timing.
+    kinetic_subtitles_enabled: bool = True
+
     # Image search provider (Story 1.11). DuckDuckGo is the default; no API key needed.
     image_search_provider: str = "duckduckgo"
 
