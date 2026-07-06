@@ -831,6 +831,10 @@ So that I can evaluate prompt variants visually and the tool meets keyboard and 
 
 ---
 
+### Story 3.8: 컨트롤 UI 결함 수리 (2026-07-06 E2E 베이스라인 발견분)
+
+실제 Playwright 사용자 시뮬레이션에서 발견된 UI 결함 4건. ① **[D9-major]** run failed 상태에서 실패 스테이지의 "재시도" 버튼 클릭이 네트워크 요청을 전혀 발생시키지 않음(아티팩트 GET 404 상태에서 핸들러 무반응) — API `POST /stages/{stage}/retry`는 정상이므로 프론트 배선 문제. ② **[D4]** `/app/runs/{id}` 딥링크 직접 진입 시 404 — static mount SPA fallback 부재. ③ **[D7]** 게이트 승인 후 재개된 장시간 스테이지 동안 `/runs/{id}`가 이전 상태(awaiting_approval/이전 stage)를 반환해 UI가 "승인 대기"로 오표기(재시도 경로는 정상 표기 — 승인-재개 경로 한정). ④ **[D14]** 자막 패널이 내용을 렌더하면서 "자막 0개"로 카운트 표기. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 4: A/B Evaluation
 
 Jay가 동일 SCP 입력으로 두 프롬프트 변형을 자동 비교하고, 수동 채점 없이 승자를 얻을 수 있다.
@@ -977,6 +981,26 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 5.12 라이브 재검증(2026-07-05, 신규 `SCP-682`)에서 발견: `CharacterService.enrich_descriptor_from_references`(1.11)가 호출은 정상적으로 되지만(5.12가 배선 완료), 실제 DeepSeek 호출이 `400 Bad Request: unknown variant "image_url", expected "text"`로 실패 — 계정에 등록된 모델(`deepseek-v4-flash`, `deepseek-v4-pro`, `/models`로 라이브 확인)이 둘 다 텍스트 전용이며, DeepSeek 공식 호스팅 API 자체가 비전(이미지 입력) 엔드포인트를 제공하지 않음. 모델 이름 교체로 해결 불가 — 비전 지원 프로바이더로 교체 필요. 이 프로젝트가 Qwen TTS용으로 이미 보유한 DashScope 계정/키(`YTFLOW_QWEN_TTS_API_KEY`, `qwen_tts_endpoint` 패턴)로 Qwen-VL을 붙이면 신규 계정 없이 해결 가능. 범위는 `enrich_descriptor_from_references`의 HTTP 호출 + 모델/엔드포인트 설정에 한정 — ComfyUI/IPAdapter 캐릭터 생성 경로, `run_service._ensure_character_reference`의 배선(5.12에서 이미 완료), Langfuse 프롬프트 콘텐츠(5.12에서 이미 수정)는 건드리지 않음. DoD: 실제 레퍼런스 이미지로 `visual_descriptor`가 실제로 채워지는 것을 라이브로 검증 — 5.12가 프로바이더 결함으로 끝까지 확인하지 못했던 AC1 경로의 마지막 조각. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.14: 파이프라인 복원력 — 샷 단위 재개 + ComfyUI 헬스체크
+
+2026-07-06 E2E 베이스라인(run `272b05a4`) 결함 D6/D8. ① `image_node` 재시도 시 이미 온전히 생성된 샷(배경+캐릭터 쌍 존재) 스킵 — ROCm 크래시(`hipErrorIllegalAddress`, 39/59샷 지점) 재시도에서 78장(~40분 GPU 시간)이 전량 재생성됨. ② ComfyUI 요청 전 헬스체크 + 연결 계열 에러 한정 짧은 대기 후 2~3회 재시도. ③ 짝으로 ComfyUI `run.sh`에 크래시 자동 재기동 와치독(인프라, repo 밖). Epic 8 전환 이후에도 유효한 복원력 작업. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.15: mood 배선 수정 — writing 자유형 mood가 Epic 7 다양성을 무력화
+
+2026-07-06 E2E 베이스라인 결함 D1(major)/D2. structure 프롬프트는 mood enum(dread/clinical/escalation/revelation)을 강제하지만 `scenario_chain.py:372`가 **writing 출력**에서 mood를 읽음 — writing이 자유형 mood("shock", "mystery", "awe mixed with dread"...)를 재발명해 8/8씬 전부 유효값이 아니었고 → `resolve_mood` 폴백으로 전 씬 dread 수렴 → 7-1 BGM/7-2 그레이드/7-4 전환의 mood 다양성이 라이브에서 관찰 불가. 수정: mood를 structure 출력에서 읽거나 체인에서 enum 정규화(+비유효값 로깅). 부수: 아티팩트 API scene 직렬화에 mood 노출(D2)해 게이트에서 사람이 검수 가능하게. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.16: 전환 경계 무결성 — 오버랩 제거 + 검은 공백
+
+2026-07-06 베이스라인 영상 Jay 시청 피드백 #2. xfade 기반 조인이 이전 세그먼트의 마지막 `XFADE_DURATION`을 다음 씬과 **겹쳐 소비**해 전환 직전 이미지와 나레이션 끝이 잘려 보임/들림(5-9의 adelay+amix 오디오도 동일 오프셋을 공유). 오버랩 계열 전환을 폐기하고 **페이드아웃 → 검은 홀드(짧은 공백) → 페이드인** + 오디오 무겹침(나레이션 완전 재생 후 전환 시작)으로 교체. `_join_with_xfade`의 running_offset 산식이 단순 concat 계열로 단순화되는 부수 효과. 주의: 7-4(mood별 xfade 타입 다양화)와 정면 충돌 — 검은 공백 구조 안에서 mood 변주를 유지할지(페이드 길이/커브 변주 등) 7-4 축소·재정의를 이 스토리에서 결정해야 함. 챕터 카드가 있는 경계는 카드 자체가 검은 공백 역할이므로 이중 공백이 생기지 않게 통합. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.17: 챕터 카드 콘텐츠 — 씬 제목 + 상황 한 줄
+
+2026-07-06 베이스라인 영상 Jay 시청 피드백 #4. 현재 챕터 카드는 검은 화면에 "- N -" 숫자뿐이라 씬이 바뀔 때 이야기 전개가 뜬금없음. 카드에 **씬 제목 + 상황 설명 한 줄**(예: "첫 면담 — 개체가 입을 열다")을 drawtext로 렌더. 텍스트 산출은 scenario 단계 소관: structure 출력이 이미 씬 구조를 알고 있으므로 씬별 `title`(+한 줄 요약) 필드를 SceneState에 추가하고 카드 렌더러가 소비. 프롬프트 변경은 PROMPT_POLICY 준수. 5-16(전환 경계)과 같은 코드 영역(카드 세그먼트 생성)을 만지므로 5-16 직후 착수 권장. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.18: 자막 원문 표기 — 표시 텍스트/TTS 텍스트 이중 트랙
+
+2026-07-06 베이스라인 영상 Jay 시청 피드백 #3. 자막이 TTS 발음 정규화문("에스시피 공사 구", "키 일점 구 미터")을 그대로 보여줌 — 자막은 **원문 표기(SCP-049, 1.9m)**여야 함. 5-4가 YAGNI로 선택했던 "SRT/TTS 동일 텍스트" 결정을 명시적으로 뒤집는 스토리: 문장 단위 이중 트랙 도입 — `tts_normalize` 단계가 정규화문과 함께 **원문을 보존**하고(문장 1:1 계약 유지), TTS/정렬은 정규화문을, 자막(.ass/.srt)은 원문을 사용. 추가 결정(Jay, 2026-07-06): **가라오케 단어 하이라이트(7-5) 은퇴** — D12 균일 타이밍 폴백으로 동기화가 어차피 가짜였고, 다큐 나레이션 관행은 정적 라인 + 강한 타이포그래피. 대신 자막 폰트/스타일 업그레이드: Pretendard Bold(OFL, repo 번들 `data/fonts/` + ffmpeg `fontsdir`), 흰 채움 + 검은 아웃라인 + 섀도, 크기 상향, 최대 2줄. 부수 효과로 발화↔표시 어절 매핑 문제와 whisperx 단어 정렬 의존이 소멸. 5-17 카드 타이틀도 동일 폰트 패밀리로 통일. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
@@ -1024,3 +1048,24 @@ candidate가 골든셋+A/B를 통과하면 production 라벨을 자동 이동하
 ### Story 7.5: 키네틱 자막 (단어 단위 가라오케 하이라이트)
 
 `SceneState.word_timings`의 단어별 타이밍을 활용해 SRT 대신 ASS(libass, 신규 의존성 없음) `\k` 카라오케 태그로 발화 중인 단어를 하이라이트한다. mood 비의존, 신규 모듈 없이 `subtitle.py`에 함수 추가(`build_ass_events`/`format_ass`, 큐 그룹핑은 기존 `_word_timings_to_segments` 재사용). 단어 단위 타이밍이 없는 경우(정렬 fallback)는 기존 SRT로 자동 강등 — 없는 데이터를 지어내지 않는다. 설정: `YTFLOW_KINETIC_SUBTITLES_ENABLED`. 상세: [2026-07-04-kinetic-subtitles-design.md](../../docs/superpowers/specs/2026-07-04-kinetic-subtitles-design.md)
+
+## Epic 8: 이미지 합성 아키텍처 전환 — 배경 + 캐릭터 카드 컴포지팅
+
+2026-07-06 E2E 베이스라인(run `272b05a4`, SCP-049, `e2e-baseline-2026-07-06.md`)에서 Jay가 확정한 아키텍처 결정. 현행 "개체 포함 프레임 생성 → 세그멘테이션 컷아웃 → 배경 인페인트"(1.6b/5-6/5-7 계열)를 폐기하고, **배경은 배경 묘사만으로 생성 + 캐릭터는 레퍼런스 기반 카드(RGBA 스프라이트)를 합성**하는 구조로 전환한다. 캐릭터 불필요 샷은 배경만. 근거 결함: D5(앵글 라벨 불일치), D10(인페인트 흉터), D11(환경 샷 오컷), D13(무알파 풀프레임 카드가 전 샷을 덮음 — critical). 전환 시 5-6/5-7 문제는 계급적으로 소멸. 권장 순서 8.1 → 8.2 → 8.3 → 8.4 (8.1/8.2는 병렬 가능, 8.4는 셋 모두 이후).
+
+### Story 8.1: 샷별 cast 메타데이터 + 배경 전용 프롬프트
+
+visual_breakdown이 샷별로 `cast` 목록(등장 캐릭터 키: 개체/`STOCK-*` 고정 출연진/파생 개체)과 카드별 **배치 메타데이터**(position/scale/z-order — 대략적 좌우·원근 수준), 그리고 **개체 묘사를 제거한 배경 전용 image_prompt**를 출력하도록 프롬프트+파서+ShotData 스키마 확장. cast 빈 목록 = 배경만(D11 해소). 프롬프트 변경은 PROMPT_POLICY 절차(candidate→A/B→승격) 준수. D3(리터럴 SCP 토큰)도 cast 참조로 흡수.
+
+### Story 8.2: 캐릭터 카드 스프라이트 파이프라인 + 고정 출연진 시드
+
+카드 산출물을 **투명 RGBA 스프라이트**로 표준화: 단색/스튜디오 배경으로 캐릭터 생성 → 컷아웃(깨끗한 배경이라 세그멘테이션 신뢰 가능) → 스프라이트 저장. D5 해소: 앵글별 IPAdapter weight 조정 또는 앵글 프롬프트 강화로 실제 프로필/후면 카드 확보, 포즈 배리에이션(서있기/앉기 등) 검토. SCP 세계관 고정 출연진(D계급, 연구원, 경비요원)을 `STOCK-*` 예약 scp_id로 사전 생성·캐싱(CharacterModel 스키마 변경 불요), 파생 개체(예: 049-2) 카드화 포함. 에피소드 간 시각 일관성이 채널 아이덴티티가 되는 부수 효과.
+
+### Story 8.3: image_node 배경 전용 생성 + video_node 다중 카드 합성
+
+image_node에서 세그멘테이션/인페인트 경로 제거 — 배경 전용 프롬프트로 배경만 생성(플랫 경로 일원화). video_node는 cast×배치 메타 기반 **다중 카드 오버레이**(N장, scale/position/z-order 반영, RGBA 검증 — 무알파 카드는 명시 에러), 카드별 독립 아이들 모션/패럴랙스(1.9c/7-3 재사용). 1.13 앵글 선택은 "전 샷 오버라이드"에서 "cast에 개체 있는 샷만"으로 게이팅(D13 해소). 완료 판정: SCP-049 재렌더 A/B로 베이스라인 대비 J2/J3/J4 개선 확인.
+
+### Story 8.4: 온디맨드 특수 포즈 카드
+
+2026-07-06 Jay 승인 포즈 차원(업계 표준 스프라이트 라이브러리 티어링: 기본 포즈 사전 생성 + 특수 포즈는 씬별 키 아트로 온디맨드 생성)의 온디맨드 티어. visual_breakdown이 cast 멤버에 선택적 자유 텍스트 `pose_hint`를 출력할 수 있게 확장 — 닫힌 pose enum(standing/sitting, 8.1)은 그대로, 별도 옵션 필드. pose_hint가 있고 캐시된 카드가 없으면 **시나리오 게이트 승인 시점**의 런타임 프로비저닝이 1회성 특수 포즈 카드를 생성(5-8/5-10 `_ensure_character_reference` 비치명 패턴 재사용 — 생성 실패 시 기본 포즈로 폴백, 런은 절대 실패하지 않음), 결정적 키(scp_id+pose_hint 해시 → 8.2 `character_cards`의 `hint:*` pose 키)로 캐싱해 런 간 재사용. 비용 가드레일: 런당 신규 생성 캡(기본 3장), mock 모드 스킵. 8.1/8.2/8.3 의존.
+
