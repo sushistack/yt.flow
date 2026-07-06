@@ -147,32 +147,34 @@ def _existing_complete_shot(
     """Return existing output paths iff a prior attempt fully completed this shot.
 
     Pure file/sidecar check only — no mock/real branch, no ``ShotData`` fields
-    (retry re-enters with state paths nulled, so disk is the only truth). [AC1-3]
+    (retry re-enters with state paths nulled, so disk is the only truth). Any
+    filesystem hiccup (missing/racing file, malformed sidecar) is treated as
+    incomplete rather than raised — this check runs inside image_node's AD-10
+    boundary and must never fail a whole run over one shot's resume check. [AC1-3]
     """
     try:
         sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
+        if not isinstance(sidecar, dict) \
+                or sidecar.get("image_prompt") != shot["image_prompt"] \
+                or sidecar.get("negative_prompt") != shot["negative_prompt"]:
+            return None
+
+        base = _shot_base(scene_num, shot)
+        img_dest = out_dir / f"{base}.png"
+        if not (img_dest.is_file() and img_dest.stat().st_size > MIN_VALID_IMAGE_BYTES):
+            return None
+
+        if not layered:
+            return {"image_path": str(img_dest)}
+
+        bg_dest = out_dir / f"{base}_background.png"
+        char_dest = out_dir / f"{base}_character.png"
+        if not (bg_dest.is_file() and bg_dest.stat().st_size > MIN_VALID_IMAGE_BYTES
+                and char_dest.is_file() and char_dest.stat().st_size > MIN_VALID_IMAGE_BYTES):
+            return None
+        return {"image_path": str(img_dest), "background_path": str(bg_dest), "character_path": str(char_dest)}
     except (OSError, ValueError):
         return None
-    if sidecar.get("image_prompt") != shot["image_prompt"] \
-            or sidecar.get("negative_prompt") != shot["negative_prompt"]:
-        return None
-
-    base = _shot_base(scene_num, shot)
-    img_dest = out_dir / f"{base}.png"
-    if not img_dest.is_file():
-        return None
-
-    if not layered:
-        if img_dest.stat().st_size <= MIN_VALID_IMAGE_BYTES:
-            return None
-        return {"image_path": str(img_dest)}
-
-    bg_dest = out_dir / f"{base}_background.png"
-    char_dest = out_dir / f"{base}_character.png"
-    if not (bg_dest.is_file() and bg_dest.stat().st_size > MIN_VALID_IMAGE_BYTES
-            and char_dest.is_file() and char_dest.stat().st_size > MIN_VALID_IMAGE_BYTES):
-        return None
-    return {"image_path": str(img_dest), "background_path": str(bg_dest), "character_path": str(char_dest)}
 
 
 def _record_trace(
