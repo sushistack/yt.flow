@@ -4,7 +4,7 @@ baseline_commit: eb9e2964860cd183050607a00ffb9b260bee70af
 
 # Story 5.15: mood 배선 수정 — read scene mood from structure output, normalize at chain time, expose in artifacts API
 
-Status: review
+Status: done
 
 Story key: `5-15` · Epic: 5
 
@@ -46,6 +46,13 @@ Defects D1 (major) and D2 (minor) of the E2E baseline (`e2e-baseline-2026-07-06.
   - [x] Run: `PYTHONPATH=$PWD/src pytest tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/api/test_stage_artifacts.py -q`, then the full suite.
 - [ ] **Task 4 (OPTIONAL, PROMPT_POLICY-gated) — tighten the writing prompt** (AC: 7 — skipped, see Completion Notes)
   - [ ] Only if pursued: the writing prompt has **no repo file** (`prompts/scenario/` contains only research/structure/tts_normalize/visual_breakdown; `scenario/writing` was seeded from `/mnt/work/projects/yt.pipe/templates/scenario/03_writing.md`, whose output example literally shows `"mood": "tense"` — an out-of-enum value). Per PROMPT_POLICY rule 1 the repo is SoT, so first materialize `prompts/scenario/writing.md`, then remove the dead `mood` field from its output schema (or add the enum), seed under `candidate`, run A/B + `scripts/eval_prompts.py --label candidate --baseline production`, promote by label move. **Recommended default: skip** — after Task 1 the writing `mood` output is ignored, so this is cleanup, not correctness.
+
+### Review Findings
+
+- [x] [Review][Patch] Case/whitespace variant moods from structure (e.g. `"Escalation"`, `" dread "`) are wrongly treated as invalid and silently fall back to `DEFAULT_MOOD` instead of resolving to the intended enum value [src/yt_flow/pipeline/nodes/scenario_chain.py:339] — fixed via `.strip().lower()` normalization before the `MOOD_VALUES` check; covered by `test_build_scenes_mood_case_and_whitespace_normalized_no_warning`.
+- [x] [Review][Patch] No test exercises the actual `structure` argument threading through `scenario_node`'s call to `build_scenes` — only `build_scenes()` itself is unit-tested with hand-built structure lists; the STRUCTURE fixture in `test_scenario.py` has no `mood` key so a wiring regression at the call site would not be caught [tests/pipeline/nodes/test_scenario.py:27] — fixed by adding a `mood` key to the module-level `STRUCTURE` fixture and asserting `out["scenes"][0]["mood"]` in `test_success_populates_scenes`.
+
+12 additional findings from Blind Hunter / Edge Case Hunter / Acceptance Auditor were reviewed and dismissed as noise, already-handled-elsewhere, or consistent with documented spec intent (see review session for detail) — no `decision-needed` or `defer` items.
 
 ## Dev Notes
 
@@ -121,6 +128,7 @@ claude-sonnet-5 (bmad-dev-story)
 - Test suite: replaced the two mood tests that asserted the old (buggy) writing-sourced behavior with five new cases covering AC1-4 (valid pass-through no-warning, structure-wins-over-writing, invalid mood, missing key, non-dict entry, writing-over-produces-scenes trailing fallback). Updated the four non-mood `build_scenes` call sites for the new signature. Added a valid `"mood": "escalation"` to `deepseek_structure.json`'s first scene for cassette-driven happy-path coverage (second scene deliberately left mood-less — it's never read since the writing cassette only produces 1 scene). API test: `_scene` helper gained `mood`/`include_mood` params; added a dedicated pre-7.1-checkpoint case asserting `mood is None`.
 - Task 4 (optional writing-prompt cleanup, AC:7) **skipped** per the story's own recommended default — after Task 1 the writing stage's `mood` output is fully dead, so removing it is cleanup, not correctness, and materializing `prompts/scenario/writing.md` in-repo first (PROMPT_POLICY rule 1) is out of scope for a wiring bug fix.
 - Full regression suite: 702 passed, 1 pre-existing skip, 1 failure — see Debug Log for the bisection proving that failure belongs to the concurrently in-progress Story 5.14, not this story.
+- **Code review (2026-07-07):** 3-layer adversarial review (Blind Hunter, Edge Case Hunter, Acceptance Auditor) raised 14 findings; 12 dismissed (noise, already-handled, or consistent with documented spec intent), 2 applied as patches — mood value normalization (`.strip().lower()` before the `MOOD_VALUES` check, so e.g. `"Escalation"`/`" dread "` from structure resolve correctly instead of falling back to default) and a node-level test closing the gap where no test exercised the actual `structure` argument threading through `scenario_node`'s call to `build_scenes`. Full regression suite re-run isolated from concurrent Story 5.14 WIP via `git stash push -u`: 690 passed, 1 skipped, 0 failed (confirms the earlier bisection — that 1 failure was 5.14's, not 5.15's). `ruff check` clean on all touched files.
 
 ### File List
 
@@ -128,9 +136,11 @@ claude-sonnet-5 (bmad-dev-story)
 - `src/yt_flow/pipeline/nodes/scenario.py`
 - `src/yt_flow/services/run_service.py`
 - `tests/pipeline/nodes/test_scenario_chain.py`
+- `tests/pipeline/nodes/test_scenario.py`
 - `tests/api/test_stage_artifacts.py`
 - `tests/fixtures/cassettes/deepseek_structure.json`
 
 ## Change Log
 
 - 2026-07-06: Implemented Story 5.15 (mood sourced from structure, normalized+warned at chain time, exposed in scenario artifacts API). Tasks 1-3 complete (all ACs 1-6 satisfied); Task 4 (optional prompt cleanup, AC:7) skipped per its own recommended default. Targeted suite 68/68 passed, full regression 702 passed/1 skipped/1 pre-existing failure (bisected to concurrent Story 5.14 WIP, not this story), ruff clean. Status → review.
+- 2026-07-07: Code review closed. 2 patches applied (mood case/whitespace normalization; node-level test for the `structure`-threading wiring gap), 12 findings dismissed. Full regression re-verified isolated from concurrent Story 5.14 WIP: 690 passed, 1 skipped, 0 failed. Status → done.
