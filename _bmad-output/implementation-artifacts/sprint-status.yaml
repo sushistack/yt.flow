@@ -116,6 +116,7 @@ development_status:
   5-16-transition-boundary-integrity: ready-for-dev  # Jay 시청 피드백 #2 — xfade 오버랩이 이미지·음성 꼬리 소비, 페이드아웃→검은 홀드→페이드인 + 오디오 무겹침으로 교체; 7-4와 조정 필요
   5-17-chapter-card-content: ready-for-dev  # Jay 시청 피드백 #4 — 카드에 씬 제목+상황 한 줄 (structure가 title 산출), 5-16 직후 착수
   5-18-subtitle-display-text-dual-track: ready-for-dev  # Jay 시청 피드백 #3 — 자막은 원문(SCP-049), TTS는 정규화문(5-4 결정 번복); 가라오케(7-5) 은퇴 + Pretendard 타이포 업그레이드
+  5-19-ddg-image-search-fallback-repair: backlog  # 2026-07-07 라이브 실측 — 403 원인은 구식 vqd 획득(홈페이지→쿼리 페이지로 변경)+Referer 누락; 소형 수정, 위키 우선 폴백 지위 불변
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress

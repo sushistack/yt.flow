@@ -1001,6 +1001,10 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 2026-07-06 베이스라인 영상 Jay 시청 피드백 #3. 자막이 TTS 발음 정규화문("에스시피 공사 구", "키 일점 구 미터")을 그대로 보여줌 — 자막은 **원문 표기(SCP-049, 1.9m)**여야 함. 5-4가 YAGNI로 선택했던 "SRT/TTS 동일 텍스트" 결정을 명시적으로 뒤집는 스토리: 문장 단위 이중 트랙 도입 — `tts_normalize` 단계가 정규화문과 함께 **원문을 보존**하고(문장 1:1 계약 유지), TTS/정렬은 정규화문을, 자막(.ass/.srt)은 원문을 사용. 추가 결정(Jay, 2026-07-06): **가라오케 단어 하이라이트(7-5) 은퇴** — D12 균일 타이밍 폴백으로 동기화가 어차피 가짜였고, 다큐 나레이션 관행은 정적 라인 + 강한 타이포그래피. 대신 자막 폰트/스타일 업그레이드: Pretendard Bold(OFL, repo 번들 `data/fonts/` + ffmpeg `fontsdir`), 흰 채움 + 검은 아웃라인 + 섀도, 크기 상향, 최대 2줄. 부수 효과로 발화↔표시 어절 매핑 문제와 whisperx 단어 정렬 의존이 소멸. 5-17 카드 타이틀도 동일 폰트 패밀리로 통일. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.19: DDG 이미지 검색 폴백 수리 — vqd 획득 경로 갱신
+
+2026-07-07 라이브 재현 테스트로 원인 규명: 5-8/5-10에서 재현된 `i.js` 403은 환경 차단이 아니라 **vqd 토큰 획득 방식이 구식**이어서임. yt.pipe(Go)와 yt.flow(`image_search.py`) 모두 duckduckgo.com 홈페이지에서 vqd를 긁는데, 현재 DDG는 홈페이지에 vqd를 내려주지 않음 — **쿼리 페이지**(`/?q=<query>&iax=images&ia=images`)에서 vqd 획득 + 브라우저 UA + `Referer: https://duckduckgo.com/` 헤더 조합으로 `i.js`가 200 + 실제 결과를 반환함(이 환경에서 실측 확인). 수정 범위: `_acquire_vqd`의 대상 URL 변경 + Referer 헤더 추가 + 회귀 테스트(MockTransport 패턴). 효과: 위키 미스 시 폴백 경로 복구, 8-5 스타일 앵커 소싱 자동화 옵션 확보. 비공식 엔드포인트라 재파손 가능성은 상수 — 폴백 지위 유지(위키 우선 불변). (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
