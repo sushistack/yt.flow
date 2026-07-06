@@ -11,7 +11,7 @@ baseline_commit: eb9e2964860cd183050607a00ffb9b260bee70af
 
 # Story 5.14: Pipeline Resilience — Shot-Level Resume + ComfyUI Health Check
 
-Status: review
+Status: done
 
 ## Story
 
@@ -80,6 +80,23 @@ Two facts make file-level skip semantically safe: (a) both shipped workflow JSON
   - [x] Run: `PYTHONPATH=$PWD/src uv run pytest tests/pipeline/nodes/test_image.py tests/services/test_comfyui_client_retry.py -q`, then the full regression per Testing Requirements below.
 - [x] Operator watchdog — document only (AC: 8)
   - [x] Nothing lands in this repo. Relay the "Operator Instruction — ComfyUI crash-restart watchdog" block from Dev Notes to Jay in the Completion Notes; record whether it was applied to `$HOME/workspaces/ComfyUI/run.sh`.
+
+### Review Findings
+
+Reviewed via `/bmad-code-review` (Blind Hunter + Edge Case Hunter + Acceptance Auditor, parallel layers). 6 patch findings applied, 2 deferred as accepted risk (consistent with existing Saved Questions), 6 dismissed as by-design or non-issues.
+
+- [x] [Review][Patch] `_existing_complete_shot` crashes the whole run on a non-dict sidecar (e.g. `null`/`[]`) instead of treating it as incomplete [`src/yt_flow/pipeline/nodes/image.py`] — `sidecar.get()` raised `AttributeError`, uncaught by `except (OSError, ValueError)`, contradicting the Dev Notes' stated intent ("treat unreadable sidecar as incomplete"). Fixed: added `isinstance(sidecar, dict)` guard.
+- [x] [Review][Patch] `_existing_complete_shot` TOCTOU race: a file deleted between `.is_file()` and `.stat()` raised an unhandled `FileNotFoundError`, aborting the whole run instead of regenerating one shot [`src/yt_flow/pipeline/nodes/image.py`]. Fixed: wrapped the whole check in `except (OSError, ValueError): return None`.
+- [x] [Review][Patch] Layered branch of `_existing_complete_shot` never checked `img_dest`'s size against `MIN_VALID_IMAGE_BYTES` (only `bg_dest`/`char_dest`), unlike the non-layered branch — a truncated composite could be "resumed" as complete [`src/yt_flow/pipeline/nodes/image.py`]. Fixed: added the same size check to `img_dest` before the layered/non-layered branch.
+- [x] [Review][Patch] `comfyui_client.py` module comment said "Validation errors (HTTP 400)" but `_submit`'s `except httpx.HTTPStatusError` catches every non-2xx status (e.g. a transient 502/503 during a ComfyUI restart), not just 400 [`src/yt_flow/services/comfyui_client.py`]. Fixed: comment wording only, no behavior change (matches AC5's blanket "HTTPStatusError = no retry").
+- [x] [Review][Patch] AC3 (non-layered shot-level resume) had zero test coverage — every new resume test hardcoded `layered=True` via `_resume_settings()` [`tests/pipeline/nodes/test_image.py`]. Fixed: added `test_non_layered_resume_skips_complete_shot` + `test_non_layered_resume_regenerates_on_missing_sidecar`.
+- [x] [Review][Patch] No test verified `check_health` is called exactly once (not once per shot) when multiple shots need generation in one `image_node` call — the `health_checked` dedup flag's core purpose was unverified [`tests/pipeline/nodes/test_image.py`]. Fixed: added `test_health_check_called_once_across_multiple_shots`.
+- [x] [Review][Defer] Sidecar doesn't record generation mode (layered vs non-layered) — flipping `YTFLOW_COMFYUI_LAYERED` mid-run and retrying could misidentify a layered composite as a valid non-layered resume output [`src/yt_flow/pipeline/nodes/image.py`] — deferred, same accepted-risk category as Saved Question #2 (sidecar doesn't record workflow/seed either); YAGNI until observed in practice.
+- [x] [Review][Defer] Added health-check + connect-retry latency (~15-19s worst case) in front of every real `image_node` run needing generation is unreconciled against any pipeline/stage timeout [`src/yt_flow/services/comfyui_client.py`] — deferred, already anticipated in Saved Question #5 ("bump attempts only if this bites in practice").
+
+Dismissed (by design or non-issue, no action taken): sidecar written only for layered success *with* a character is the literal, deliberate session rule (AC2 "skip only when BOTH background and character files exist", Saved Question #4) — not a bug; `character_count` incrementing unconditionally on skip is correct given that rule; `MIN_VALID_IMAGE_BYTES` as an independent module constant is the intended ponytail approach (Dev Notes: "module constants only"); a test fixture missing `encoding="utf-8"` (prod pins it, fixture doesn't) is inconsequential for ASCII-safe JSON; `test_comfyui_client_retry.py`'s file-local `_no_delay` fixture was flagged as a risk to `test_comfyui_client.py`'s tests but that file has no transport-error test to be affected (verified via grep).
+
+Full regression (`PYTHONPATH=$PWD/src uv run pytest -q --ignore=tests/services/test_character_service_generation.py --ignore=tests/services/test_comfyui_client.py --ignore=tests/services/test_image_search.py`): 639 passed, 1 skipped, 1 failed. The failure (`test_e2e_stub_run.py::test_stub_run_completes_via_api_with_ordered_sse_and_artifact_on_disk`) reproduces identically on baseline `42d9305` with none of this story's changes applied — confirmed pre-existing and unrelated via `git stash`, not attributable to this diff.
 
 ## Dev Notes
 
@@ -225,3 +242,4 @@ claude-sonnet-5 (Claude Code)
 
 - 2026-07-06: Story created from E2E baseline defects D6/D8 (run `272b05a4`) via create-story; scope = shot-level resume (sidecar-sentinel skip rule), lazy ComfyUI health check + bounded transport retry, operator watchdog documented not implemented. Epic 8 forward-compatibility constraint recorded. Status: ready-for-dev.
 - 2026-07-07: Implemented and reviewed by dev-story: shot-level resume (sidecar + skip check), `comfyui_client.check_health`, bounded connection retry, `skipped_count` trace metadata, config.py comment fix. Fixed an unanticipated regression in `tests/conftest.py`'s `stub_profile` fixture (missing `check_health` fake). Full regression green (639 passed, 1 skipped). Live kill/restart drill and operator watchdog application deferred to Jay. Status: review.
+- 2026-07-07: Code review (`/bmad-code-review`, 3 parallel layers) found and fixed 6 patch-level gaps — a crash-on-malformed-sidecar bug, a TOCTOU file-race bug, a missing size check on the layered composite image, an inaccurate client comment, and two test-coverage gaps (AC3 non-layered resume untested, health-check dedup untested). 2 items deferred as accepted risk consistent with existing Saved Questions; 6 dismissed as by-design or non-issues. Full regression re-run: 639 passed, 1 skipped, 1 failed — the failure (`test_e2e_stub_run.py`) reproduces identically on baseline with none of this story's changes applied, confirmed pre-existing via `git stash`. Status: done.
