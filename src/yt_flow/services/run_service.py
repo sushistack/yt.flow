@@ -84,6 +84,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
             {
                 "scene_num": s["scene_num"],
                 "narration": s["narration"],
+                "mood": s.get("mood"),
                 "shots": [
                     {
                         "shot_id": sh["shot_id"],

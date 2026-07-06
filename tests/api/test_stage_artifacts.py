@@ -17,8 +17,8 @@ from yt_flow.services import run_service
 RUN_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def _scene(n, *, image=None, audio=None, subtitle=None):
-    return {
+def _scene(n, *, image=None, audio=None, subtitle=None, mood="escalation", include_mood=True):
+    scene = {
         "scene_num": n,
         "narration": f"narration {n}",
         "shots": [{
@@ -38,6 +38,9 @@ def _scene(n, *, image=None, audio=None, subtitle=None):
         "word_timings": [],
         "subtitle_path": subtitle,
     }
+    if include_mood:
+        scene["mood"] = mood
+    return scene
 
 
 def _state(scenes, video_path=None):
@@ -93,6 +96,13 @@ def test_scenario_artifacts(client, monkeypatch):
     assert body["stage"] == "scenario"
     assert body["scenes"][0]["narration"] == "narration 1"
     assert body["scenes"][0]["shots"][0]["shot_id"] == "S001"
+    assert body["scenes"][0]["mood"] == "escalation"
+
+
+def test_scenario_artifacts_pre_7_1_checkpoint_mood_is_null(client, monkeypatch):
+    _mock_graph(monkeypatch, _state([_scene(1, include_mood=False)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["mood"] is None
 
 
 def test_image_artifacts(client, monkeypatch):

@@ -24,7 +24,7 @@ class FakePrompt:
 
 
 RESEARCH = {"core_identity": "x", "frozen_descriptor": "desc", "entity_sheet": "entity sheet", "story_logline": "logline", "dramatic_beats": "x", "environment": "x", "hooks": "x"}
-STRUCTURE = [{"scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension", "estimated_duration_sec": 45}]
+STRUCTURE = [{"scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension", "estimated_duration_sec": 45, "mood": "escalation"}]
 WRITING = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "문장.", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
 VISUAL = [{"image_prompt": "shot", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
 REVIEW_PASS = {"overall_pass": True, "coverage_pct": 90.0, "issues": [], "corrections": [], "storytelling_score": 80, "storytelling_issues": []}
@@ -107,6 +107,7 @@ async def test_success_populates_scenes(monkeypatch):
     assert out.get("error") is None
     assert len(out["scenes"]) == 1
     assert out["scenes"][0]["shots"][0]["image_prompt"] == "shot"
+    assert out["scenes"][0]["mood"] == "escalation"
 
 
 async def test_no_retry_when_critic_passes(monkeypatch):

@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -482,7 +483,7 @@ def test_build_scenes_merges_empty_prompt_into_previous_shot():
             {"image_prompt": "shot three", "negative_prompt": "neg three", "sentence_start": 3, "sentence_end": 3, "camera_type": "close-up"},
         ]
     }
-    scenes = chain.build_scenes(writing, visual_by_scene)
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
     assert len(scenes) == 1
     shots = scenes[0]["shots"]
     assert len(shots) == 2  # the empty-prompt sentence merged into shot 1, not its own shot
@@ -499,7 +500,7 @@ def test_build_scenes_first_sentence_empty_falls_back_to_scene_context():
             {"image_prompt": "shot two", "negative_prompt": "neg two", "sentence_start": 2, "sentence_end": 2, "camera_type": "medium"},
         ]
     }
-    scenes = chain.build_scenes(writing, visual_by_scene)
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
     shots = scenes[0]["shots"]
     assert len(shots) == 2  # no previous shot to merge into -> kept as its own, backfilled
     assert "hallway" in shots[0]["image_prompt"] or "cold dread" in shots[0]["image_prompt"]
@@ -515,49 +516,78 @@ def test_build_scenes_scene_num_is_positional():
         0: [{"image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}],
     }
     visual_by_scene_full = {0: visual_by_scene[0], 1: visual_by_scene[0]}
-    scenes = chain.build_scenes(writing, visual_by_scene_full)
+    scenes = chain.build_scenes(writing, visual_by_scene_full, [{}, {}])
     assert [s["scene_num"] for s in scenes] == [1, 2]
 
 
 def test_build_scenes_single_empty_shot_falls_back_not_raises():
     writing = {"scenes": [{"scene_num": 1, "narration": "(정적)", "location": "vault", "atmosphere": "silence"}]}
     visual_by_scene = {0: [{"image_prompt": "", "negative_prompt": "", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]}
-    scenes = chain.build_scenes(writing, visual_by_scene)
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
     assert len(scenes[0]["shots"]) == 1
     assert scenes[0]["shots"][0]["image_prompt"]
 
 
-# ── mood field (Story 7.1 AC:1) ────────────────────────────────────────────────
+# ── mood field (Story 5.15: sourced from structure, normalized at chain time) ──
 
 
 _ONE_SHOT_VISUAL = {0: [{"image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]}
 
 
-def test_build_scenes_populates_mood_from_writing_scene():
-    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": "escalation"}]}
-    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
-    assert scenes[0]["mood"] == "escalation"
-
-
-@pytest.mark.parametrize("raw_mood", [None, ""])
-def test_build_scenes_missing_or_empty_mood_falls_back_to_default(raw_mood):
-    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": raw_mood}]}
-    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
-    assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD
-
-
-def test_build_scenes_stores_unrecognized_mood_verbatim_resolved_later():
-    """build_scenes only falls back on falsy values (`.get() or DEFAULT`); an unknown
-    but truthy mood string is stored as-is — resolve_mood normalizes it at the point
-    of use (sound_design/video.py), not here."""
-    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": "not-a-real-mood"}]}
-    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
-    assert scenes[0]["mood"] == "not-a-real-mood"
-    assert sound_design.resolve_mood(scenes[0]["mood"]) == sound_design.DEFAULT_MOOD
-
-
-def test_build_scenes_no_mood_key_at_all_falls_back_to_default():
-    """Old checkpointed writing-stage output with no `mood` key must resume safely."""
+def test_build_scenes_valid_structure_mood_passes_through_no_warning(caplog):
     writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
-    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL)
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{"mood": "escalation"}])
+    assert scenes[0]["mood"] == "escalation"
+    assert not caplog.records
+
+
+def test_build_scenes_mood_case_and_whitespace_normalized_no_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{"mood": " Escalation "}])
+    assert scenes[0]["mood"] == "escalation"
+    assert not caplog.records
+
+
+def test_build_scenes_structure_mood_wins_over_writing_mood():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장.", "mood": "clinical"}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{"mood": "revelation"}])
+    assert scenes[0]["mood"] == "revelation"
+
+
+def test_build_scenes_invalid_structure_mood_falls_back_with_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{"mood": "shock"}])
     assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD
+    assert any("1" in r.message and "shock" in r.message for r in caplog.records)
+
+
+def test_build_scenes_missing_mood_key_falls_back_with_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD
+    assert len(caplog.records) == 1
+
+
+def test_build_scenes_non_dict_structure_entry_falls_back_with_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, ["not-a-dict"])
+    assert scenes[0]["mood"] == sound_design.DEFAULT_MOOD
+    assert len(caplog.records) == 1
+
+
+def test_build_scenes_writing_over_produces_trailing_scene_falls_back_with_warning(caplog):
+    writing = {"scenes": [
+        {"scene_num": 1, "narration": "첫 문장."},
+        {"scene_num": 2, "narration": "둘째 문장."},
+    ]}
+    visual_by_scene = {0: _ONE_SHOT_VISUAL[0], 1: _ONE_SHOT_VISUAL[0]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, visual_by_scene, [{"mood": "clinical"}])
+    assert scenes[0]["mood"] == "clinical"
+    assert scenes[1]["mood"] == sound_design.DEFAULT_MOOD
+    assert any("2" in r.message and "None" in r.message for r in caplog.records)

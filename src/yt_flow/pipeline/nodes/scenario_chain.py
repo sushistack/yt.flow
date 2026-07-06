@@ -14,7 +14,7 @@ import logging
 import re
 
 from yt_flow.domain.state import SceneState, ShotData
-from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD
+from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
 
 logger = logging.getLogger(__name__)
@@ -317,18 +317,31 @@ def _fallback_prompt(scene: dict) -> str:
     return f"static wide shot, {location}, {atmosphere}, no visible subject"
 
 
-def build_scenes(writing: dict, visual_by_scene: dict) -> list:
+def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) -> list:
     """Convert the chain's per-scene narration + visual_descriptions into PipelineState.scenes.
 
     A shot with an empty ``image_prompt`` (yt.pipe's transition/effect-only
     sentence marker) is merged into the previous shot's ``sentence_indices``
     instead of becoming its own ``ShotData`` — yt.flow's image_node needs a
     real prompt for every shot it renders.
+
+    ``mood`` comes from the **structure** scene at the same positional index
+    (structure_step's prompt is the only one that enforces the mood enum) —
+    the writing stage's own ``mood`` output is ignored. Same 1:1 positional
+    rule ``_write_and_review`` uses for ``scene_role``.
     """
     scenes: list = []
     for idx, writing_scene in enumerate(writing["scenes"]):
         scene_num = idx + 1  # positional, matches scenario.py's pre-existing rule
         raw_shots = visual_by_scene[idx]  # positional — matches _write_and_review's keying
+
+        structure_scene = structure[idx] if idx < len(structure) else None
+        raw_mood = structure_scene.get("mood") if isinstance(structure_scene, dict) else None
+        if isinstance(raw_mood, str):
+            raw_mood = raw_mood.strip().lower()
+        if raw_mood not in MOOD_VALUES:
+            logger.warning("scenario: scene %d mood %r not in %s; falling back to default", scene_num, raw_mood, MOOD_VALUES)
+        mood = resolve_mood(raw_mood)
 
         shots: list = []
         for i, raw_shot in enumerate(raw_shots):
@@ -369,7 +382,7 @@ def build_scenes(writing: dict, visual_by_scene: dict) -> list:
                 audio_duration=None,
                 word_timings=[],
                 subtitle_path=None,
-                mood=str(writing_scene.get("mood") or DEFAULT_MOOD),
+                mood=mood,
             )
         )
     return scenes
