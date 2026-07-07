@@ -83,6 +83,7 @@ def _shot(shot_id, scene_num=1, *, character_path="/tmp/char.png",
         "image_path": "/tmp/img.png",
         "background_path": "/tmp/bg.png",
         "character_path": character_path,
+        "cast": [],
     }
 
 

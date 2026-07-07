@@ -89,6 +89,7 @@ def _shot(
         "image_path": image_path,
         "background_path": background_path,
         "character_path": character_path,
+        "cast": [],
     }
 
 

@@ -88,7 +88,7 @@ async def test_video_node_emits_tiny_artifact(graph_env, stub_profile, monkeypat
                 "shot_id": "S001", "sentence_indices": [0],
                 "image_prompt": "p", "negative_prompt": "n",
                 "image_path": str(img), "background_path": None, "character_path": None,
-                "camera_angle": None, "camera_movement": None,
+                "camera_angle": None, "camera_movement": None, "cast": [],
             }],
         }],
         "video_path": None,

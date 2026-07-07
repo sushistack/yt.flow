@@ -182,7 +182,7 @@ async def test_duplicate_llm_scene_num_does_not_corrupt_shots(monkeypatch):
     async def fake_writing(*a, **k):
         return writing_two_scenes
 
-    async def fake_visual(scene, sentences, *a, **k):
+    async def fake_visual(scp_id, scene, sentences, *a, **k):
         # Distinguish the two scenes by their own narration/location so the
         # test can prove which shot ended up where.
         call_count["n"] += 1
@@ -231,7 +231,7 @@ async def test_scene_count_exceeding_structure_logs_warning_instead_of_crashing(
     }
     captured_roles = []
 
-    async def fake_visual(scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+    async def fake_visual(scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
         captured_roles.append(scene_role)
         return VISUAL
 
@@ -253,7 +253,7 @@ async def test_visual_breakdown_receives_entity_sheet_logline_and_scene_role(mon
     _stub_chain(monkeypatch)
     captured = {}
 
-    async def fake_visual(scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+    async def fake_visual(scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
         captured["entity_sheet"] = entity_sheet
         captured["story_logline"] = story_logline
         captured["scene_role"] = scene_role

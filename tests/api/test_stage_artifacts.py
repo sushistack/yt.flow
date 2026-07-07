@@ -21,22 +21,26 @@ def _scene(
     n, *, image=None, audio=None, subtitle=None, mood="escalation", include_mood=True,
     title="첫 면담", kicker="개체가 입을 열다", include_title_kicker=True,
     display_narration=None, include_display_narration=True,
+    cast=None, include_cast=True,
 ):
+    shot = {
+        "shot_id": f"S00{n}",
+        "sentence_indices": [0, 1],
+        "image_prompt": "a dark corridor",
+        "negative_prompt": "bright, daylight",
+        "camera_angle": "medium",
+        "camera_movement": "static",
+        "image_path": image,
+        "background_path": None,
+        "character_path": None,
+        "layered_fallback": False,
+    }
+    if include_cast:
+        shot["cast"] = cast if cast is not None else []
     scene = {
         "scene_num": n,
         "narration": f"narration {n}",
-        "shots": [{
-            "shot_id": f"S00{n}",
-            "sentence_indices": [0, 1],
-            "image_prompt": "a dark corridor",
-            "negative_prompt": "bright, daylight",
-            "camera_angle": "medium",
-            "camera_movement": "static",
-            "image_path": image,
-            "background_path": None,
-            "character_path": None,
-            "layered_fallback": False,
-        }],
+        "shots": [shot],
         "audio_path": audio,
         "audio_duration": 12.5 if audio else None,
         "word_timings": [],
@@ -146,6 +150,23 @@ def test_scenario_artifacts_pre_5_18_checkpoint_display_narration_falls_back_to_
     _mock_graph(monkeypatch, _state([_scene(1, include_display_narration=False)]))
     body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
     assert body["scenes"][0]["display_narration"] == "narration 1"
+
+
+def test_scenario_artifacts_includes_cast(client, monkeypatch):
+    """[Story 8.1 AC:7] cast is exposed at the scenario gate so a human reviewer
+    can see per-shot cast placement, not just image_prompt — the D2 mistake
+    (mood silently dropped by the serializer) must not repeat here."""
+    cast = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]
+    _mock_graph(monkeypatch, _state([_scene(1, cast=cast)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["shots"][0]["cast"] == cast
+
+
+def test_scenario_artifacts_pre_8_1_checkpoint_cast_defaults_empty(client, monkeypatch):
+    """Old checkpoints without a cast key: defaults to [], not a KeyError (AC:6)."""
+    _mock_graph(monkeypatch, _state([_scene(1, include_cast=False)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["shots"][0]["cast"] == []
 
 
 def test_image_artifacts(client, monkeypatch):

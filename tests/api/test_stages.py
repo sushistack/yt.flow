@@ -71,6 +71,7 @@ def _scene(num=1, narration="old", image=True, audio=True, subtitle="/tmp/s.srt"
             "image_path": "/tmp/img.png" if image else None,
             "background_path": "/tmp/bg.png" if image else None,
             "character_path": "/tmp/ch.png" if image else None,
+            "cast": [],
         }],
         "audio_path": "/tmp/a.wav" if audio else None,
         "audio_duration": 3.0 if audio else None,

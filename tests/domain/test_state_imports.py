@@ -15,8 +15,9 @@ EXPECTED_FIELDS = {
     "ShotData": {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
         "camera_angle", "camera_movement", "image_path",
-        "background_path", "character_path", "layered_fallback",
+        "background_path", "character_path", "layered_fallback", "cast",
     },
+    "CastMember": {"card_key", "position", "depth", "pose"},
     "SceneState": {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
         "word_timings", "subtitle_path", "mood", "title", "kicker", "display_narration",
@@ -43,7 +44,8 @@ EXPECTED_FIELDS = {
 
 def test_typeddicts_import():
     for name in ("PipelineState", "SceneState", "ShotData", "WordTiming",
-                  "SearchResult", "ReferenceImage", "Character", "CharacterCandidate", "AngleName"):
+                  "SearchResult", "ReferenceImage", "Character", "CharacterCandidate", "AngleName",
+                  "CastMember"):
         assert hasattr(state, name), name
 
 

@@ -14,6 +14,20 @@ StageName = Literal["scenario", "image", "tts", "subtitle", "video"]
 GateState = Literal["pending", "approved", "rejected", "n/a"]
 PromptVariant = Literal["A", "B"]
 AngleName = Literal["front", "back", "side", "three_quarter"]
+CastPosition = Literal["left", "center", "right"]
+CastDepth = Literal["near", "mid", "far"]
+CastPose = Literal["standing", "sitting"]  # closed v1 vocabulary — free-text special
+                                            # poses arrive via Story 8.4's pose_hint field
+
+STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
+
+
+class CastMember(TypedDict):
+    card_key: str          # CharacterModel.scp_id key: entity's scp_id, a STOCK_CAST_KEYS
+                            # member, or a derived "<scp_id>-<n>"
+    position: CastPosition  # horizontal slot in frame
+    depth: CastDepth        # distance plane: drives scale, parallax amplitude, and stacking
+    pose: CastPose          # body stance: selects which pose entry of the card library
 
 
 class WordTiming(TypedDict):
@@ -33,6 +47,7 @@ class ShotData(TypedDict):
     background_path: str | None  # layered mode: opaque background layer
     character_path: str | None   # layered mode: transparent character PNG; None = background-only
     layered_fallback: bool       # layered mode: True if segmentation errored and this shot degraded to flat
+    cast: list[CastMember]       # [] == background-only shot: downstream does NO overlay work at all
 
 
 class SceneState(TypedDict):

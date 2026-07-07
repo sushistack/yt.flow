@@ -12,8 +12,9 @@ converts it into ``PipelineState.error`` exactly as before.
 import json
 import logging
 import re
+from typing import cast
 
-from yt_flow.domain.state import SceneState, ShotData
+from yt_flow.domain.state import CastDepth, CastMember, CastPose, CastPosition, STOCK_CAST_KEYS, SceneState, ShotData
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
 
@@ -24,6 +25,50 @@ logger = logging.getLogger(__name__)
 TARGET_DURATION_MINUTES = 3
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+_SCP_PREFIX_RE = re.compile(r"^scp-", re.IGNORECASE)
+_STOCK_CANONICAL = {key.lower(): key for key in STOCK_CAST_KEYS}
+_VALID_POSITIONS = {"left", "center", "right"}
+_VALID_DEPTHS = {"near", "mid", "far"}
+_VALID_POSES = {"standing", "sitting"}
+
+
+def _normalize_card_key(card_key: str) -> str:
+    """Epic 8 Interfaces rule 5: normalize case on known key shapes; anything
+    else passes through as-is for downstream DB resolution."""
+    card_key = card_key.strip()
+    canonical_stock = _STOCK_CANONICAL.get(card_key.lower())
+    if canonical_stock:
+        return canonical_stock
+    if _SCP_PREFIX_RE.match(card_key):
+        return "SCP-" + card_key[4:]
+    return card_key
+
+
+def parse_cast(raw: object) -> list[CastMember]:
+    """Normalize a visual_breakdown shot's raw ``cast`` payload (Epic 8
+    Interfaces rules 4-6). Never raises — a taxonomy violation degrades
+    (drop the entry / fall back to a default), it never fails the scenario
+    stage (D1 lesson, same philosophy as ``resolve_mood``).
+    """
+    if not isinstance(raw, list):
+        return []
+    members: list[CastMember] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            logger.warning("parse_cast: dropping non-dict cast entry %r", entry)
+            continue
+        card_key = entry.get("card_key")
+        if not isinstance(card_key, str) or not card_key.strip():
+            logger.warning("parse_cast: dropping cast entry with unusable card_key %r", entry)
+            continue
+        raw_position, raw_depth, raw_pose = entry.get("position"), entry.get("depth"), entry.get("pose")
+        position = cast(CastPosition, raw_position) if raw_position in _VALID_POSITIONS else "center"
+        depth = cast(CastDepth, raw_depth) if raw_depth in _VALID_DEPTHS else "mid"
+        pose = cast(CastPose, raw_pose) if raw_pose in _VALID_POSES else "standing"
+        members.append(
+            CastMember(card_key=_normalize_card_key(card_key), position=position, depth=depth, pose=pose)
+        )
+    return members
 
 
 def split_sentences(text: str) -> list[str]:
@@ -177,6 +222,7 @@ def _scene_role_text(scene_role: object) -> str:
 
 
 async def visual_breakdown_step(
+    scp_id: str,
     scene: dict,
     sentences: list[str],
     frozen_descriptor: str,
@@ -202,6 +248,8 @@ async def visual_breakdown_step(
             "story_logline": story_logline,
             "scene_role": _scene_role_text(scene_role),
             "character_visual_context": "",
+            "scp_id": scp_id,
+            "stock_cast_keys": ", ".join(STOCK_CAST_KEYS),
             "narration": scene.get("narration", ""),
             "numbered_sentences": numbered,
             "sentence_count": len(sentences),
@@ -374,7 +422,9 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     continue
                 # No previous shot to merge into (leading transition sentence) — backfill.
                 image_prompt = _fallback_prompt(writing_scene)
-                raw_shot = {**raw_shot, "negative_prompt": raw_shot.get("negative_prompt") or ""}
+                # "no visible subject" backfill prompt — cast is always empty here,
+                # regardless of what the LLM emitted for this transition sentence.
+                raw_shot = {**raw_shot, "negative_prompt": raw_shot.get("negative_prompt") or "", "cast": []}
 
             shots.append(
                 ShotData(
@@ -387,6 +437,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     image_path=None,
                     background_path=None,
                     character_path=None,
+                    cast=parse_cast(raw_shot.get("cast")),
                 )
             )
 

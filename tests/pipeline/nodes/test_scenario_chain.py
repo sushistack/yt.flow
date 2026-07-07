@@ -152,7 +152,7 @@ def test_scene_role_text_coerces_non_string_fields():
 def test_visual_breakdown_prompt_file_has_required_placeholders():
     prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "visual_breakdown.md"
     content = prompt_path.read_text(encoding="utf-8")
-    for placeholder in ("{{story_logline}}", "{{scene_role}}", "{{entity_sheet}}", "{{scp_visual_reference}}", "{{numbered_sentences}}", "{{sentence_count}}"):
+    for placeholder in ("{{story_logline}}", "{{scene_role}}", "{{entity_sheet}}", "{{scp_visual_reference}}", "{{numbered_sentences}}", "{{sentence_count}}", "{{scp_id}}", "{{stock_cast_keys}}"):
         assert placeholder in content, f"missing {placeholder} in visual_breakdown.md"
 
 
@@ -240,7 +240,7 @@ async def test_visual_breakdown_step_maps_one_shot_per_sentence(monkeypatch):
     call = _deepseek_from_cassette("deepseek_visual_breakdown.json")
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     sentences = ["첫 문장.", "(정적)", "셋째 문장."]
-    result = await chain.visual_breakdown_step(scene, sentences, "desc", "entity sheet", "logline", {}, None, call)
+    result = await chain.visual_breakdown_step("SCP-173", scene, sentences, "desc", "entity sheet", "logline", {}, None, call)
     assert len(result) == 3
     assert result[0]["image_prompt"]
     assert result[1]["image_prompt"] == ""  # transition sentence, no image
@@ -258,7 +258,7 @@ async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
 
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     with pytest.raises(ValueError, match="1:1"):
-        await chain.visual_breakdown_step(scene, ["문장1.", "문장2."], "desc", "entity sheet", "logline", {}, None, call)
+        await chain.visual_breakdown_step("SCP-173", scene, ["문장1.", "문장2."], "desc", "entity sheet", "logline", {}, None, call)
 
 
 async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatch):
@@ -281,7 +281,7 @@ async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatc
 
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     scene_role = {"act": "hook", "emotional_beat": "tension", "synopsis": "the discovery"}
-    await chain.visual_breakdown_step(scene, ["문장1."], "frozen desc", "entity sheet text", "story logline text", scene_role, None, call)
+    await chain.visual_breakdown_step("SCP-173", scene, ["문장1."], "frozen desc", "entity sheet text", "story logline text", scene_role, None, call)
 
     assert captured.kwargs["scp_visual_reference"] == "frozen desc"
     assert captured.kwargs["entity_sheet"] == "entity sheet text"
@@ -289,6 +289,8 @@ async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatc
     assert "hook" in captured.kwargs["scene_role"]
     assert "tension" in captured.kwargs["scene_role"]
     assert "the discovery" in captured.kwargs["scene_role"]
+    assert captured.kwargs["scp_id"] == "SCP-173"
+    assert captured.kwargs["stock_cast_keys"] == "STOCK-d-class, STOCK-researcher, STOCK-security"
 
 
 async def test_review_step_returns_report(monkeypatch):
@@ -664,6 +666,136 @@ def test_build_scenes_title_and_kicker_stripped_to_first_line():
     )
     assert scenes[0]["title"] == "첫 면담"
     assert scenes[0]["kicker"] == "상황 한 줄"
+
+
+# ── parse_cast (Story 8.1: leniency table per Epic 8 Interfaces rules 4-6) ──────
+
+
+def test_parse_cast_valid_entry_passes_through():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "sitting"}]
+    assert chain.parse_cast(raw) == [
+        {"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "sitting"}
+    ]
+
+
+def test_parse_cast_invalid_position_falls_back_to_center():
+    raw = [{"card_key": "SCP-049", "position": "sideways", "depth": "near", "pose": "standing"}]
+    assert chain.parse_cast(raw)[0]["position"] == "center"
+
+
+def test_parse_cast_invalid_depth_falls_back_to_mid():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "very-far", "pose": "standing"}]
+    assert chain.parse_cast(raw)[0]["depth"] == "mid"
+
+
+def test_parse_cast_invalid_pose_falls_back_to_standing():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "crouching"}]
+    assert chain.parse_cast(raw)[0]["pose"] == "standing"
+
+
+def test_parse_cast_missing_pose_defaults_to_standing():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near"}]
+    assert chain.parse_cast(raw)[0]["pose"] == "standing"
+
+
+def test_parse_cast_drops_non_dict_entry(caplog):
+    with caplog.at_level(logging.WARNING):
+        result = chain.parse_cast(["not-a-dict", {"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}])
+    assert len(result) == 1
+    assert result[0]["card_key"] == "SCP-049"
+    assert any("non-dict" in r.message for r in caplog.records)
+
+
+def test_parse_cast_drops_empty_card_key(caplog):
+    with caplog.at_level(logging.WARNING):
+        result = chain.parse_cast([{"card_key": "", "position": "left", "depth": "near", "pose": "standing"}])
+    assert result == []
+    assert any("unusable card_key" in r.message for r in caplog.records)
+
+
+def test_parse_cast_drops_non_string_card_key(caplog):
+    with caplog.at_level(logging.WARNING):
+        result = chain.parse_cast([{"card_key": 42, "position": "left", "depth": "near", "pose": "standing"}])
+    assert result == []
+
+
+def test_parse_cast_normalizes_scp_prefix_casing():
+    raw = [{"card_key": "scp-049", "position": "left", "depth": "near", "pose": "standing"}]
+    assert chain.parse_cast(raw)[0]["card_key"] == "SCP-049"
+
+
+def test_parse_cast_normalizes_stock_key_casing():
+    raw = [{"card_key": "stock-researcher", "position": "left", "depth": "near", "pose": "standing"}]
+    assert chain.parse_cast(raw)[0]["card_key"] == "STOCK-researcher"
+
+
+def test_parse_cast_derived_entity_key_passes_through_unchanged():
+    raw = [{"card_key": "SCP-049-2", "position": "left", "depth": "near", "pose": "standing"}]
+    assert chain.parse_cast(raw)[0]["card_key"] == "SCP-049-2"
+
+
+def test_parse_cast_missing_cast_returns_empty_list():
+    assert chain.parse_cast(None) == []
+
+
+def test_parse_cast_non_list_returns_empty_list():
+    assert chain.parse_cast({"card_key": "SCP-049"}) == []
+
+
+# ── cast field (Story 8.1: build_scenes attaches parsed cast per shot) ──────────
+
+
+def test_build_scenes_attaches_cast_to_shot():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    visual_by_scene = {0: [{
+        "image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1,
+        "camera_type": "wide", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}],
+    }]}
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
+    assert scenes[0]["shots"][0]["cast"] == [
+        {"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}
+    ]
+
+
+def test_build_scenes_legacy_payload_without_cast_defaults_empty():
+    # Old production prompt (pre-8.1) never emits "cast" at all.
+    scenes = chain.build_scenes({"scenes": [{"scene_num": 1, "narration": "문장."}]}, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["shots"][0]["cast"] == []
+
+
+def test_build_scenes_merged_shot_contributes_no_cast_of_its_own():
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. (정적) 셋째 문장."}]}
+    visual_by_scene = {
+        0: [
+            {"image_prompt": "shot one", "negative_prompt": "n", "sentence_start": 1, "sentence_end": 1,
+             "camera_type": "wide", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]},
+            {"image_prompt": "", "negative_prompt": "", "sentence_start": 2, "sentence_end": 2, "camera_type": "wide",
+             "cast": [{"card_key": "STOCK-researcher", "position": "right", "depth": "far", "pose": "standing"}]},
+            {"image_prompt": "shot three", "negative_prompt": "n", "sentence_start": 3, "sentence_end": 3, "camera_type": "close-up"},
+        ]
+    }
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
+    shots = scenes[0]["shots"]
+    assert len(shots) == 2
+    # The merged empty-prompt sentence's cast is discarded, not merged into shot 1.
+    assert shots[0]["cast"] == [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]
+    assert shots[1]["cast"] == []
+
+
+def test_build_scenes_fallback_backfill_shot_gets_empty_cast():
+    # Leading transition sentence with no previous shot to merge into: the LLM
+    # may still have emitted a cast for it, but the backfilled "no visible
+    # subject" prompt must not carry cast through.
+    writing = {"scenes": [{"scene_num": 1, "narration": "(정적) 둘째 문장.", "location": "hallway", "atmosphere": "cold dread"}]}
+    visual_by_scene = {
+        0: [
+            {"image_prompt": "", "negative_prompt": "", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide",
+             "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]},
+            {"image_prompt": "shot two", "negative_prompt": "n", "sentence_start": 2, "sentence_end": 2, "camera_type": "medium"},
+        ]
+    }
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
+    assert scenes[0]["shots"][0]["cast"] == []
 
 
 # ── display_narration field (Story 5.18: dual track — subtitle vs TTS) ──────────

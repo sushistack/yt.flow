@@ -120,7 +120,7 @@ async def _write_and_review(
             )
             scene_role = {}
         shots = await visual_breakdown_step(
-            scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, s, _call_deepseek, label=label
+            scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, s, _call_deepseek, label=label
         )
         return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 

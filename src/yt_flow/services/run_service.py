@@ -96,6 +96,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
                         "negative_prompt": sh["negative_prompt"],
                         "camera_angle": sh["camera_angle"],
                         "camera_movement": sh["camera_movement"],
+                        "cast": sh.get("cast", []),
                     }
                     for sh in s["shots"]
                 ],

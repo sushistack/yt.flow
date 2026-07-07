@@ -15,7 +15,7 @@ related:
 
 # Story 8.1: Per-Shot Cast Metadata + Background-Only Prompts
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -86,27 +86,42 @@ class ShotData(TypedDict):
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Domain types + drift guard (AC: 1, 2)
-  - [ ] Add `CastPosition`, `CastDepth`, `CastPose`, `CastMember`, `STOCK_CAST_KEYS` to `src/yt_flow/domain/state.py` (near `AngleName`, line 16); add `cast: list[CastMember]` to `ShotData` (lines 25-36). Pure stdlib typing only.
-  - [ ] Update `tests/domain/test_state_imports.py` `EXPECTED_FIELDS` (lines 13-41) and the import list (lines 44-47).
-- [ ] Task 2 — Cast parser (AC: 5, 6)
-  - [ ] Add a pure `parse_cast(raw: object) -> list[CastMember]` helper in `scenario_chain.py` implementing Interfaces rules 4-6 (leniency + normalization, incl. `pose` → `"standing"` default), logging a `logger.warning` per dropped entry (module already has `logger`).
-  - [ ] Wire it into `build_scenes`'s `ShotData(...)` construction (line 346-358): `cast=parse_cast(raw_shot.get("cast"))`. Merged/backfill shots per AC5.
-  - [ ] Do NOT tighten `visual_breakdown_step`'s validation (lines 205-212) beyond today's 1:1 count check — cast problems degrade, they don't retry the stage.
-- [ ] Task 3 — Prompt rewrite (AC: 3, 4)
-  - [ ] Rewrite `prompts/scenario/visual_breakdown.md` per AC3: output schema (`cast` replaces `entity_visible`, current example at lines 205-223; example member carries all four fields incl. `pose`), entity-visible rules section (138-153) replaced with cast+background-only rules, pose guidance per AC3(g) folded into the placement-guidance block, Character Visual Anchoring section (172-176) re-scoped (anchoring now applies to *card* vocabulary, not prompt prose), pre-output self-check (225-243) updated (checks: no entity/person description in image_prompt; no bare SCP tokens; cast values ∈ allowed sets incl. `pose` ∈ {standing, sitting}; environment shots have `"cast": []`).
-  - [ ] Add the card vocabulary inputs (`{{scp_id}}` if not already available in the variable dict, plus a compiled stock-keys line) and pass them from `visual_breakdown_step` (`scenario_chain.py:186-200`).
-  - [ ] Keep everything that still applies: 8-slot structure, forbidden generic terms, camera_type rules, 1:1 mapping, negative_prompt prefix. Additionally instruct negative_prompt to include person/figure exclusion terms for background-only intent (belt; 8.3 adds the code-side suspenders).
-- [ ] Task 4 — Gate artifact exposure (AC: 7)
-  - [ ] Add `"cast": sh.get("cast", [])` to the scenario serializer in `run_service.get_stage_artifacts` (`run_service.py:83-100`); extend its test (`tests/api/` or `tests/services/` — follow wherever `get_stage_artifacts` is currently covered).
-- [ ] Task 5 — Prompt rollout per policy (AC: 8)
-  - [ ] Seed: `uv run python scripts/migrate_prompts.py --label candidate --source prompts/scenario`.
-  - [ ] Golden-set gate: `uv run python scripts/eval_prompts.py --label candidate --baseline production`; record the verdict in Dev Agent Record. Note: the judge axes don't score cast correctness — additionally hand-inspect one candidate-label SCP-049 scenario for (a) empty-cast environment shots, (b) no entity descriptions in image_prompt, (c) sane placement values, (d) pose values ∈ {standing, sitting} used with plausible composition intent (not sitting-everywhere / standing-everywhere-including-interview-scenes), and record findings.
-  - [ ] Do not move the `production` label; do not edit prompts in the Langfuse UI (policy rules 2/5).
-- [ ] Task 6 — Tests + regression (AC: 9, 10)
-  - [ ] `tests/pipeline/nodes/test_scenario_chain.py`: `parse_cast` table tests + `build_scenes` cast attach/merge/legacy tests.
-  - [ ] Update `tests/stubs/fakes.py` / any scene-dict fixtures that build `ShotData` literals to include `cast` (TypedDicts don't enforce at runtime, but fixtures should model the real contract; grep for `"character_path"` in tests to find shot-literal builders).
-  - [ ] Full suite: `uv run pytest -q` green; confirm zero diffs under `src/yt_flow/pipeline/nodes/image.py` / `video.py`.
+- [x] Task 1 — Domain types + drift guard (AC: 1, 2)
+  - [x] Add `CastPosition`, `CastDepth`, `CastPose`, `CastMember`, `STOCK_CAST_KEYS` to `src/yt_flow/domain/state.py` (near `AngleName`, line 16); add `cast: list[CastMember]` to `ShotData` (lines 25-36). Pure stdlib typing only.
+  - [x] Update `tests/domain/test_state_imports.py` `EXPECTED_FIELDS` (lines 13-41) and the import list (lines 44-47).
+- [x] Task 2 — Cast parser (AC: 5, 6)
+  - [x] Add a pure `parse_cast(raw: object) -> list[CastMember]` helper in `scenario_chain.py` implementing Interfaces rules 4-6 (leniency + normalization, incl. `pose` → `"standing"` default), logging a `logger.warning` per dropped entry (module already has `logger`).
+  - [x] Wire it into `build_scenes`'s `ShotData(...)` construction (line 346-358): `cast=parse_cast(raw_shot.get("cast"))`. Merged/backfill shots per AC5.
+  - [x] Do NOT tighten `visual_breakdown_step`'s validation (lines 205-212) beyond today's 1:1 count check — cast problems degrade, they don't retry the stage.
+- [x] Task 3 — Prompt rewrite (AC: 3, 4)
+  - [x] Rewrite `prompts/scenario/visual_breakdown.md` per AC3: output schema (`cast` replaces `entity_visible`, current example at lines 205-223; example member carries all four fields incl. `pose`), entity-visible rules section (138-153) replaced with cast+background-only rules, pose guidance per AC3(g) folded into the placement-guidance block, Character Visual Anchoring section (172-176) re-scoped (anchoring now applies to *card* vocabulary, not prompt prose), pre-output self-check (225-243) updated (checks: no entity/person description in image_prompt; no bare SCP tokens; cast values ∈ allowed sets incl. `pose` ∈ {standing, sitting}; environment shots have `"cast": []`).
+  - [x] Add the card vocabulary inputs (`{{scp_id}}` if not already available in the variable dict, plus a compiled stock-keys line) and pass them from `visual_breakdown_step` (`scenario_chain.py:186-200`).
+  - [x] Keep everything that still applies: 8-slot structure, forbidden generic terms, camera_type rules, 1:1 mapping, negative_prompt prefix. Additionally instruct negative_prompt to include person/figure exclusion terms for background-only intent (belt; 8.3 adds the code-side suspenders).
+- [x] Task 4 — Gate artifact exposure (AC: 7)
+  - [x] Add `"cast": sh.get("cast", [])` to the scenario serializer in `run_service.get_stage_artifacts` (`run_service.py:83-100`); extend its test (`tests/api/` or `tests/services/` — follow wherever `get_stage_artifacts` is currently covered).
+- [x] Task 5 — Prompt rollout per policy (AC: 8)
+  - [x] Seed: `uv run python scripts/migrate_prompts.py --label candidate --source prompts/scenario`.
+  - [x] Golden-set gate: `uv run python scripts/eval_prompts.py --label candidate --baseline production`; record the verdict in Dev Agent Record. Note: the judge axes don't score cast correctness — additionally hand-inspect one candidate-label SCP-049 scenario for (a) empty-cast environment shots, (b) no entity descriptions in image_prompt, (c) sane placement values, (d) pose values ∈ {standing, sitting} used with plausible composition intent (not sitting-everywhere / standing-everywhere-including-interview-scenes), and record findings.
+  - [x] Do not move the `production` label; do not edit prompts in the Langfuse UI (policy rules 2/5).
+- [x] Task 6 — Tests + regression (AC: 9, 10)
+  - [x] `tests/pipeline/nodes/test_scenario_chain.py`: `parse_cast` table tests + `build_scenes` cast attach/merge/legacy tests.
+  - [x] Update `tests/stubs/fakes.py` / any scene-dict fixtures that build `ShotData` literals to include `cast` (TypedDicts don't enforce at runtime, but fixtures should model the real contract; grep for `"character_path"` in tests to find shot-literal builders).
+  - [x] Full suite: `uv run pytest -q` green; confirm zero diffs under `src/yt_flow/pipeline/nodes/image.py` / `video.py`.
+
+### Review Findings
+
+- [x] [Review][Patch] Candidate prompt still fails the cast/background-only contract [prompts/scenario/visual_breakdown.md:149]
+- [x] [Review][Patch] 8.1 prompt claims current image-stage enforcement even though AC9 forbids image changes [prompts/scenario/visual_breakdown.md:218]
+- [x] [Review][Patch] 8.2 image/config/workflow changes are mixed into the 8.1 review range [src/yt_flow/pipeline/nodes/image.py:35]
+- [x] [Review][Patch] 8.2 character-card pipeline code is mixed into the 8.1 review range [scripts/seed_stock_cast.py:1]
+- [x] [Review][Patch] Anchorless ComfyUI card generation can submit a placeholder LoadImage node [src/yt_flow/services/character_image_provider.py:101]
+- [x] [Review][Patch] Qwen card provider path cannot satisfy the new alpha-sprite requirement [src/yt_flow/services/character_service.py:635]
+- [x] [Review][Patch] Descriptor card generation continues side/back angles without a front identity anchor [src/yt_flow/services/character_service.py:681]
+- [x] [Review][Patch] Stock card seeding completion checks ignore missing or corrupt files [scripts/seed_stock_cast.py:35]
+- [x] [Review][Patch] Concurrent card seeding can race unique constraints [src/yt_flow/services/character_service.py:225]
+- [x] [Review][Patch] A single --anchor can be reused across every stock cast member [scripts/seed_stock_cast.py:94]
+- [x] [Review][Patch] Seeder/service accept pose values outside the closed cast enum [scripts/seed_stock_cast.py:122]
+- [x] [Review][Patch] Alpha check can accept malformed PNG bytes [src/yt_flow/domain/png.py:10]
 
 ## Dev Notes
 
@@ -168,19 +183,44 @@ Minimal diff: one TypedDict + one tuple constant, one pure parser function, one 
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story.
+
 ### Debug Log References
+
+- Golden-set gate run (joint candidate-vs-production): **FAIL** — `SCP-049/SCP-173/SCP-096: item failure` on both sides in the joint run. Isolating with `--label production` alone showed the baseline itself failing 2/3 items on stages this story never touches: `SCP-173: scenario/review response truncated (finish_reason=length)`, `SCP-096: Expecting ',' delimiter: line 45 column 90 (char 4323)` (JSON parse failure, pre-`visual_breakdown`). `--label candidate` alone succeeded on all 3 items (atmosphere/narrative_coherence/article_fidelity scores recorded in Langfuse dataset run `golden-eval-candidate - 2026-07-07T13:03:52Z`). Per PROMPT_POLICY.md's strict criteria (no item may fail on either label) the gate is FAIL, but the failures are baseline flakiness in `research`/`review` stages this story does not touch, not a regression this story introduced — captured here per AC8, not fixed (config.py / other stages are out of this story's scope).
+- Hand inspection (Task 5, AC:8) across 3 live scenario_node runs (SCP-049 ×2, SCP-173 ×1, using `prompt_variant="B"` against the seeded `candidate` label) surfaced a real prompt-compliance gap: **0/125 shots across all 3 successful runs got a non-empty `cast`** — the LLM (deepseek-v4-flash) kept describing the entity/D-class/researchers directly in `image_prompt` (e.g. "a gaunt man with a shaved head... torn orange jumpsuit", "SCP-173" appearing 17 times as a bare token in one run) instead of using `cast` entries, despite the rewritten rules explicitly forbidding this. Attempted one round of prompt strengthening (added a top-of-document "CRITICAL RULE" callout + a concrete BAD→GOOD worked example, re-seeded as `candidate`) — re-tested and the gap persisted identically (0/56 cast-populated shots on SCP-173 post-strengthening). Several other runs failed on `visual_breakdown`/`review` response truncation or a 1:1 count mismatch — all pre-existing failure modes (structural validation / `max_tokens`), not new ones; truncation frequency may be modestly higher because the cast schema lengthens `visual_breakdown`'s output per shot, but `deepseek_max_tokens` is in `config.py`, which AC9 forbids touching in this story.
+- Code review patch (2026-07-07): removed remaining body-shaped shadow/person-implied prompt examples, added explicit JSON few-shot examples with populated `cast`, and removed the false claim that the image stage already enforces person exclusions. Re-seeded `scenario/visual_breakdown` as a fresh `candidate` via `uv run python scripts/migrate_prompts.py --label candidate --source prompts/scenario` (`created: visual_breakdown`). A post-patch `uv run python scripts/eval_prompts.py --label candidate --baseline production` attempt was manually interrupted after more than 8 minutes without a final verdict; no post-patch hand-inspection verdict is claimed here.
+- Conclusion recorded for Jay (see Saved Questions #4, new): the code contract (domain types, parser, serializer, tests) is complete and correct per AC1-2/4-7/9-10, and the prompt document meets every literal AC3 sub-requirement — but the candidate prompt does not yet reliably get the LLM to use `cast` instead of prose. Further prompt iteration (few-shot examples, restructuring, or a different model/temperature) is needed before promotion; this is explicitly out of this story's DoD (AC8) and is not a regression against the old `entity_visible` prompt, which had the same category of enum-violation risk (D1) this story's lenient parser already absorbs safely — `cast=[]` degrading gracefully to background-only downstream is the intended fallback either way.
 
 ### Completion Notes List
 
+- Domain types (`CastMember`/`CastPosition`/`CastDepth`/`CastPose`/`STOCK_CAST_KEYS`), `ShotData.cast`, drift guard, `parse_cast` lenient normalizer, `build_scenes` wiring (incl. merge/backfill semantics), `visual_breakdown_step`'s `scp_id`/`stock_cast_keys` threading, the scenario artifact serializer's `cast` field, and the full `visual_breakdown.md` prompt rewrite are all implemented and unit-tested (AC1-2, AC4-7, AC9-10 — `uv run pytest -q` full suite green, 753 passed / 1 pre-existing skip).
+- AC8 (prompt rollout): candidate seeded, golden-set gate run, hand inspection done — see Debug Log References above for the original FAIL verdict and cast-compliance finding. Code review strengthened and re-seeded the candidate again; production label was not moved (per policy), and the post-review eval attempt was interrupted before verdict.
+- **Concurrent-edit collision during this session**: a separate parallel session was actively implementing Story 5.20 (cc-attribution-credits) in the same working tree and, mid-session, overwrote `src/yt_flow/domain/state.py`, `tests/domain/test_state_imports.py`, `src/yt_flow/services/run_service.py`, `tests/api/test_stage_artifacts.py`, and `tests/pipeline/nodes/test_video.py` with a version that predated this story's edits, dropping the `cast` additions. Detected via an unrelated `ImportError: cannot import name 'CastDepth'` during hand inspection; re-applied this story's diffs on top of the then-current (5.20-inclusive) file contents and re-ran the full targeted test set to confirm both stories' changes coexist correctly. No 5.20 content was reverted or lost. Flagged to Jay mid-session; instructed to continue rather than pause or move to a worktree.
+
 ### File List
+
+- `src/yt_flow/domain/state.py` — `CastPosition`/`CastDepth`/`CastPose`/`CastMember`/`STOCK_CAST_KEYS`; `ShotData.cast`.
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` — `parse_cast`, `_normalize_card_key`, `build_scenes` wiring, `visual_breakdown_step` gains `scp_id` param + `stock_cast_keys` variable.
+- `src/yt_flow/pipeline/nodes/scenario.py` — thread `scp_id` into the `visual_breakdown_step` call site.
+- `src/yt_flow/services/run_service.py` — scenario artifact serializer emits `"cast": sh.get("cast", [])`.
+- `prompts/scenario/visual_breakdown.md` — cast/placement/pose contract replaces `entity_visible`; background-only rules; CRITICAL RULE callout + worked example (post-hand-inspection strengthening pass).
+- `tests/domain/test_state_imports.py` — `CastMember` + `ShotData.cast` drift-guard coverage.
+- `tests/pipeline/nodes/test_scenario_chain.py` — `parse_cast` table tests, `build_scenes` cast attach/merge/backfill tests, `visual_breakdown_step` signature + placeholder updates.
+- `tests/pipeline/nodes/test_scenario.py` — `fake_visual` signatures updated for the new `scp_id` leading param.
+- `tests/api/test_stage_artifacts.py` — `cast` fixture param + 2 new tests (present / pre-8.1-checkpoint-default).
+- `tests/api/test_stages.py`, `tests/pipeline/nodes/test_video.py`, `tests/pipeline/test_stub_profile_smoke.py`, `tests/services/test_character_angle_selector.py` — shot-literal fixtures gain `"cast": []` to model the real `ShotData` contract.
 
 ## Change Log
 
 - 2026-07-06: Story created from Epic 8 architecture decision (E2E baseline run 272b05a4). Owns the Epic 8 `CastMember` interface definition.
 - 2026-07-06: pose dimension added per Jay — industry-standard sprite-library tiering. `CastMember` gains `pose: Literal["standing","sitting"]` (lenient parse → `"standing"`); prompt contract teaches pose with composition intent; drift guard/tests extended. Free-text special poses stay out of the enum — Story 8.4 (new) owns the optional `pose_hint` field and on-demand card provisioning.
+- 2026-07-07: Implemented (this session). Domain types, lenient parser, prompt rewrite, serializer exposure, and full test coverage delivered per AC1-2/4-7/9-10. AC8 (rollout) completed to spec: candidate seeded, golden-set gate run (FAIL — baseline flakiness in untouched stages, not a regression), hand-inspection done and a real cast-compliance gap documented for Jay. Status → review.
+- 2026-07-07: Code review findings patched. Prompt examples strengthened with concrete cast-populated JSON few-shots, contradictory image-stage enforcement text removed, scenario candidate re-seeded; 8.2 review spillover findings fixed separately and kept out of the 8.1 commit boundary.
 
 ## Saved Questions / Clarifications
 
 1. **Promotion timing.** AC8 deliberately stops at `candidate` + eval evidence; until Jay promotes, live runs emit `cast=[]` everywhere and 8.3 (if merged first) renders background-only videos. If Jay wants promotion inside this story, the golden-set gate must pass first and the judge axes say nothing about cast quality — hand inspection (Task 5) is the real check.
 2. **Derived-entity descriptors.** The prompt can emit `card_key: "SCP-049-2"`, but nothing in this story guarantees a card exists for it — 8.2 provides the seeding mechanism and 8.3 skips-with-warning at composition. Whether derived-entity cards should be auto-provisioned mid-run (post-scenario hook) is an open product question recorded in 8.2/8.3 as well.
 3. **`characters_present` (scene-level, structure stage) vs per-shot cast** — left untouched as LLM context. If they conflict, cast wins (it's the machine-read contract). Consider unifying in a later prompt iteration, not here.
+4. **Cast-compliance gap (new, from hand inspection).** Across every successful candidate-label run tested (SCP-049 ×2, SCP-173 ×1 — 125 shots total), the LLM never populated a `cast` entry and kept describing the entity/D-class/researchers directly in `image_prompt`, including bare "SCP-173" tokens. One round of prompt strengthening (top-of-doc CRITICAL RULE + worked example) did not change this. The code-side contract (parser, serializer, tests) is correct and ships regardless — a `cast=[]` always degrades safely to today's background-only-downstream behavior — but the prompt itself needs another iteration (stronger few-shot demonstration, restructuring so cast rules aren't competing with the unchanged 8-slot/Visual-Vocabulary sections' implicit modeling of dense subject prose, or a stricter enforcement pass) before Jay should consider promoting `candidate` to `production`. Recommend a short, focused prompt-only follow-up (no code changes) before 8.3 depends on real cast data in production traffic.
