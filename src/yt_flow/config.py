@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +56,11 @@ class Settings(BaseSettings):
     qwen_tts_endpoint: str = "https://dashscope-intl.aliyuncs.com"
     qwen_tts_model: str = "qwen3-tts-flash"
     qwen_tts_voice: str = "Cherry"
+    qwen_tts_clone_enabled: bool = False
+    qwen_tts_clone_model: str = "qwen3-tts-vc-2026-01-22"
+    qwen_tts_clone_voice_path: str = "data/voices/sutak.mp3"
+    qwen_tts_clone_voice_id: str = ""
+    qwen_tts_speed: float = Field(1.2, ge=0.5, le=2.0)
     qwen_tts_mock: bool = False
 
     # Forced alignment for subtitle generation (Story 1.8). Strategy is config-driven;

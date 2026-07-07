@@ -13,6 +13,7 @@ duration and whitespace tokenization. Story 1.8 owns forced alignment and must
 not treat these as alignment-quality.
 """
 
+import asyncio
 import contextlib
 import time
 import wave
@@ -58,7 +59,7 @@ def _wav_duration(path: Path) -> float:
         raise ValueError(f"audio at {path} is not a readable WAV (unexpected format?): {exc}") from exc
 
 
-def _write_mock_wav(path: Path, narration: str) -> None:
+def _write_mock_wav(path: Path, narration: str, *, speed: float = 1.0) -> None:
     """Write a deterministic silent WAV whose length scales with word count.
 
     Mock mode still produces a real, readable file so downstream file-existence
@@ -67,12 +68,42 @@ def _write_mock_wav(path: Path, narration: str) -> None:
     """
     words = max(len(narration.split()), 1)
     framerate = 8000
-    nframes = max(int(framerate * _MOCK_SECONDS_PER_WORD * words), 1)
+    nframes = max(int(framerate * _MOCK_SECONDS_PER_WORD * words / speed), 1)
     with contextlib.closing(wave.open(str(path), "wb")) as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(framerate)
         w.writeframes(b"\x00\x00" * nframes)
+
+
+def _voice_config(s: Settings, *, require_voice_id: bool = True) -> tuple[str, str, str]:
+    if s.qwen_tts_clone_enabled:
+        voice_id = s.qwen_tts_clone_voice_id.strip()
+        if require_voice_id and not voice_id:
+            raise RuntimeError(
+                "qwen_tts_clone_enabled but YTFLOW_QWEN_TTS_CLONE_VOICE_ID is empty "
+                "-- run scripts/seed_voice_clone.py"
+            )
+        return s.qwen_tts_clone_model, voice_id, "clone"
+    return s.qwen_tts_model, s.qwen_tts_voice, "stock"
+
+
+async def _run_ffmpeg(*args: str) -> tuple[int, str]:
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-loglevel", "error", *args,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    return proc.returncode, stderr.decode("utf-8", errors="replace")
+
+
+async def _apply_speed(src: Path, dest: Path, speed: float) -> None:
+    returncode, stderr = await _run_ffmpeg(
+        "-y", "-i", str(src), "-filter:a", f"atempo={speed:g}", "-c:a", "pcm_s16le", str(dest),
+    )
+    if returncode != 0:
+        raise RuntimeError(f"ffmpeg atempo failed ({returncode}): {stderr[-500:]}")
 
 
 async def _synthesize(text: str, s: Settings, path: Path) -> None:
@@ -86,12 +117,12 @@ async def _synthesize(text: str, s: Settings, path: Path) -> None:
     """
     if not s.qwen_tts_api_key:
         raise RuntimeError("YTFLOW_QWEN_TTS_API_KEY is not configured")
+    model, voice, _ = _voice_config(s)
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
         resp = await client.post(
             f"{s.qwen_tts_endpoint.rstrip('/')}{_GENERATION_PATH}",
             headers={"Authorization": f"Bearer {s.qwen_tts_api_key}"},
-            json={"model": s.qwen_tts_model,
-                  "input": {"text": text, "voice": s.qwen_tts_voice}},
+            json={"model": model, "input": {"text": text, "voice": voice}},
         )
         resp.raise_for_status()
         audio = resp.json().get("output", {}).get("audio", {})
@@ -122,7 +153,17 @@ def _provisional_timings(narration: str, duration: float) -> list[WordTiming]:
     return timings
 
 
-def _record_trace(*, run_id, model, voice, scene_count, latency_ms, per_scene=None, error=None) -> None:
+def _record_trace(
+    *,
+    run_id,
+    model,
+    voice,
+    voice_mode,
+    scene_count,
+    latency_ms,
+    per_scene=None,
+    error=None,
+) -> None:
     """Best-effort enrich the current ``tts`` span. [AD-10 — tracing is non-fatal]
 
     Never logs the API key or raw audio bytes — only metrics and identifiers.
@@ -135,6 +176,7 @@ def _record_trace(*, run_id, model, voice, scene_count, latency_ms, per_scene=No
                 "run_id": run_id,
                 "model": model,
                 "voice": voice,
+                "voice_mode": voice_mode,
                 "scene_count": scene_count,
                 "latency_ms": latency_ms,
                 **({"per_scene_ms": per_scene} if per_scene is not None else {}),
@@ -150,8 +192,15 @@ async def tts_node(state: PipelineState) -> dict:
     run_id = state.get("run_id", "?")
     t0 = time.perf_counter()
     s: Settings | None = None
+    model = voice = voice_mode = "?"
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
+        model, voice, voice_mode = _voice_config(s, require_voice_id=False)
+        if not s.qwen_tts_mock and s.qwen_tts_clone_enabled and not voice:
+            raise RuntimeError(
+                "qwen_tts_clone_enabled but YTFLOW_QWEN_TTS_CLONE_VOICE_ID is empty "
+                "-- run scripts/seed_voice_clone.py"
+            )
         audio_dir = Path(s.workspace_path) / run_id / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,10 +210,25 @@ async def tts_node(state: PipelineState) -> dict:
             t_scene = time.perf_counter()
             path = audio_dir / f"scene_{scene['scene_num']:03d}.wav"
             if s.qwen_tts_mock:
-                _write_mock_wav(path, scene["narration"])
+                _write_mock_wav(path, scene["narration"], speed=s.qwen_tts_speed)
             else:
                 # A mid-scene failure fails the whole stage — no partial checkpoint. [NFR-8]
-                await _synthesize(scene["narration"], s, path)
+                synth_path = path
+                if s.qwen_tts_speed != 1.0:
+                    synth_path = path.with_name(f"{path.stem}.src{path.suffix}")
+                await _synthesize(scene["narration"], s, synth_path)
+                if synth_path != path:
+                    with contextlib.suppress(FileNotFoundError):
+                        path.unlink()
+                    try:
+                        await _apply_speed(synth_path, path, s.qwen_tts_speed)
+                    except Exception:
+                        with contextlib.suppress(FileNotFoundError):
+                            path.unlink()
+                        raise
+                    finally:
+                        with contextlib.suppress(FileNotFoundError):
+                            synth_path.unlink()
             duration = _wav_duration(path)
             new_scenes.append({
                 **scene,
@@ -174,11 +238,10 @@ async def tts_node(state: PipelineState) -> dict:
             })
             per_scene_ms.append(_ms(t_scene))
 
-        _record_trace(run_id=run_id, model=s.qwen_tts_model, voice=s.qwen_tts_voice,
+        _record_trace(run_id=run_id, model=model, voice=voice, voice_mode=voice_mode,
                       scene_count=len(new_scenes), latency_ms=_ms(t0), per_scene=per_scene_ms)
         return {"scenes": new_scenes, "current_stage": "tts", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
-        _record_trace(run_id=run_id, model=s.qwen_tts_model if s else "?",
-                      voice=s.qwen_tts_voice if s else "?",
+        _record_trace(run_id=run_id, model=model, voice=voice, voice_mode=voice_mode,
                       scene_count=len(state.get("scenes", [])), latency_ms=_ms(t0), error=exc)
         return {"current_stage": "tts", "error": f"stage=tts run_id={run_id}: {exc}"}
