@@ -213,3 +213,8 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 - Test fixtures (`_fake_vqd_html`) are minimal/synthetic vs real DDG markup, and no automated test catches future DDG markup drift [tests/services/test_image_search.py] — established project test pattern; live verification is this story's manual process, not the automated suite.
 - No test coverage for non-5xx failure modes (timeouts, malformed JSON, missing `results` key) [tests/services/test_image_search.py] — not required by AC5 (exception-type/message preservation only), pre-existing gap.
 - DDG anti-bot/fingerprint risk on the new GET path is undetected and untested [src/yt_flow/services/image_search.py] — inherent third-party scraping risk, story already frames re-breakage probability as constant.
+
+## Deferred from: code review of 5-20-cc-attribution-credits (2026-07-07)
+
+- **`scp_id` defaulting to `""` via `state.get("scp_id", "")` would produce a dead wiki URL and blank attribution text if ever missing** [src/yt_flow/pipeline/nodes/video.py `video_node`] — pre-existing pattern from Story 1.13's angle-selector code (same expression, unchanged by this diff); no known caller path leaves `scp_id` unset.
+- **`run_id` is interpolated directly into a filesystem path with no format validation** [src/yt_flow/services/run_service.py `get_stage_artifacts`/`_initial_state`] — pre-existing pattern used identically throughout `run_service.py` (e.g. the scenario-artifact path); `run_id` is server-generated, not attacker-controlled.
