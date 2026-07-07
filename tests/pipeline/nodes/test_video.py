@@ -358,11 +358,11 @@ async def test_join_with_fades_per_segment_fade_points(monkeypatch, tmp_path):
 
     fc = captured[0]
     # segment 0: fade-out only, starting at 3.0 - 0.5 = 2.5
-    assert "[0:v]fade=t=out:st=2.500:d=0.5[v0]" in fc
+    assert "[0:v]fade=t=out:st=2.500:d=0.500[v0]" in fc
     # segment 1: fade-in at 0, fade-out at 2.0 - 0.5 = 1.5
-    assert "[1:v]fade=t=in:st=0:d=0.5,fade=t=out:st=1.500:d=0.5[v1]" in fc
+    assert "[1:v]fade=t=in:st=0:d=0.500,fade=t=out:st=1.500:d=0.500[v1]" in fc
     # segment 2: fade-in only, no fade-out (last segment)
-    assert "[2:v]fade=t=in:st=0:d=0.5[v2]" in fc
+    assert "[2:v]fade=t=in:st=0:d=0.500[v2]" in fc
     assert "[v0][0:a][v1][1:a][v2][2:a]concat=n=3:v=1:a=1[vout][aout]" in fc
 
 
@@ -396,7 +396,26 @@ async def test_join_with_fades_clamps_fade_to_segment_duration(monkeypatch, tmp_
 
     await _join_with_fades(segs, tmp_path / "out.mp4")
 
-    assert "fade=t=out:st=0.000:d=0.2" in captured[0]
+    assert "fade=t=out:st=0.000:d=0.200" in captured[0]
+
+
+async def test_join_with_fades_overlapping_windows_dont_double_up(monkeypatch, tmp_path):
+    """A segment shorter than fade_in+fade_out gets a fade_out clamped against the
+    remaining duration AFTER fade_in, not just against dur — so the two windows
+    never overlap on the same segment."""
+    segs = [
+        (tmp_path / "s0.mp4", 2.0, 0.0, FADE_DURATION),
+        (tmp_path / "s1.mp4", 0.3, FADE_DURATION, FADE_DURATION),
+        (tmp_path / "s2.mp4", 2.0, FADE_DURATION, 0.0),
+    ]
+    for p, *_ in segs:
+        p.write_bytes(b"FAKE")
+    captured = _capture_filter(monkeypatch)
+
+    await _join_with_fades(segs, tmp_path / "out.mp4")
+
+    # segment 1: dur=0.3, fade_in clamped to 0.3, leaving 0 for fade_out (skipped).
+    assert "[1:v]fade=t=in:st=0:d=0.300[v1]" in captured[0]
 
 
 async def test_join_with_fades_fail_raises(monkeypatch, tmp_path):
@@ -1749,11 +1768,13 @@ async def test_black_hold_inserted_at_every_card_less_boundary(monkeypatch, tmp_
 
     assert out.get("error") is None
     assert not _output_files(calls, "card_")
-    assert _output_files(calls, "hold_") == [str(tmp_path / "run-001" / "hold_shared.mp4")]
+    # ffmpeg renders to a .tmp.mp4 path, then _compose_black_hold renames it into
+    # place atomically — the captured ffmpeg call's own output arg is the tmp name.
+    assert _output_files(calls, "hold_") == [str(tmp_path / "run-001" / "hold_shared.tmp.mp4")]
 
     join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
     hold_inputs = [a for a in join_args if isinstance(a, str) and "/hold_" in a]
-    assert len(hold_inputs) == 2  # one per card-less boundary, same shared file
+    assert hold_inputs == [str(tmp_path / "run-001" / "hold_shared.mp4")] * 2  # final (renamed) path, shared file
 
 
 async def test_black_hold_per_boundary_file_when_sound_design_enabled(

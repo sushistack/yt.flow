@@ -710,6 +710,10 @@ async def _compose_chapter_card(
         *audio_input,
         "-vf", vf,
         *audio_filter_args,
+        # Explicit -map: without it, a real ambient .mp3 (unlike anullsrc) could
+        # carry an embedded cover-art video stream that hijacks ffmpeg's default
+        # video-stream auto-selection away from the color background.
+        "-map", "0:v", "-map", "1:a",
         "-t", f"{duration:.3f}",
         *_OUTPUT_ARGS,
         str(card_path),
@@ -746,20 +750,26 @@ async def _compose_black_hold(
     audio_input, audio_filter_args = _card_hold_audio_input(
         mood, sound_design_enabled=sound_design_enabled,
     )
+    # Render to a tmp path and rename into place atomically: a crash mid-render
+    # must never leave a truncated file at hold_path for the exists() cache
+    # check above to pick up on a retried/resumed run.
+    tmp_path = hold_path.with_suffix(".tmp.mp4")
     rc, stderr = await _run_ffmpeg(
         "-y",
         "-f", "lavfi",
         "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={BLACK_HOLD_DURATION}",
         *audio_input,
         *audio_filter_args,
+        "-map", "0:v", "-map", "1:a",
         "-t", f"{BLACK_HOLD_DURATION:.3f}",
         *_OUTPUT_ARGS,
-        str(hold_path),
+        str(tmp_path),
     )
     if rc != 0:
         raise RuntimeError(f"FFmpeg black hold {index} failed (rc={rc}): {stderr[-500:]}")
-    if not hold_path.exists():
-        raise RuntimeError(f"FFmpeg black hold {index}: output not created: {hold_path}")
+    if not tmp_path.exists():
+        raise RuntimeError(f"FFmpeg black hold {index}: output not created: {tmp_path}")
+    tmp_path.replace(hold_path)
     return hold_path
 
 
@@ -789,13 +799,16 @@ async def _join_with_fades(
     v_parts: list[str] = []
     concat_labels: list[str] = []
     for i, (_, dur, fade_in, fade_out) in enumerate(segments):
+        # Clamp fade_out against the remaining duration after fade_in (not just
+        # against dur) so a segment shorter than fade_in+fade_out can't get
+        # overlapping fade-in/fade-out windows on its own frames.
         fade_in = min(fade_in, dur)
-        fade_out = min(fade_out, dur)
+        fade_out = min(fade_out, dur - fade_in)
         fades = []
         if fade_in:
-            fades.append(f"fade=t=in:st=0:d={fade_in}")
+            fades.append(f"fade=t=in:st=0:d={fade_in:.3f}")
         if fade_out:
-            fades.append(f"fade=t=out:st={dur - fade_out:.3f}:d={fade_out}")
+            fades.append(f"fade=t=out:st={dur - fade_out:.3f}:d={fade_out:.3f}")
         if fades:
             v_label = f"[v{i}]"
             v_parts.append(f"[{i}:v]{','.join(fades)}{v_label}")
