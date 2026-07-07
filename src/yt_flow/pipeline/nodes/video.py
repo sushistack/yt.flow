@@ -9,6 +9,7 @@ Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
 
 import asyncio
+import json
 import logging
 import shutil
 import time
@@ -84,6 +85,11 @@ CARD_FONT_PATH = Path("data/fonts/Pretendard-Bold.otf")
 # as the ffmpeg `subtitles=` filter's `fontsdir` so libass resolves Fontname from
 # this dir first, never depending on system-installed fonts.
 SUBTITLE_FONT_DIR = Path("data/fonts")
+
+# ── CC BY-SA attribution constants (Story 5.20) ───────────────────────────────
+WIKI_BASE_URL = "https://scp-wiki.wikidot.com"
+CC_LICENSE_URL = "https://creativecommons.org/licenses/by-sa/3.0/"
+SCP_DATA_PATH = Path("data/scps.json")
 
 # ── Character idle-motion constants (Story 1.9c) ──────────────────────────────
 # Sway = larger/slower horizontal drift; bob = subtle/faster vertical breathing.
@@ -404,6 +410,85 @@ def _chapter_card_duration(value: float) -> float:
     return min(MAX_CARD_DURATION, max(MIN_CARD_DURATION, float(value)))
 
 
+def _scp_wiki_slug(scp_id: str) -> str:
+    """Wikidot slug: lowercase, hyphenated, no zero-padding. [Story 5.20]
+
+    Deterministic from scp_id alone — confirmed live against the real wiki by
+    Story 5.10's ScpWikiImageFetch. No HTTP call needed to know the page URL.
+    """
+    return scp_id.strip().lower()
+
+
+_scp_nicknames: dict[str, str] | None = None  # ponytail: lazy-loaded cache; read-only reference data
+
+
+def _scp_nickname(scp_id: str) -> str | None:
+    """Best-effort nickname lookup from data/scps.json, cached after first call.
+
+    Tolerant: a missing/corrupt file or unknown scp_id just means no nickname
+    (AC:3) — never raises.
+    """
+    global _scp_nicknames
+    if _scp_nicknames is None:
+        try:
+            entries = json.loads(SCP_DATA_PATH.read_text(encoding="utf-8"))
+            # per-entry tolerant: one entry missing "id"/"nickname" must not
+            # discard every other entry's lookup (AC:3).
+            _scp_nicknames = {e["id"]: e["nickname"] for e in entries if "id" in e and "nickname" in e}
+        except Exception as exc:  # noqa: BLE001 — tolerant lookup (AC:3)
+            logger.warning("SCP nickname lookup unavailable: %s", exc)
+            _scp_nicknames = {}
+    return _scp_nicknames.get(scp_id)
+
+
+def build_description_text(
+    scp_id: str,
+    *,
+    scp_nickname: str | None = None,
+    wiki_page_url: str | None = None,
+) -> str:
+    """Build the YouTube description.txt block. [Story 5.20 AC:3,4]
+
+    The image-source line reuses the same deterministic wiki URL: whether the
+    run's reference image actually came from the wiki or fell back to DDG, the
+    article itself is CC BY-SA either way (per AC:4). Author-byline extraction
+    is deliberately out of scope — it would require fetching the wiki page at
+    video time, which the story's own guardrails rule out; the page link alone
+    is the documented-sufficient fallback (AC:3).
+    """
+    url = wiki_page_url or f"{WIKI_BASE_URL}/{_scp_wiki_slug(scp_id)}"
+    title = f"[{scp_id}] {scp_nickname} — SCP Foundation Wiki" if scp_nickname else f"[{scp_id}] — SCP Foundation Wiki"
+    return (
+        f"{title}\n"
+        f"{url}\n"
+        "\n"
+        "Licensed under CC BY-SA 3.0\n"
+        f"{CC_LICENSE_URL}\n"
+        "\n"
+        f'This video is a derivative work based on "{scp_id}" from the SCP Foundation Wiki.\n'
+        "\n"
+        "---\n"
+        f"Image source: {url}\n"
+    )
+
+
+async def _write_description_artifact(run_dir: Path, scp_id: str) -> Path | None:
+    """Write description.txt to the run directory. Non-fatal (AD-10, AC:5).
+
+    Async for consistency with video_node's other await'd calls; the actual I/O
+    (mkdir + write_text) is synchronous — same seam _card_font()/_settings() use.
+    """
+    try:
+        text = build_description_text(scp_id, scp_nickname=_scp_nickname(scp_id))
+        run_dir.mkdir(parents=True, exist_ok=True)
+        path = run_dir / "description.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+    except Exception as exc:  # noqa: BLE001 — AD-10: attribution never fails the run
+        logger.warning("description.txt write failed: %s", exc)
+        return None
+
+
 def _ms(t0: float) -> int:
     return int((time.perf_counter() - t0) * 1000)
 
@@ -422,6 +507,8 @@ def _record_trace(
     chapter_cards_enabled: bool = False,
     chapter_card_duration: float | None = None,
     chapter_card_count: int = 0,
+    ending_credit: bool = False,
+    ending_credit_error: str | None = None,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -446,6 +533,8 @@ def _record_trace(
                 "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
                 "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
             },
+            "ending_credit": ending_credit,
+            "ending_credit_error": ending_credit_error,
             **({"error": repr(error)} if error is not None else {}),
         }
         # Story 1.13: angle selection tracing metadata
@@ -771,6 +860,35 @@ async def _compose_chapter_card(
     return card_path
 
 
+async def _compose_ending_credit(
+    scp_id: str,
+    out_dir: Path,
+    *,
+    mood: str | None = None,
+    post_fx_enabled: bool = False,
+    sound_design_enabled: bool = False,
+) -> Path:
+    """Render the CC BY-SA attribution ending card. [Story 5.20 AC:2]
+
+    Thin wrapper over _compose_chapter_card — same renderer, distinct output
+    filename (credit_ending.mp4, never card_NNN.mp4) so it can never collide
+    with a chapter card. Raises on failure, same as _compose_chapter_card;
+    video_node's caller decides how to log/report it (AC:5 non-fatal handling
+    needs the run_id, which this function has no reason to know).
+    """
+    slug = _scp_wiki_slug(scp_id)
+    label = f"Based on '{scp_id}' from the SCP Foundation Wiki"
+    kicker = f"CC BY-SA 3.0 — scp-wiki.wikidot.com/{slug}"
+    card_path = await _compose_chapter_card(
+        label, 0, out_dir, MAX_CARD_DURATION,
+        kicker=kicker, mood=mood, post_fx_enabled=post_fx_enabled,
+        sound_design_enabled=sound_design_enabled,
+    )
+    ending_path = out_dir / "credit_ending.mp4"
+    card_path.replace(ending_path)
+    return ending_path
+
+
 async def _compose_black_hold(
     out_dir: Path,
     index: int,
@@ -903,6 +1021,7 @@ async def video_node(state: PipelineState) -> dict:
         if not scenes:  # explicit guard — don't rely on the join assert (stripped under -O)
             raise ValueError("no scenes to render")
         s = _settings()
+        scp_id = state.get("scp_id", "")
         _validate_scene_assets(scenes, sound_design_enabled=s.sound_design_enabled)
 
         # ── Story 1.13: LLM angle pre-selection ───────────────────────────
@@ -910,7 +1029,6 @@ async def video_node(state: PipelineState) -> dict:
         if _angle_selector is not None:
             t_angle = time.perf_counter()
             try:
-                scp_id = state.get("scp_id", "")
                 selections = await _angle_selector(scp_id, scenes)
                 if selections:
                     angles_selected: list[str] = []
@@ -967,14 +1085,46 @@ async def video_node(state: PipelineState) -> dict:
         card_duration = _chapter_card_duration(s.chapter_card_duration_sec)
         card_count = 0
 
+        # CC BY-SA attribution (Story 5.20): compute up front so both the single-
+        # and multi-scene join paths know whether to append it as the true last
+        # segment. Composition failure is non-fatal (AC:5) — the run's own
+        # try/except records the message, ending_credit_path stays None, and the
+        # join proceeds without it.
+        cc_attribution = s.cc_attribution
+        ending_credit_path: Path | None = None
+        ending_credit_error: str | None = None
+        if cc_attribution:
+            try:
+                ending_credit_path = await _compose_ending_credit(
+                    scp_id, run_dir, mood=scenes[-1].get("mood"),
+                    post_fx_enabled=s.post_fx_enabled,
+                    sound_design_enabled=s.sound_design_enabled,
+                )
+            except Exception as exc:  # noqa: BLE001 — AD-10: attribution never fails the run
+                logger.warning("Ending credit card failed for run %s: %s", run_id, exc)
+                ending_credit_error = str(exc)
+
         if len(segs) == 1:
-            segs[0].replace(output)  # replace: atomic overwrite, cross-platform
+            if ending_credit_path is not None:
+                await _join_with_fades(
+                    [
+                        (segs[0], segs_with_specs[0][1], 0.0, FADE_DURATION),
+                        (ending_credit_path, MAX_CARD_DURATION, 0.0, 0.0),
+                    ],
+                    output,
+                )
+            else:
+                segs[0].replace(output)  # replace: atomic overwrite, cross-platform
         else:  # 2+ scenes: dip-to-black fade+concat join (Story 5.16)
             last_idx = len(segs_with_specs) - 1
             join_segments: list[tuple[Path, float, float, float]] = []
             for i, (seg_path, duration, _, _) in enumerate(segs_with_specs):
                 fade_in = 0.0 if i == 0 else FADE_DURATION
-                fade_out = 0.0 if i == last_idx else FADE_DURATION
+                # The true final segment gets no fade-out (nothing follows it) —
+                # UNLESS the ending credit card is appended after it, in which
+                # case it must dip to black like any other internal boundary.
+                is_true_end = i == last_idx and ending_credit_path is None
+                fade_out = 0.0 if is_true_end else FADE_DURATION
                 join_segments.append((seg_path, duration, fade_in, fade_out))
                 if i == last_idx:
                     continue
@@ -1001,7 +1151,16 @@ async def video_node(state: PipelineState) -> dict:
                         sound_design_enabled=s.sound_design_enabled,
                     )
                     join_segments.append((hold_path, BLACK_HOLD_DURATION, 0.0, 0.0))
+            if ending_credit_path is not None:
+                # Self-fading, same contract as a chapter card (AC:2). Its actual
+                # rendered length is always MAX_CARD_DURATION (_compose_ending_credit
+                # never uses the configured card_duration), so the join must declare
+                # the same value it was rendered at.
+                join_segments.append((ending_credit_path, MAX_CARD_DURATION, 0.0, 0.0))
             await _join_with_fades(join_segments, output)
+
+        if cc_attribution:
+            await _write_description_artifact(run_dir, scp_id)
 
         effects_meta = [
             {
@@ -1023,8 +1182,13 @@ async def video_node(state: PipelineState) -> dict:
             chapter_cards_enabled=chapter_cards_enabled,
             chapter_card_duration=card_duration,
             chapter_card_count=card_count,
+            ending_credit=ending_credit_path is not None,
+            ending_credit_error=ending_credit_error,
         )
-        return {"current_stage": "video", "video_path": str(output), "error": None}
+        result = {"current_stage": "video", "video_path": str(output), "error": None}
+        if cc_attribution:
+            result["ending_credit_error"] = ending_credit_error
+        return result
 
     except Exception as exc:  # noqa: BLE001
         _record_trace(

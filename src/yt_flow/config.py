@@ -122,3 +122,8 @@ class Settings(BaseSettings):
     # coupled to language — swapping this without picking a matching voice
     # would silently mis-synthesize; no mapping exists yet.
     content_language: str = "ko"
+
+    # CC BY-SA attribution (Story 5.20): ending credit card + description.txt for
+    # every monetized SCP video. Off for dry-runs/non-SCP content where the license
+    # doesn't apply — skips both outputs entirely, no HTTP calls, no file writes.
+    cc_attribution: bool = True

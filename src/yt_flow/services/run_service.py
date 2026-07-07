@@ -134,7 +134,15 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     video_path = values.get("video_path")
     if video_path is None:
         raise LookupError("Stage not reached")
-    return {"stage": "video", "video_path": video_path}
+    result: dict = {"stage": "video", "video_path": video_path}
+    # ending_credit_error is only present in the checkpoint when cc_attribution
+    # was on for this run (Story 5.20 AC:6) — its presence, not its value, is
+    # the attempted/not-attempted signal.
+    if "ending_credit_error" in values:
+        result["ending_credit"] = values["ending_credit_error"] is None
+        result["ending_credit_error"] = values["ending_credit_error"]
+        result["description_txt_path"] = str(Path(_settings().workspace_path) / run_id / "description.txt")
+    return result
 
 # Injected compiled pipeline graph + per-run RunnableConfig (thread_id) for resume.
 _graph: Any = None

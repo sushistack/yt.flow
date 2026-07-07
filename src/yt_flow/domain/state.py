@@ -8,7 +8,7 @@ These are TypedDicts, not Pydantic models, because LangGraph state is the
 source of truth and must stay plain JSON-serializable for checkpointing. [AD-2]
 """
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 StageName = Literal["scenario", "image", "tts", "subtitle", "video"]
 GateState = Literal["pending", "approved", "rejected", "n/a"]
@@ -108,3 +108,4 @@ class PipelineState(TypedDict):
     gate_states: dict[StageName, GateState]
     prompt_variant: PromptVariant | None
     error: str | None
+    ending_credit_error: NotRequired[str | None]  # Story 5.20 — absent unless the run attempted the ending credit (cc_attribution=True); presence signals attempted
