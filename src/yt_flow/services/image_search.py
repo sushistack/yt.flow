@@ -122,26 +122,26 @@ class DuckDuckGoImageSearch(ImageSearch):
     """DuckDuckGo image search via VQD token + i.js endpoint.
 
     Flow:
-      1. POST to duckduckgo.com → extract vqd token from response
-      2. GET duckduckgo.com/i.js?q=<query>&vqd=<token> → parse JSON results
+      1. GET the query results page (duckduckgo.com/?q=<query>&iax=images&ia=images) → extract vqd token
+      2. GET duckduckgo.com/i.js?q=<query>&vqd=<token> with Referer header → parse JSON results
     """
 
     def __init__(self, timeout: float = _TIMEOUT, user_agent: str = _USER_AGENT) -> None:
         self._timeout = timeout
         self._headers = {"User-Agent": user_agent}
 
-    async def _acquire_vqd(self, client: httpx.AsyncClient) -> str:
-        """POST to duckduckgo.com and extract the VQD token from the response.
+    async def _acquire_vqd(self, client: httpx.AsyncClient, query: str) -> str:
+        """GET the DuckDuckGo query results page and extract the VQD token from it.
 
+        The homepage no longer serves vqd; the query page (image tab) still does.
         Retries up to _VQD_MAX_RETRIES times with exponential backoff on failure.
         """
         last_error: Exception | None = None
         for attempt in range(_VQD_MAX_RETRIES):
             try:
-                resp = await client.post(
-                    "https://duckduckgo.com",
+                resp = await client.get(
+                    f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images",
                     headers=self._headers,
-                    data={"q": "test"},
                     follow_redirects=True,
                 )
                 resp.raise_for_status()
@@ -164,7 +164,7 @@ class DuckDuckGoImageSearch(ImageSearch):
             timeout=httpx.Timeout(self._timeout),
             headers=self._headers,
         ) as client:
-            vqd = await self._acquire_vqd(client)
+            vqd = await self._acquire_vqd(client, query)
 
             params = {
                 "q": query,
@@ -173,7 +173,11 @@ class DuckDuckGoImageSearch(ImageSearch):
                 "p": "1",
                 "f": ",,,,,",
             }
-            resp = await client.get("https://duckduckgo.com/i.js", params=params)
+            resp = await client.get(
+                "https://duckduckgo.com/i.js",
+                params=params,
+                headers={**self._headers, "Referer": "https://duckduckgo.com/"},
+            )
             resp.raise_for_status()
             data = resp.json()
 
