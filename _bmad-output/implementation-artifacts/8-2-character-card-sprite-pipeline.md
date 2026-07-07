@@ -17,7 +17,7 @@ related:
 
 # Story 8.2: Character Card Sprite Pipeline + Stock Cast Seeding
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -104,10 +104,13 @@ Key insight from the epic: cutting a character out of a **plain studio backgroun
 - [x] Task 7 — SCP-049 regeneration + regression (AC: 9, 10, 11)
   - [x] Regenerate SCP-049's 4 standing cards under the new pipeline (evidence for 8.3's A/B DoD); sitting × 4 covered by Task 6b.
   - [x] Regression gate (5-8/5-10 suite): `uv run pytest tests/services/test_run_service_character_provisioning.py tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/pipeline/nodes/test_image.py -q` plus new tests; full suite green.
-- [ ] Task 8 — Look-dev comparison + anchor adoption (AC: 14)
-  - [ ] Produce frontier counterparts for 2-3 representative subjects (manual, no integration; transparent-bg model) into a `lookdev/` review directory; run the side-by-side with Jay at the Task 5/6 QA stop.
-  - [ ] Apply the adoption rule per subject class (frontier file → `--anchor <path>` input, or direct adoption if it passes the sprite contract); validate adopted files with `domain.png.has_alpha` + framing check.
-  - [ ] Record the look-dev decision (adopted classes, filter refusals, rationale) in the Dev Agent Record.
+- [x] Task 8 — Look-dev decision + local quality tuning (AC: 14, supersedes frontier-anchor plan)
+  - [x] Look-dev decision (2026-07-08, Jay): reviewed the local SDXL contact sheet, judged it "나쁘지 않은" (good enough) — **local wins outright, no frontier counterparts produced**. AC14's adoption rule (anchor or direct-adopt a frontier file) is therefore moot for this story; no `lookdev/` directory was created. Supersedes AC14's frontier-comparison plan with a lighter one-step decision.
+  - [x] Jay flagged 3 concrete defects on the local output instead (identity drift across angles, photographic drop-shadow, horizontal cutout noise) — fixed all three as the real Task 8 scope:
+    - **Identity drift (mask/face/insignia changing per angle)**: root cause was the D5 weight table pulling too low for the self-referencing stock/derived chain (AC7) — text alone couldn't hold a specific face/mask design across independent generations. Fix: after the front card generates, call the existing Story 5.13 `enrich_descriptor_from_references` (Qwen-VL) on it and persist the enriched descriptor before generating side/back/three_quarter — text conditioning now describes the *actual* generated face/mask/colors, not just the generic archetype descriptor. `_ANGLE_IPADAPTER_WEIGHTS` also raised (`three_quarter/side/back`: 0.35/0.25/0.15 → 0.5/0.45/0.35) as a secondary reinforcement.
+    - **Photographic drop-shadow**: `darkness_xl_v2` LoRA strength in the character workflow (`data/workflows/comfyui_character_multi_angle_api.json`) dropped 0.5 → 0.3 (0.15 destabilized the checkpoint into "turnaround sheet" grid artifacts — tested and reverted); added shadow/lighting negative-prompt terms to the workflow's negative node and positive-prompt sources (`prompts/character/generation.md` + built-in fallback).
+    - **Horizontal cutout noise**: root-caused to InSPyReNet's pyramid decoder leaving ordered-dither alpha bands on flat, low-contrast garment regions (confirmed via raw-alpha-channel visualization and a direct `transparent_background.Remover` test — reproduces identically under both `resize='static'` and `'dynamic'`, so it's a model-architecture artifact, not a ComfyUI node config issue). Fixed with a new post-process, `_clean_alpha_noise` in `character_image_provider.py`: threshold → morphological close(25)/open(7) → keep-largest-connected-component → snap to fully opaque/transparent. Applied at all 3 return points of `ComfyUICharacterProvider.generate()`. Unit-tested (`test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob`).
+  - [x] SCP-049 (standing ×4 + sitting ×4) and all 3 stock cast (standing ×4 each) regenerated end-to-end with the tuned pipeline; verified via checkerboard-composited contact sheets — clean silhouettes, consistent identity across all angles per character, flat even lighting, zero residual noise.
 
 ## Dev Notes
 
@@ -188,25 +191,32 @@ GPT-5 Codex
 - `uv run pytest -q` → 820 passed, 1 skipped, 1 warning.
 - Live ComfyUI validation: local ComfyUI started from `$HOME/workspaces/ComfyUI/run.sh` on `127.0.0.1:8188`; InSPyReNet and IPAdapter nodes loaded; SCP-049 standing+sitting and stock standing cards generated through the real workflow with no `node_errors` surfaced to the client.
 - Live evidence: `_bmad-output/implementation-artifacts/8-2-live-validation/character-card-contact-sheet.png`.
+- 2026-07-08 (Task 8 follow-up): `uv run pytest tests/services/test_character_service_generation.py -q` → 51 passed (fixed the stale `test_generate_candidates_passes_angle_specific_ipadapter_weights` weight assertion, added `test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob`).
+- 2026-07-08: `uv run ruff check src tests scripts/seed_stock_cast.py` → All checks passed.
+- 2026-07-08: `uv run pytest -q` → 821 passed, 1 skipped, 1 warning (full suite, post Task 8 tuning).
+- 2026-07-08: standalone root-cause test — `transparent_background.Remover(resize='static')` vs `Remover(resize='dynamic')` run directly (ComfyUI's own venv) against a pre-cutout raw render produced byte-for-byte identical dither artifacts, confirming the noise is an InSPyReNet decoder artifact, not a ComfyUI node resize-mode config issue. No change made to the third-party ComfyUI custom node; the fix lives entirely in `_clean_alpha_noise` inside this repo.
+- 2026-07-08: live evidence — `_bmad-output/implementation-artifacts/8-2-live-validation/stock-cast-contact-sheet-2026-07-08.png` (3 stock keys × 4 angles, post-tuning) and `scp049-contact-sheet-2026-07-08.png` (standing + sitting × 4 angles), both checkerboard-composited to make alpha cleanliness inspectable.
 
 ### Completion Notes List
 
 - Moved PNG alpha detection to `yt_flow.domain.png.has_alpha` and kept `image.py` compatible via import alias.
 - Updated the character multi-angle workflow to output RGBA sprites via `VAEDecode(8) -> InspyrenetRembg(12) -> SaveImage(9)`, with portrait `832x1216` defaults.
 - Strengthened character generation prompt sources (repo prompt, built-in fallback, Langfuse candidate seed) for full-body single-subject sprite generation on a plain light-gray studio background; added negative prompt exclusions for scenery/rooms/props/crops.
-- Added per-call IPAdapter weight injection and live-tuned angle weights to `front=0.2`, `three_quarter=0.35`, `side=0.25`, `back=0.15` after SCP-049 live validation showed the original front/back weights over-followed the cropped reference.
+- Added per-call IPAdapter weight injection and live-tuned angle weights to `front=0.2`, `three_quarter=0.35`, `side=0.25`, `back=0.15` after SCP-049 live validation showed the original front/back weights over-followed the cropped reference. **Re-tuned 2026-07-08** (Task 8 follow-up) to `front=0.2`, `three_quarter=0.5`, `side=0.45`, `back=0.35` — the original values let the self-referencing stock/derived chain (AC7) redraw the face/mask/insignia per angle; see Task 8 for the full identity-drift fix (vision-enrichment re-anchoring is the primary fix, the weight bump is secondary reinforcement).
 - Enforced RGBA at save time for every generated card; opaque outputs are treated as per-angle generation failures and do not poison the batch.
 - Added descriptor-driven `generate_cards_from_descriptor`, deliberate ComfyUI t2i generation, stock/derived seed script, and optional `--anchor-search` human-curation stop.
 - Added additive `CharacterCard` table plus `save_card`/`get_card` helpers and pose-aware generation; standing remains in `Character.angle_*_path`, non-standing persists in `character_cards`.
 - Live generated SCP-049 standing x4 and sitting x4, plus stock cast standing x12. All inspected generated PNGs are `832x1216`, color type 6, alpha true. Contact sheet shows side/back angles are materially distinct from front for the regenerated library.
 - Code-review hardening applied during the 8.1 review pass: t2i fallback now removes disconnected IPAdapter/LoadImage placeholder nodes; Qwen image generation is fail-fast unsupported for RGBA card sprites until a real background-removal path exists; descriptor generation skips non-front angles when no front/anchor image exists; stock seeding completion validates existing files as alpha PNGs; `--anchor` requires `--key`; pose values are restricted to the closed `standing`/`sitting` enum; PNG alpha detection validates IHDR structure/CRC instead of trusting a header byte.
-- HALT: Task 8 is intentionally incomplete because AC14 requires Jay to produce/review frontier-model counterparts and make the look-dev adoption decision. No code can honestly complete that human judgment step.
+- Task 8 resolved 2026-07-08: Jay reviewed the local contact sheet and decided local wins outright — no frontier counterparts needed, AC14's adoption rule is moot. Instead fixed 3 concrete defects Jay flagged on the local output: cross-angle identity drift (fixed via Qwen-VL descriptor re-anchoring after front generation, `enrich_descriptor_from_references`, plus a secondary IPAdapter weight bump), photographic drop-shadow (`darkness_xl_v2` LoRA 0.5→0.3 in the character workflow, tested 0.15 first — destabilized the checkpoint into grid/duplicate artifacts, reverted), and horizontal cutout noise (InSPyReNet ordered-dither artifact on flat garment regions, root-caused via raw-alpha visualization + a standalone `transparent_background.Remover` test that reproduced identically under both `resize` modes; fixed with a new `_clean_alpha_noise` post-process — threshold, morphological close/open, keep-largest-component). All 3 stock cast + SCP-049 (standing+sitting) regenerated end-to-end and verified clean via checkerboard contact sheets.
 
 ### File List
 
 - `.env.example`
 - `_bmad-output/implementation-artifacts/8-2-character-card-sprite-pipeline.md`
 - `_bmad-output/implementation-artifacts/8-2-live-validation/character-card-contact-sheet.png`
+- `_bmad-output/implementation-artifacts/8-2-live-validation/stock-cast-contact-sheet-2026-07-08.png`
+- `_bmad-output/implementation-artifacts/8-2-live-validation/scp049-contact-sheet-2026-07-08.png`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `data/workflows/README-character-multi-angle.md`
 - `data/workflows/comfyui_character_multi_angle_api.json`
@@ -227,6 +237,7 @@ GPT-5 Codex
 
 ## Change Log
 
+- 2026-07-08: Task 8 completed — Jay reviewed the local contact sheet and chose local-only (no frontier comparison), then flagged 3 concrete defects which were fixed: cross-angle identity drift (Qwen-VL descriptor re-anchoring + IPAdapter weight bump), photographic drop-shadow (`darkness_xl_v2` LoRA 0.5→0.3), horizontal cutout noise (new `_clean_alpha_noise` post-process for InSPyReNet's ordered-dither artifact). SCP-049 + all 3 stock cast regenerated and verified. Full suite green (821 passed). Status → `review`.
 - 2026-07-07: Implemented Tasks 1-7. Added RGBA sprite workflow, png domain helper, prompt updates, per-angle IPAdapter weights, RGBA save validation, descriptor/stock seeding, pose-aware `CharacterCard` storage, SCP-049 and stock live generated evidence, and regression tests. Story remains `in-progress` because Task 8 requires Jay's manual look-dev comparison/adoption decision.
 - 2026-07-06: Story created from Epic 8 architecture decision (E2E baseline run 272b05a4). Owns the Epic 8 card artifact contract (RGBA sprite) and stock-cast seeding.
 - 2026-07-07: optional anchor sourcing added per Jay — `--anchor-search` (image search per stock key, human curation stop) + `--anchor <path>` → front-angle IPAdapter reference (`anchor_path` param). Opt-in; default path byte-identical. Search leg depends on Story 5.19.

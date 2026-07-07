@@ -136,7 +136,7 @@ development_status:
   # ── Epic 8: 이미지 합성 아키텍처 전환 — 배경+캐릭터 카드 컴포지팅 ──────────
   epic-8: in-progress
   8-1-shot-cast-metadata-bg-prompts: done  # visual_breakdown: cast 목록+배치 메타+배경 전용 프롬프트; cast 빈 목록 = 배경만 (D3/D11 해소). 코드리뷰 완료: prompt few-shot 강화+candidate 재시딩, 8.2 혼입은 커밋 경계로 분리, 리뷰 spillover 8.2 hardening 별도 패치
-  8-2-character-card-sprite-pipeline: in-progress  # RGBA 스프라이트 표준화(단색 배경 생성→컷아웃), 앵글/포즈 다양화(D5), STOCK-* 고정 출연진 시드, 파생 개체 카드
+  8-2-character-card-sprite-pipeline: review  # RGBA 스프라이트 표준화(단색 배경 생성→컷아웃), 앵글/포즈 다양화(D5), STOCK-* 고정 출연진 시드, 파생 개체 카드; Task 8 완료(로컬 채택, 정체성/그림자/노이즈 3건 튜닝) — 코드리뷰 대기
   8-3-bg-only-generation-multicard-compositing: ready-for-dev  # image_node 세그/인페인트 제거, video_node 다중 카드 합성(스케일/위치/z-order+카드별 모션), 1.13 오버라이드를 cast 게이팅으로 (D10/D13 해소); DoD: SCP-049 재렌더 A/B
   8-4-on-demand-special-pose-cards: ready-for-dev  # pose_hint 자유텍스트 → run 중 키아트 카드 온디맨드 생성(scenario 게이트 승인 훅, non-fatal, hint:sha256 캐싱, run당 3장 캡); depends on 8-1~8-3
   8-5-stock-location-plates: ready-for-dev  # 2026-07-07 created
