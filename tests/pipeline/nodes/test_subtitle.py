@@ -1,12 +1,13 @@
-"""Unit tests for src/yt_flow/pipeline/nodes/subtitle.py (Story 1.8).
+"""Unit tests for src/yt_flow/pipeline/nodes/subtitle.py (Story 1.8, rewritten Story 5.18).
 
 No live WhisperX / Langfuse: settings and the aligner are monkeypatched.
-Tests cover SRT formatting, word-timing grouping, strategy resolver,
-subtitle_node happy path (word_timings reuse + aligner fallback),
-error handling, and purity. No GPU, no network, no model downloads required.
+Tests cover the dual-track sentence-cue renderer (sentence_cues, wrap_cue_text,
+format_ass), the aligner-fallback path, subtitle_node happy path + guards, error
+handling, and purity. No GPU, no network, no model downloads required.
 """
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,28 +18,28 @@ from yt_flow.pipeline.nodes.subtitle import (
     AlignmentSegment,
     PLAY_RES_X,
     PLAY_RES_Y,
+    SUBTITLE_FONT_FAMILY,
+    SUBTITLE_FONT_SIZE,
+    SUBTITLE_MARGIN_V,
+    SUBTITLE_OUTLINE_WIDTH,
     _get_aligner,
-    _group_words,
-    _word_timings_to_segments,
-    _words_or_segments,
-    build_ass_events,
     format_ass,
-    format_srt,
+    sentence_cues,
     subtitle_node,
+    wrap_cue_text,
 )
 
 
 # ── Fakes / helpers ───────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path, aligner="whisperx", kinetic_subtitles_enabled=True):
+def _settings_ns(tmp_path, aligner="whisperx"):
     return SimpleNamespace(
         aligner=aligner,
         aligner_model="base",
         aligner_device="cpu",
         aligner_compute_type="int8",
         workspace_path=str(tmp_path),
-        kinetic_subtitles_enabled=kinetic_subtitles_enabled,
     )
 
 
@@ -59,7 +60,8 @@ def _timings(words: list[str], duration: float = 2.0) -> list[dict]:
 
 
 def _scene(scene_num: int, narration: str, *, audio_path: str | None = None,
-           word_timings=None, audio_duration: float | None = 2.0, **over) -> dict:
+           word_timings=None, audio_duration: float | None = 2.0,
+           display_narration: str | None = None, **over) -> dict:
     base = {
         "scene_num": scene_num,
         "narration": narration,
@@ -69,6 +71,8 @@ def _scene(scene_num: int, narration: str, *, audio_path: str | None = None,
         "word_timings": word_timings if word_timings is not None else [],
         "subtitle_path": None,
     }
+    if display_narration is not None:
+        base["display_narration"] = display_narration
     base.update(over)
     return base
 
@@ -101,165 +105,198 @@ def _silent_trace(monkeypatch):
     monkeypatch.setattr(subtitle, "_record_trace", lambda **kw: None)
 
 
-# ── format_srt ───────────────────────────────────────────────────────────────
+# ── wrap_cue_text ─────────────────────────────────────────────────────────────
 
 
-def test_format_srt_single_cue():
-    segs = [{"start_sec": 1.25, "end_sec": 3.5, "text": "격리 절차 시작"}]
-    out = format_srt(segs)
-    assert out.startswith("1\n")
-    assert "00:00:01,250 --> 00:00:03,500" in out
-    assert "격리 절차 시작" in out
+def test_wrap_cue_text_short_stays_one_line():
+    assert wrap_cue_text("짧은 문장") == "짧은 문장"
 
 
-def test_format_srt_multiple_cues():
-    segs = [
-        {"start_sec": 0.0, "end_sec": 1.0, "text": "첫 번째"},
-        {"start_sec": 1.2, "end_sec": 2.5, "text": "두 번째"},
-    ]
-    out = format_srt(segs)
-    assert "1\n" in out
-    assert "2\n" in out
-    assert "00:00:00,000 --> 00:00:01,000" in out
-    assert "00:00:01,200 --> 00:00:02,500" in out
+def test_wrap_cue_text_single_word_never_breaks():
+    long_word = "가" * 30
+    assert wrap_cue_text(long_word) == long_word
 
 
-def test_format_srt_empty_returns_empty():
-    assert format_srt([]) == ""
+def test_wrap_cue_text_wraps_to_two_lines_at_word_boundary():
+    text = "이것은 상당히 길어서 줄을 나눠야 하는 문장입니다"
+    out = wrap_cue_text(text)
+    assert out.count("\\N") == 1
+    line1, line2 = out.split("\\N")
+    assert line1 and line2
+    # word-boundary break: no word is split across the two lines
+    assert set((line1 + " " + line2).split()) == set(text.split())
 
 
-def test_format_srt_korean_utf8():
-    segs = [{"start_sec": 0.0, "end_sec": 2.0, "text": "SCP재단 격리 절차"}]
-    out = format_srt(segs)
-    assert "SCP재단 격리 절차" in out
+def test_wrap_cue_text_never_produces_more_than_two_lines():
+    text = "가나다 라마바 사아자 차카타 파하가 나다라 마바사 아자차"
+    assert wrap_cue_text(text).count("\\N") <= 1
 
 
-def test_format_srt_hour_boundary():
-    segs = [{"start_sec": 3661.5, "end_sec": 3663.0, "text": "test"}]
-    out = format_srt(segs)
-    assert "01:01:01,500 --> 01:01:03,000" in out
+# ── sentence_cues ─────────────────────────────────────────────────────────────
 
 
-def test_format_srt_cue_separation():
-    segs = [
-        {"start_sec": 0.0, "end_sec": 1.0, "text": "A"},
-        {"start_sec": 1.5, "end_sec": 2.5, "text": "B"},
-    ]
-    out = format_srt(segs)
-    # Blank line separates cues
-    assert "\n\n" in out
+def test_sentence_cues_single_sentence_uses_full_word_span():
+    wt = _timings(["에스시피", "공사", "구는"], duration=3.0)
+    cues = sentence_cues(wt, "에스시피 공사 구는.", "SCP-049는.")
+    assert len(cues) == 1
+    assert cues[0]["start_sec"] == 0.0
+    assert cues[0]["end_sec"] == 3.0
+    assert cues[0]["text"] == "SCP-049는."
 
 
-# ── _word_timings_to_segments ─────────────────────────────────────────────────
+def test_sentence_cues_multiple_sentences_window_per_sentence():
+    spoken = "첫 문장 입니다. 둘째 문장 이다."
+    display = "첫 문장이다. 둘째다."
+    wt = _timings(spoken.split(), duration=6.0)  # 6 words total -> 1.0s each
+    cues = sentence_cues(wt, spoken, display)
+    assert len(cues) == 2
+    assert cues[0]["text"] == "첫 문장이다."
+    assert cues[0]["start_sec"] == 0.0
+    assert cues[0]["end_sec"] == 3.0  # first sentence consumes 3 words
+    assert cues[1]["text"] == "둘째다."
+    assert cues[1]["start_sec"] == 3.0
+    assert cues[1]["end_sec"] == 6.0
 
 
-def test_word_timings_to_segments_empty():
-    assert _word_timings_to_segments([]) == []
+def test_sentence_cues_original_orthography_appears_not_phoneticized():
+    spoken = "에스시피 공사 구는 키 일점 구 미터의 개체입니다."
+    display = "SCP-049는 키 1.9m의 개체입니다."
+    wt = _timings(spoken.split(), duration=4.0)
+    cues = sentence_cues(wt, spoken, display)
+    assert "SCP-049" in cues[0]["text"]
+    assert "에스시피" not in cues[0]["text"]
 
 
-def test_word_timings_to_segments_single_short():
-    t = _timings(["격리절차시작"])
-    segs = _word_timings_to_segments(t, max_chars=40)
-    assert len(segs) == 1
-    assert segs[0]["text"] == "격리절차시작"
-    assert segs[0]["start_sec"] == 0.0
+def test_sentence_cues_no_timings_returns_empty():
+    assert sentence_cues([], "문장.", "문장.") == []
 
 
-def test_word_timings_to_segments_splits_long_lines():
-    # 5 long words should split into ≥2 cues when max_chars=20
-    words = ["longword1", "longword2", "longword3", "longword4", "longword5"]
-    t = _timings(words, duration=5.0)
-    segs = _word_timings_to_segments(t, max_chars=20)
-    assert len(segs) >= 2
-    for seg in segs:
-        assert len(seg["text"]) <= 30  # allows one word slightly over limit
+def test_sentence_cues_no_spoken_sentences_returns_empty():
+    assert sentence_cues(_timings(["a"]), "", "문장.") == []
 
 
-def test_word_timings_to_segments_monotonic():
-    words = ["a", "b", "c", "d", "e"]
-    t = _timings(words, duration=5.0)
-    segs = _word_timings_to_segments(t)
+def test_sentence_cues_display_absent_falls_back_to_spoken_silently(caplog):
+    wt = _timings(["문장", "입니다"], duration=2.0)
+    with caplog.at_level(logging.WARNING):
+        cues = sentence_cues(wt, "문장 입니다.", "")
+    assert cues[0]["text"] == "문장 입니다."
+    assert not caplog.records  # AC:7 — absent display is expected, not a warning case
+
+
+def test_sentence_cues_display_equals_spoken_no_warning(caplog):
+    wt = _timings(["문장", "입니다"], duration=2.0)
+    with caplog.at_level(logging.WARNING):
+        cues = sentence_cues(wt, "문장 입니다.", "문장 입니다.")
+    assert cues[0]["text"] == "문장 입니다."
+    assert not caplog.records
+
+
+def test_sentence_cues_sentence_count_mismatch_falls_back_with_warning(caplog):
+    spoken = "첫 문장. 둘째 문장."
+    display = "합쳐진 문장 하나뿐."  # 1 sentence vs spoken's 2 -> mismatch
+    wt = _timings(spoken.split(), duration=4.0)
+    with caplog.at_level(logging.WARNING):
+        cues = sentence_cues(wt, spoken, display)
+    assert len(cues) == 2
+    assert cues[0]["text"] == "첫 문장."  # fell back to spoken text
+    assert cues[1]["text"] == "둘째 문장."
+    assert any("sentence-count mismatch" in r.message for r in caplog.records)
+
+
+def test_sentence_cues_word_timings_count_mismatch_apportions_with_warning(caplog):
+    spoken = "첫 문장 이다. 둘째 문장 이다."  # 6 words total
+    display = spoken
+    wt = _timings(["a", "b", "c"], duration=3.0)  # only 3 timings, not 6
+    with caplog.at_level(logging.WARNING):
+        cues = sentence_cues(wt, spoken, display)
+    assert len(cues) == 2
+    assert cues[0]["start_sec"] == 0.0
+    assert cues[-1]["end_sec"] == 3.0
+    # proportional split by character length, not a crash
     prev_end = 0.0
-    for s in segs:
-        assert s["start_sec"] >= prev_end - 1e-6
-        assert s["end_sec"] > s["start_sec"]
-        prev_end = s["end_sec"]
+    for c in cues:
+        assert c["start_sec"] >= prev_end - 1e-6
+        assert c["end_sec"] > c["start_sec"]
+        prev_end = c["end_sec"]
+    assert any("word_timings count" in r.message for r in caplog.records)
 
 
-# ── _group_words / ASS karaoke ────────────────────────────────────────────────
+def test_sentence_cues_word_timings_count_mismatch_falls_back_to_spoken_text(caplog):
+    """[AC:7] Word-timings-count mismatch degrades to SPOKEN text, not just re-apportioned
+    windows — the prior implementation kept rendering display text here, missed because
+    the sibling test above passes display == spoken."""
+    spoken = "첫 문장 이다. 둘째 문장 이다."  # 6 words total
+    display = "SCP-1 첫 문장. SCP-2 둘째 문장."  # different text, same sentence count
+    wt = _timings(["a", "b", "c"], duration=3.0)  # only 3 timings, not 6 -> word-count mismatch
+    with caplog.at_level(logging.WARNING):
+        cues = sentence_cues(wt, spoken, display)
+    assert len(cues) == 2
+    assert cues[0]["text"] == "첫 문장 이다."
+    assert cues[1]["text"] == "둘째 문장 이다."
+    assert "SCP-1" not in cues[0]["text"]
+    assert any("word_timings count" in r.message for r in caplog.records)
 
 
-def test_group_words_matches_word_timings_to_segments_boundaries():
-    words = ["longword1", "longword2", "longword3", "longword4", "longword5"]
-    t = _timings(words, duration=5.0)
-    groups = _group_words(t, max_chars=20)
-    segs = _word_timings_to_segments(t, max_chars=20)
-    assert len(groups) == len(segs)
-    for group, seg in zip(groups, segs):
-        assert seg["start_sec"] == group[0]["start_sec"]
-        assert seg["end_sec"] == group[-1]["end_sec"]
-        assert seg["text"] == " ".join(w["word"] for w in group)
+def test_sentence_cues_long_sentence_splits_into_multiple_cues_proportionally():
+    long_display = "가나다라마바 사아자차카타 파하가나다라 마바사아자차 카타파하가나 다라마바사아 자차카타파하"  # > 44 chars
+    spoken = "짧은 대응 문장 입니다."
+    wt = _timings(spoken.split(), duration=4.0)
+    cues = sentence_cues(wt, spoken, long_display)
+    assert len(cues) > 1  # soft-cap split into consecutive cues [AC:4]
+    prev_end = 0.0
+    for c in cues:
+        assert c["start_sec"] >= prev_end - 1e-6
+        assert c["end_sec"] > c["start_sec"]
+        prev_end = c["end_sec"]
+    assert prev_end == 4.0
+    reconstructed = " ".join(c["text"].replace("\\N", " ") for c in cues)
+    assert reconstructed.split() == long_display.split()
 
 
-def test_group_words_empty():
-    assert _group_words([]) == []
+def test_sentence_cues_escapes_brace_and_backslash():
+    spoken = "문장 입니다."
+    display = "위험{한}\\문장."
+    wt = _timings(spoken.split(), duration=2.0)
+    cues = sentence_cues(wt, spoken, display)
+    assert "{" not in cues[0]["text"].replace("\\N", "")
+    assert "}" not in cues[0]["text"]
+    assert "\\문장" not in cues[0]["text"]
 
 
-@pytest.fixture(autouse=True)
-def _fake_ass_font(monkeypatch):
-    monkeypatch.setattr(subtitle, "_ass_font_family", lambda: "DejaVu Sans")
+# ── format_ass ─────────────────────────────────────────────────────────────────
 
 
-def test_build_ass_events_k_duration_matches_word_span():
-    t = _timings(["격리", "절차"], duration=2.0)  # 1.0s each word
-    out = build_ass_events(t)
-    assert "{\\k100}격리 " in out
-    assert "{\\k100}절차 " in out
-
-
-def test_build_ass_events_cue_boundaries_match_segments():
-    words = ["longword1", "longword2", "longword3", "longword4", "longword5"]
-    t = _timings(words, duration=5.0)
-    events = build_ass_events(t, max_chars=20)
-    segs = _word_timings_to_segments(t, max_chars=20)
-    assert events.count("Dialogue:") == len(segs)
-
-
-def test_build_ass_events_empty_returns_empty():
-    assert build_ass_events([]) == ""
-
-
-def test_format_ass_header_has_play_res():
-    out = format_ass(_timings(["hi"]))
+def test_format_ass_header_has_play_res_and_typography():
+    out = format_ass([])
     assert f"PlayResX: {PLAY_RES_X}" in out
     assert f"PlayResY: {PLAY_RES_Y}" in out
-    assert PLAY_RES_X == 1920
-    assert PLAY_RES_Y == 1080
+    assert PLAY_RES_X == 1920 and PLAY_RES_Y == 1080
+    assert SUBTITLE_FONT_FAMILY in out
+    assert f"{SUBTITLE_FONT_SIZE}" in out
+    assert f",{SUBTITLE_OUTLINE_WIDTH}," in out
+    assert f",{SUBTITLE_MARGIN_V}," in out
 
 
-def test_format_ass_includes_events():
-    out = format_ass(_timings(["hello", "world"]))
+def test_format_ass_has_no_karaoke_tags():
+    cues = [{"start_sec": 0.0, "end_sec": 1.0, "text": "SCP-049는."}]
+    out = format_ass(cues)
+    assert "\\k" not in out
     assert "Dialogue:" in out
-    assert "{\\k" in out
+    assert "SCP-049는." in out
 
 
-def test_build_ass_events_second_boundary_carries_not_overflows():
-    t = [{"word": "hi", "start_sec": 0.0, "end_sec": 59.999}]
-    out = build_ass_events(t)
-    assert "0:01:00.00" in out
-    assert ".100" not in out
+def test_format_ass_empty_cues_no_dialogue_lines():
+    out = format_ass([])
+    assert "Dialogue:" not in out
 
 
-def test_build_ass_events_escapes_brace_and_backslash_in_word():
-    t = [{"word": "a{b}c\\d", "start_sec": 0.0, "end_sec": 1.0}]
-    out = build_ass_events(t)
-    assert "{\\k100}abcd " in out
-
-
-def test_build_ass_events_clamps_negative_duration_to_zero():
-    t = [{"word": "oops", "start_sec": 1.0, "end_sec": 0.5}]
-    out = build_ass_events(t)
-    assert "{\\k0}oops " in out
+def test_format_ass_multiple_cues_in_order():
+    cues = [
+        {"start_sec": 0.0, "end_sec": 1.0, "text": "첫 번째"},
+        {"start_sec": 1.0, "end_sec": 2.0, "text": "두 번째"},
+    ]
+    out = format_ass(cues)
+    assert out.index("첫 번째") < out.index("두 번째")
 
 
 # ── _words_or_segments (WhisperX word/segment fallback) ───────────────────────
@@ -275,7 +312,6 @@ def test_words_or_segments_prefers_usable_words():
 
 
 def test_words_or_segments_falls_back_when_words_lack_start_end():
-    # word_segments is non-empty but no word has usable start/end keys
     aligned = {
         "word_segments": [{"word": "hi"}, {"word": "there"}],
         "segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}],
@@ -315,18 +351,38 @@ def test_get_aligner_unknown_raises_value_error():
 # ── subtitle_node: happy path ─────────────────────────────────────────────────
 
 
+async def test_subtitle_node_always_writes_ass(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    wt = _timings(["에스시피", "공사", "구는", "키", "일점", "구", "미터의", "개체입니다."], duration=4.0)
+    scenes = [_scene(1, "에스시피 공사 구는 키 일점 구 미터의 개체입니다.",
+                      audio_path=audio_file, word_timings=wt, audio_duration=4.0,
+                      display_narration="SCP-049는 키 1.9m의 개체입니다.")]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    path = Path(out["scenes"][0]["subtitle_path"])
+    assert path.exists()
+    assert path.suffix == ".ass"
+    text = path.read_text(encoding="utf-8")
+    assert "SCP-049" in text
+    assert "에스시피" not in text
+    assert "\\k" not in text
+
+
 async def test_subtitle_node_uses_word_timings_not_aligner(monkeypatch, tmp_path, audio_file):
     fake = _FakeAligner()
     monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(subtitle, "_get_aligner", lambda s: fake)
 
     wt = _timings(["격리", "절차", "시작"])
-    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=wt)]
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=wt,
+                      display_narration="격리 절차 시작")]
     out = await subtitle_node(_state(scenes))
 
     assert out["current_stage"] == "subtitle"
     assert out.get("error") is None
-    # word_timings present → aligner.align should NOT be called
     assert len(fake.calls) == 0
     assert out["scenes"][0]["subtitle_path"]
 
@@ -345,64 +401,39 @@ async def test_subtitle_node_calls_aligner_when_no_timings(monkeypatch, tmp_path
     assert fake.calls[0] == (audio_file, "격리 절차")
 
 
-async def test_subtitle_node_creates_srt_files(monkeypatch, tmp_path, audio_file):
+async def test_subtitle_node_aligner_fallback_emits_static_ass(monkeypatch, tmp_path, audio_file):
+    """No word_timings -> whisperx segments, still static .ass (no \\k). [AC:7]"""
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(
+        subtitle, "_get_aligner",
+        lambda s: _FakeAligner(segments=[{"start_sec": 0.0, "end_sec": 1.5, "text": "격리 절차 시작"}]),
+    )
+
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=[])]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    path = Path(out["scenes"][0]["subtitle_path"])
+    text = path.read_text(encoding="utf-8")
+    assert path.suffix == ".ass"
+    assert "\\k" not in text
+    assert "격리 절차 시작" in text.replace("\\N", " ")
+
+
+async def test_subtitle_node_old_checkpoint_without_display_narration_renders_spoken(monkeypatch, tmp_path, audio_file):
+    """Old checkpoint scene has no display_narration key at all -> spoken text, no error. [AC:7]"""
     monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
 
-    scenes = [_scene(1, "test narration", audio_path=audio_file)]
-    out = await subtitle_node(_state(scenes, run_id="run-abc"))
-
-    srt_path = Path(out["scenes"][0]["subtitle_path"])
-    assert srt_path.exists()
-    assert srt_path.suffix == ".srt"
-    assert "subtitles" in str(srt_path)
-    assert "run-abc" in str(srt_path)
-    text = srt_path.read_text(encoding="utf-8")
-    assert "00:" in text  # has timestamps
-
-
-# ── subtitle_node: kinetic (.ass) branching ───────────────────────────────────
-
-
-async def test_subtitle_node_writes_ass_when_flag_on_and_word_timings(monkeypatch, tmp_path, audio_file):
-    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=True))
-    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
-    monkeypatch.setattr(subtitle, "_ass_font_family", lambda: "DejaVu Sans")
-
     wt = _timings(["격리", "절차", "시작"])
-    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=wt)]
-    out = await subtitle_node(_state(scenes))
-
-    assert out.get("error") is None
-    ass_path = Path(out["scenes"][0]["subtitle_path"])
-    assert ass_path.exists()
-    assert ass_path.suffix == ".ass"
-    assert "Dialogue:" in ass_path.read_text(encoding="utf-8")
-
-
-async def test_subtitle_node_writes_srt_when_no_word_timings_even_if_flag_on(monkeypatch, tmp_path, audio_file):
-    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=True))
-    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
-
-    scenes = [_scene(1, "격리 절차", audio_path=audio_file, word_timings=[])]
-    out = await subtitle_node(_state(scenes))
+    scene = _scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=wt)
+    assert "display_narration" not in scene
+    out = await subtitle_node(_state([scene]))
 
     assert out.get("error") is None
     path = Path(out["scenes"][0]["subtitle_path"])
-    assert path.suffix == ".srt"
-
-
-async def test_subtitle_node_writes_srt_when_flag_off_even_with_word_timings(monkeypatch, tmp_path, audio_file):
-    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, kinetic_subtitles_enabled=False))
-    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
-
-    wt = _timings(["격리", "절차"])
-    scenes = [_scene(1, "격리 절차", audio_path=audio_file, word_timings=wt)]
-    out = await subtitle_node(_state(scenes))
-
-    assert out.get("error") is None
-    path = Path(out["scenes"][0]["subtitle_path"])
-    assert path.suffix == ".srt"
+    text = path.read_text(encoding="utf-8")
+    assert "격리" in text.replace("\\N", " ")
 
 
 async def test_subtitle_node_updates_subtitle_path(monkeypatch, tmp_path, audio_file):
@@ -430,8 +461,8 @@ async def test_subtitle_node_scenes_in_order(monkeypatch, tmp_path, audio_file):
 
     nums = [s["scene_num"] for s in out["scenes"]]
     assert nums == [1, 2]
-    assert out["scenes"][0]["subtitle_path"].endswith("scene_001.srt")
-    assert out["scenes"][1]["subtitle_path"].endswith("scene_002.srt")
+    assert out["scenes"][0]["subtitle_path"].endswith("scene_001.ass")
+    assert out["scenes"][1]["subtitle_path"].endswith("scene_002.ass")
 
 
 async def test_subtitle_node_input_not_mutated(monkeypatch, tmp_path, audio_file):
@@ -514,7 +545,7 @@ async def test_subtitle_node_aligner_returns_no_segments(monkeypatch, tmp_path, 
     out = await subtitle_node(_state(scenes))
 
     assert out["error"] and "stage=subtitle" in out["error"]
-    assert "no segments" in out["error"]
+    assert "no subtitle cues" in out["error"]
 
 
 async def test_subtitle_node_aligner_exception(monkeypatch, tmp_path, audio_file):
