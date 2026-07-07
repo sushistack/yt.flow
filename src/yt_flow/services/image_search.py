@@ -140,7 +140,8 @@ class DuckDuckGoImageSearch(ImageSearch):
         for attempt in range(_VQD_MAX_RETRIES):
             try:
                 resp = await client.get(
-                    f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images",
+                    "https://duckduckgo.com/",
+                    params={"q": query, "iax": "images", "ia": "images"},
                     headers=self._headers,
                     follow_redirects=True,
                 )
@@ -176,7 +177,7 @@ class DuckDuckGoImageSearch(ImageSearch):
             resp = await client.get(
                 "https://duckduckgo.com/i.js",
                 params=params,
-                headers={**self._headers, "Referer": "https://duckduckgo.com/"},
+                headers={"Referer": "https://duckduckgo.com/"},
             )
             resp.raise_for_status()
             data = resp.json()
