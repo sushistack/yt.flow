@@ -1,6 +1,10 @@
+---
+baseline_commit: afb8f16e4ce64e936d515f8ccb9cb72c61867d20
+---
+
 # Story 3.8: 컨트롤 UI 결함 수리 (Control UI Defect Fixes)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Context: E2E baseline 2026-07-06 (run 272b05a4). Root causes below were investigated
      and verified against the actual code during story creation — D9's live-session gap was
@@ -37,27 +41,37 @@ so that the browser control surface tells the truth and every recovery action wo
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 [frontend]: Fix D9 — wire `run_failed` stage into client gate state (AC: 1, 2, 3)**
-  - [ ] In `frontend/src/pages/RunDetail.tsx:96-98`, change `onRunFailed` to consume the event's `stage` field: set `status: "failed"`, `error`, `current_stage: stage`, and merge `gate_states[stage] = "failed"` (reuse `setStageGateState` or extend it — note `setStageGateState` currently forces `status` only for `"pending"`, so a small dedicated updater is fine).
-  - [ ] Confirm the handler payload type already carries `stage` (`useRunProgress.ts` `ProgressEventData` has `stage?` — no hook change needed).
-  - [ ] Add the page-level regression test from Dev Notes ("Red test for D9") to `frontend/src/pages/RunDetail.test.tsx` using its existing `MockEventSource` pattern (lines 6-22): emit `run_failed` with `stage:"image"` on a live run → assert 실패 badge + "재시도" button appear → click 재시도 → 확인 → assert `fetch` called with `POST /runs/r1/stages/image/retry`.
-  - [ ] Add the fresh-load regression test (run fetched with `gate_states` containing `"image":"failed"`, artifacts GET 404) → retry click → confirm → assert POST fires. (Verified passing today; guards against regression.)
-  - [ ] Do NOT change the UX-DR13 confirm flow (inline `role="alert"` confirmation, 5s auto-dismiss) — see Saved Questions Q1.
-- [ ] **Task 2 [backend]: Fix D4 — SPA fallback for `/app/*` (AC: 4, 5)**
-  - [ ] In `src/yt_flow/api/main.py` (`mount_static_spa`, lines 45-52), subclass `StaticFiles` overriding `get_response`: on 404 `HTTPException` for a non-file path, return `index.html` instead (Starlette raises `HTTPException(404)` from `StaticFiles.get_response` when the file is missing). Keep the mount at `/app` only; keep the "skip when dist absent" guard.
-  - [ ] Add TestClient tests in `tests/api/test_static_spa.py` (file exists): `GET /app/runs/some-id` → 200 + `text/html`; existing asset path still served; `GET /nonexistent` outside `/app` still JSON 404.
-- [ ] **Task 3 [backend]: Fix D7 — pre-stream status write in `resume_run` (AC: 6, 7)**
-  - [ ] In `src/yt_flow/services/run_service.py` `resume_run` (lines 486-494), before `await _run(...)`, add `await asyncio.to_thread(_write_run, run_id, status="running")` — the exact pattern `retry_stage` (line 606) and `resume_run_from_failure` (line 510) already use. Must go through `asyncio.to_thread` (see `_consume` docstring, lines 238-245 — an inline sync sqlite write blocks the loop and starves the checkpointer into "database is locked").
-  - [ ] Do not change `_consume` barrier writes; the next interrupt/failure/completion overwrites status as today.
-  - [ ] Add a TestClient/asyncio test (alongside `tests/api/test_gate.py` conventions) asserting: after gate approve 202, the run row reads `status="running"` while the resumed graph is in flight (stub graph — see existing gate tests for the stub-run pattern).
-  - [ ] Optional (should, not must): also set `current_stage` to the successor stage and publish a `stage_entry` SSE pre-stream, mirroring `retry_stage` lines 606-608 (approve at stage *i* → `_STAGES[i+1]`; reject → same stage re-runs). If skipped, record why in the Dev Agent Record — see Saved Questions Q3.
-- [ ] **Task 4 [frontend]: Fix D14 — count ASS dialogue events (AC: 8, 9)**
-  - [ ] In `frontend/src/components/ArtifactPanel.tsx` `SubtitlePanel` (line 373), extend the cue count to cover both formats, e.g. `const cueCount = (text.match(/-->/g) ?? []).length + (text.match(/^Dialogue:/gm) ?? []).length`.
-  - [ ] Extend the existing subtitle test (`ArtifactPanel.test.tsx:113-121`, currently SRT-only) with an `.ass` fixture (header + N `Dialogue:` lines) asserting "자막 N개".
-- [ ] **Task 5: Regression verification (AC: all)**
-  - [ ] `cd frontend && npm test` (Vitest, jsdom) and `npm run build` (tsc -b + vite build) pass.
-  - [ ] `uv run pytest tests/api/test_static_spa.py tests/api/test_gate.py tests/api/test_stages.py tests/api/test_sse.py` pass.
-  - [ ] Preserved behavior spot-checks: gate 승인/반려 flow unchanged; retry API contract unchanged (202, `{"status":"retrying"}` body); SSE listeners for all four event names still update sidebar/panel; `/files` mount and `/runs/*` API routes unshadowed.
+- [x] **Task 1 [frontend]: Fix D9 — wire `run_failed` stage into client gate state (AC: 1, 2, 3)**
+  - [x] In `frontend/src/pages/RunDetail.tsx:96-98`, change `onRunFailed` to consume the event's `stage` field: set `status: "failed"`, `error`, `current_stage: stage`, and merge `gate_states[stage] = "failed"` (reuse `setStageGateState` or extend it — note `setStageGateState` currently forces `status` only for `"pending"`, so a small dedicated updater is fine).
+  - [x] Confirm the handler payload type already carries `stage` (`useRunProgress.ts` `ProgressEventData` has `stage?` — no hook change needed).
+  - [x] Add the page-level regression test from Dev Notes ("Red test for D9") to `frontend/src/pages/RunDetail.test.tsx` using its existing `MockEventSource` pattern (lines 6-22): emit `run_failed` with `stage:"image"` on a live run → assert 실패 badge + "재시도" button appear → click 재시도 → 확인 → assert `fetch` called with `POST /runs/r1/stages/image/retry`.
+  - [x] Add the fresh-load regression test (run fetched with `gate_states` containing `"image":"failed"`, artifacts GET 404) → retry click → confirm → assert POST fires. (Verified passing today; guards against regression.)
+  - [x] Do NOT change the UX-DR13 confirm flow (inline `role="alert"` confirmation, 5s auto-dismiss) — see Saved Questions Q1.
+- [x] **Task 2 [backend]: Fix D4 — SPA fallback for `/app/*` (AC: 4, 5)**
+  - [x] In `src/yt_flow/api/main.py` (`mount_static_spa`, lines 45-52), subclass `StaticFiles` overriding `get_response`: on 404 `HTTPException` for a non-file path, return `index.html` instead (Starlette raises `HTTPException(404)` from `StaticFiles.get_response` when the file is missing). Keep the mount at `/app` only; keep the "skip when dist absent" guard.
+  - [x] Add TestClient tests in `tests/api/test_static_spa.py` (file exists): `GET /app/runs/some-id` → 200 + `text/html`; existing asset path still served; `GET /nonexistent` outside `/app` still JSON 404.
+- [x] **Task 3 [backend]: Fix D7 — pre-stream status write in `resume_run` (AC: 6, 7)**
+  - [x] In `src/yt_flow/services/run_service.py` `resume_run` (lines 486-494), before `await _run(...)`, add `await asyncio.to_thread(_write_run, run_id, status="running")` — the exact pattern `retry_stage` (line 606) and `resume_run_from_failure` (line 510) already use. Must go through `asyncio.to_thread` (see `_consume` docstring, lines 238-245 — an inline sync sqlite write blocks the loop and starves the checkpointer into "database is locked").
+  - [x] Do not change `_consume` barrier writes; the next interrupt/failure/completion overwrites status as today.
+  - [x] Add a TestClient/asyncio test (alongside `tests/api/test_gate.py` conventions) asserting: after gate approve 202, the run row reads `status="running"` while the resumed graph is in flight (stub graph — see existing gate tests for the stub-run pattern).
+  - [x] Optional (should, not must): also set `current_stage` to the successor stage and publish a `stage_entry` SSE pre-stream, mirroring `retry_stage` lines 606-608 (approve at stage *i* → `_STAGES[i+1]`; reject → same stage re-runs). If skipped, record why in the Dev Agent Record — see Saved Questions Q3.
+- [x] **Task 4 [frontend]: Fix D14 — count ASS dialogue events (AC: 8, 9)**
+  - [x] In `frontend/src/components/ArtifactPanel.tsx` `SubtitlePanel` (line 373), extend the cue count to cover both formats, e.g. `const cueCount = (text.match(/-->/g) ?? []).length + (text.match(/^Dialogue:/gm) ?? []).length`.
+  - [x] Extend the existing subtitle test (`ArtifactPanel.test.tsx:113-121`, currently SRT-only) with an `.ass` fixture (header + N `Dialogue:` lines) asserting "자막 N개".
+- [x] **Task 5: Regression verification (AC: all)**
+  - [x] `cd frontend && npm test` (Vitest, jsdom) and `npm run build` (tsc -b + vite build) pass.
+  - [x] `uv run pytest tests/api/test_static_spa.py tests/api/test_gate.py tests/api/test_stages.py tests/api/test_sse.py` pass.
+  - [x] Preserved behavior spot-checks: gate 승인/반려 flow unchanged; retry API contract unchanged (202, `{"status":"retrying"}` body); SSE listeners for all four event names still update sidebar/panel; `/files` mount and `/runs/*` API routes unshadowed.
+
+### Review Findings
+
+- [x] [Review][Patch] 자막 큐 카운트가 ASS `Dialogue:` 텍스트에 리터럴 `-->`가 포함되면 이중 계산될 수 있음 [frontend/src/components/ArtifactPanel.tsx:373]
+- [x] [Review][Patch] `test_unknown_route_outside_app_still_json_404`가 SPA 마운트 없는 별도 앱으로 검증해 "SPA 마운트와 공존해도 무관"이라는 주석의 주장을 실제로 증명하지 못함 [tests/api/test_static_spa.py]
+- [x] [Review][Patch] D9 라이브-페이지 재시도 테스트가 AC1.2 "정확히 한 번"의 POST 요청 수를 검증하지 않음 [frontend/src/pages/RunDetail.test.tsx]
+- [x] [Review][Defer] `resume_run`의 무조건 pre-write(`status="running"`)에 동시성 가드 없음 — deferred, pre-existing (`resume_run_from_failure`가 이미 동일 패턴) [src/yt_flow/services/run_service.py:495]
+- [x] [Review][Defer] `_write_run` pre-write 실패 시 `spawn()` 백그라운드 태스크에서 예외가 조용히 삼켜짐 — deferred, pre-existing (동일 구조가 `resume_run_from_failure`에도 존재) [src/yt_flow/services/run_service.py:495]
+- [x] [Review][Defer] `run_failed`가 `stage:"unknown"`을 전달하면 `curIdx=-1`이 되어 사이드바 reachedIdx가 깨짐 — deferred, pre-existing (fresh-load 경로에서 이 diff 이전부터 이미 존재하던 갭; 이 diff는 AC1이 요구하는 live/fresh-load 동등성만 달성) [frontend/src/pages/RunDetail.tsx:96-101]
+- [x] [Review][Defer] AC7(반려된 non-scenario 게이트 재개 경로) 전용 회귀 테스트 없음 — deferred, 현재 무조건적 pre-write로 인해 우연히 통과하나 회귀 가드는 없음 [tests/services/test_run_service_gate.py]
 
 ## Dev Notes
 
@@ -177,8 +191,33 @@ Four surgical fixes, zero new dependencies, zero new abstractions: one SSE-handl
 
 ### Agent Model Used
 
+claude-sonnet-5
+
 ### Debug Log References
+
+- D4 first attempt caught `fastapi.HTTPException` in `SpaStaticFiles.get_response`, which never matched — Starlette's `StaticFiles.get_response` raises `starlette.exceptions.HTTPException`, and `fastapi.HTTPException` is a *subclass*, not the same class, so the `except` clause silently missed it and every deep link still 404'd. Fixed by catching `starlette.exceptions.HTTPException` directly. Caught by `test_spa_deep_link_serves_index_html` failing on first run.
+- D7 regression test required a genuinely blocking stage node (`asyncio.Event`) plus a background `asyncio.create_task`, rebuilt via a dedicated graph (own `Settings`/checkpointer, not the shared `env` fixture) so the STAGE_NODES patch takes effect at graph-build time — `stub_stage_nodes` makes every stage instant, which can't demonstrate a state read *while the resumed graph is in flight*.
 
 ### Completion Notes List
 
+- AC1–3 (D9): `RunDetail.tsx` `onRunFailed` now merges `stage` into `gate_states[stage] = "failed"` and `current_stage`, reusing the same `parseGateStates` pattern as `setStageGateState`. Both the live-SSE path and the fresh-load regression path pass in `RunDetail.test.tsx`.
+- AC4–5 (D4): `SpaStaticFiles(StaticFiles)` in `src/yt_flow/api/main.py` catches the Starlette 404 on a missing `/app/*` path and re-serves `index.html`; real assets and non-`/app` routes are untouched (verified in `test_static_spa.py`).
+- AC6–7 (D7): `resume_run` now pre-writes `status="running"` via `asyncio.to_thread(_write_run, ...)` before streaming, mirroring `retry_stage`/`resume_run_from_failure`. Skipped the optional Q3 subtask (pre-writing the successor `current_stage` + synthetic `stage_entry`) — the AC only requires `status="running"`, and branching approve-vs-reject successor logic adds complexity for a live-page cosmetic gap already scoped out in Q2 as a follow-up story. Verified with a genuinely concurrent test (blocking stage node + background task), not just a call-order assertion.
+- AC8–9 (D14): `ArtifactPanel.tsx` `SubtitlePanel` cue count now sums SRT `-->` arrows and ASS `Dialogue:` lines; both formats covered by test.
+- Full regression: frontend 98/98 tests + `npm run build` clean; backend targeted suites 46/46; full backend suite 578/578 passed (1 pre-existing skip) — excluded `tests/pipeline/nodes/test_video.py`, which was mid-edit from an unrelated concurrent session (`transition_variety_enabled` removal, Story 7.4-adjacent) sharing this worktree; none of those files are touched by this story and the failures pre-date this session's changes.
+
 ### File List
+
+- `frontend/src/pages/RunDetail.tsx`
+- `frontend/src/pages/RunDetail.test.tsx`
+- `frontend/src/components/ArtifactPanel.tsx`
+- `frontend/src/components/ArtifactPanel.test.tsx`
+- `src/yt_flow/api/main.py`
+- `src/yt_flow/services/run_service.py`
+- `tests/api/test_static_spa.py`
+- `tests/services/test_run_service_gate.py`
+
+## Change Log
+
+- 2026-07-07: Implemented Story 3.8 — fixed D9 (retry button dead on live-page run_failed), D4 (SPA deep-link 404), D7 (stale awaiting_approval status post-approval), D14 (ASS subtitle count showing 0). All 4 defects fixed with targeted regression tests; no new dependencies, no refactors. Status → review.
+- 2026-07-07: Code review (bmad-code-review) — 3 patch findings fixed (D14 cue-count double-count risk via per-line OR instead of summed regexes; placebo test in `test_static_spa.py` now exercises the SPA-mounted app; D9 test now asserts the retry POST fires exactly once per AC1.2), 4 defer findings logged to `deferred-work.md` (all pre-existing patterns mirrored/inherited, not introduced by this diff). Frontend 99/99 + build clean; backend 61/61 targeted suites. Status → done.

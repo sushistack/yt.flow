@@ -183,6 +183,13 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 - **Partial-usable `word_segments` still drops words instead of falling back** [src/yt_flow/pipeline/nodes/subtitle.py `_words_or_segments`] — this fix (see spec-subtitle-word-segment-fallback.md) only closes the fully-empty case (no word has usable `start`/`end`). If even one word lacks `start`/`end` while others have it, `usable` is non-empty/truthy so the function returns the partial word list, silently dropping the unusable words rather than falling back to the presumably-complete `segments`. Pre-existing behavior (identical filter logic existed before this fix), not a regression, but still untested and still live. Reproduce only with a live WhisperX model; narrow further if a real run surfaces missing words mid-cue.
 
+## Deferred from: code review of story-3.8 (2026-07-07)
+
+- **`resume_run`의 무조건적 pre-write(`status="running"`)에 동시성 가드 없음** [src/yt_flow/services/run_service.py:495] — `retry_stage`/`resume_run_from_failure`가 이미 동일한 무가드 패턴을 사용 중이며, `POST /gate` 라우트의 409 사전조건 검사가 대부분의 동시-재개를 걸러낸다. 이 스토리의 diff가 새로 만든 위험이 아니라 기존 패턴을 그대로 미러링한 것.
+- **`_write_run` pre-write 실패 시 예외가 `spawn()` 백그라운드 태스크에서 조용히 삼켜짐** [src/yt_flow/services/run_service.py:495] — `resume_run_from_failure`(기존 코드, line 512)에도 동일한 구조가 이미 존재. 두 함수를 함께 고치는 일관성 패스가 필요하면 그때 처리.
+- **`run_failed`가 `stage:"unknown"`을 전달하면 `curIdx=-1`이 되어 사이드바 `reachedIdx`가 깨짐** [frontend/src/pages/RunDetail.tsx:96-101] — 백엔드의 `_stage_from_exception` fallback("unknown")은 이 diff 이전부터 존재했고, fresh-load 경로(`GET /runs/{id}`)에서 이미 동일한 문제가 재현 가능했다. 이 diff는 AC1이 요구하는 live-SSE/fresh-load 동등성만 달성했을 뿐 이 갭 자체를 새로 만들지 않음. `STAGE_ORDER`에 "unknown"에 대한 명시적 처리를 추가하려면 별도 스토리 필요.
+- **AC7(반려된 non-scenario 게이트 재개 경로) 전용 회귀 테스트 없음** [tests/services/test_run_service_gate.py] — `resume_run`의 pre-write가 action과 무관하게 무조건 실행되므로 현재는 구조적으로 통과하지만, 향후 action-분기 로직이 추가될 경우 이 경로만 회귀해도 잡아낼 테스트가 없다.
+
 ## Anticipated next bottlenecks — 의도적으로 아직 스토리화하지 않음 (2026-07-07, E2E 베이스라인 스토리 10건 완성 시점)
 
 베이스라인發 10개 스토리(5-14~5-18, 3-8, 8-1~8-4)가 완성돼도 아래는 남을 것으로 예측된 리스크. **재고 조건: 8-3의 DoD(SCP-049 재렌더 A/B, iteration 1) 결과에서 실제 결함으로 확인되면 그때 스토리화** — 예측만으로 미리 만드는 건 YAGNI.
