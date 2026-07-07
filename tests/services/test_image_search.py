@@ -7,7 +7,7 @@ import pytest
 
 from yt_flow.domain.state import SearchResult
 from yt_flow.services import image_search as image_search_module
-from yt_flow.services.image_search import DuckDuckGoImageSearch, ScpWikiImageFetch, _VQD_RE
+from yt_flow.services.image_search import DuckDuckGoImageSearch, ScpWikiImageFetch, _VQD_MAX_RETRIES, _VQD_RE
 
 
 def _make_injecting_client(transport: httpx.MockTransport) -> type[httpx.AsyncClient]:
@@ -30,9 +30,14 @@ def _fake_vqd_html():
     return '<html><head>vqd=3-314-abc123-def456</head></html>'
 
 
-async def _no_sleep(_seconds: float) -> None:
-    """Stand-in for asyncio.sleep in retry tests — skips the real backoff delay."""
-    return None
+def _recording_sleep(recorded: list[float]):
+    """Stand-in for asyncio.sleep in retry tests — records the requested delay
+    instead of skipping it, so tests can assert on the backoff sequence."""
+
+    async def _sleep(seconds: float) -> None:
+        recorded.append(seconds)
+
+    return _sleep
 
 
 class TestDuckDuckGoImageSearch:
@@ -73,7 +78,8 @@ class TestDuckDuckGoImageSearch:
     @pytest.mark.asyncio
     async def test_vqd_retry_on_failure(self, monkeypatch):
         """AC1/AC5: retry loop with exponential backoff, preserved across the new GET path."""
-        monkeypatch.setattr(image_search_module.asyncio, "sleep", _no_sleep)
+        sleeps: list[float] = []
+        monkeypatch.setattr(image_search_module.asyncio, "sleep", _recording_sleep(sleeps))
         calls = {"n": 0}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -89,11 +95,12 @@ class TestDuckDuckGoImageSearch:
 
         assert vqd == "3-314-abc123-def456"
         assert calls["n"] == 3
+        assert sleeps == [1, 2]  # exponential backoff: 2**0, 2**1
 
     @pytest.mark.asyncio
     async def test_vqd_retry_exhausted_raises(self, monkeypatch):
         """AC5: exhausting all retries raises the same RuntimeError as before."""
-        monkeypatch.setattr(image_search_module.asyncio, "sleep", _no_sleep)
+        monkeypatch.setattr(image_search_module.asyncio, "sleep", _recording_sleep([]))
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(500, request=request)
@@ -101,7 +108,7 @@ class TestDuckDuckGoImageSearch:
         transport = httpx.MockTransport(handler)
         search = DuckDuckGoImageSearch()
         async with httpx.AsyncClient(transport=transport) as client:
-            with pytest.raises(RuntimeError, match="VQD acquisition failed after 3 attempts"):
+            with pytest.raises(RuntimeError, match=f"VQD acquisition failed after {_VQD_MAX_RETRIES} attempts"):
                 await search._acquire_vqd(client, "SCP-096")
 
     @pytest.mark.asyncio
