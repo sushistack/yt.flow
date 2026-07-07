@@ -9,10 +9,8 @@ Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
 
 import asyncio
-import functools
 import logging
 import shutil
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +24,7 @@ from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     AMBIENT_VOLUME,
     MOOD_ASSET_PATHS,
+    STINGER_VOLUME,
     build_sound_design_args,
     build_sound_design_filter,
     resolve_mood,
@@ -73,11 +72,18 @@ _DIRECTION_POOL = [
 FADE_DURATION = 0.5  # seconds — in-place fade-out/fade-in at each segment's own edges
 BLACK_HOLD_DURATION = 0.3  # seconds — dip-to-black hold at card-less act breaks
 
-# ── Chapter-card constants (Story 5.1) ─────────────────────────────────────────
+# ── Chapter-card constants (Story 5.1, content Story 5.17) ─────────────────────
 MIN_CARD_DURATION = 1.5
-MAX_CARD_DURATION = 2.0
+MAX_CARD_DURATION = 2.5  # Story 5.17: raised 2.0->2.5 — cards now carry title+kicker text
 CARD_FADE_DURATION = 0.25  # seconds, in/out fade inside the card itself
 CARD_FONT_SIZE = 72
+CARD_KICKER_FONT_SIZE = 40
+CARD_FONT_PATH = Path("data/fonts/Pretendard-Bold.otf")
+
+# Bundled font directory for the subtitle `.ass` burn-in (Story 5.18 AC:6) — passed
+# as the ffmpeg `subtitles=` filter's `fontsdir` so libass resolves Fontname from
+# this dir first, never depending on system-installed fonts.
+SUBTITLE_FONT_DIR = Path("data/fonts")
 
 # ── Character idle-motion constants (Story 1.9c) ──────────────────────────────
 # Sway = larger/slower horizontal drift; bob = subtle/faster vertical breathing.
@@ -362,47 +368,23 @@ def _settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
 
 
-@functools.lru_cache(maxsize=1)
-def _drawtext_font() -> str:
-    """Resolve a Korean-capable drawtext font via fontconfig. [Story 5.1 AC:2]
+def _card_font() -> str:
+    """Resolve the bundled Pretendard Bold card font. [Story 5.17 AC:5]
 
-    Never hardcodes a machine-specific path: ``fc-match`` resolves whatever the
-    OS actually has installed. Noto Sans CJK first (Korean labels), DejaVu Sans
-    as the widely-packaged fallback.
+    A repo-relative committed file, not a fontconfig lookup — portable by
+    construction, unlike the machine-specific system-font search it replaces.
+    Fails fast if missing: that's repo corruption, not an environment condition.
     """
-    for family in ("Noto Sans CJK KR", "DejaVu Sans"):
-        try:
-            result = subprocess.run(
-                ["fc-match", "--format=%{file}", family],
-                capture_output=True, text=True, timeout=5, check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        path = result.stdout.strip()
-        if path and Path(path).exists():
-            return path
-    for path in (
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ):
-        if Path(path).exists():
-            return path
-    raise RuntimeError("no drawtext font resolved via fc-match (Noto Sans CJK KR / DejaVu Sans)")
+    if not CARD_FONT_PATH.exists():
+        raise RuntimeError(f"bundled card font not found: {CARD_FONT_PATH}")
+    return str(CARD_FONT_PATH)
 
 
 def _card_label(scene: SceneState) -> str:
-    """Chapter-card label for the upcoming scene. [Story 5.1 AC:3]
-
-    Uses a real title only if the state already carries one; SceneState has no
-    ``title`` field today, so this always falls back to ``"- N -"`` until one
-    is added upstream.
-    """
-    if "title" in SceneState.__annotations__:
-        title = str(scene.get("title", "")).strip()  # type: ignore[typeddict-item]
-        if title:
-            return title
-    return f"- {scene['scene_num']} -"
+    """Chapter-card title for the upcoming scene, falling back to "- N -"
+    when the scenario stage hasn't produced one yet. [Story 5.1 AC:3] [Story 5.17 AC:8]"""
+    title = str(scene.get("title") or "").strip()
+    return title or f"- {scene['scene_num']} -"
 
 
 def _chapter_card_duration(value: float) -> float:
@@ -531,12 +513,17 @@ async def _compose_scene(
     sound_design_enabled: bool = False,
     post_fx_enabled: bool = False,
     parallax_enabled: bool = False,
+    include_stinger: bool = True,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
     transparent character composited on top with idle motion, optionally with a
     mood-driven BGM/ambient/stinger mix ducked under the narration, optionally
     with a mood-driven color grade + constant vignette/grain applied before
     subtitle burn-in. [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9]
+
+    `include_stinger=False` (Story 5.17 AC:7) omits this scene's own baked
+    scene-entry stinger — set by the caller for a scene immediately preceded
+    by a chapter card, since the card now carries that boundary's stinger hit.
 
     Returns (segment_path, effect_spec, character_overlaid).
     """
@@ -557,6 +544,7 @@ async def _compose_scene(
     spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
+    fontsdir = _escape_subtitles_path(SUBTITLE_FONT_DIR.resolve())
     mood = scene.get("mood")
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
     # so every chain below degrades to today's byte-for-byte ungraded output.
@@ -588,7 +576,7 @@ async def _compose_scene(
             f"[0:v]{zp_chain}[bg];"
             f"[1:v]{char_chain}[char];"
             f"[bg][char]{overlay}[ov];"
-            f"[ov]{post_label}subtitles='{sub}'[out]"
+            f"[ov]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]"
         )
         video_map = "[out]"
         narration_label = "[2:a]"
@@ -600,7 +588,7 @@ async def _compose_scene(
             "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
             "-i", audio_path,
         ]
-        video_chain = f"[0:v]{zp_chain}{post_frag},subtitles='{sub}'[vout]"
+        video_chain = f"[0:v]{zp_chain}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
         video_map = "[vout]"
         narration_label = "[1:a]"
         input_offset = 2
@@ -612,9 +600,9 @@ async def _compose_scene(
         # (labeled [vout]) instead of staying a -vf string. Hazard 2: input_offset/
         # narration_label differ per branch — see class docstring in sound_design.py.
         resolved_mood = resolve_mood(scene.get("mood"))
-        sound_args = build_sound_design_args(resolved_mood)
+        sound_args = build_sound_design_args(resolved_mood, include_stinger=include_stinger)
         sound_fragment, audio_out_label = build_sound_design_filter(
-            resolved_mood, duration, narration_label, input_offset,
+            resolved_mood, duration, narration_label, input_offset, include_stinger=include_stinger,
         )
         ffmpeg_args = [
             "-y", *inputs, *sound_args,
@@ -637,7 +625,7 @@ async def _compose_scene(
     else:
         # Sound design disabled (AC:8): keep the pre-existing -vf path, still
         # carrying post_frag (empty string when post_fx_enabled=False too).
-        vf = f"{zp_chain}{post_frag},subtitles='{sub}'"
+        vf = f"{zp_chain}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'"
         ffmpeg_args = [
             "-y", *inputs,
             "-vf", vf,
@@ -671,17 +659,21 @@ async def _compose_chapter_card(
     out_dir: Path,
     duration: float,
     *,
+    kicker: str = "",
     mood: str | None = None,
     post_fx_enabled: bool = False,
     sound_design_enabled: bool = False,
 ) -> Path:
-    """Render a black title-card segment: color bg + centered drawtext + audio
-    bed, fading in/out at its own edges. [Story 5.1 AC:2,5] [Story 5.16 AC:3,5]
+    """Render a black title-card segment: color bg + centered title/kicker
+    drawtext + audio bed, fading in/out at its own edges.
+    [Story 5.1 AC:2,5] [Story 5.16 AC:3,5] [Story 5.17 AC:4,5,7]
 
     `mood` grades the card to the *upcoming* scene's mood, applied before
-    drawtext so the label text isn't grained. [Story 7.2 AC:7,8] The same mood
-    also picks the card's ambient audio bed when sound design is enabled — the
-    card IS the dip-to-black (Story 5.16), so it carries the boundary's audio.
+    drawtext so the text isn't grained. [Story 7.2 AC:7,8] The same mood also
+    picks the card's ambient audio bed, and — when sound design is on — its
+    mood stinger: the card IS the boundary now (Story 5.16's dip-to-black,
+    Story 5.17's stinger-on-entry), so it carries the boundary's full audio,
+    not just the ambient bed.
 
     Matches _compose_scene's output contract (COMP_W x COMP_H, FPS, H.264/AAC,
     yuv420p, has an audio stream) so _join_with_fades can treat it as an
@@ -689,35 +681,77 @@ async def _compose_chapter_card(
     """
     card_path = out_dir / f"card_{index:03d}.mp4"
     label_file = out_dir / f"card_{index:03d}_label.txt"
-    label_file.write_text(label, encoding="utf-8")
-    font = _escape_subtitles_path(Path(_drawtext_font()))
-    textfile = _escape_subtitles_path(label_file)
+    label_stripped = label.strip()
+    label_clean = label_stripped.splitlines()[0].strip() if label_stripped else label_stripped
+    label_file.write_text(label_clean, encoding="utf-8")
+    font = _escape_subtitles_path(Path(_card_font()))
+    title_textfile = _escape_subtitles_path(label_file)
     fade_out_start = max(0.0, duration - CARD_FADE_DURATION)
     post_frag = f"{build_post_filter(mood)}," if post_fx_enabled else ""
+
+    kicker_frag = ""
+    kicker_stripped = kicker.strip()
+    kicker_clean = kicker_stripped.splitlines()[0].strip() if kicker_stripped else ""
+    if kicker_clean:
+        kicker_file = out_dir / f"card_{index:03d}_kicker.txt"
+        kicker_file.write_text(kicker_clean, encoding="utf-8")
+        kicker_textfile = _escape_subtitles_path(kicker_file)
+        kicker_frag = (
+            f",drawtext=fontfile='{font}':textfile='{kicker_textfile}':"
+            f"fontcolor=white:fontsize={CARD_KICKER_FONT_SIZE}:x=(w-text_w)/2:y=(h-text_h)/2+60"
+        )
     vf = (
         f"{post_frag}"
-        f"drawtext=fontfile='{font}':textfile='{textfile}':"
-        f"fontcolor=white:fontsize={CARD_FONT_SIZE}:x=(w-text_w)/2:y=(h-text_h)/2,"
+        f"drawtext=fontfile='{font}':textfile='{title_textfile}':"
+        f"fontcolor=white:fontsize={CARD_FONT_SIZE}:x=(w-text_w)/2:y=(h-text_h)/2-40"
+        f"{kicker_frag},"
         f"fade=t=in:st=0:d={CARD_FADE_DURATION},"
         f"fade=t=out:st={fade_out_start:.3f}:d={CARD_FADE_DURATION}"
     )
-    audio_input, audio_filter_args = _card_hold_audio_input(
-        mood, sound_design_enabled=sound_design_enabled,
-    )
-    rc, stderr = await _run_ffmpeg(
-        "-y",
-        "-f", "lavfi", "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={duration}",
-        *audio_input,
-        "-vf", vf,
-        *audio_filter_args,
-        # Explicit -map: without it, a real ambient .mp3 (unlike anullsrc) could
-        # carry an embedded cover-art video stream that hijacks ffmpeg's default
-        # video-stream auto-selection away from the color background.
-        "-map", "0:v", "-map", "1:a",
-        "-t", f"{duration:.3f}",
-        *_OUTPUT_ARGS,
-        str(card_path),
-    )
+
+    if sound_design_enabled:
+        # Ambient bed (5.16) + this boundary's mood stinger, one-shot from t=0
+        # (Story 5.17 AC:7) — the following scene omits its own baked stinger
+        # via include_stinger=False so the boundary gets exactly one hit.
+        resolved_mood = resolve_mood(mood)
+        ambient = MOOD_ASSET_PATHS[resolved_mood]["ambient"]
+        stinger = MOOD_ASSET_PATHS[resolved_mood]["stinger"]
+        # normalize=0 (matches sound_design.py's own final mix): amix's default
+        # normalize=1 auto-attenuates by active-input count, which flattened the
+        # stinger down to the ambient bed's level — no audible hit at all. Summing
+        # at the configured volumes verbatim is what makes AC:7's "one hit at
+        # card t=0" actually audible. [caught in Story 5.17 live validation]
+        audio_fragment = (
+            f"[1:a]volume={AMBIENT_VOLUME}[amb_v];"
+            f"[2:a]volume={STINGER_VOLUME},apad=whole_dur={duration}[stg_v];"
+            f"[amb_v][stg_v]amix=inputs=2:duration=first:normalize=0[aout]"
+        )
+        rc, stderr = await _run_ffmpeg(
+            "-y",
+            "-f", "lavfi", "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={duration}",
+            "-stream_loop", "-1", "-i", str(ambient),
+            "-i", str(stinger),
+            "-filter_complex", f"[0:v]{vf}[vout];{audio_fragment}",
+            "-map", "[vout]", "-map", "[aout]",
+            "-t", f"{duration:.3f}",
+            *_OUTPUT_ARGS,
+            str(card_path),
+        )
+    else:
+        audio_input, _ = _card_hold_audio_input(mood, sound_design_enabled=False)
+        rc, stderr = await _run_ffmpeg(
+            "-y",
+            "-f", "lavfi", "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={duration}",
+            *audio_input,
+            "-vf", vf,
+            # Explicit -map: without it, a real ambient .mp3 (unlike anullsrc) could
+            # carry an embedded cover-art video stream that hijacks ffmpeg's default
+            # video-stream auto-selection away from the color background.
+            "-map", "0:v", "-map", "1:a",
+            "-t", f"{duration:.3f}",
+            *_OUTPUT_ARGS,
+            str(card_path),
+        )
     if rc != 0:
         raise RuntimeError(f"FFmpeg chapter card {index} failed (rc={rc}): {stderr[-500:]}")
     if not card_path.exists():
@@ -898,6 +932,11 @@ async def video_node(state: PipelineState) -> dict:
         run_dir = Path(s.workspace_path) / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
+        # Chapter cards (Story 5.1): only meaningful with 2+ scenes to join. Computed
+        # up front (Story 5.17 AC:7) so _compose_scene knows whether to suppress its
+        # own scene-entry stinger for scenes immediately following a card.
+        chapter_cards_enabled = bool(s.chapter_cards) and len(scenes) >= 2
+
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         for i, scene in enumerate(scenes):
             seg_path, spec, has_char = await _compose_scene(
@@ -905,6 +944,7 @@ async def video_node(state: PipelineState) -> dict:
                 sound_design_enabled=s.sound_design_enabled,
                 post_fx_enabled=s.post_fx_enabled,
                 parallax_enabled=s.parallax_enabled,
+                include_stinger=not (chapter_cards_enabled and i > 0),
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))
@@ -912,8 +952,6 @@ async def video_node(state: PipelineState) -> dict:
         output = run_dir / "video.mp4"
         segs = [p for p, _, _, _ in segs_with_specs]
 
-        # Chapter cards (Story 5.1): only meaningful with 2+ scenes to join.
-        chapter_cards_enabled = bool(s.chapter_cards) and len(segs_with_specs) >= 2
         card_duration = _chapter_card_duration(s.chapter_card_duration_sec)
         card_count = 0
 
@@ -932,10 +970,15 @@ async def video_node(state: PipelineState) -> dict:
                 if chapter_cards_enabled:
                     # Card boundaries produce no double dip (AC:5) — the card
                     # IS the dip, self-fading internally; it gets 0.0 join-fades.
-                    label = _card_label(scenes[i + 1])
+                    next_scene = scenes[i + 1]
+                    label = _card_label(next_scene)
+                    # AC:8 — the "- N -" fallback carries no kicker line, even if a
+                    # kicker exists without a title (partial checkpoint/LLM omission).
+                    has_title = bool(str(next_scene.get("title") or "").strip())
+                    kicker = (next_scene.get("kicker") or "") if has_title else ""
                     card_path = await _compose_chapter_card(
                         label, i + 1, run_dir, card_duration,
-                        mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
+                        kicker=kicker, mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
                         sound_design_enabled=s.sound_design_enabled,
                     )
                     join_segments.append((card_path, card_duration, 0.0, 0.0))

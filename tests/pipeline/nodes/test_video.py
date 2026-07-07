@@ -682,6 +682,7 @@ async def test_video_node_escapes_subtitle_path(monkeypatch, tmp_path, assets):
     vf = captured_vfs[0]
     assert "subtitles='" in vf and "\\:" in vf  # single-quoted value, colon escaped
     assert "a b:c.srt" not in vf  # raw unescaped colon must not appear
+    assert "fontsdir='" in vf  # Story 5.18 AC:6 — bundled Pretendard, no system-font dependency
 
 
 async def test_video_node_missing_image_sets_error(monkeypatch, tmp_path, assets):
@@ -1010,6 +1011,7 @@ async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, a
     assert "overlay=" in fc         # character composited on top
     assert "eval=frame" in fc       # motion animates per-frame
     assert "subtitles=" in fc       # subtitles burned last
+    assert "fontsdir='" in fc       # Story 5.18 AC:6 — bundled Pretendard, character-path branch too
     assert "scale=" in fc           # character normalized to motion-safe box
     assert "[char]" in fc           # scaled character feeds the overlay
 
@@ -1134,7 +1136,6 @@ async def test_chapter_card_post_fx_placement(monkeypatch, tmp_path):
         Path(args[-1]).write_bytes(b"FAKE_MP4")
         return 0, ""
 
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake)
 
     await video._compose_chapter_card(
@@ -1157,7 +1158,6 @@ async def test_chapter_card_post_fx_disabled_no_fragment(monkeypatch, tmp_path):
         Path(args[-1]).write_bytes(b"FAKE_MP4")
         return 0, ""
 
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake)
 
     await video._compose_chapter_card("- 1 -", 1, tmp_path, 1.75)
@@ -1182,7 +1182,6 @@ async def test_video_node_chapter_card_uses_upcoming_scene_mood(monkeypatch, tmp
         return 0, ""
 
     monkeypatch.setattr(video, "_run_ffmpeg", _rec)
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 
     scene1 = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread")
     scene2 = _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation")
@@ -1675,7 +1674,6 @@ async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path
     """3-scene run with cards enabled renders 3 scene segs + 2 card segs and joins
     all 5 into one filtergraph, no black holds. [AC:2,5] [Story 5.16 AC:1,5]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     fake, calls = _capture_ffmpeg_calls()
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
@@ -1707,10 +1705,9 @@ async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path
 
 
 async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):
-    """Out-of-range config is clamped to the accepted 1.5-2.0s card range. [AC:2]"""
+    """Out-of-range config is clamped to the accepted 1.5-2.5s card range. [AC:2] [Story 5.17 AC:6]"""
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True, chapter_card_duration_sec=99.0))
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
     monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
 
@@ -1720,9 +1717,154 @@ async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):
     ]
     await video_node(_state(scenes))
 
-    assert captured.get("chapter_card_duration") == pytest.approx(2.0)
+    assert captured.get("chapter_card_duration") == pytest.approx(2.5)
     assert video._chapter_card_duration(0.1) == pytest.approx(1.5)
     assert video._chapter_card_duration(1.75) == pytest.approx(1.75)
+
+
+# ── Chapter-card title + kicker content (Story 5.17) ────────────────────────────
+
+
+async def test_compose_chapter_card_writes_title_and_kicker_textfiles(tmp_path, monkeypatch):
+    """[AC:4] Two drawtext chains when kicker is present; each textfile carries
+    the exact Korean string (never inlined into the filtergraph)."""
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    await video._compose_chapter_card("첫 면담", 1, tmp_path, 1.75, kicker="개체가 입을 열다")
+
+    vf = calls[0][calls[0].index("-vf") + 1]
+    assert vf.count("drawtext=") == 2
+    assert f"fontsize={video.CARD_FONT_SIZE}" in vf
+    assert f"fontsize={video.CARD_KICKER_FONT_SIZE}" in vf
+    assert (tmp_path / "card_001_label.txt").read_text(encoding="utf-8") == "첫 면담"
+    assert (tmp_path / "card_001_kicker.txt").read_text(encoding="utf-8") == "개체가 입을 열다"
+
+
+async def test_compose_chapter_card_title_stripped_to_first_line(tmp_path, monkeypatch):
+    """A multi-line title is defended at the render layer too (not just
+    build_scenes) — mirrors the kicker's own first-line stripping."""
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    await video._compose_chapter_card("  첫 면담  \n둘째 줄", 1, tmp_path, 1.75)
+
+    assert (tmp_path / "card_001_label.txt").read_text(encoding="utf-8") == "첫 면담"
+
+
+async def test_compose_chapter_card_no_kicker_renders_single_drawtext(tmp_path, monkeypatch):
+    """[AC:4,8] Empty kicker (incl. today's "- N -" fallback): exactly one drawtext,
+    no kicker textfile written."""
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    await video._compose_chapter_card("- 1 -", 1, tmp_path, 1.75)
+
+    vf = calls[0][calls[0].index("-vf") + 1]
+    assert vf.count("drawtext=") == 1
+    assert not (tmp_path / "card_001_kicker.txt").exists()
+
+
+async def test_compose_chapter_card_uses_bundled_fontfile(tmp_path, monkeypatch):
+    """[AC:5] drawtext fontfile= points at the bundled Pretendard path, not a
+    fontconfig-resolved system font."""
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    await video._compose_chapter_card("제목", 1, tmp_path, 1.75, kicker="상황")
+
+    vf = calls[0][calls[0].index("-vf") + 1]
+    assert f"fontfile='{video.CARD_FONT_PATH}'" in vf
+
+
+async def test_video_node_card_passes_upcoming_scene_kicker(monkeypatch, tmp_path, assets):
+    """[Task 3] video_node passes scenes[i+1]'s kicker to the card render."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+               title="둘째 씬", kicker="맥락 한 줄"),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    # boundary between scene 0 and scene 1 (index i=0) renders card index i+1=1
+    assert (tmp_path / "run-001" / "card_001_label.txt").read_text(encoding="utf-8") == "둘째 씬"
+    assert (tmp_path / "run-001" / "card_001_kicker.txt").read_text(encoding="utf-8") == "맥락 한 줄"
+
+
+async def test_video_node_card_no_kicker_when_title_missing(monkeypatch, tmp_path, assets):
+    """[AC:8] A kicker with no title is a partial/inconsistent state — the "- N -"
+    fallback card must render with no kicker line, not fallback-title-plus-kicker."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+               kicker="맥락 한 줄"),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert (tmp_path / "run-001" / "card_001_label.txt").read_text(encoding="utf-8") == "- 2 -"
+    assert not (tmp_path / "run-001" / "card_001_kicker.txt").exists()
+
+
+# ── Stinger-on-card-entry sync (Story 5.17 AC:7) ────────────────────────────────
+
+
+async def test_video_node_card_stinger_present_scene_after_card_suppressed(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """The card carries the boundary's stinger; the scene right after a card omits
+    its own baked scene-entry stinger. Scene 0 (no preceding card) keeps it."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=True, sound_design_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    card_call = next(args for args in calls if isinstance(args[-1], str) and "/card_" in args[-1])
+    assert str(sound_assets["stinger"]) in list(card_call)
+
+    seg_calls = [args for args in calls if isinstance(args[-1], str) and "/seg_" in args[-1]]
+    seg0_args, seg1_args = seg_calls[0], seg_calls[1]
+    assert str(sound_assets["stinger"]) in list(seg0_args)  # scene 0: no preceding card
+    assert str(sound_assets["stinger"]) not in list(seg1_args)  # scene 1: right after the card
+
+
+async def test_video_node_no_cards_scene_stinger_unchanged(monkeypatch, tmp_path, assets, sound_assets):
+    """[AC:7] Cards off: every scene keeps its own baked scene-entry stinger."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=False, sound_design_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    seg_calls = [args for args in calls if isinstance(args[-1], str) and "/seg_" in args[-1]]
+    for args in seg_calls:
+        assert str(sound_assets["stinger"]) in list(args)
 
 
 async def test_chapter_cards_disabled_no_card_render(monkeypatch, tmp_path, assets):
@@ -1804,7 +1946,6 @@ async def test_black_hold_per_boundary_file_when_sound_design_enabled(
 async def test_black_hold_zero_when_cards_enabled(monkeypatch, tmp_path, assets):
     """[AC:5] Cards on: zero hold segments render — the card is the dip."""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     fake, calls = _capture_ffmpeg_calls()
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
@@ -1870,12 +2011,12 @@ async def test_card_uses_ambient_bed_when_sound_design_enabled(
     monkeypatch, tmp_path, assets, sound_assets,
 ):
     """[AC:3] Card audio bed is the upcoming scene's mood ambient asset when sound
-    design is on; card visuals (drawtext, self-fades) are unaffected."""
+    design is on, mixed with its mood stinger via -filter_complex (Story 5.17
+    AC:7); card visuals (drawtext, self-fades) are unaffected."""
     monkeypatch.setattr(
         video, "_settings",
         lambda: _settings_ns(tmp_path, chapter_cards=True, sound_design_enabled=True),
     )
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     fake, calls = _capture_ffmpeg_calls()
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
@@ -1889,16 +2030,18 @@ async def test_card_uses_ambient_bed_when_sound_design_enabled(
     card_call = next(args for args in calls if isinstance(args[-1], str) and "/card_" in args[-1])
     args = list(card_call)
     assert str(sound_assets["ambient"]) in args
-    vf = args[args.index("-vf") + 1]
-    assert "fade=t=in:st=0:d=0.25" in vf
-    assert "drawtext=" in vf
+    assert str(sound_assets["stinger"]) in args
+    fc = args[args.index("-filter_complex") + 1]
+    assert "fade=t=in:st=0:d=0.25" in fc
+    assert "drawtext=" in fc
+    assert f"volume={video.AMBIENT_VOLUME}" in fc
+    assert f"volume={video.STINGER_VOLUME}" in fc
 
 
 async def test_card_and_hold_receive_zero_join_fades(monkeypatch, tmp_path, assets):
     """[AC:1,5] Cards/holds keep their own internal fades but get 0.0 join-fades
     from _join_with_fades — no double fade at their own edges."""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     captured_filter = _capture_filter(monkeypatch)
 
     scenes = [
@@ -1932,7 +2075,6 @@ async def test_trace_chapter_card_metadata(monkeypatch, tmp_path, assets):
     """Trace metadata reflects fadeblack transition + chapter-card state/count/duration. [AC:7]"""
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True, chapter_card_duration_sec=1.75))
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
     monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
 
@@ -1976,43 +2118,25 @@ def test_card_label_uses_fallback_when_no_title(assets):
     assert video._card_label(scene) == "- 3 -"
 
 
-def test_card_label_ignores_ad_hoc_title_until_scene_state_defines_it(assets):
+def test_card_label_uses_real_title_when_scene_state_defines_it(assets):
+    """[Story 5.17 AC:8] A non-empty scene title wins over the "- N -" fallback."""
     scene = _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
     scene["title"] = "The Discovery"  # type: ignore[typeddict-unknown-key]
-    assert video._card_label(scene) == "- 3 -"
+    assert video._card_label(scene) == "The Discovery"
 
 
-@pytest.mark.skipif(shutil.which("fc-match") is None, reason="fontconfig not installed")
-def test_drawtext_font_resolves_to_existing_file():
-    font = video._drawtext_font()
+def test_card_font_resolves_to_bundled_pretendard():
+    font = video._card_font()
     assert Path(font).exists()
+    assert font == str(video.CARD_FONT_PATH)
 
 
-def test_drawtext_font_tries_fallback_after_fc_match_timeout(monkeypatch, tmp_path):
-    fallback = tmp_path / "fallback.ttf"
-    fallback.write_bytes(b"font")
-    calls = 0
-
-    def _run(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout"))
-        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout=str(fallback), stderr="")
-
-    try:
-        video._drawtext_font.cache_clear()
-        monkeypatch.setattr(subprocess, "run", _run)
-        font = video._drawtext_font()
-        assert font == str(fallback)
-    finally:
-        video._drawtext_font.cache_clear()
+def test_card_font_raises_when_bundled_file_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(video, "CARD_FONT_PATH", tmp_path / "missing.otf")
+    with pytest.raises(RuntimeError, match="bundled card font not found"):
+        video._card_font()
 
 
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("fc-match") is None,
-    reason="ffmpeg or fontconfig not installed",
-)
 async def test_compose_chapter_card_integration(tmp_path):
     """Real FFmpeg: card segment renders with video+audio streams. [AC:2]"""
     from yt_flow.pipeline.nodes.video import _compose_chapter_card
@@ -2038,7 +2162,6 @@ async def test_compose_chapter_card_bounds_infinite_audio(monkeypatch, tmp_path)
         Path(args[-1]).write_bytes(b"FAKE_MP4")
         return 0, ""
 
-    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake)
 
     await video._compose_chapter_card("- 1 -", 1, tmp_path, 1.75)

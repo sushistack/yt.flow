@@ -17,7 +17,11 @@ from yt_flow.services import run_service
 RUN_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def _scene(n, *, image=None, audio=None, subtitle=None, mood="escalation", include_mood=True):
+def _scene(
+    n, *, image=None, audio=None, subtitle=None, mood="escalation", include_mood=True,
+    title="첫 면담", kicker="개체가 입을 열다", include_title_kicker=True,
+    display_narration=None, include_display_narration=True,
+):
     scene = {
         "scene_num": n,
         "narration": f"narration {n}",
@@ -40,6 +44,11 @@ def _scene(n, *, image=None, audio=None, subtitle=None, mood="escalation", inclu
     }
     if include_mood:
         scene["mood"] = mood
+    if include_title_kicker:
+        scene["title"] = title
+        scene["kicker"] = kicker
+    if include_display_narration:
+        scene["display_narration"] = display_narration or f"display {n}"
     return scene
 
 
@@ -103,6 +112,40 @@ def test_scenario_artifacts_pre_7_1_checkpoint_mood_is_null(client, monkeypatch)
     _mock_graph(monkeypatch, _state([_scene(1, include_mood=False)]))
     body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
     assert body["scenes"][0]["mood"] is None
+
+
+def test_scenario_artifacts_includes_title_and_kicker(client, monkeypatch):
+    """[Story 5.17 AC:9] title/kicker are exposed so the reviewer vets card text
+    at the scenario gate."""
+    _mock_graph(monkeypatch, _COMPLETE)
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["title"] == "첫 면담"
+    assert body["scenes"][0]["kicker"] == "개체가 입을 열다"
+
+
+def test_scenario_artifacts_pre_5_17_checkpoint_title_and_kicker_default_empty(client, monkeypatch):
+    """[Story 5.17 AC:9] Old checkpoints without title/kicker keys are safe — "",
+    matching the layered_fallback precedent, not a KeyError."""
+    _mock_graph(monkeypatch, _state([_scene(1, include_title_kicker=False)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["title"] == ""
+    assert body["scenes"][0]["kicker"] == ""
+
+
+def test_scenario_artifacts_includes_display_narration(client, monkeypatch):
+    """[Story 5.18 AC:8] display_narration exposed so the reviewer can diff
+    spoken vs display text at the gate."""
+    _mock_graph(monkeypatch, _state([_scene(1, display_narration="원문 1")]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["display_narration"] == "원문 1"
+    assert body["scenes"][0]["narration"] == "narration 1"
+
+
+def test_scenario_artifacts_pre_5_18_checkpoint_display_narration_falls_back_to_narration(client, monkeypatch):
+    """Old checkpoints without display_narration: falls back to narration, not a KeyError."""
+    _mock_graph(monkeypatch, _state([_scene(1, include_display_narration=False)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["display_narration"] == "narration 1"
 
 
 def test_image_artifacts(client, monkeypatch):
