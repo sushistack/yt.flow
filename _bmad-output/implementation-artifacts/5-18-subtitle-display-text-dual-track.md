@@ -13,7 +13,7 @@ baseline_commit: eb9e2964860cd183050607a00ffb9b260bee70af
 
 # Story 5.18: Subtitle Display Text — Dual Track + Typography-First Static Subtitles
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -45,31 +45,40 @@ Current single-track flow: `tts_normalize_step` **replaces** `narration` with no
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Chain: preserve the original code-side (AC: 1, 2)**
-  - [ ] `tts_normalize_step` ([scenario_chain.py:268-310](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L268)): accepted scene → `{**original_scene, "narration": normalized, "display_narration": original_narration}`; fallback scene → `{**original_scene, "display_narration": original_narration}` (both tracks = original). No prompt change — see Dev Notes "Why no prompt change".
-  - [ ] `build_scenes` ([scenario_chain.py:363-374](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L363)): `display_narration=str(writing_scene.get("display_narration") or writing_scene["narration"])`.
-  - [ ] `state.py`: add `display_narration: str` to `SceneState`; update `EXPECTED_FIELDS` (coordinate with 5.17's `title`/`kicker` additions — guaranteed conflict if parallel).
-- [ ] **Task 2 — Subtitle: static sentence-cue renderer (AC: 4, 5, 7)**
-  - [ ] Add pure helpers in [subtitle.py](../../src/yt_flow/pipeline/nodes/subtitle.py): (a) `sentence_cues(timings, spoken_text, display_text) -> list[AlignmentSegment]` — sentence windows from the spoken track (consume `len(s.split())` timings per `split_sentences(spoken_text)` sentence; import `split_sentences` from `scenario_chain` — pipeline-node→pipeline-node import is layer-legal, don't duplicate the regex), text from the matching display sentence; guards per AC7 return spoken-track cues + WARNING for count mismatches; (b) `wrap_cue_text(text) -> str` — ≤2 `\N` lines, word-boundary breaks, ~16 chars/line guidance, ~44-char soft cap triggering the proportional cue split of AC4.
-  - [ ] Rewrite `format_ass` to take cues (start/end/wrapped text) and emit plain `Dialogue` lines (keep `_ass_time`, keep the `_escape_ass_word`-style brace/backslash stripping applied to cue text).
-  - [ ] Apply the AC5 deletion list; rewrite `_ass_header()` with the AC6 style values and the constant Pretendard family name (no fc-match).
-  - [ ] `subtitle_node` ([subtitle.py:277-321](../../src/yt_flow/pipeline/nodes/subtitle.py#L277)): timings present → `cues = sentence_cues(timings, scene["narration"], scene.get("display_narration") or scene["narration"])`; timings absent → aligner segments as cues (unchanged aligner call). Validate via `_validate_segments`, always write `scene_{n:03d}.ass`.
-- [ ] **Task 3 — Font bundle + burn-in wiring (AC: 6)**
-  - [ ] Vendor `data/fonts/Pretendard-SemiBold.otf` (and `Pretendard-Bold.otf` for 5.17's cards, if 5.17 hasn't already) — source/license in Dev Notes; commit the binaries.
-  - [ ] [video.py](../../src/yt_flow/pipeline/nodes/video.py): append `:fontsdir='{escaped}'` to BOTH `subtitles='{sub}'` fragments ([video.py:602](../../src/yt_flow/pipeline/nodes/video.py#L602) character chain, [video.py:614](../../src/yt_flow/pipeline/nodes/video.py#L614) background-only — the sound-design branch reuses these chains, verify all built `filter_complex`/`-vf` variants carry it); escape the dir path with the existing `_escape_subtitles_path` ([video.py:357-369](../../src/yt_flow/pipeline/nodes/video.py#L357)).
-  - [ ] Verify the exact family/style name libass matches for the SemiBold weight (`fc-scan data/fonts/Pretendard-SemiBold.otf` → family/fullname) and pin that string as the `Fontname` constant; confirm in the AC9 live burn.
-- [ ] **Task 4 — Artifacts API (AC: 8)**
-  - [ ] Add `"display_narration": s.get("display_narration") or s["narration"]` to the scenario branch of `get_stage_artifacts`.
-- [ ] **Task 5 — Tests (AC: 1-8)**
-  - [ ] [tests/pipeline/nodes/test_scenario_chain.py](../../tests/pipeline/nodes/test_scenario_chain.py): extend the `tts_normalize_step` block (lines 345–470) — accepted scene carries both tracks; mismatch fallback yields `display_narration == narration == original` (extend `test_tts_normalize_step_falls_back_per_scene_on_sentence_count_mismatch`, line 426); `build_scenes` populates/defaults `display_narration`.
-  - [ ] [tests/pipeline/nodes/test_subtitle.py](../../tests/pipeline/nodes/test_subtitle.py): REPLACE the 7.5/karaoke suite — `test_format_srt_*` (107–152), `test_word_timings_to_segments_*`/`test_group_words_*` (156–209), `test_build_ass_events_*` (213–263), kinetic routing tests (`test_subtitle_node_writes_ass_when_flag_on_and_word_timings` etc., 367–406) — with: `sentence_cues` unit tests (window boundaries match spoken sentence spans; display text carried; each AC7 guard → spoken fallback, count-mismatch WARNING via `caplog`); `wrap_cue_text` (≤2 lines, word-boundary breaks, soft-cap cue split with proportional times); `format_ass` has zero `\k` and no `{`-injection from text; header asserts Pretendard/Fontsize 60/Outline 3/MarginV 54; node tests — always `.ass`, contains "SCP-049" and not "에스시피", old-checkpoint scene (no `display_narration`) renders spoken text without error, aligner-fallback path emits static `.ass`.
-  - [ ] [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py): burn-in tests assert `fontsdir=` present in captured filtergraphs (extend `test_video_node_escapes_subtitle_path`, line 732, and the `filter_complex` character-path tests).
-  - [ ] `tests/domain/test_state_imports.py`: `EXPECTED_FIELDS["SceneState"]` += `{"display_narration"}`.
-  - [ ] Config: delete the `kinetic_subtitles_enabled` default test; grep `kinetic` repo-wide for stragglers.
-  - [ ] Cassettes/fakes untouched (`deepseek_tts_normalize.json` contract unchanged — display track is derived code-side); verify the stub-profile E2E passes.
-  - [ ] Run targeted files, then full `uv run pytest -q`.
-- [ ] **Task 6 — Live validation (AC: 9)**
-  - [ ] Build a real dual-track scene (pair above) with real TTS audio (or reuse `workspace/272b05a4*/audio/scene_001.wav`), run `subtitle_node` for real, inspect the `.ass` (original text, no `\k`, ≤2-line cues, `_validate_segments` passes vs real `audio_duration`), then burn one frame with real ffmpeg using `fontsdir` on a machine path where Noto/system fonts are NOT consulted (e.g. temporarily point fontsdir at `data/fonts` and confirm Pretendard renders). Record evidence; keep artifacts (5.9 review lesson).
+- [x] **Task 1 — Chain: preserve the original code-side (AC: 1, 2)**
+  - [x] `tts_normalize_step` ([scenario_chain.py:268-310](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L268)): accepted scene → `{**original_scene, "narration": normalized, "display_narration": original_narration}`; fallback scene → `{**original_scene, "display_narration": original_narration}` (both tracks = original). No prompt change — see Dev Notes "Why no prompt change".
+  - [x] `build_scenes` ([scenario_chain.py:363-374](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L363)): `display_narration=str(writing_scene.get("display_narration") or writing_scene["narration"])`.
+  - [x] `state.py`: add `display_narration: str` to `SceneState`; update `EXPECTED_FIELDS` (coordinate with 5.17's `title`/`kicker` additions — guaranteed conflict if parallel).
+- [x] **Task 2 — Subtitle: static sentence-cue renderer (AC: 4, 5, 7)**
+  - [x] Add pure helpers in [subtitle.py](../../src/yt_flow/pipeline/nodes/subtitle.py): (a) `sentence_cues(timings, spoken_text, display_text) -> list[AlignmentSegment]` — sentence windows from the spoken track (consume `len(s.split())` timings per `split_sentences(spoken_text)` sentence; import `split_sentences` from `scenario_chain` — pipeline-node→pipeline-node import is layer-legal, don't duplicate the regex), text from the matching display sentence; guards per AC7 return spoken-track cues + WARNING for count mismatches; (b) `wrap_cue_text(text) -> str` — ≤2 `\N` lines, word-boundary breaks, ~16 chars/line guidance, ~44-char soft cap triggering the proportional cue split of AC4.
+  - [x] Rewrite `format_ass` to take cues (start/end/wrapped text) and emit plain `Dialogue` lines (keep `_ass_time`, keep the `_escape_ass_word`-style brace/backslash stripping applied to cue text).
+  - [x] Apply the AC5 deletion list; rewrite `_ass_header()` with the AC6 style values and the constant Pretendard family name (no fc-match).
+  - [x] `subtitle_node` ([subtitle.py:277-321](../../src/yt_flow/pipeline/nodes/subtitle.py#L277)): timings present → `cues = sentence_cues(timings, scene["narration"], scene.get("display_narration") or scene["narration"])`; timings absent → aligner segments as cues (unchanged aligner call). Validate via `_validate_segments`, always write `scene_{n:03d}.ass`.
+- [x] **Task 3 — Font bundle + burn-in wiring (AC: 6)**
+  - [x] Vendor `data/fonts/Pretendard-SemiBold.otf` (and `Pretendard-Bold.otf` for 5.17's cards, if 5.17 hasn't already) — source/license in Dev Notes; commit the binaries.
+  - [x] [video.py](../../src/yt_flow/pipeline/nodes/video.py): append `:fontsdir='{escaped}'` to BOTH `subtitles='{sub}'` fragments ([video.py:602](../../src/yt_flow/pipeline/nodes/video.py#L602) character chain, [video.py:614](../../src/yt_flow/pipeline/nodes/video.py#L614) background-only — the sound-design branch reuses these chains, verify all built `filter_complex`/`-vf` variants carry it); escape the dir path with the existing `_escape_subtitles_path` ([video.py:357-369](../../src/yt_flow/pipeline/nodes/video.py#L357)).
+  - [x] Verify the exact family/style name libass matches for the SemiBold weight (`fc-scan data/fonts/Pretendard-SemiBold.otf` → family/fullname) and pin that string as the `Fontname` constant; confirm in the AC9 live burn.
+- [x] **Task 4 — Artifacts API (AC: 8)**
+  - [x] Add `"display_narration": s.get("display_narration") or s["narration"]` to the scenario branch of `get_stage_artifacts`.
+- [x] **Task 5 — Tests (AC: 1-8)**
+  - [x] [tests/pipeline/nodes/test_scenario_chain.py](../../tests/pipeline/nodes/test_scenario_chain.py): extend the `tts_normalize_step` block (lines 345–470) — accepted scene carries both tracks; mismatch fallback yields `display_narration == narration == original` (extend `test_tts_normalize_step_falls_back_per_scene_on_sentence_count_mismatch`, line 426); `build_scenes` populates/defaults `display_narration`.
+  - [x] [tests/pipeline/nodes/test_subtitle.py](../../tests/pipeline/nodes/test_subtitle.py): REPLACE the 7.5/karaoke suite — `test_format_srt_*` (107–152), `test_word_timings_to_segments_*`/`test_group_words_*` (156–209), `test_build_ass_events_*` (213–263), kinetic routing tests (`test_subtitle_node_writes_ass_when_flag_on_and_word_timings` etc., 367–406) — with: `sentence_cues` unit tests (window boundaries match spoken sentence spans; display text carried; each AC7 guard → spoken fallback, count-mismatch WARNING via `caplog`); `wrap_cue_text` (≤2 lines, word-boundary breaks, soft-cap cue split with proportional times); `format_ass` has zero `\k` and no `{`-injection from text; header asserts Pretendard/Fontsize 60/Outline 3/MarginV 54; node tests — always `.ass`, contains "SCP-049" and not "에스시피", old-checkpoint scene (no `display_narration`) renders spoken text without error, aligner-fallback path emits static `.ass`.
+  - [x] [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py): burn-in tests assert `fontsdir=` present in captured filtergraphs (extend `test_video_node_escapes_subtitle_path`, line 732, and the `filter_complex` character-path tests).
+  - [x] `tests/domain/test_state_imports.py`: `EXPECTED_FIELDS["SceneState"]` += `{"display_narration"}`.
+  - [x] Config: delete the `kinetic_subtitles_enabled` default test; grep `kinetic` repo-wide for stragglers.
+  - [x] Cassettes/fakes untouched (`deepseek_tts_normalize.json` contract unchanged — display track is derived code-side); verify the stub-profile E2E passes.
+  - [x] Run targeted files, then full `uv run pytest -q`.
+- [x] **Task 6 — Live validation (AC: 9)**
+  - [x] Build a real dual-track scene (pair above) with real TTS audio (or reuse `workspace/272b05a4*/audio/scene_001.wav`), run `subtitle_node` for real, inspect the `.ass` (original text, no `\k`, ≤2-line cues, `_validate_segments` passes vs real `audio_duration`), then burn one frame with real ffmpeg using `fontsdir` on a machine path where Noto/system fonts are NOT consulted (e.g. temporarily point fontsdir at `data/fonts` and confirm Pretendard renders). Record evidence; keep artifacts (5.9 review lesson).
+
+### Review Findings
+
+- [x] [Review][Patch] `sentence_cues()` word-timings-count-mismatch branch renders display text, not spoken — AC7 violation [subtitle.py: `sentence_cues`] — the sentence-count-mismatch guard correctly reassigns `display_sentences = spoken_sentences`, but the word_timings-count-mismatch guard only reapportions timing windows and leaves `display_sentences` as the original display track, so a token-count mismatch still burns "SCP-049"-style original text instead of falling back to the spoken track per AC7. Existing test doesn't catch it because it passes `display == spoken`. **Fixed**: `display_sentences = spoken_sentences` added to the word_timings-mismatch branch; new regression test `test_sentence_cues_word_timings_count_mismatch_falls_back_to_spoken_text` uses `display != spoken` to actually exercise the gap.
+- [x] [Review][Patch] No existence check on the bundled subtitle font directory before ffmpeg burn-in [video.py: `_compose_scene`, `SUBTITLE_FONT_DIR`] — `fontsdir` is built and passed to all three `subtitles=` call sites with no check that `data/fonts/` (or the pinned `.otf`) exists; a missing/renamed font directory fails silently via ffmpeg's own font-fallback instead of a clear pipeline error, unlike the sibling `_card_font()` which raises `RuntimeError` on a missing file. **Fixed**: added `_subtitle_fontsdir()` mirroring `_card_font()`'s fail-fast pattern; `_compose_scene` now calls it instead of using `SUBTITLE_FONT_DIR` directly.
+- [x] [Review][Patch] Sound-design `filter_complex` video_chain fontsdir path untested [tests/pipeline/nodes/test_video.py] — the background-only + sound-design-enabled branch (the third `subtitles=` call site) has no test asserting `fontsdir=` in its captured filtergraph, unlike the `-vf` and character-path branches; same code today, but unguarded against regression. **Fixed**: added the missing assertion to `test_video_node_background_only_sound_design_enabled`.
+- [x] [Review][Defer] `_apportion`/`_sentence_to_cues` zero-duration window when a `WordTiming` pair has `start_sec == end_sec` [subtitle.py: `_apportion`] — deferred, would require a near-zero-length spoken word from TTS/whisperx; pre-existing class of risk (old word-level cues had the same gap), not introduced by this diff.
+- [x] [Review][Defer] A sentence composed entirely of escaped-away characters (`\`, `{`, `}`) produces one empty-text `Dialogue` cue instead of being skipped [subtitle.py: `_sentence_to_cues`] — deferred, cosmetic (a blank subtitle flash), not a crash; narration text realistically never consists solely of those characters.
+- [x] [Review][Defer] Individual `WordTiming` dict missing `start_sec`/`end_sec` keys not defensively checked in `sentence_cues`'s exact-match branch [subtitle.py: `sentence_cues`] — deferred, trusts the internal `tts_node`/aligner contract (same trust boundary already relied on elsewhere in this module), not user-facing input.
 
 ## Dev Notes
 
@@ -138,16 +147,43 @@ Current line logic is `_group_words` greedy ≤40-char single-line cues — dies
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- Concurrent-session collision (repeat of [[project_5-7-review-done]]'s hazard class): a parallel session closing Story 5.17 ran a broad commit while this story was mid-implementation and swept up several already-written 5.18 changes into 5.17's commits (`2666d2c` feat(scenario), `c457db5` feat(video)) — specifically Task 1's `display_narration` field/logic in `state.py`/`scenario_chain.py`, Task 3's `Pretendard-SemiBold.otf` vendoring + `fontsdir` wiring in `video.py`, and Task 4's artifacts-API exposure in `run_service.py`, plus their tests. Verified no code or test coverage was lost — full suite (730 passed/1 skipped) and `ruff check` both green after the collision. Left the history as-is rather than rebase shared/closed commits; this story's own commit covers the remaining files (`subtitle.py` rewrite, `config.py` flag removal, `test_subtitle.py`, `sprint-status.yaml`). Flagging here for traceability since `git log` alone won't show Task 1/3/4 landing under a 5.18 commit message.
+- Live validation (AC:9, Task 6): ran `subtitle_node` directly against the real `workspace/272b05a4*/audio/scene_001.wav` (21.6s) with a hand-built dual-track pair (spoken "에스시피 공사 구는 키 일점 구 미터의 개체입니다. 격리 절차는 삼 단계 봉쇄를 요구합니다." / display "SCP-049는 키 1.9m의 개체입니다. 격리 절차는 3단계 봉쇄를 요구합니다."); produced a valid `.ass` (2 cues, ≤2 lines each, in-bounds vs the real duration). Burned real ffmpeg frames at t=1.0s both with and without `fontsdir=data/fonts`: with it, libass logs `fontselect: (Pretendard SemiBold, ...) -> Pretendard-SemiBold`; without it, libass falls back to `/usr/share/fonts/.../NotoSans-Regular.ttf` + `NotoSansCJK-Regular.ttc` (missing-glyph fallback) — confirming `fontsdir` is load-bearing, not a no-op. Visual inspection of both frames: no tofu, correct original-orthography text ("SCP-049", not "에스시피"), no `\k` tags, bold Pretendard SemiBold strokes visibly distinct from the thinner Noto fallback.
 
 ### Completion Notes List
 
+- Dual track implemented exactly per AC:1/2 — `display_narration` preserved code-side in `tts_normalize_step` (no prompt change, per Dev Notes rationale), copied through `build_scenes`, defaults to `narration` when absent (old checkpoints).
+- `subtitle.py` fully rewritten: karaoke `\k` path, `.srt` output, `kinetic_subtitles_enabled` flag, and the fc-match font lookup are all deleted (AC:5). New pure helpers `sentence_cues`/`wrap_cue_text`/`_sentence_to_cues`/`_apportion`/`_chunk_words` implement sentence-window cues from the spoken track's word timings, text from the display track, with guarded degradation to spoken-track-only cues (warning only on genuine count mismatches, silent on absent/identical display — AC:7).
+- Typography: bundled `Pretendard-SemiBold.otf` (vendored from the same upstream release as 5.17's Bold), `Fontname` pinned to the more specific `Pretendard SemiBold` family name (not bare `Pretendard`, which both weights share) to avoid ambiguous libass matching once both files sit in the same `fontsdir`. Style: white fill, `Outline=3`, `Shadow=1`, `Fontsize=60`, `MarginV=54` (AC:6).
+- `video.py`'s three `subtitles=` call sites (layered, background-only `-vf`, background-only sound-design `-filter_complex`) all gained `:fontsdir=`, escaped via the existing `_escape_subtitles_path`.
+- Regression: 730 passed / 1 skipped, `ruff check` clean.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/subtitle.py` — full rewrite: static sentence-cue renderer, karaoke/`.srt`/fc-match deletion
+- `tests/pipeline/nodes/test_subtitle.py` — full rewrite matching the above
+- `src/yt_flow/config.py` — removed `kinetic_subtitles_enabled`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status tracking
+- Landed via the parallel session's Story 5.17 commits (see Debug Log Reference above), but authored as part of this story's Task 1/3/4:
+  - `src/yt_flow/domain/state.py` — `display_narration: str` field on `SceneState`
+  - `src/yt_flow/pipeline/nodes/scenario_chain.py` — `tts_normalize_step`/`build_scenes` dual-track logic
+  - `src/yt_flow/services/run_service.py` — `display_narration` in `get_stage_artifacts`
+  - `src/yt_flow/pipeline/nodes/video.py` — `SUBTITLE_FONT_DIR` constant + `:fontsdir=` on all three `subtitles=` sites
+  - `data/fonts/Pretendard-SemiBold.otf`, `data/fonts/README.md` — vendored font + doc update
+  - `tests/domain/test_state_imports.py` — `EXPECTED_FIELDS["SceneState"]` += `display_narration`
+  - `tests/pipeline/nodes/test_scenario_chain.py` — dual-track tests
+  - `tests/api/test_stage_artifacts.py` — `display_narration` artifact-exposure tests
+  - `tests/pipeline/nodes/test_video.py` — `fontsdir=` burn-in assertions
 
 ## Change Log
 
 - 2026-07-06: Story created from Jay's viewing feedback #3 on the E2E baseline video (run `272b05a4`): subtitles must show original script text, not TTS phoneticization. Supersedes Story 5.4 AC2's "same text for SRT+TTS" YAGNI decision.
 - 2026-07-06: Revised per Jay's direction: karaoke `\k` highlight RETIRED (7.5 kinetic path deleted — it never synced per D12; documentary convention is a static line), replaced by typography-first static `.ass` (bundled Pretendard SemiBold via `fontsdir`, 60px/outline 3/safe-area margins, max-2-line Korean line-breaking, original-orthography display text). Word-level alignment and the spoken→display word-mapping question became moot and were removed from scope.
+- 2026-07-07: Implemented (all 6 tasks). Dual-track `display_narration` field threaded through scenario_chain/state/artifacts API; `subtitle.py` rewritten to a static sentence-cue `.ass` renderer (karaoke/`.srt`/fc-match retired); Pretendard SemiBold vendored + `fontsdir` wired into all three `video.py` burn-in call sites. Live-validated against real audio + real ffmpeg. Regression: 730 passed/1 skipped, ruff clean. Note: a concurrent session's Story 5.17 commit swept up this story's Task 1/3/4 changes — see Debug Log Reference.
 
 ## Saved Questions / Clarifications
 

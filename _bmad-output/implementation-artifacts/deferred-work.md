@@ -199,6 +199,12 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 3. **연기의 한계**: "시신이 일어난다" 같은 서사 순간은 카드 포즈(서기/앉기/특수 3장 캡)로 표현 불가 — 정적 다큐 문법으론 수용 가능하나 "3~5배 역동적" 원목표 대비 부분 달성. 해법 후보(비용 큼): i2v(이미지→비디오) 모션 클립, 컷 리듬 고속화.
 4. **귀 판정 미검증 축**: TTS 억양, BGM 믹스 밸런스 — judge가 텍스트/측정 프록시로만 채점 중. Jay 시청 판정과의 캘리브레이션이 iteration 1의 병행 과제.
 
+## Deferred from: code review of 5-18-subtitle-display-text-dual-track (2026-07-07)
+
+- **`_apportion`/`_sentence_to_cues` zero-duration window when a `WordTiming` pair has `start_sec == end_sec`** [src/yt_flow/pipeline/nodes/subtitle.py `_apportion`] — would require a near-zero-length spoken word from TTS/whisperx; the same class of gap existed in the old word-level cue path and is not introduced by this diff.
+- **A sentence composed entirely of escaped-away characters (`\`, `{`, `}`) produces one empty-text `Dialogue` cue instead of being skipped** [src/yt_flow/pipeline/nodes/subtitle.py `_sentence_to_cues`] — cosmetic (a blank subtitle flash), not a crash; narration text realistically never consists solely of those characters.
+- **Individual `WordTiming` dict missing `start_sec`/`end_sec` keys not defensively checked in `sentence_cues`'s exact-match branch** [src/yt_flow/pipeline/nodes/subtitle.py `sentence_cues`] — trusts the internal `tts_node`/aligner contract, same trust boundary already relied on elsewhere in this module; not user-facing input.
+
 ## Deferred from: code review of 5-19-ddg-image-search-fallback-repair (2026-07-07)
 
 - No validation for empty/whitespace `query` in `search()`/`_acquire_vqd` [src/yt_flow/services/image_search.py] — pre-existing gap, no current caller passes an empty query.
