@@ -201,3 +201,12 @@ def test_create_trace_id_is_deterministic():
 
     assert Langfuse.create_trace_id(seed="r") == Langfuse.create_trace_id(seed="r")
     assert Langfuse.create_trace_id(seed="r") != Langfuse.create_trace_id(seed="q")
+
+
+def test_initial_state_omits_ending_credit_error():
+    """[Story 5.20 review] `ending_credit_error` must be absent, not pre-seeded
+    None — its presence in the checkpoint is the AC6 attempted/not-attempted
+    signal, which `video_node` alone sets when cc_attribution=True."""
+    state = run_service._initial_state("run-1", "SCP-049", "text")
+
+    assert "ending_credit_error" not in state

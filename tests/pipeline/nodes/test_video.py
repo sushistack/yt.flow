@@ -42,13 +42,14 @@ _REAL_RECORD_TRACE = video._record_trace  # the autouse _silent_trace fixture be
 def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
-    parallax_enabled: bool = False,
+    parallax_enabled: bool = False, cc_attribution: bool = False,
 ):
-    # ponytail: fake settings default cards/sound-design/post-fx/parallax OFF so
-    # pre-existing tests (written before Story 5.1/7.1/7.2/7.3) don't need
-    # touching; the real Settings() default is True for all four — see
-    # test_config_chapter_cards_default_true / test_config_post_fx_enabled_default_true
-    # / test_config_parallax_enabled_default_true.
+    # ponytail: fake settings default cards/sound-design/post-fx/parallax/
+    # cc_attribution OFF so pre-existing tests (written before Story 5.1/7.1/
+    # 7.2/7.3/5.20) don't need touching; the real Settings() default is True
+    # for all five — see test_config_chapter_cards_default_true /
+    # test_config_post_fx_enabled_default_true /
+    # test_config_parallax_enabled_default_true / test_config_cc_attribution_default_true.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
@@ -56,6 +57,7 @@ def _settings_ns(
         sound_design_enabled=sound_design_enabled,
         post_fx_enabled=post_fx_enabled,
         parallax_enabled=parallax_enabled,
+        cc_attribution=cc_attribution,
     )
 
 
@@ -2201,3 +2203,240 @@ async def test_angle_selector_trace_metadata(monkeypatch, tmp_path, assets):
     assert asel["shots_analyzed"] == 1
     assert "front" in asel["angles_selected"]
     assert "latency_ms" in asel
+
+
+# ── CC BY-SA attribution (Story 5.20) ─────────────────────────────────────────
+
+
+def test_config_cc_attribution_default_true():
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["cc_attribution"].default is True
+
+
+@pytest.mark.parametrize(("scp_id", "slug"), [
+    ("SCP-049", "scp-049"),
+    ("SCP-096", "scp-096"),
+    ("SCP-682", "scp-682"),
+    (" scp-999 ", "scp-999"),
+])
+def test_scp_wiki_slug(scp_id, slug):
+    assert video._scp_wiki_slug(scp_id) == slug
+
+
+def test_scp_nickname_known(monkeypatch):
+    monkeypatch.setattr(video, "_scp_nicknames", None)
+    assert video._scp_nickname("SCP-049") == "Plague Doctor"
+
+
+def test_scp_nickname_unknown_is_tolerant(monkeypatch):
+    monkeypatch.setattr(video, "_scp_nicknames", None)
+    assert video._scp_nickname("SCP-9999") is None
+
+
+def test_scp_nickname_missing_file_is_tolerant(monkeypatch):
+    monkeypatch.setattr(video, "_scp_nicknames", None)
+    monkeypatch.setattr(video, "SCP_DATA_PATH", Path("/no/such/scps.json"))
+    assert video._scp_nickname("SCP-049") is None
+
+
+def test_build_description_with_nickname():
+    """[AC:3] SCP-049 → includes 'Plague Doctor'."""
+    text = video.build_description_text("SCP-049", scp_nickname="Plague Doctor")
+    assert "[SCP-049] Plague Doctor — SCP Foundation Wiki" in text
+    assert "https://scp-wiki.wikidot.com/scp-049" in text
+
+
+def test_build_description_without_nickname():
+    """[AC:3] Unknown scp_id: no nickname, '— SCP Foundation Wiki' still present."""
+    text = video.build_description_text("SCP-9999")
+    assert "[SCP-9999] — SCP Foundation Wiki" in text
+    assert "Plague Doctor" not in text
+
+
+def test_build_description_slug():
+    assert "scp-049" in video.build_description_text("SCP-049")
+    assert "scp-682" in video.build_description_text("SCP-682")
+
+
+def test_build_description_includes_license_links():
+    text = video.build_description_text("SCP-049")
+    assert "Licensed under CC BY-SA 3.0" in text
+    assert video.CC_LICENSE_URL in text
+    assert 'derivative work based on "SCP-049"' in text
+
+
+def test_build_description_includes_image_source_line():
+    """[AC:4] Image source is the same deterministic wiki URL regardless of
+    whether the run's reference image actually came from the wiki or DDG."""
+    text = video.build_description_text("SCP-049")
+    assert "Image source: https://scp-wiki.wikidot.com/scp-049" in text
+
+
+async def test_write_description_artifact(tmp_path, monkeypatch):
+    monkeypatch.setattr(video, "_scp_nicknames", None)
+    path = await video._write_description_artifact(tmp_path, "SCP-999")
+    assert path is not None
+    assert path == tmp_path / "description.txt"
+    text = path.read_text(encoding="utf-8")
+    assert "The Tickle Monster" in text
+    assert "scp-999" in text
+
+
+async def test_write_description_artifact_failure_non_fatal(tmp_path, monkeypatch):
+    def _raise(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", _raise)
+    assert await video._write_description_artifact(tmp_path, "SCP-999") is None
+
+
+async def test_compose_ending_credit_uses_distinct_filename(tmp_path, monkeypatch):
+    """[Task 2 CRITICAL] never card_NNN.mp4 — must not collide with a chapter card."""
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    path = await video._compose_ending_credit("SCP-049", tmp_path)
+
+    assert path == tmp_path / "credit_ending.mp4"
+    assert path.exists()
+    assert not (tmp_path / "card_000.mp4").exists()
+    assert calls[0][-1] == str(tmp_path / "card_000.mp4")  # ffmpeg itself still wrote the card name
+
+
+async def test_ending_credit_appended(monkeypatch, tmp_path, assets):
+    """[AC:2] cc_attribution=True: a self-fading credit_ending.mp4 segment is
+    appended after the last scene, carrying the attribution text/URL, at
+    MAX_CARD_DURATION."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, cc_attribution=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes, scp_id="SCP-049"))
+
+    assert out.get("error") is None
+    assert len(_output_files(calls, "card_000")) == 1
+
+    join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
+    assert any(isinstance(a, str) and a.endswith("credit_ending.mp4") for a in join_args)
+
+    label_file = tmp_path / "run-001" / "card_000_label.txt"
+    kicker_file = tmp_path / "run-001" / "card_000_kicker.txt"
+    assert label_file.read_text(encoding="utf-8") == "Based on 'SCP-049' from the SCP Foundation Wiki"
+    kicker_text = kicker_file.read_text(encoding="utf-8")
+    assert "CC BY-SA 3.0" in kicker_text and "scp-wiki.wikidot.com/scp-049" in kicker_text
+
+    card_call = next(args for args in calls if str(args[-1]) == str(tmp_path / "run-001" / "card_000.mp4"))
+    assert card_call[card_call.index("-t") + 1] == f"{video.MAX_CARD_DURATION:.3f}"
+
+
+async def test_ending_credit_single_scene(monkeypatch, tmp_path, assets):
+    """[AC:2] Single-scene run + cc_attribution=True: the join path is used
+    (not the direct-replace fast path) so the ending card can be appended."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, cc_attribution=True))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    state = _state(
+        [_scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)],
+        scp_id="SCP-999",
+    )
+    out = await video_node(state)
+
+    assert out.get("error") is None
+    join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
+    assert "-filter_complex" in join_args
+    assert any(isinstance(a, str) and a.endswith("credit_ending.mp4") for a in join_args)
+
+
+async def test_ending_credit_skipped_when_disabled(monkeypatch, tmp_path, assets):
+    """cc_attribution=False (fixture default): no credit segment, no card_000
+    textfiles, no description.txt, no ending_credit_error in the return dict."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert not _output_files(calls, "card_000")
+    assert not (tmp_path / "run-001" / "description.txt").exists()
+    assert "ending_credit_error" not in out
+
+
+async def test_ending_credit_failure_non_fatal(monkeypatch, tmp_path, assets):
+    """[AC:5] Ending-card ffmpeg failure never fails the run — the join proceeds
+    without the credit, and the error is recorded rather than raised."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, cc_attribution=True))
+    captured: dict = {}
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    async def _fake(*args):
+        out_path = str(args[-1])
+        if "card_000" in out_path:
+            return 1, "boom: codec missing"
+        Path(out_path).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes, scp_id="SCP-049"))
+
+    assert out.get("error") is None
+    assert Path(out["video_path"]).exists()
+    assert out["ending_credit_error"] is not None
+    assert "boom" in out["ending_credit_error"]
+    assert captured.get("ending_credit") is False
+    assert "boom" in captured.get("ending_credit_error", "")
+
+
+async def test_description_txt_written_when_enabled(monkeypatch, tmp_path, assets):
+    """[AC:3] description.txt lands under workspace/{run_id}/ alongside video.mp4."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, cc_attribution=True))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-999"))
+
+    assert out.get("error") is None
+    desc = tmp_path / "run-001" / "description.txt"
+    assert desc.exists()
+    assert "The Tickle Monster" in desc.read_text(encoding="utf-8")
+
+
+async def test_trace_metadata_includes_credit_fields(monkeypatch, tmp_path, assets):
+    """[AC:6] _record_trace receives ending_credit/ending_credit_error."""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, cc_attribution=True))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene], scp_id="SCP-049"))
+
+    assert captured.get("ending_credit") is True
+    assert captured.get("ending_credit_error") is None
+
+
+async def test_trace_metadata_credit_off(monkeypatch, tmp_path, assets):
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene]))
+
+    assert captured.get("ending_credit") is False

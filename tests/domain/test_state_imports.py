@@ -36,7 +36,7 @@ EXPECTED_FIELDS = {
     },
     "PipelineState": {
         "run_id", "scp_id", "scp_text", "scenes", "video_path", "current_stage",
-        "gate_states", "prompt_variant", "error",
+        "gate_states", "prompt_variant", "error", "ending_credit_error",
     },
 }
 

@@ -184,6 +184,37 @@ def test_video_artifacts(client, monkeypatch):
     assert body == {"stage": "video", "video_path": "workspace/x/output.mp4"}
 
 
+def test_video_artifacts_ending_credit_success(client, monkeypatch):
+    """[Story 5.20 AC:6] cc_attribution was on and the card succeeded — the checkpoint's
+    ending_credit_error=None surfaces as ending_credit=True + the expected description
+    path (even though get_stage_artifacts never touches the filesystem for it)."""
+    state = {**_COMPLETE, "ending_credit_error": None}
+    _mock_graph(monkeypatch, state)
+    body = client.get(f"/runs/{RUN_ID}/stages/video/artifacts").json()
+    assert body["ending_credit"] is True
+    assert body["ending_credit_error"] is None
+    assert body["description_txt_path"] == f"workspace/{RUN_ID}/description.txt"
+
+
+def test_video_artifacts_ending_credit_failure(client, monkeypatch):
+    """A non-fatal card failure surfaces ending_credit=False + the error message,
+    while video_path/status stay unaffected (AC:5)."""
+    state = {**_COMPLETE, "ending_credit_error": "FFmpeg chapter card 0 failed (rc=1): boom"}
+    _mock_graph(monkeypatch, state)
+    body = client.get(f"/runs/{RUN_ID}/stages/video/artifacts").json()
+    assert body["ending_credit"] is False
+    assert body["ending_credit_error"] == "FFmpeg chapter card 0 failed (rc=1): boom"
+
+
+def test_video_artifacts_no_ending_credit_fields_when_not_attempted(client, monkeypatch):
+    """cc_attribution was off for this run — no ending_credit_error key in the
+    checkpoint at all, so none of the attribution fields appear."""
+    _mock_graph(monkeypatch, _COMPLETE)
+    body = client.get(f"/runs/{RUN_ID}/stages/video/artifacts").json()
+    assert "ending_credit" not in body
+    assert "description_txt_path" not in body
+
+
 # ── AC 3 / AC 5: stage not yet reached → 404 ────────────────────────────────
 
 def test_stage_not_reached_404(client, monkeypatch):
