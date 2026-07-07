@@ -1,13 +1,12 @@
 """Tests for src/yt_flow/pipeline/nodes/video.py (Story 1.9 + 1.9b).
 
 No live FFmpeg / Langfuse: _run_ffmpeg and _record_trace are monkeypatched.
-Covers: select_effect, zoompan filter, xfade offset math, happy/error paths,
+Covers: select_effect, zoompan filter, dip-to-black fade+concat join, happy/error paths,
 observability, AD-1 layer guards, integration (skippable without ffmpeg+ffprobe).
 """
 
 import asyncio
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -20,20 +19,21 @@ from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.color_grade import MOOD_GRADE_PARAMS
 from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD
 from yt_flow.pipeline.nodes.video import (
-    MOOD_XFADE_MAP,
-    XFADE_DURATION,
+    BLACK_HOLD_DURATION,
+    FADE_DURATION,
     EffectSpec,
     _character_scale_filter,
     _character_spec,
     _character_zoom_filter,
-    _join_with_xfade,
+    _join_with_fades,
     _overlay_filter,
     _validate_scene_assets,
     _zoompan_filter,
-    resolve_transition,
     select_effect,
     video_node,
 )
+
+_REAL_RECORD_TRACE = video._record_trace  # the autouse _silent_trace fixture below stubs this out
 
 
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
@@ -42,13 +42,13 @@ from yt_flow.pipeline.nodes.video import (
 def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
-    parallax_enabled: bool = False, transition_variety_enabled: bool = False,
+    parallax_enabled: bool = False,
 ):
-    # ponytail: fake settings default cards/sound-design/post-fx/parallax/variety
-    # OFF so pre-existing tests (written before Story 5.1/7.1/7.2/7.3/7.4) don't
-    # need touching; the real Settings() default is True for all five — see
+    # ponytail: fake settings default cards/sound-design/post-fx/parallax OFF so
+    # pre-existing tests (written before Story 5.1/7.1/7.2/7.3) don't need
+    # touching; the real Settings() default is True for all four — see
     # test_config_chapter_cards_default_true / test_config_post_fx_enabled_default_true
-    # / test_config_parallax_enabled_default_true / test_config_transition_variety_enabled_default_true.
+    # / test_config_parallax_enabled_default_true.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
@@ -56,7 +56,6 @@ def _settings_ns(
         sound_design_enabled=sound_design_enabled,
         post_fx_enabled=post_fx_enabled,
         parallax_enabled=parallax_enabled,
-        transition_variety_enabled=transition_variety_enabled,
     )
 
 
@@ -308,195 +307,106 @@ def test_zoompan_filter_diagonal_has_expected_axis_expressions(direction, x_expr
     assert f":y='{y_expr}'" in filt
 
 
-# ── _join_with_xfade offset math ─────────────────────────────────────────────
+# ── _join_with_fades (Story 5.16) ────────────────────────────────────────────
 
 
-async def test_xfade_offset_math_3_scenes(monkeypatch, tmp_path):
-    """3-scene fixture: assert cumulative offset values in the filtergraph. [AC:2]
-
-    With durations [3.0, 2.0, 4.0] and XFADE_DURATION=0.5:
-      offset_1 = 3.0 - 1*0.5 = 2.5
-      offset_2 = (3.0+2.0) - 2*0.5 = 4.0
-    """
-    segs = [(tmp_path / f"s{i}.mp4", float(d), "fadeblack") for i, d in enumerate([3.0, 2.0, 4.0])]
-    for p, _, _ in segs:
-        p.write_bytes(b"FAKE")
-
-    captured_filter: list[str] = []
+def _capture_filter(monkeypatch):
+    """Patch video._run_ffmpeg to record each call's -filter_complex value."""
+    captured: list[str] = []
 
     async def _capture(*args):
         args_list = list(args)
         if "-filter_complex" in args_list:
-            idx = args_list.index("-filter_complex")
-            captured_filter.append(args_list[idx + 1])
+            captured.append(args_list[args_list.index("-filter_complex") + 1])
         Path(args[-1]).write_bytes(b"FAKE_MP4")
         return 0, ""
 
     monkeypatch.setattr(video, "_run_ffmpeg", _capture)
-    await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-    assert captured_filter, "filter_complex not captured"
-    fc = captured_filter[0]
-    assert "offset=2.5000" in fc or "offset=2.5" in fc
-    assert "offset=4.0000" in fc or "offset=4.0" in fc
+    return captured
 
 
-async def test_xfade_video_crossfades_audio_does_not(monkeypatch, tmp_path):
-    """Video keeps xfade; audio must NOT crossfade (no volume dip). [Story 5.9 AC:1]
-
-    Audio is joined via adelay (per-segment, positioned at the same offset the
-    video xfade uses) + amix (normalize=0, so no dip in level) instead of
-    acrossfade.
-    """
-    segs = [(tmp_path / f"s{i}.mp4", 2.0, "fadeblack") for i in range(2)]
-    for p, _, _ in segs:
+async def test_join_with_fades_uses_concat_not_xfade(monkeypatch, tmp_path):
+    """[AC:1,2] The join is plain concat — no xfade/acrossfade/adelay/amix anywhere."""
+    segs = [
+        (tmp_path / "s0.mp4", 3.0, 0.0, FADE_DURATION),
+        (tmp_path / "s1.mp4", 2.0, FADE_DURATION, 0.0),
+    ]
+    for p, *_ in segs:
         p.write_bytes(b"FAKE")
+    captured = _capture_filter(monkeypatch)
 
-    captured_filter: list[str] = []
+    await _join_with_fades(segs, tmp_path / "out.mp4")
 
-    async def _capture(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            idx = args_list.index("-filter_complex")
-            captured_filter.append(args_list[idx + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
-    await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-    fc = captured_filter[0]
-    assert "xfade" in fc
-    assert "acrossfade" not in fc
-    assert "adelay" in fc
-    assert "amix=inputs=2" in fc
-    assert "normalize=0" in fc
+    fc = captured[0]
+    assert "concat=n=2:v=1:a=1" in fc
+    for token in ("xfade=", "acrossfade", "adelay", "amix"):
+        assert token not in fc
 
 
-async def test_xfade_audio_delay_matches_video_offset_3_scenes(monkeypatch, tmp_path):
-    """Audio adelay values must equal the video xfade offsets (zero-drift sync). [Story 5.9 AC:3]
-
-    Same fixture as test_xfade_offset_math_3_scenes: durations [3.0, 2.0, 4.0],
-    XFADE_DURATION=0.5 → offsets 2.5 and 4.0 → delays 2500ms and 4000ms.
-    """
-    segs = [(tmp_path / f"s{i}.mp4", float(d), "fadeblack") for i, d in enumerate([3.0, 2.0, 4.0])]
-    for p, _, _ in segs:
+async def test_join_with_fades_per_segment_fade_points(monkeypatch, tmp_path):
+    """[AC:1] Each segment fades in/out over its OWN edges at the right start time."""
+    segs = [
+        (tmp_path / "s0.mp4", 3.0, 0.0, FADE_DURATION),
+        (tmp_path / "s1.mp4", 2.0, FADE_DURATION, FADE_DURATION),
+        (tmp_path / "s2.mp4", 4.0, FADE_DURATION, 0.0),
+    ]
+    for p, *_ in segs:
         p.write_bytes(b"FAKE")
+    captured = _capture_filter(monkeypatch)
 
-    captured_filter: list[str] = []
+    await _join_with_fades(segs, tmp_path / "out.mp4")
 
-    async def _capture(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            idx = args_list.index("-filter_complex")
-            captured_filter.append(args_list[idx + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
-    await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-    fc = captured_filter[0]
-    assert "adelay=2500:all=1" in fc
-    assert "adelay=4000:all=1" in fc
-    assert "amix=inputs=3" in fc
+    fc = captured[0]
+    # segment 0: fade-out only, starting at 3.0 - 0.5 = 2.5
+    assert "[0:v]fade=t=out:st=2.500:d=0.5[v0]" in fc
+    # segment 1: fade-in at 0, fade-out at 2.0 - 0.5 = 1.5
+    assert "[1:v]fade=t=in:st=0:d=0.5,fade=t=out:st=1.500:d=0.5[v1]" in fc
+    # segment 2: fade-in only, no fade-out (last segment)
+    assert "[2:v]fade=t=in:st=0:d=0.5[v2]" in fc
+    assert "[v0][0:a][v1][1:a][v2][2:a]concat=n=3:v=1:a=1[vout][aout]" in fc
 
 
-async def test_xfade_uses_fadeblack_transition(monkeypatch, tmp_path):
-    """Default transition must be fadeblack, not a plain image-over-image crossfade. [AC:1]"""
-    segs = [(tmp_path / f"s{i}.mp4", 2.0, "fadeblack") for i in range(2)]
-    for p, _, _ in segs:
+async def test_join_with_fades_zero_fade_segment_skips_filter(monkeypatch, tmp_path):
+    """[AC:5] A segment with no join-fades (card/hold) is concat'd directly, unfiltered."""
+    segs = [
+        (tmp_path / "s0.mp4", 3.0, 0.0, FADE_DURATION),
+        (tmp_path / "card.mp4", BLACK_HOLD_DURATION, 0.0, 0.0),
+        (tmp_path / "s1.mp4", 2.0, FADE_DURATION, 0.0),
+    ]
+    for p, *_ in segs:
         p.write_bytes(b"FAKE")
+    captured = _capture_filter(monkeypatch)
 
-    captured_filter: list[str] = []
+    await _join_with_fades(segs, tmp_path / "out.mp4")
 
-    async def _capture(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            idx = args_list.index("-filter_complex")
-            captured_filter.append(args_list[idx + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
-    await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-    assert video.XFADE_TRANSITION == "fadeblack"
-    assert "transition=fadeblack" in captured_filter[0]
+    fc = captured[0]
+    assert "[1:v]fade=" not in fc
+    assert "[v0][0:a][1:v][1:a][v2][2:a]concat=n=3:v=1:a=1[vout][aout]" in fc
 
 
-async def test_xfade_fail_raises(monkeypatch, tmp_path):
-    segs = [(tmp_path / f"s{i}.mp4", 2.0, "fadeblack") for i in range(2)]
-    for p, _, _ in segs:
+async def test_join_with_fades_clamps_fade_to_segment_duration(monkeypatch, tmp_path):
+    """[Task 1] A fade longer than the segment's own duration is clamped defensively."""
+    segs = [
+        (tmp_path / "s0.mp4", 0.2, 0.0, FADE_DURATION),
+        (tmp_path / "s1.mp4", 2.0, FADE_DURATION, 0.0),
+    ]
+    for p, *_ in segs:
+        p.write_bytes(b"FAKE")
+    captured = _capture_filter(monkeypatch)
+
+    await _join_with_fades(segs, tmp_path / "out.mp4")
+
+    assert "fade=t=out:st=0.000:d=0.2" in captured[0]
+
+
+async def test_join_with_fades_fail_raises(monkeypatch, tmp_path):
+    segs = [(tmp_path / f"s{i}.mp4", 2.0, 0.0, 0.0) for i in range(2)]
+    for p, *_ in segs:
         p.write_bytes(b"FAKE")
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_fail)
 
-    with pytest.raises(RuntimeError, match="xfade join failed"):
-        await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-
-async def test_xfade_offset_negative_raises(monkeypatch, tmp_path):
-    """A scene shorter than XFADE_DURATION drives offset negative — this must fail
-    loudly rather than silently clamp the audio delay to 0 and desync from video.
-    [Story 5.9 AC:3]"""
-    segs = [(tmp_path / "s0.mp4", 0.1, "fadeblack"), (tmp_path / "s1.mp4", 2.0, "fadeblack")]
-    for p, _, _ in segs:
-        p.write_bytes(b"FAKE")
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
-
-    with pytest.raises(AssertionError, match="offset went negative"):
-        await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-
-# ── resolve_transition (Story 7.4) ───────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("mood", "expected"),
-    [
-        ("dread", "fadeblack"),
-        ("clinical", "fadeblack"),
-        ("escalation", "wipeleft"),
-        ("revelation", "fadewhite"),
-    ],
-)
-def test_resolve_transition_maps_each_mood(mood, expected):
-    """[AC:1] Each of the 4 moods maps to its designated xfade transition."""
-    assert resolve_transition(mood) == expected
-    assert MOOD_XFADE_MAP[mood] == expected
-
-
-@pytest.mark.parametrize("mood", [None, "garbage", ""])
-def test_resolve_transition_unknown_falls_back_to_dread(mood):
-    """[AC:1] Missing/unknown mood delegates to resolve_mood -> DEFAULT_MOOD ('dread') -> fadeblack."""
-    assert resolve_transition(mood) == "fadeblack"
-
-
-async def test_join_with_xfade_per_boundary_transition(monkeypatch, tmp_path):
-    """[AC:3] Boundary i uses segments[i+1][2] — the entering segment's own transition."""
-    segs = [
-        (tmp_path / "s0.mp4", 2.0, "fadeblack"),
-        (tmp_path / "s1.mp4", 2.0, "wipeleft"),
-        (tmp_path / "s2.mp4", 2.0, "fadewhite"),
-    ]
-    for p, _, _ in segs:
-        p.write_bytes(b"FAKE")
-
-    captured_filter: list[str] = []
-
-    async def _capture(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
-    await _join_with_xfade(segs, tmp_path / "out.mp4")
-
-    fc = captured_filter[0]
-    assert re.findall(r"transition=(\w+)", fc) == ["wipeleft", "fadewhite"]
-
+    with pytest.raises(RuntimeError, match="fade join failed"):
+        await _join_with_fades(segs, tmp_path / "out.mp4")
 
 # ── _validate_scene_assets ────────────────────────────────────────────────────
 
@@ -831,6 +741,19 @@ async def test_trace_receives_transition_metadata(monkeypatch, tmp_path, assets)
 
     # transition metadata must be recorded regardless of scene count
     assert captured.get("upscale_pass") is True
+
+
+def test_record_trace_reports_dip_to_black_grammar(monkeypatch):
+    """[Story 5.16 AC:7] Trace metadata names the new grammar, not the retired xfade one."""
+    captured: dict = {}
+    fake_client = SimpleNamespace(update_current_span=lambda **kw: captured.update(kw["metadata"]))
+    monkeypatch.setattr(video, "get_client", lambda: fake_client)
+
+    _REAL_RECORD_TRACE(run_id="r", scene_count=2, latency_ms=10)
+
+    assert captured["transition"] == "dip-to-black"
+    assert captured["fade_duration"] == video.FADE_DURATION
+    assert captured["black_hold_sec"] == video.BLACK_HOLD_DURATION
 
 
 async def test_trace_captures_error_on_failure(monkeypatch, tmp_path, assets):
@@ -1469,11 +1392,12 @@ async def test_trace_character_overlay_false_when_absent(monkeypatch, tmp_path, 
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg or ffprobe not installed",
 )
-async def test_xfade_join_integration(tmp_path):
-    """Real FFmpeg: 2 pre-made segments → xfade join; duration ≈ Σ − overlap.
+async def test_join_with_fades_integration(tmp_path):
+    """Real FFmpeg: scene + black hold + scene → fade+concat join. [Story 5.16 AC:1,6]
 
-    Tests _join_with_xfade directly with color-source segments (no image/subtitle
-    complexity) to verify the offset accumulation math produces correct output.
+    Tests _join_with_fades directly with color-source segments (no image/subtitle
+    complexity) to verify the new no-overlap duration formula: total = Σdur +
+    holds × BLACK_HOLD_DURATION (no offset subtraction, unlike xfade).
     """
     dur1, dur2 = 1.0, 1.0
 
@@ -1487,12 +1411,20 @@ async def test_xfade_join_integration(tmp_path):
         assert rc == 0, f"segment creation failed for {path}"
 
     from yt_flow.pipeline.nodes.video import _run_ffmpeg
-    seg1, seg2 = tmp_path / "seg1.mp4", tmp_path / "seg2.mp4"
+    seg1, hold, seg2 = tmp_path / "seg1.mp4", tmp_path / "hold.mp4", tmp_path / "seg2.mp4"
     await _make_seg(seg1, "blue", dur1)
+    await _make_seg(hold, "black", BLACK_HOLD_DURATION)
     await _make_seg(seg2, "red", dur2)
 
     output = tmp_path / "out.mp4"
-    await _join_with_xfade([(seg1, dur1, "fadeblack"), (seg2, dur2, "fadeblack")], output)
+    await _join_with_fades(
+        [
+            (seg1, dur1, 0.0, FADE_DURATION),
+            (hold, BLACK_HOLD_DURATION, 0.0, 0.0),
+            (seg2, dur2, FADE_DURATION, 0.0),
+        ],
+        output,
+    )
     assert output.exists()
 
     def _stream_duration(stream: str) -> float:
@@ -1506,12 +1438,12 @@ async def test_xfade_join_integration(tmp_path):
         assert out, f"ffprobe returned no duration for stream {stream!r} — stream missing? stderr: {result.stderr}"
         return float(out)
 
-    expected = dur1 + dur2 - XFADE_DURATION
+    expected = dur1 + dur2 + BLACK_HOLD_DURATION
     video_dur = _stream_duration("v:0")
     audio_dur = _stream_duration("a:0")
     assert abs(video_dur - expected) < 0.5, f"Video duration {video_dur:.2f}s ≠ expected {expected:.2f}s"
-    # [Story 5.9 AC:3] audio must land on the same combined-output duration as
-    # video — no accumulating drift from the adelay+amix audio join.
+    # [Story 5.9 AC:3, preserved] audio lands on the same combined-output
+    # duration as video — now trivially true, concat has no drift to accumulate.
     assert abs(audio_dur - expected) < 0.5, f"Audio duration {audio_dur:.2f}s ≠ expected {expected:.2f}s"
 
 
@@ -1722,7 +1654,7 @@ def _output_files(calls, substr: str) -> list[str]:
 
 async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path, assets):
     """3-scene run with cards enabled renders 3 scene segs + 2 card segs and joins
-    all 5 into one filtergraph. [AC:2,5]"""
+    all 5 into one filtergraph, no black holds. [AC:2,5] [Story 5.16 AC:1,5]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
     monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     fake, calls = _capture_ffmpeg_calls()
@@ -1738,19 +1670,21 @@ async def test_chapter_cards_enabled_creates_card_segments(monkeypatch, tmp_path
     assert out.get("error") is None
     seg_outputs = _output_files(calls, "seg_")
     card_outputs = _output_files(calls, "card_")
+    hold_outputs = _output_files(calls, "hold_")
     assert len(seg_outputs) == 3
     assert len(card_outputs) == 2
+    assert not hold_outputs
 
     join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
     assert len([a for a in join_args if isinstance(a, str) and "/seg_" in a]) == 3
     assert len([a for a in join_args if isinstance(a, str) and "/card_" in a]) == 2
 
-    # [Story 5.9 AC:2] card segments (silent anullsrc audio, Story 5.1) go through
-    # the same adelay/amix join as ordinary scenes — no acrossfade, no special-casing.
+    # [Story 5.16 AC:1,2] card segments (audio bed, Story 5.1/5.16) go through the
+    # same fade+concat join as ordinary scenes — no xfade/adelay/amix, no special-casing.
     filter_complex = join_args[join_args.index("-filter_complex") + 1]
-    assert "acrossfade" not in filter_complex
-    assert "adelay" in filter_complex
-    assert "amix=inputs=5" in filter_complex
+    assert "concat=n=5:v=1:a=1" in filter_complex
+    for token in ("xfade=", "acrossfade", "adelay", "amix"):
+        assert token not in filter_complex
 
 
 async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):
@@ -1773,18 +1707,11 @@ async def test_chapter_card_duration_is_clamped(monkeypatch, tmp_path, assets):
 
 
 async def test_chapter_cards_disabled_no_card_render(monkeypatch, tmp_path, assets):
-    """chapter_cards=False: no card render call; join still uses fadeblack only. [AC:4]"""
+    """chapter_cards=False: no card render call; a black hold marks the dip instead.
+    [AC:4] [Story 5.16 AC:1,5]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=False))
-    captured_filter: list[str] = []
-
-    async def _fake(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
     scenes = [
         _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
@@ -1793,128 +1720,177 @@ async def test_chapter_cards_disabled_no_card_render(monkeypatch, tmp_path, asse
     out = await video_node(_state(scenes))
 
     assert out.get("error") is None
-    assert captured_filter, "join filtergraph not captured"
-    assert "transition=fadeblack" in captured_filter[0]
-    assert "card_" not in captured_filter[0]
+    assert not _output_files(calls, "card_")
+    assert len(_output_files(calls, "hold_")) == 1
+
+    join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
+    filter_complex = join_args[join_args.index("-filter_complex") + 1]
+    assert "concat=n=3:v=1:a=1" in filter_complex
+    assert "card_" not in filter_complex
 
 
-# ── Transition variety (Story 7.4) ───────────────────────────────────────────
+# ── Black-hold insertion (Story 5.16) ────────────────────────────────────────
 
 
-async def test_video_node_mood_varied_scene_transition(monkeypatch, tmp_path, assets):
-    """[AC:1,3,4] No cards: a scene-to-scene boundary uses the entering scene's
-    mood-resolved transition (escalation -> wipeleft)."""
-    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, transition_variety_enabled=True))
-    captured_filter: list[str] = []
-
-    async def _fake(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+async def test_black_hold_inserted_at_every_card_less_boundary(monkeypatch, tmp_path, assets):
+    """[AC:5] Cards off, 3 scenes (2 boundaries): the join gets exactly (n-1) hold
+    inputs, zero card inputs. Sound design off (default) reuses one shared hold
+    file across both boundaries — same file, referenced twice in the join."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=False))
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
     scenes = [
-        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread"),
-        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
     ]
     out = await video_node(_state(scenes))
 
     assert out.get("error") is None
-    join_filter = captured_filter[-1]
-    assert "xfade=transition=wipeleft" in join_filter
+    assert not _output_files(calls, "card_")
+    assert _output_files(calls, "hold_") == [str(tmp_path / "run-001" / "hold_shared.mp4")]
+
+    join_args = next(args for args in calls if isinstance(args[-1], str) and args[-1].endswith("video.mp4"))
+    hold_inputs = [a for a in join_args if isinstance(a, str) and "/hold_" in a]
+    assert len(hold_inputs) == 2  # one per card-less boundary, same shared file
 
 
-async def test_video_node_multiple_mood_boundaries_each_independent(monkeypatch, tmp_path, assets):
-    """[AC:1,3,4] No cards, 3 scenes: two distinct scene-to-scene boundaries each
-    resolve to their own entering scene's mood transition, independently."""
-    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, transition_variety_enabled=True))
-    captured_filter: list[str] = []
-
-    async def _fake(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
-
-    scenes = [
-        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="dread"),
-        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
-        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
-    ]
-    out = await video_node(_state(scenes))
-
-    assert out.get("error") is None
-    join_filter = captured_filter[-1]
-    assert re.findall(r"transition=(\w+)", join_filter) == ["wipeleft", "fadewhite"]
-
-
-async def test_video_node_card_adjacency_uses_mood_transition(monkeypatch, tmp_path, assets):
-    """[AC:5, revised 2026-07-06] Cards on + varied moods: card boundaries are
-    mood-driven too (no more fadeblack lock) — a card's transition follows the
-    same upcoming-scene mood that already drives its color grade (Story 7.2)."""
+async def test_black_hold_per_boundary_file_when_sound_design_enabled(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """[AC:3,5] Sound design on: each boundary's hold is a distinct render (moods
+    may differ), so 2 boundaries render 2 hold files."""
     monkeypatch.setattr(
         video, "_settings",
-        lambda: _settings_ns(tmp_path, chapter_cards=True, transition_variety_enabled=True),
+        lambda: _settings_ns(tmp_path, chapter_cards=False, sound_design_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert not _output_files(calls, "card_")
+    assert len(_output_files(calls, "hold_")) == 2
+
+
+async def test_black_hold_zero_when_cards_enabled(monkeypatch, tmp_path, assets):
+    """[AC:5] Cards on: zero hold segments render — the card is the dip."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert not _output_files(calls, "hold_")
+    assert len(_output_files(calls, "card_")) == 1
+
+
+async def test_black_hold_uses_ambient_bed_when_sound_design_enabled(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """[AC:3] Hold audio is the incoming scene's mood ambient asset when sound
+    design is on, looped and at AMBIENT_VOLUME — not anullsrc."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=False, sound_design_enabled=True),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    hold_call = next(args for args in calls if isinstance(args[-1], str) and "/hold_" in args[-1])
+    args = list(hold_call)
+    assert str(sound_assets["ambient"]) in args
+    assert "anullsrc" not in args
+    assert f"volume={video.AMBIENT_VOLUME}" in args[args.index("-af") + 1]
+
+
+async def test_black_hold_uses_anullsrc_when_sound_design_disabled(monkeypatch, tmp_path, assets):
+    """[AC:3] Hold audio stays anullsrc silence when sound design is off (unchanged)."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=False, sound_design_enabled=False),
+    )
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    hold_call = next(args for args in calls if isinstance(args[-1], str) and "/hold_" in args[-1])
+    args = list(hold_call)
+    assert "anullsrc=channel_layout=stereo:sample_rate=44100" in args
+
+
+async def test_card_uses_ambient_bed_when_sound_design_enabled(
+    monkeypatch, tmp_path, assets, sound_assets,
+):
+    """[AC:3] Card audio bed is the upcoming scene's mood ambient asset when sound
+    design is on; card visuals (drawtext, self-fades) are unaffected."""
+    monkeypatch.setattr(
+        video, "_settings",
+        lambda: _settings_ns(tmp_path, chapter_cards=True, sound_design_enabled=True),
     )
     monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-    captured_filter: list[str] = []
-
-    async def _fake(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    fake, calls = _capture_ffmpeg_calls()
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
 
     scenes = [
-        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
-        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="clinical"),
-        _scene(3, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+    ]
+    out = await video_node(_state(scenes))
+
+    assert out.get("error") is None
+    card_call = next(args for args in calls if isinstance(args[-1], str) and "/card_" in args[-1])
+    args = list(card_call)
+    assert str(sound_assets["ambient"]) in args
+    vf = args[args.index("-vf") + 1]
+    assert "fade=t=in:st=0:d=0.25" in vf
+    assert "drawtext=" in vf
+
+
+async def test_card_and_hold_receive_zero_join_fades(monkeypatch, tmp_path, assets):
+    """[AC:1,5] Cards/holds keep their own internal fades but get 0.0 join-fades
+    from _join_with_fades — no double fade at their own edges."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, chapter_cards=True))
+    monkeypatch.setattr(video, "_drawtext_font", lambda: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    captured_filter = _capture_filter(monkeypatch)
+
+    scenes = [
+        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
+        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle),
     ]
     out = await video_node(_state(scenes))
 
     assert out.get("error") is None
     join_filter = captured_filter[-1]
-    # scene0->card0 and card0->scene1 both announce card0's mood (clinical);
-    # scene1->card1 and card1->scene2 both announce card1's mood (revelation).
-    assert re.findall(r"transition=(\w+)", join_filter) == [
-        "fadeblack", "fadeblack", "fadewhite", "fadewhite",
-    ]
-
-
-async def test_video_node_transition_variety_disabled_all_fadeblack(monkeypatch, tmp_path, assets):
-    """[AC:6] transition_variety_enabled=False: mood-varied scenes still join all-fadeblack."""
-    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, transition_variety_enabled=False))
-    captured_filter: list[str] = []
-
-    async def _fake(*args):
-        args_list = list(args)
-        if "-filter_complex" in args_list:
-            captured_filter.append(args_list[args_list.index("-filter_complex") + 1])
-        Path(args[-1]).write_bytes(b"FAKE_MP4")
-        return 0, ""
-
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
-
-    scenes = [
-        _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="escalation"),
-        _scene(2, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, mood="revelation"),
-    ]
-    out = await video_node(_state(scenes))
-
-    assert out.get("error") is None
-    join_filter = captured_filter[-1]
-    assert "wipeleft" not in join_filter
-    assert "fadewhite" not in join_filter
-    assert "transition=fadeblack" in join_filter
+    # scene0 fade-out, card gets no join-fade filter (index 1), scene1 fade-in.
+    assert "[1:v]fade=" not in join_filter
+    assert "concat=n=3:v=1:a=1" in join_filter
 
 
 async def test_single_scene_no_card_no_join(monkeypatch, tmp_path, assets):
@@ -1972,13 +1948,6 @@ def test_config_chapter_cards_default_true():
 
     assert Settings.model_fields["chapter_cards"].default is True
     assert 1.5 <= Settings.model_fields["chapter_card_duration_sec"].default <= 2.0
-
-
-def test_config_transition_variety_enabled_default_true():
-    """Settings.transition_variety_enabled defaults true, per Story 7.4 AC:6."""
-    from yt_flow.config import Settings
-
-    assert Settings.model_fields["transition_variety_enabled"].default is True
 
 
 def test_card_label_uses_fallback_when_no_title(assets):

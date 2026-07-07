@@ -1,8 +1,9 @@
 """video_node — FFmpeg composition stage (Story 1.9 + 1.9b).
 
 Story 1.9: per-scene segment render + concat → video.mp4
-Story 1.9b: Ken Burns zoompan per shot + xfade/acrossfade scene transitions
+Story 1.9b: Ken Burns zoompan per shot
 Story 1.13: LLM-based character angle pre-selection before FFmpeg composition
+Story 5.16: dip-to-black fade + concat scene boundaries (retires xfade/acrossfade)
 
 Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
@@ -23,7 +24,8 @@ from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
-    MOOD_VALUES,
+    AMBIENT_VOLUME,
+    MOOD_ASSET_PATHS,
     build_sound_design_args,
     build_sound_design_filter,
     resolve_mood,
@@ -62,28 +64,14 @@ _DIRECTION_POOL = [
     "pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left",
 ]
 
-# xfade defaults
-# fadeblack (Story 5.1): scene boundaries cut to black, never blend two scene
-# images together — plain "fade" showed both images overlapped mid-transition.
-# Also the card transition and the transition_variety_enabled=False fallback (Story 7.4).
-XFADE_TRANSITION = "fadeblack"
-XFADE_DURATION = 0.5  # seconds — constant across all moods (Story 7.4 AC:2)
-
-# Mood-driven transition type (Story 7.4): only the xfade *type* varies by mood,
-# duration stays constant. Values are ffmpeg built-in xfade transition names.
-MOOD_XFADE_MAP: dict[str, str] = {
-    "dread": "fadeblack",       # unchanged — Story 5.1 found plain "fade" overlapped both images
-    "clinical": "fadeblack",    # keep the calmer moods on the proven default
-    "escalation": "wipeleft",   # directional/kinetic
-    "revelation": "fadewhite",
-}
-# resolve_mood only guarantees a MOOD_VALUES member; keep this dict's keys in
-# sync or an unmapped mood raises KeyError mid-render.
-assert set(MOOD_XFADE_MAP) == set(MOOD_VALUES)
-
-
-def resolve_transition(mood: str | None) -> str:
-    return MOOD_XFADE_MAP[resolve_mood(mood)]
+# Boundary grammar (Story 5.16): dip-to-black fade + concat replaces xfade —
+# narration is never trimmed/overlapped, and the dip marks the act break (the
+# chapter card where one exists, otherwise a plain black hold). 7.4's
+# mood-driven xfade *type* variety is retired outright (Jay-aligned direction,
+# 2026-07-06): wipe/white transitions blend two scene images, exactly the
+# artifact this grammar removes.
+FADE_DURATION = 0.5  # seconds — in-place fade-out/fade-in at each segment's own edges
+BLACK_HOLD_DURATION = 0.3  # seconds — dip-to-black hold at card-less act breaks
 
 # ── Chapter-card constants (Story 5.1) ─────────────────────────────────────────
 MIN_CARD_DURATION = 1.5
@@ -451,8 +439,9 @@ def _record_trace(
             **({"output_path": output_path} if output_path else {}),
             **({"ffmpeg_returncode": returncode} if returncode is not None else {}),
             **({"effects": effects} if effects is not None else {}),
-            "transition": XFADE_TRANSITION,
-            "transition_duration": XFADE_DURATION,
+            "transition": "dip-to-black",
+            "fade_duration": FADE_DURATION,
+            "black_hold_sec": BLACK_HOLD_DURATION,
             "chapter_cards_enabled": chapter_cards_enabled,
             "chapter_card_count": chapter_card_count,
             **({"chapter_card_duration": chapter_card_duration} if chapter_card_duration is not None else {}),
@@ -500,7 +489,7 @@ def _validate_scene_assets(
         character = shot.get("character_path")
         if character and not Path(character).exists():
             raise FileNotFoundError(f"scene {n}: character_path set but not found: {character!r}")
-        # audio_duration drives zoompan frame count + xfade offset; a missing/≤0 value
+        # audio_duration drives zoompan frame count + segment fade timing; a missing/≤0 value
         # would silently truncate the scene (via -shortest) or corrupt timing. Fail fast
         # instead of inventing a fallback duration. [review:D]
         dur = scene.get("audio_duration")
@@ -663,6 +652,19 @@ async def _compose_scene(
     return seg_path, spec, bool(character_path)
 
 
+def _card_hold_audio_input(mood: str | None, *, sound_design_enabled: bool) -> tuple[list[str], list[str]]:
+    """Audio input args + optional volume filter for a card/hold segment. [Story 5.16 AC:3]
+
+    Sound design on: the upcoming scene's mood ambient bed, looped, at
+    AMBIENT_VOLUME — the boundary never drops to digital silence. Off: today's
+    anullsrc silence, unchanged.
+    """
+    if not sound_design_enabled:
+        return ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"], []
+    ambient = MOOD_ASSET_PATHS[resolve_mood(mood)]["ambient"]
+    return ["-stream_loop", "-1", "-i", str(ambient)], ["-af", f"volume={AMBIENT_VOLUME}"]
+
+
 async def _compose_chapter_card(
     label: str,
     index: int,
@@ -671,15 +673,18 @@ async def _compose_chapter_card(
     *,
     mood: str | None = None,
     post_fx_enabled: bool = False,
+    sound_design_enabled: bool = False,
 ) -> Path:
-    """Render a black title-card segment: color bg + centered drawtext + silent
-    audio, fading in/out at its own edges. [Story 5.1 AC:2,5]
+    """Render a black title-card segment: color bg + centered drawtext + audio
+    bed, fading in/out at its own edges. [Story 5.1 AC:2,5] [Story 5.16 AC:3,5]
 
     `mood` grades the card to the *upcoming* scene's mood, applied before
-    drawtext so the label text isn't grained. [Story 7.2 AC:7,8]
+    drawtext so the label text isn't grained. [Story 7.2 AC:7,8] The same mood
+    also picks the card's ambient audio bed when sound design is enabled — the
+    card IS the dip-to-black (Story 5.16), so it carries the boundary's audio.
 
     Matches _compose_scene's output contract (COMP_W x COMP_H, FPS, H.264/AAC,
-    yuv420p, has an audio stream) so _join_with_xfade can treat it as an
+    yuv420p, has an audio stream) so _join_with_fades can treat it as an
     ordinary segment — no join-engine changes needed.
     """
     card_path = out_dir / f"card_{index:03d}.mp4"
@@ -696,11 +701,15 @@ async def _compose_chapter_card(
         f"fade=t=in:st=0:d={CARD_FADE_DURATION},"
         f"fade=t=out:st={fade_out_start:.3f}:d={CARD_FADE_DURATION}"
     )
+    audio_input, audio_filter_args = _card_hold_audio_input(
+        mood, sound_design_enabled=sound_design_enabled,
+    )
     rc, stderr = await _run_ffmpeg(
         "-y",
         "-f", "lavfi", "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={duration}",
-        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        *audio_input,
         "-vf", vf,
+        *audio_filter_args,
         "-t", f"{duration:.3f}",
         *_OUTPUT_ARGS,
         str(card_path),
@@ -712,78 +721,95 @@ async def _compose_chapter_card(
     return card_path
 
 
-async def _join_with_xfade(
-    segments: list[tuple[Path, float, str]],
+async def _compose_black_hold(
+    out_dir: Path,
+    index: int,
+    *,
+    mood: str | None = None,
+    sound_design_enabled: bool = False,
+) -> Path:
+    """Render a pure-black hold segment for a card-less scene boundary dip.
+    [Story 5.16 AC:1,3,5]
+
+    No drawtext, no self-fades — it sits between two segments that already
+    fade to/from black at their own edges. Carries the incoming scene's mood
+    ambient bed when sound design is on (same recipe as the card); anullsrc
+    otherwise. Mood-independent (silent) holds share one file per run; mood-
+    bearing holds render per boundary since adjacent boundaries may announce
+    different moods.
+    """
+    hold_path = out_dir / (
+        f"hold_{index:03d}.mp4" if sound_design_enabled else "hold_shared.mp4"
+    )
+    if hold_path.exists():
+        return hold_path
+    audio_input, audio_filter_args = _card_hold_audio_input(
+        mood, sound_design_enabled=sound_design_enabled,
+    )
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=black:s={COMP_W}x{COMP_H}:r={FPS}:d={BLACK_HOLD_DURATION}",
+        *audio_input,
+        *audio_filter_args,
+        "-t", f"{BLACK_HOLD_DURATION:.3f}",
+        *_OUTPUT_ARGS,
+        str(hold_path),
+    )
+    if rc != 0:
+        raise RuntimeError(f"FFmpeg black hold {index} failed (rc={rc}): {stderr[-500:]}")
+    if not hold_path.exists():
+        raise RuntimeError(f"FFmpeg black hold {index}: output not created: {hold_path}")
+    return hold_path
+
+
+async def _join_with_fades(
+    segments: list[tuple[Path, float, float, float]],
     output: Path,
 ) -> None:
-    """Join scenes with xfade (video) + delayed overlay-mix (audio). [AC:2] [Story 5.9 AC:1-3]
+    """Join segments with in-place fades + concat — no overlap. [Story 5.16 AC:1,2,6]
 
-    segments: list of (path, duration_seconds, transition). transition is the
-    xfade type used *entering* that segment (Story 7.4) — boundary i uses
-    segments[i+1][2], i.e. the next segment announces its own cut-in.
-    xfade offset is measured on the *combined* prior output, so it accumulates:
-    the transition after segment i begins at Σ(dur_0..i) − (i+1)·XFADE_DURATION,
-    which is XFADE_DURATION before the running combined length ends. This is the
-    #1 source of xfade timing bugs; we track running_offset explicitly.
+    segments: list of (path, duration_seconds, fade_in_sec, fade_out_sec).
+    Fades are computed by the caller (video_node): 0.0 for cards/holds (already
+    black, or self-fading), 0.0 fade-in on the first segment and 0.0 fade-out
+    on the last (no fade into/out of nothing).
 
-    Audio does NOT use `acrossfade` (Story 5.9): that filter fades each
-    segment's volume down/up over the overlap window, which is audible as a
-    volume dip at every scene cut in sync with the video's fade-to-black.
-    Instead, each segment's audio is delayed (`adelay`) to start at the exact
-    same offset the video xfade uses for that segment, then summed
-    (`amix=normalize=0`, so ongoing solo playback is never scaled down) —
-    narration plays at full, constant volume and only briefly overlaps with
-    its neighbor during the black-frame transition window, landing on the
-    same total duration as the video stream (proven: the last segment's
-    delayed end time telescopes to exactly the video's combined length).
+    Each segment fades to/from black over its OWN first/last frames — no frame
+    ever blends two segments' images, and no segment content is trimmed or
+    consumed by a shared transition window (replaces xfade's offset
+    accounting, the #1 source of its timing bugs). Audio passes through
+    untouched via plain concat: no acrossfade, no adelay/amix, no gain
+    manipulation anywhere — narration plays to its last sample before the
+    boundary (Story 5.9's no-volume-dip guarantee now holds by construction,
+    since there is no overlap window at all).
     """
     n = len(segments)
     assert n >= 2
-    # ponytail: assumes each scene ≥ 2×XFADE_DURATION (TTS narration is always multi-second).
-    # Below XFADE_DURATION, offset goes negative outright (guarded below). Between
-    # XFADE_DURATION and 2×XFADE_DURATION, offset stays non-negative but the scene's
-    # own overlap windows with both neighbors touch/collide, producing 3-way audio
-    # overlap instead of the intended pairwise crossfade window — add a per-pair
-    # min-duration clamp only if scenes that short ever become real.
 
-    # Build video filter chain
     v_parts: list[str] = []
-    a_parts: list[str] = []
-    audio_labels: list[str] = ["[0:a]"]
-    running_offset = 0.0
-    v_prev = "[0:v]"
+    concat_labels: list[str] = []
+    for i, (_, dur, fade_in, fade_out) in enumerate(segments):
+        fade_in = min(fade_in, dur)
+        fade_out = min(fade_out, dur)
+        fades = []
+        if fade_in:
+            fades.append(f"fade=t=in:st=0:d={fade_in}")
+        if fade_out:
+            fades.append(f"fade=t=out:st={dur - fade_out:.3f}:d={fade_out}")
+        if fades:
+            v_label = f"[v{i}]"
+            v_parts.append(f"[{i}:v]{','.join(fades)}{v_label}")
+            concat_labels.append(v_label)
+        else:
+            concat_labels.append(f"[{i}:v]")
+        concat_labels.append(f"[{i}:a]")
 
-    for i, (_, dur, _) in enumerate(segments):
-        if i < n - 1:
-            transition = segments[i + 1][2]
-            running_offset += dur
-            offset = running_offset - (i + 1) * XFADE_DURATION
-            v_out = f"[vx{i}]" if i < n - 2 else "[vout]"
-            v_parts.append(
-                f"{v_prev}[{i+1}:v]xfade=transition={transition}"
-                f":duration={XFADE_DURATION}:offset={offset:.4f}{v_out}"
-            )
-            v_prev = v_out
-
-            assert offset >= 0, (
-                f"segment {i} duration {dur}s is too short for XFADE_DURATION="
-                f"{XFADE_DURATION}s — offset went negative ({offset:.3f}s); a silent "
-                "clamp here would desync audio from the video xfade's own offset"
-            )
-            delay_ms = round(offset * 1000)
-            a_out = f"[ad{i+1}]"
-            a_parts.append(f"[{i+1}:a]adelay={delay_ms}:all=1{a_out}")
-            audio_labels.append(a_out)
-
-    a_parts.append(
-        "".join(audio_labels) + f"amix=inputs={n}:normalize=0:duration=longest[aout]"
+    filter_complex = "; ".join(
+        [*v_parts, "".join(concat_labels) + f"concat=n={n}:v=1:a=1[vout][aout]"]
     )
 
-    filter_complex = "; ".join(v_parts + a_parts)
-
-    # Build input args: one -i per segment
     input_args: list[str] = []
-    for path, _, _ in segments:
+    for path, _, _, _ in segments:
         input_args += ["-i", str(path)]
 
     rc, stderr = await _run_ffmpeg(
@@ -797,9 +823,9 @@ async def _join_with_xfade(
         str(output),
     )
     if rc != 0:
-        raise RuntimeError(f"FFmpeg xfade join failed (rc={rc}): {stderr[-500:]}")
+        raise RuntimeError(f"FFmpeg fade join failed (rc={rc}): {stderr[-500:]}")
     if not output.exists():
-        raise RuntimeError(f"FFmpeg xfade: output not created: {output}")
+        raise RuntimeError(f"FFmpeg fade join: output not created: {output}")
 
 
 
@@ -880,25 +906,34 @@ async def video_node(state: PipelineState) -> dict:
 
         if len(segs) == 1:
             segs[0].replace(output)  # replace: atomic overwrite, cross-platform
-        else:  # 2+ scenes: xfade join (label wiring handles n>=2 uniformly)
-            variety = s.transition_variety_enabled
-            join_segments: list[tuple[Path, float, str]] = []
+        else:  # 2+ scenes: dip-to-black fade+concat join (Story 5.16)
+            last_idx = len(segs_with_specs) - 1
+            join_segments: list[tuple[Path, float, float, float]] = []
             for i, (seg_path, duration, _, _) in enumerate(segs_with_specs):
-                # Story 7.4 (revised 2026-07-06): cards are mood-driven too, same
-                # as their own color grade — no more card-adjacency fadeblack lock.
-                transition = resolve_transition(scenes[i].get("mood")) if variety else XFADE_TRANSITION
-                join_segments.append((seg_path, duration, transition))
-                if chapter_cards_enabled and i < len(segs_with_specs) - 1:
+                fade_in = 0.0 if i == 0 else FADE_DURATION
+                fade_out = 0.0 if i == last_idx else FADE_DURATION
+                join_segments.append((seg_path, duration, fade_in, fade_out))
+                if i == last_idx:
+                    continue
+                upcoming_mood = scenes[i + 1].get("mood")
+                if chapter_cards_enabled:
+                    # Card boundaries produce no double dip (AC:5) — the card
+                    # IS the dip, self-fading internally; it gets 0.0 join-fades.
                     label = _card_label(scenes[i + 1])
-                    upcoming_mood = scenes[i + 1].get("mood")
                     card_path = await _compose_chapter_card(
                         label, i + 1, run_dir, card_duration,
                         mood=upcoming_mood, post_fx_enabled=s.post_fx_enabled,
+                        sound_design_enabled=s.sound_design_enabled,
                     )
-                    card_transition = resolve_transition(upcoming_mood) if variety else XFADE_TRANSITION
-                    join_segments.append((card_path, card_duration, card_transition))
+                    join_segments.append((card_path, card_duration, 0.0, 0.0))
                     card_count += 1
-            await _join_with_xfade(join_segments, output)
+                else:
+                    hold_path = await _compose_black_hold(
+                        run_dir, i + 1, mood=upcoming_mood,
+                        sound_design_enabled=s.sound_design_enabled,
+                    )
+                    join_segments.append((hold_path, BLACK_HOLD_DURATION, 0.0, 0.0))
+            await _join_with_fades(join_segments, output)
 
         effects_meta = [
             {
