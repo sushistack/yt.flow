@@ -33,13 +33,14 @@ from yt_flow.pipeline.nodes.subtitle import (
 # ── Fakes / helpers ───────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path, aligner="whisperx"):
+def _settings_ns(tmp_path, aligner="whisperx", content_language="ko"):
     return SimpleNamespace(
         aligner=aligner,
         aligner_model="base",
         aligner_device="cpu",
         aligner_compute_type="int8",
         workspace_path=str(tmp_path),
+        content_language=content_language,
     )
 
 
@@ -537,6 +538,17 @@ async def test_subtitle_node_bad_aligner_config(monkeypatch, tmp_path, audio_fil
 
     assert out["error"] and "stage=subtitle" in out["error"]
     assert "Unsupported" in out["error"] or "bad_aligner" in out["error"]
+
+
+async def test_subtitle_node_non_ko_content_language_fails_fast(monkeypatch, tmp_path, audio_file):
+    """A retried/resumed subtitle stage must fail on its own, independent of scenario_node."""
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, content_language="en"))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    scenes = [_scene(1, "test", audio_path=audio_file)]
+    out = await subtitle_node(_state(scenes))
+
+    assert out["error"] and "content_language" in out["error"]
 
 
 async def test_subtitle_node_aligner_returns_no_segments(monkeypatch, tmp_path, audio_file):

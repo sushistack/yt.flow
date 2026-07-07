@@ -323,6 +323,11 @@ async def subtitle_node(state: PipelineState) -> dict:
     t0 = time.perf_counter()
     try:
         s = _settings()
+        if s.content_language != "ko":
+            raise NotImplementedError(
+                f"content_language={s.content_language!r} not supported yet; scenario prompts, "
+                "TTS naturalization, and subtitle typography are Korean-only (YTFLOW_CONTENT_LANGUAGE)"
+            )
         aligner = _get_aligner(s)  # validate config upfront; fail fast on bad YTFLOW_ALIGNER
         subtitle_dir = Path(s.workspace_path) / run_id / "subtitles"
         subtitle_dir.mkdir(parents=True, exist_ok=True)
