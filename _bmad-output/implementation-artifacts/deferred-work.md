@@ -198,3 +198,12 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 2. **배경 프롬프트 순응도**: SDXL이 배경 전용 프롬프트를 따르는 정도는 Epic 8이 보장 못 함 (베이스라인 S00202: "격리실 관찰창" → 추상 건축물). 개체 분리로 프롬프트가 단순해져 개선 여지는 있으나 미검증. 해법 후보: visual_breakdown 배경 프롬프트 최적화(6-2 골든셋 A/B), 배경 특화 LoRA.
 3. **연기의 한계**: "시신이 일어난다" 같은 서사 순간은 카드 포즈(서기/앉기/특수 3장 캡)로 표현 불가 — 정적 다큐 문법으론 수용 가능하나 "3~5배 역동적" 원목표 대비 부분 달성. 해법 후보(비용 큼): i2v(이미지→비디오) 모션 클립, 컷 리듬 고속화.
 4. **귀 판정 미검증 축**: TTS 억양, BGM 믹스 밸런스 — judge가 텍스트/측정 프록시로만 채점 중. Jay 시청 판정과의 캘리브레이션이 iteration 1의 병행 과제.
+
+## Deferred from: code review of 5-19-ddg-image-search-fallback-repair (2026-07-07)
+
+- No validation for empty/whitespace `query` in `search()`/`_acquire_vqd` [src/yt_flow/services/image_search.py] — pre-existing gap, no current caller passes an empty query.
+- `i.js` request omits `iax`/`ia` image-tab params present on the vqd-page GET [src/yt_flow/services/image_search.py] — pre-existing, unchanged by this diff.
+- vqd regex could match the wrong tab's token if the query page embeds multiple `vqd=` occurrences [src/yt_flow/services/image_search.py] — unofficial-endpoint risk already documented in the story as a constant; live-verified working today.
+- Test fixtures (`_fake_vqd_html`) are minimal/synthetic vs real DDG markup, and no automated test catches future DDG markup drift [tests/services/test_image_search.py] — established project test pattern; live verification is this story's manual process, not the automated suite.
+- No test coverage for non-5xx failure modes (timeouts, malformed JSON, missing `results` key) [tests/services/test_image_search.py] — not required by AC5 (exception-type/message preservation only), pre-existing gap.
+- DDG anti-bot/fingerprint risk on the new GET path is undetected and untested [src/yt_flow/services/image_search.py] — inherent third-party scraping risk, story already frames re-breakage probability as constant.
