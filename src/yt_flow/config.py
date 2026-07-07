@@ -102,3 +102,17 @@ class Settings(BaseSettings):
     # the background's EffectSpec, amplified by CHAR_DEPTH_FACTOR, for a real
     # multiplane depth cue. When false, character reverts to fixed-size sway/bob only.
     parallax_enabled: bool = True
+
+    # Content language (Story 9.1): single seam for a future language pivot. The
+    # pipeline is Korean-only today — changing this to anything else makes
+    # scenario_node fail fast rather than silently mixing languages. Touchpoints
+    # that would need real work before this value does anything: the WhisperX
+    # aligner language (subtitle.py, already wired), SUBTITLE_FONT_FAMILY +
+    # line-wrap constants tuned for Hangul density (subtitle.py), CARD_FONT_PATH
+    # (video.py), and the scenario-chain prompt templates in prompts/scenario/
+    # (research/structure/visual_breakdown/tts_normalize here, plus
+    # writing/review/critic_agent/format_guide which live only in Langfuse's
+    # production label / the sibling yt.pipe repo). `qwen_tts_voice` is also
+    # coupled to language — swapping this without picking a matching voice
+    # would silently mis-synthesize; no mapping exists yet.
+    content_language: str = "ko"

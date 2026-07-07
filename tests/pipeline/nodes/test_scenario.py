@@ -16,6 +16,7 @@ class FakeSettings:
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
+    content_language = "ko"
 
 
 class FakePrompt:
@@ -65,12 +66,14 @@ async def _async_return(value):
 
 
 def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None):
-    calls = {"writing": 0, "tts_normalize": 0}
+    calls = {"research": 0, "structure": 0, "writing": 0, "tts_normalize": 0}
 
     async def fake_research(*a, **k):
+        calls["research"] += 1
         return RESEARCH
 
     async def fake_structure(*a, **k):
+        calls["structure"] += 1
         return STRUCTURE
 
     async def fake_writing(*a, **k):
@@ -273,6 +276,19 @@ async def test_missing_api_key_sets_error(monkeypatch):
     _stub_chain(monkeypatch)
     out = await sc.scenario_node(_state())
     assert out["error"] and "DEEPSEEK_API_KEY" in out["error"]
+
+
+async def test_non_ko_content_language_sets_error_without_calling_chain(monkeypatch):
+    class NonKoSettings(FakeSettings):
+        content_language = "en"
+
+    monkeypatch.setattr(sc, "_settings", lambda: NonKoSettings())
+    calls = _stub_chain(monkeypatch)
+    out = await sc.scenario_node(_state())
+    assert out["error"] and "content_language" in out["error"]
+    assert calls["research"] == 0
+    assert calls["structure"] == 0
+    assert calls["writing"] == 0
 
 
 async def test_variant_b_fetches_format_guide_with_candidate_label(monkeypatch):

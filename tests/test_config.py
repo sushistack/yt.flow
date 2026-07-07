@@ -66,6 +66,20 @@ def test_sound_design_enabled_defaults_true(monkeypatch):
     assert Settings(_env_file=None).sound_design_enabled is True
 
 
+def test_content_language_defaults_ko(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.delenv("YTFLOW_CONTENT_LANGUAGE", raising=False)
+    from yt_flow.config import Settings
+    assert Settings(_env_file=None).content_language == "ko"
+
+
+def test_content_language_env_override(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YTFLOW_CONTENT_LANGUAGE", "en")
+    from yt_flow.config import Settings
+    assert Settings(_env_file=None).content_language == "en"
+
+
 def test_observe_is_noop_when_flag_off():
     """With the flag off, the observability seam's @observe runs the fn and
     get_client().update_current_span(...) never raises (no trace emitted).

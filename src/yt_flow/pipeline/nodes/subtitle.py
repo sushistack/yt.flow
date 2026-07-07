@@ -42,8 +42,9 @@ class WhisperXAligner:
     Lazy import keeps this module loadable without whisperx present.
     """
 
-    def __init__(self, model: str, device: str, compute_type: str) -> None:
+    def __init__(self, model: str, device: str, compute_type: str, language: str) -> None:
         self._model, self._device, self._compute_type = model, device, compute_type
+        self._language = language
 
     async def align(self, audio_path: str, transcript: str) -> list[AlignmentSegment]:
         # ponytail: get_running_loop() is safe inside a coroutine; get_event_loop() is deprecated in 3.10+
@@ -61,7 +62,7 @@ class WhisperXAligner:
         model = whisperx.load_model(self._model, self._device, compute_type=self._compute_type)
         audio = whisperx.load_audio(audio_path)
         result = model.transcribe(audio)
-        align_model, meta = whisperx.load_align_model(language_code="ko", device=self._device)
+        align_model, meta = whisperx.load_align_model(language_code=self._language, device=self._device)
         # ponytail: len(audio)/16000 gives actual duration; 999.0 sentinel caused garbage alignment on short clips
         last_end = result["segments"][-1]["end"] if result.get("segments") else len(audio) / 16000
         aligned = whisperx.align(
@@ -83,7 +84,7 @@ def _words_or_segments(aligned: dict) -> list[AlignmentSegment]:
 
 def _get_aligner(s: Settings) -> SubtitleAligner:
     if s.aligner == "whisperx":
-        return WhisperXAligner(s.aligner_model, s.aligner_device, s.aligner_compute_type)
+        return WhisperXAligner(s.aligner_model, s.aligner_device, s.aligner_compute_type, s.content_language)
     raise ValueError(f"Unsupported YTFLOW_ALIGNER: {s.aligner!r}; supported: ['whisperx']")
 
 

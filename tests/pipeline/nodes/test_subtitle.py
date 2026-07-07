@@ -335,10 +335,12 @@ def test_words_or_segments_empty_when_nothing_usable():
 
 def test_get_aligner_whisperx_returns_instance():
     s = SimpleNamespace(aligner="whisperx", aligner_model="base",
-                        aligner_device="cpu", aligner_compute_type="int8")
+                        aligner_device="cpu", aligner_compute_type="int8",
+                        content_language="ko")
     from yt_flow.pipeline.nodes.subtitle import WhisperXAligner
     aligner = _get_aligner(s)
     assert isinstance(aligner, WhisperXAligner)
+    assert aligner._language == "ko"
 
 
 def test_get_aligner_unknown_raises_value_error():

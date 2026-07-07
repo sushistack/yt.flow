@@ -148,6 +148,11 @@ async def scenario_node(state: PipelineState) -> dict:
         s = _settings()
         if not s.deepseek_api_key:
             raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
+        if s.content_language != "ko":
+            raise NotImplementedError(
+                f"content_language={s.content_language!r} not supported yet; scenario prompts, "
+                "TTS naturalization, and subtitle typography are Korean-only (YTFLOW_CONTENT_LANGUAGE)"
+            )
 
         label = "candidate" if state.get("prompt_variant") == "B" else None
         format_guide = (
