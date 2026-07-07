@@ -117,6 +117,7 @@ development_status:
   5-17-chapter-card-content: done  # Jay 시청 피드백 #4 — 카드에 씬 제목+상황 한 줄 (structure가 title 산출) 구현 완료; 라이브 검증 중 amix normalize 버그 발견+수정(스팅어가 앰비언트 레벨로 무음화됨); 프롬프트 승격은 Jay에게 위임(A/B+eval 게이트 필요). 코드리뷰(3-레이어) 완료: patch 2건 적용(AC8 위반 — 타이틀 없이 kicker만 있을 때 "- N -" 폴백에 kicker가 붙던 버그, 카드 타이틀 멀티라인 방어 누락), 4건 기각(오탐). 회귀 스위트 231/231 passed, ruff clean(대상 파일)
   5-18-subtitle-display-text-dual-track: done  # Jay 시청 피드백 #3 — 자막은 원문(SCP-049), TTS는 정규화문(5-4 결정 번복); 가라오케(7-5) 은퇴 + Pretendard 타이포 업그레이드; 구현 완료(6개 태스크), 실사 오디오+실제 ffmpeg 번인 검증. 병렬 5.17 세션 커밋에 Task 1/3/4 일부 편입됨(데이터 손실 없음, story doc 참고). 코드리뷰(3-레이어) 완료: patch 3건 적용(AC7 위반 — word_timings 개수 불일치 시 display 트랙이 계속 렌더되던 버그를 spoken 폴백으로 수정, fontsdir 디렉토리 부재 시 fail-fast 가드 추가, sound-design filter_complex 분기 fontsdir 테스트 추가), 3건 보류, 10건 기각. 회귀 스위트 731 passed/1 skip, ruff clean
   5-19-ddg-image-search-fallback-repair: done  # 2026-07-07 라이브 실측 — 403 원인은 구식 vqd 획득(홈페이지→쿼리 페이지로 변경)+Referer 누락; 소형 수정, 위키 우선 폴백 지위 불변. 구현+라이브 재검증 완료(SCP-173 폴백 성공, SCP-049 위키 우선 hit 확인). 코드리뷰(3-레이어) 완료: patch 4건 적용(vqd GET params= 통일, i.js 헤더 중복 병합 제거, 재시도소진 테스트 상수화, 지수백오프 시퀀스 검증 추가), 6건 보류, 6건 기각. 회귀 스위트 726 passed/1 skip, ruff clean
+  5-20-cc-attribution-credits: backlog  # CC BY-SA 준수 자동화 — 엔딩 크레딧 카드(5-17 렌더러 재사용) + description.txt 아티팩트(문서·라이선스·이미지 출처), 비치명적
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
@@ -139,6 +140,7 @@ development_status:
   8-4-on-demand-special-pose-cards: ready-for-dev  # pose_hint 자유텍스트 → run 중 키아트 카드 온디맨드 생성(scenario 게이트 승인 훅, non-fatal, hint:sha256 캐싱, run당 3장 캡); depends on 8-1~8-3
   8-5-stock-location-plates: ready-for-dev  # 2026-07-07 created
   8-6-asset-library-management: ready-for-dev  # assets/ 루트 분리(workspace 스크래치와 격리) + manifest.json(출처·sha256 커밋) + style_epoch 버저닝 + draft/approved 수명주기 + 8-2 카드 이주; 8-5보다 선행 필수
+  8-7-composite-harmonization: backlog  # 콜라주 룩 해소 — Tier1 ffmpeg(mood 틴트+컨택트 섀도+합성 후 그레이드) → Tier2 라이트 랩 → Tier3 IC-Light 리라이팅((card,location) 쌍 사전 계산·8-6 캐싱); 착수 게이트 = iteration 1 실측
 
   # ── Epic 9: Localization Config — 콘텐츠 언어 스위치 ────────────────────────
   epic-9: in-progress
