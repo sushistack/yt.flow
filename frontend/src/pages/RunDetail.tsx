@@ -93,8 +93,12 @@ export function RunDetail({ runId }: { runId: string }) {
       onGatePending: ({ stage }: { stage?: StageName }) => {
         if (stage) setStageGateState(stage, "pending")
       },
-      onRunFailed: ({ error: err }: { error?: string }) => {
-        setRun((r) => (r ? { ...r, status: "failed", error: err } : r))
+      onRunFailed: ({ stage, error: err }: { stage?: StageName; error?: string }) => {
+        setRun((r) => {
+          if (!r) return r
+          const gs = stage ? { ...parseGateStates(r.gate_states), [stage]: "failed" as GateState } : parseGateStates(r.gate_states)
+          return { ...r, status: "failed", error: err, current_stage: stage ?? r.current_stage, gate_states: gs }
+        })
       },
       onConnectionError: () => {
         // EventSource auto-retries; only run_failed is authoritative failure.

@@ -86,7 +86,7 @@ development_status:
   3-5-gate-controls-retry-editor-sse: done
   3-6-ab-comparison-accessibility: done
   3-7-character-management-ui: done  # depends on 1-12
-  3-8-control-ui-defect-fixes: ready-for-dev  # 2026-07-06 E2E 베이스라인 D4/D7/D9/D14 — failed 재시도 버튼 무동작(major), SPA 딥링크 404, 상태 랙, 자막 카운트
+  3-8-control-ui-defect-fixes: done  # 2026-07-06 E2E 베이스라인 D4/D7/D9/D14 — failed 재시도 버튼 무동작(major), SPA 딥링크 404, 상태 랙, 자막 카운트. 코드리뷰 완료(patch 3건 수정, defer 4건 로그)
   epic-3-retrospective: optional
 
   # ── Epic 4: A/B Evaluation ──────────────────────────────────────────────────

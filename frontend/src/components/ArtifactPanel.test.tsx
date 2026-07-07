@@ -120,6 +120,21 @@ describe("ArtifactPanel", () => {
     expect(screen.getByText("자막 2개")).toBeInTheDocument()
   })
 
+  it("subtitle: counts ASS Dialogue events, not SRT arrows (D14)", async () => {
+    const ass = [
+      "[Script Info]",
+      "ScriptType: v4.00+",
+      "[Events]",
+      "Format: Layer, Start, End, Style, Text",
+      "Dialogue: 0,0:00:00.00,0:00:01.00,Default,안녕",
+      "Dialogue: 0,0:00:01.00,0:00:02.00,Default,반가워",
+      "Dialogue: 0,0:00:02.00,0:00:03.00,Default,잘가",
+    ].join("\n")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => ass }))
+    renderPanel({ data: { stage: "subtitle", subtitles: [{ scene_num: 1, subtitle_path: "workspace/r1/subs/1.ass" }] } })
+    await waitFor(() => expect(screen.getByText("자막 3개")).toBeInTheDocument())
+  })
+
   it("video: full-width native player + download link (AC7)", () => {
     renderPanel({ data: { stage: "video", video_path: "workspace/r1/video.mp4" } })
     const video = document.querySelector("video[controls]")

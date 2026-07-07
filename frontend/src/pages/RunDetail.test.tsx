@@ -120,6 +120,49 @@ describe("RunDetail", () => {
     expect(MockEventSource.instances[1].url).toBe("/runs/r2/progress")
   })
 
+  it("run_failed SSE flips the failed stage to retryable without reload (D9)", async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(RUN) })
+      if (url.includes("/stages/image/retry")) return Promise.resolve({ ok: true, status: 202, text: async () => JSON.stringify({ run_id: "r1", stage: "image", status: "retrying" }) })
+      // artifacts GET 404s: the failed stage never finished, mirrors the real E2E capture
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(<RunDetail runId="r1" />)
+    await waitFor(() => expect(screen.getByRole("navigation")).toBeInTheDocument())
+
+    act(() => MockEventSource.instances[0].emit("run_failed", { run_id: "r1", stage: "image", error: "ComfyUI connection refused" }))
+
+    const main = screen.getByRole("main")
+    const retryBtn = await within(main).findByRole("button", { name: "재시도" })
+    fireEvent.click(retryBtn)
+    fireEvent.click(within(main).getByRole("button", { name: "확인" }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/runs/r1/stages/image/retry", expect.objectContaining({ method: "POST" })),
+    )
+  })
+
+  it("retries a stage that was already failed on fresh load (regression guard)", async () => {
+    const run = { ...RUN, status: "failed", gate_states: JSON.stringify({ image: "failed" }) }
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
+      if (url.includes("/stages/image/retry")) return Promise.resolve({ ok: true, status: 202, text: async () => JSON.stringify({ run_id: "r1", stage: "image", status: "retrying" }) })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(<RunDetail runId="r1" />)
+
+    const main = await screen.findByRole("main")
+    const retryBtn = await within(main).findByRole("button", { name: "재시도" })
+    fireEvent.click(retryBtn)
+    fireEvent.click(within(main).getByRole("button", { name: "확인" }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/runs/r1/stages/image/retry", expect.objectContaining({ method: "POST" })),
+    )
+  })
+
   it("asks for confirmation before leaving a stage with dirty edits", async () => {
     const run = { ...RUN, current_stage: "subtitle", gate_states: null }
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {

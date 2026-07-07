@@ -370,7 +370,7 @@ function SubtitlePanel({
   }, [subtitles])
 
   if (text === null) return <p className="text-muted-foreground">불러오는 중…</p>
-  const cueCount = (text.match(/-->/g) ?? []).length
+  const cueCount = (text.match(/-->/g) ?? []).length + (text.match(/^Dialogue:/gm) ?? []).length
   return (
     <div>
       <p className="mb-3 text-muted-foreground">자막 {cueCount}개</p>

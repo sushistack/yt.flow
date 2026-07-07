@@ -275,6 +275,62 @@ def test_stage_from_exception_falls_back_to_unknown_without_notes():
     assert run_service._stage_from_exception(RuntimeError("no notes here")) == "unknown"
 
 
+# ── Story 3.8 D7: status is "running" (not stale "awaiting_approval") while the
+#    resumed stage is still executing ────────────────────────────────────────
+
+
+async def test_resume_run_reports_running_while_stage_in_flight(tmp_path, monkeypatch):
+    from yt_flow.pipeline import nodes
+
+    monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
+    fakes.patch_character_reference_seams(monkeypatch)
+    db.init("sqlite://")
+
+    def _instant(stage):
+        async def node(state):
+            return {"current_stage": stage, "error": None}
+        return node
+
+    for s in nodes.STAGES:
+        monkeypatch.setitem(nodes.STAGE_NODES, s, _instant(s))
+    gate = asyncio.Event()
+
+    async def blocking_image(state):
+        await gate.wait()
+        return {"current_stage": "image", "error": None}
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "image", blocking_image)
+
+    settings = Settings(
+        langfuse_host="http://localhost", langfuse_public_key="pk",
+        langfuse_secret_key="sk", db_path=str(tmp_path / "cp-d7.db"),
+    )
+    saver = await run_service.init(settings)  # rebuild graph with the blocking image node
+    try:
+        run_id = str(uuid.uuid4())
+        _seed(run_id)
+        reg = _FakeRegistry()
+        await run_service.start_run(run_id, "SCP-096", "t", reg)  # pauses at scenario gate
+
+        task = asyncio.create_task(run_service.resume_run(run_id, "scenario", "approve", reg))
+        for _ in range(200):
+            if _load(run_id).status == "running":
+                break
+            await asyncio.sleep(0.005)
+        # AC6: truthful "running" while image (the next stage) is still executing —
+        # not the stale "awaiting_approval" that resume_run used to leave behind.
+        assert _load(run_id).status == "running"
+
+        gate.set()
+        await task
+        assert _load(run_id).status == "awaiting_approval"  # settles at the image gate as before
+    finally:
+        await saver.conn.close()
+        run_service._graph = None
+        run_service._configs.clear()
+        db._engine = None
+
+
 # ── SYS-INT-007 / AD-10: Langfuse client raises → stage completes, error logged ──
 
 

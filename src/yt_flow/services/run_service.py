@@ -492,6 +492,7 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
     """
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     decision = _ACTION_TO_DECISION.get(action, action)
+    await asyncio.to_thread(_write_run, run_id, status="running")
     await _run(run_id, _graph.astream(Command(resume=decision), config, stream_mode="updates"), sse_registry)
 
 

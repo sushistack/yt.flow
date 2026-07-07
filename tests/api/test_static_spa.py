@@ -39,3 +39,26 @@ def test_skips_mount_when_build_absent(tmp_path):
 
 def client_404(app):
     return TestClient(app).get("/app/").status_code == 404
+
+
+def test_spa_deep_link_serves_index_html(tmp_path):
+    """Story 3.8 D4: unknown /app/* paths (client-side routes) get index.html, not 404."""
+    app = FastAPI()
+    mount_static_spa(app, _make_dist(tmp_path))
+    client = TestClient(app)
+
+    deep_link = client.get("/app/runs/some-id")
+    assert deep_link.status_code == 200
+    assert deep_link.headers["content-type"].startswith("text/html")
+    assert "yt.flow" in deep_link.text
+
+    # Real assets and non-/app routes are unaffected.
+    assert client.get("/app/assets/app.js").status_code == 200
+
+
+def test_unknown_route_outside_app_still_json_404():
+    app = FastAPI()
+    client = TestClient(app)
+    res = client.get("/nonexistent")
+    assert res.status_code == 404
+    assert res.json() == {"detail": "Not Found"}
