@@ -1005,6 +1005,10 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 2026-07-07 라이브 재현 테스트로 원인 규명: 5-8/5-10에서 재현된 `i.js` 403은 환경 차단이 아니라 **vqd 토큰 획득 방식이 구식**이어서임. yt.pipe(Go)와 yt.flow(`image_search.py`) 모두 duckduckgo.com 홈페이지에서 vqd를 긁는데, 현재 DDG는 홈페이지에 vqd를 내려주지 않음 — **쿼리 페이지**(`/?q=<query>&iax=images&ia=images`)에서 vqd 획득 + 브라우저 UA + `Referer: https://duckduckgo.com/` 헤더 조합으로 `i.js`가 200 + 실제 결과를 반환함(이 환경에서 실측 확인). 수정 범위: `_acquire_vqd`의 대상 URL 변경 + Referer 헤더 추가 + 회귀 테스트(MockTransport 패턴). 효과: 위키 미스 시 폴백 경로 복구, 8-5 스타일 앵커 소싱 자동화 옵션 확보. 비공식 엔드포인트라 재파손 가능성은 상수 — 폴백 지위 유지(위키 우선 불변). (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.20: CC BY-SA 크레딧 자동화 — 엔딩 카드 + 설명란 텍스트
+
+SCP 콘텐츠 상업화(수익화)의 라이선스 준수 자동화(Jay, 2026-07-07). SCP 위키 콘텐츠는 CC BY-SA — 원작 표기 + 동일 라이선스 고지 의무. ① video_node 마지막에 **엔딩 크레딧 카드**(2~3초): "Based on 'SCP-XXX' from the SCP Foundation Wiki / CC BY-SA 3.0" + 문서 URL, 5-17 카드 렌더러·Pretendard 재사용. ② run 산출물에 **`description.txt` 아티팩트**: 유튜브 설명란용 표기 블록(문서 링크, 라이선스 링크, 파생물 고지, 사용된 위키 이미지 출처 — 5-10이 이미 CC BY-SA 출처 메타데이터를 보존함) — 게이트에서 복사해가면 됨. 저자명은 위키 페이지에서 확보 가능하면 포함, 불가하면 문서 링크로 충분(위키 관례). 비치명적 — 크레딧 생성 실패가 run을 죽이지 않음. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
@@ -1082,3 +1086,15 @@ Jay 제안(2026-07-07), 업계 표준(애니메이션 배경 미술 라이브러
 ### Story 8.6: 자산 라이브러리 관리 체계 — 레지스트리·출처·버저닝
 
 Jay 지시(2026-07-07): 재사용 자산(캐릭터 카드, 로케이션 플레이트, 룩뎁 앵커)의 체계적 관리. 현재 카드가 run 스크래치 영역(`workspace/`)에 살아 라이브러리와 일회성 산출물이 섞여 있음(테스트의 workspace 오염 전례 있음). 정리: ① **저장 분리** — `assets/` 루트 신설(`characters/{card_key}/{pose}_{angle}.png`, `locations/{location_key}/{variant}.png`, `anchors/`), 바이너리는 gitignore하되 **`assets/manifest.json`은 커밋**(키→경로·sha256·출처: 앵커 참조/워크플로우 해시/시드/weight/생성일/승인일) → 자산 이력이 git으로 감사 가능. ② **카탈로그** — 조회는 DB 진실 유지(`characters`/`character_cards` + 신규 `location_plates` 테이블), 매니페스트는 출처·무결성 담당(파일↔행 정합 검증 스크립트 포함). ③ **버저닝** — `style_epoch` 정수: 스타일 앵커 세트 변경 시 +1, 재생성은 새 epoch, 옛 epoch 보존(과거 에피소드 자산의 소급 변경 방지). ④ **수명주기** — draft→approved(큐레이션 게이트, 파이프라인은 approved만 사용)→retired. ⑤-α **전역 재사용 불변식(Jay, 2026-07-07)**: 라이브러리 자산의 키는 run/에피소드가 아니라 자산 정체성(`card_key`, `location_key`) — 캐릭터 카드는 연관 에피소드 재등장 시 자동 재사용(5-8 `check_existing_character` 경로가 생성 스킵), **STOCK-* 고정 출연진 카드는 무조건 전 에피소드 공유**(시드 idempotent, run별 사본 금지), 어떤 run 종료·정리 루틴도 라이브러리 자산을 삭제할 수 없음. ⑤ **이주** — 8-2가 기존 경로로 만든 카드 라이브러리를 assets/로 일괄 이주(소비자 경로 일원화: character_service·8-3 resolver·3.7 UI). 8-5 플레이트는 처음부터 이 체계에서 시작 — **8-5보다 선행 필수, 8-2/8-3과는 독립**. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+
+### Story 8.7: 합성 조화(콜라주 룩 해소) — 표준 컴포지팅 사다리
+
+deferred-work(2026-07-07 #1)의 콜라주 룩 리스크를 업계 표준 기법 사다리로 스토리화(Jay, 2026-07-07; 착수 게이트: iteration 1에서 콜라주 룩 실측 확인 시). 2D 합성 표준 기법을 비용 순으로: **Tier 1 (ffmpeg 수준, 저비용)** — ① mood별 스프라이트 틴트(장면 광원과 톤 일치 — 게임 2D 라이팅 관행의 gradient tint), ② **컨택트 섀도**(카드 발밑 타원 그림자 — 접지감이 최대 리얼리즘 신호), ③ 그레이드·그레인을 합성 **후** 전체 프레임에 적용해 통일(8-3이 이미 post-fx last 순서 보장 — 검증만). **Tier 2** — 라이트 랩(배경색이 스프라이트 가장자리로 번지는 VFX 표준). **Tier 3 (AI, ComfyUI 네이티브)** — **IC-Light 배경 조건 리라이팅**: 카드를 플레이트 광원에 맞춰 리라이트. 핵심 최적화: STOCK 카드 × STOCK 플레이트 조합은 유한하므로 **리라이트 결과를 (card, location) 쌍으로 사전 계산해 8-6 라이브러리에 캐싱** — 런타임 비용 0. Tier 1부터 적용하고 A/B로 각 티어의 기여를 측정, 충분해지면 상위 티어 중단(YAGNI). 참고: IC-Light ComfyUI 노드, DreamLight, harmonization diffusion 계열. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+## Epic 9: Localization Config — 콘텐츠 언어 스위치
+
+Jay 결정(2026-07-07): SCP 채널은 한국어로 확정 진행하되, 향후 언어 피벗 가능성에 대비해 "한국어 하드코딩"을 명시적 config 스위치 뒤로 옮긴다. Scope는 스위치 자체뿐 — 실제 다국어 생성(프롬프트 번역, TTS 자연화 규칙, 자막 타이포그래피 재조정)은 이 Epic의 범위가 아니다(YAGNI). 지금 하드코딩된 지점(scenario LLM 프롬프트 5개, TTS 자연화 단계, subtitle.py 타이포 상수)을 건드리지 않고, 새 config 값이 "ko" 외의 값으로 바뀌면 파이프라인이 조용히 깨진 결과물을 만들지 않고 즉시 명확하게 실패하도록 만든다.
+
+### Story 9.1: 콘텐츠 언어 config 스위치
+
+`Settings.content_language`(env `YTFLOW_CONTENT_LANGUAGE`, 기본값 `"ko"`) 신설. `scenario_node` 진입 시 `"ko"`가 아니면 즉시 `NotImplementedError`로 실패(다국어 생성은 미구현임을 명시). 현재 한국어에 암묵적으로 의존하는 지점 전체(scenario 프롬프트 5개, `tts_normalize`, subtitle.py의 Pretendard 타이포/줄바꿈 상수)를 config.py 주석에 한 곳에 모아 문서화 — 실제 동작 변경 없음, 향후 다국어 작업의 체크리스트 역할. (draft — 상세 스토리 파일은 create-story로 별도 생성)
