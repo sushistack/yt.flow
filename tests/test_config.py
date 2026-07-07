@@ -80,6 +80,27 @@ def test_content_language_env_override(monkeypatch):
     assert Settings(_env_file=None).content_language == "en"
 
 
+def test_qwen_tts_clone_and_speed_defaults(monkeypatch):
+    _base_env(monkeypatch)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.qwen_tts_clone_enabled is False
+    assert s.qwen_tts_clone_model == "qwen3-tts-vc-2026-01-22"
+    assert s.qwen_tts_clone_voice_path == "data/voices/sutak.mp3"
+    assert s.qwen_tts_clone_voice_id == ""
+    assert s.qwen_tts_speed == 1.2
+
+
+def test_qwen_tts_speed_out_of_range_raises(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YTFLOW_QWEN_TTS_SPEED", "12")
+    from yt_flow.config import Settings
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    errors = {err["loc"][0]: err for err in exc_info.value.errors()}
+    assert "qwen_tts_speed" in errors
+
+
 def test_observe_is_noop_when_flag_off():
     """With the flag off, the observability seam's @observe runs the fn and
     get_client().update_current_span(...) never raises (no trace emitted).

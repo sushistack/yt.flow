@@ -28,6 +28,11 @@ def _settings(tmp_path, *, mock=True, api_key="sk-test"):
         qwen_tts_endpoint="https://dashscope-intl.aliyuncs.com",
         qwen_tts_model="qwen3-tts-flash",
         qwen_tts_voice="Cherry",
+        qwen_tts_clone_enabled=False,
+        qwen_tts_clone_model="qwen3-tts-vc-2026-01-22",
+        qwen_tts_clone_voice_path="data/voices/sutak.mp3",
+        qwen_tts_clone_voice_id="",
+        qwen_tts_speed=1.0,
         qwen_tts_mock=mock,
         workspace_path=str(tmp_path),
     )
@@ -156,6 +161,45 @@ async def test_missing_api_key_sets_error(monkeypatch, tmp_path):
     assert out["current_stage"] == "tts"
 
 
+async def test_clone_enabled_without_voice_id_sets_error(monkeypatch, tmp_path):
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_clone_enabled = True
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    out = await tts.tts_node(_state([_scene(1, "hello world")]))
+    assert "scenes" not in out or not out.get("scenes")
+    assert out["error"] and "stage=tts" in out["error"]
+    assert "seed_voice_clone.py" in out["error"]
+
+
+async def test_clone_enabled_without_voice_id_traces_clone_mode(monkeypatch, tmp_path):
+    captured = {}
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_clone_enabled = True
+    s.qwen_tts_clone_voice_id = "   "
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    monkeypatch.setattr(tts, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await tts.tts_node(_state([_scene(1, "hello world")]))
+    assert out["error"] and "seed_voice_clone.py" in out["error"]
+    assert captured["model"] == "qwen3-tts-vc-2026-01-22"
+    assert captured["voice"] == ""
+    assert captured["voice_mode"] == "clone"
+    assert captured.get("error") is not None
+
+
+async def test_mock_clone_mode_does_not_require_voice_id(monkeypatch, tmp_path):
+    captured = {}
+    s = _settings(tmp_path, mock=True)
+    s.qwen_tts_clone_enabled = True
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    monkeypatch.setattr(tts, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await tts.tts_node(_state([_scene(1, "hello world")]))
+    assert out.get("error") is None
+    assert out["scenes"][0]["audio_path"]
+    assert captured["voice_mode"] == "clone"
+
+
 async def test_provider_failure_sets_error_no_partial(monkeypatch, tmp_path):
     monkeypatch.setattr(tts, "_settings", lambda: _settings(tmp_path, mock=False))
 
@@ -178,6 +222,7 @@ async def test_trace_receives_metrics(monkeypatch, tmp_path):
     await tts.tts_node(_state([_scene(1, "one two"), _scene(2, "three four")]))
     assert captured["model"] == "qwen3-tts-flash"
     assert captured["voice"] == "Cherry"
+    assert captured["voice_mode"] == "stock"
     assert captured["run_id"] == "run-123"
     assert captured["scene_count"] == 2
     assert isinstance(captured["latency_ms"], int)
@@ -190,13 +235,216 @@ async def test_trace_captures_error(monkeypatch, tmp_path):
     monkeypatch.setattr(tts, "_record_trace", lambda **kw: captured.update(kw))
     await tts.tts_node(_state([_scene(1, "hello")]))
     assert captured.get("error") is not None
+    assert captured["voice_mode"] == "stock"
+
+
+async def test_trace_captures_clone_mode_on_error(monkeypatch, tmp_path):
+    captured = {}
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_clone_enabled = True
+    s.qwen_tts_clone_voice_id = "qwen-vc-sutak-123"
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    monkeypatch.setattr(tts, "_record_trace", lambda **kw: captured.update(kw))
+
+    async def boom(text, settings, path):
+        raise RuntimeError("provider down")
+    monkeypatch.setattr(tts, "_synthesize", boom)
+
+    await tts.tts_node(_state([_scene(1, "hello")]))
+    assert captured["model"] == "qwen3-tts-vc-2026-01-22"
+    assert captured["voice"] == "qwen-vc-sutak-123"
+    assert captured["voice_mode"] == "clone"
+    assert captured.get("error") is not None
 
 
 def test_record_trace_is_non_fatal(monkeypatch):
     # AD-10: a Langfuse transport failure must never break the node.
     monkeypatch.setattr(tts, "get_client",
                         lambda: (_ for _ in ()).throw(RuntimeError("langfuse down")))
-    tts._record_trace(run_id="r", model="m", voice="v", scene_count=1, latency_ms=1)
+    tts._record_trace(run_id="r", model="m", voice="v", voice_mode="stock", scene_count=1, latency_ms=1)
+
+
+# ── Story 5.21: clone payload selection and speech speed ────────────────────
+
+async def test_synthesize_default_payload_uses_stock_model_and_voice(monkeypatch, tmp_path):
+    captured = {}
+
+    class Response:
+        def __init__(self, data=None, content=b""):
+            self._data = data or {}
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._data
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, headers, json):
+            captured.update(json)
+            return Response({"output": {"audio": {"url": "https://audio.example/stock.wav"}}})
+
+        async def get(self, url):
+            return Response(content=b"RIFF")
+
+    monkeypatch.setattr(tts.httpx, "AsyncClient", Client)
+    await tts._synthesize("hello", _settings(tmp_path, mock=False), tmp_path / "scene.wav")
+    assert captured == {"model": "qwen3-tts-flash", "input": {"text": "hello", "voice": "Cherry"}}
+
+
+async def test_synthesize_clone_payload_uses_clone_model_and_voice(monkeypatch, tmp_path):
+    captured = {}
+
+    class Response:
+        def __init__(self, data=None, content=b""):
+            self._data = data or {}
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._data
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, headers, json):
+            captured.update(json)
+            return Response({"output": {"audio": {"url": "https://audio.example/clone.wav"}}})
+
+        async def get(self, url):
+            return Response(content=b"RIFF")
+
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_clone_enabled = True
+    s.qwen_tts_clone_voice_id = "qwen-vc-sutak-123"
+    monkeypatch.setattr(tts.httpx, "AsyncClient", Client)
+    await tts._synthesize("hello", s, tmp_path / "scene.wav")
+    assert captured == {
+        "model": "qwen3-tts-vc-2026-01-22",
+        "input": {"text": "hello", "voice": "qwen-vc-sutak-123"},
+    }
+
+
+async def test_non_mock_speed_applies_atempo_before_duration(monkeypatch, tmp_path):
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_speed = 1.2
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    captured = {}
+
+    async def fake_synthesize(text, settings, path):
+        tts._write_mock_wav(path, text)
+
+    async def fake_apply_speed(src, dest, speed):
+        captured["src"] = src
+        captured["dest"] = dest
+        captured["speed"] = speed
+        tts._write_mock_wav(dest, "processed")
+
+    monkeypatch.setattr(tts, "_synthesize", fake_synthesize)
+    monkeypatch.setattr(tts, "_apply_speed", fake_apply_speed)
+
+    out = await tts.tts_node(_state([_scene(1, "one two three")]))
+    path = tmp_path / "run-123" / "audio" / "scene_001.wav"
+    assert captured == {
+        "src": tmp_path / "run-123" / "audio" / "scene_001.src.wav",
+        "dest": path,
+        "speed": 1.2,
+    }
+    assert out["scenes"][0]["audio_path"] == str(path)
+    assert out["scenes"][0]["audio_duration"] == tts._wav_duration(path)
+    assert not captured["src"].exists()
+
+
+async def test_speed_one_spawns_no_ffmpeg(monkeypatch, tmp_path):
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_speed = 1.0
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    calls = []
+
+    async def fake_synthesize(text, settings, path):
+        tts._write_mock_wav(path, text)
+
+    async def fake_apply_speed(src, dest, speed):
+        calls.append((src, dest, speed))
+
+    monkeypatch.setattr(tts, "_synthesize", fake_synthesize)
+    monkeypatch.setattr(tts, "_apply_speed", fake_apply_speed)
+
+    out = await tts.tts_node(_state([_scene(1, "one two three")]))
+    assert out.get("error") is None
+    assert calls == []
+
+
+async def test_apply_speed_uses_atempo_filter(monkeypatch, tmp_path):
+    captured = {}
+
+    async def fake_run_ffmpeg(*args):
+        captured["args"] = args
+        return 0, ""
+
+    monkeypatch.setattr(tts, "_run_ffmpeg", fake_run_ffmpeg)
+    await tts._apply_speed(tmp_path / "scene.src.wav", tmp_path / "scene.wav", 1.2)
+    assert "atempo=1.2" in captured["args"]
+    assert "-c:a" in captured["args"]
+    assert "pcm_s16le" in captured["args"]
+
+
+async def test_speed_failure_removes_temp_and_final_audio(monkeypatch, tmp_path):
+    s = _settings(tmp_path, mock=False)
+    s.qwen_tts_speed = 1.2
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+
+    async def fake_synthesize(text, settings, path):
+        tts._write_mock_wav(path, text)
+
+    async def fake_apply_speed(src, dest, speed):
+        tts._write_mock_wav(dest, "partial")
+        raise RuntimeError("ffmpeg atempo failed")
+
+    monkeypatch.setattr(tts, "_synthesize", fake_synthesize)
+    monkeypatch.setattr(tts, "_apply_speed", fake_apply_speed)
+
+    out = await tts.tts_node(_state([_scene(1, "one two three")]))
+    audio_dir = tmp_path / "run-123" / "audio"
+    assert out["error"] and "ffmpeg atempo failed" in out["error"]
+    assert not (audio_dir / "scene_001.src.wav").exists()
+    assert not (audio_dir / "scene_001.wav").exists()
+
+
+async def test_mock_speed_scales_duration(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    s.qwen_tts_speed = 1.0
+    monkeypatch.setattr(tts, "_settings", lambda: s)
+    normal = await tts.tts_node(_state([_scene(1, "one two three four")], run_id="normal"))
+
+    s_fast = _settings(tmp_path)
+    s_fast.qwen_tts_speed = 2.0
+    monkeypatch.setattr(tts, "_settings", lambda: s_fast)
+    fast = await tts.tts_node(_state([_scene(1, "one two three four")], run_id="fast"))
+
+    assert fast["scenes"][0]["audio_duration"] == pytest.approx(
+        normal["scenes"][0]["audio_duration"] / 2,
+        rel=0.05,
+    )
 
 
 # ── Mock WAV is a real, readable file with a positive duration ──────────────
