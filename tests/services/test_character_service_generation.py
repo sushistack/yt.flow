@@ -6,17 +6,20 @@ AC: 7 (Config-driven provider selection)
 """
 
 import base64
+import io
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import numpy as np
 import pytest
+from PIL import Image
 from sqlmodel import Session
 
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.domain.exceptions import ValidationError
-from yt_flow.services.character_service import CharacterService
+from yt_flow.services.character_service import _ANGLE_IPADAPTER_WEIGHTS, CharacterService
 from tests.stubs.fakes import TINY_PNG
 from yt_flow.services.character_image_provider import (
     ComfyUICharacterProvider,
@@ -300,7 +303,7 @@ class TestMultiAngleGeneration:
             )
 
         weights = [call.kwargs["ipadapter_weight"] for call in mock_provider.generate.call_args_list]
-        assert weights == [0.2, 0.25, 0.15]
+        assert weights == [_ANGLE_IPADAPTER_WEIGHTS[a] for a in ("front", "side", "back")]
 
     def test_generate_candidates_rejects_opaque_png_per_angle(
         self, service, temp_ref_image, tmp_path
@@ -553,6 +556,25 @@ class TestReferenceImageInjectionAndFallback:
         assert len(ipadapter_nodes) == 1
         assert ipadapter_nodes[0]["inputs"]["weight"] == 0.4
         assert updated["7"]["inputs"]["text"]
+
+    def test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob(self):
+        """Story 8.2 follow-up: InSPyReNet leaves dithered alpha noise as small
+        disconnected specks or ragged bands; only the largest silhouette survives,
+        snapped fully opaque so the closed-over dithering doesn't reappear."""
+        from yt_flow.services.character_image_provider import _clean_alpha_noise
+
+        size = 100
+        arr = np.zeros((size, size, 4), dtype=np.uint8)
+        arr[20:80, 20:80, :3] = 255
+        arr[20:80, 20:80, 3] = 255  # main blob: opaque 60x60 square
+        arr[5:10, 5:10, 3] = 200  # disconnected noise speck, far from the blob
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        cleaned = np.array(Image.open(io.BytesIO(_clean_alpha_noise(buf.getvalue()))).convert("RGBA"))
+
+        assert cleaned[50, 50, 3] == 255  # main blob stays fully opaque
+        assert cleaned[7, 7, 3] == 0  # disconnected speck removed
 
 
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────

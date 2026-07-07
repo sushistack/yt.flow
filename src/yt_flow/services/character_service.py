@@ -60,11 +60,14 @@ _ANGLE_DESCRIPTIONS: dict[str, str] = {
 _CANONICAL_ANGLES = list(_ANGLE_DESCRIPTIONS.keys())  # ["front", "back", "side", "three_quarter"]
 CANONICAL_ANGLES = _CANONICAL_ANGLES  # public alias for API-layer validation
 # ponytail: live-tuned starting points; frontal references need less pull as view diverges.
+# Raised 2026-07-07 (Story 8.2 Task 8 follow-up) — the original values let the
+# self-referencing stock/derived chain (AC7) redraw the face/mask/insignia per
+# angle; identity now takes priority, re-tune down only if angle turn regresses.
 _ANGLE_IPADAPTER_WEIGHTS: dict[str, float] = {
     "front": 0.2,
-    "three_quarter": 0.35,
-    "side": 0.25,
-    "back": 0.15,
+    "three_quarter": 0.5,
+    "side": 0.45,
+    "back": 0.35,
 }
 _POSE_DESCRIPTIONS: dict[str, str] = {
     "standing": "standing upright",
@@ -720,8 +723,14 @@ class CharacterService:
                 continue
             path = generated[0]
             saved.append(path)
-            if angle == "front":
+            if angle == "front" and anchor_path is None:
                 front_path = path
+                # Describe the just-generated face/mask/insignia in text so the
+                # self-referencing angles below stay the same person, not just
+                # the same outfit — IPAdapter alone doesn't lock facial identity.
+                enriched = await self.enrich_descriptor_from_references(card_key, [path])
+                if enriched:
+                    character = self.update_character(character.id, visual_descriptor=enriched)
             if pose == "standing":
                 angle_paths[angle] = path
 
@@ -798,9 +807,11 @@ class CharacterService:
             "Create a transparent-sprite source image: one single subject, full body, feet visible, "
             "centered on canvas, clean silhouette, no crop, no bust portrait. Place the subject on a "
             "plain flat light-gray studio background only, with no scenery, room, furniture, props, "
-            "environment detail, text, watermark, border, or extra characters. Suitable for later "
-            "background removal and video compositing. Maintain consistent character design, proportions, "
-            "and color palette across all angles."
+            "environment detail, text, watermark, border, or extra characters. Lighting is soft and even "
+            "studio lighting with no cast shadow, no drop shadow, and no dramatic or high-contrast lighting "
+            "on the subject or floor. Suitable for later background removal and video compositing. "
+            "Maintain consistent character design, proportions, and color palette across all angles — the "
+            "same face, mask or head design, and clothing markings must appear identical regardless of angle."
         )
 
     # ── Candidate Tracking (AC4) ──────────────────────────────────────────

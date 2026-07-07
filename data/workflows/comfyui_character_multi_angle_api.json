@@ -25,8 +25,8 @@
     "class_type": "LoraLoader",
     "inputs": {
       "lora_name": "darkness_xl_v2.safetensors",
-      "strength_model": 0.5,
-      "strength_clip": 0.5,
+      "strength_model": 0.3,
+      "strength_clip": 0.3,
       "model": [
         "10",
         0
@@ -56,7 +56,7 @@
       "title": "Negative Prompt"
     },
     "inputs": {
-      "text": "lowres, bad anatomy, worst quality, extra limbs, watermark, text, logo, border, scenery, landscape, room, corridor, detailed background, environmental detail, props, furniture, multiple characters, crowd, cropped body, bust portrait, close-up, feet out of frame",
+      "text": "lowres, bad anatomy, worst quality, extra limbs, watermark, text, logo, border, scenery, landscape, room, corridor, detailed background, environmental detail, props, furniture, multiple characters, crowd, cropped body, bust portrait, close-up, feet out of frame, drop shadow, cast shadow, harsh shadow, dramatic lighting, chiaroscuro, high contrast lighting, rim light, vignette, dark background, floor reflection, noise, grain, jpeg artifacts, banding",
       "clip": [
         "11",
         1

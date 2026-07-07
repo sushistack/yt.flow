@@ -28,6 +28,42 @@ def _drop_reference_only_nodes(workflow: dict) -> None:
         if node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced", "LoadImage"):
             workflow.pop(node_id, None)
 
+
+def _clean_alpha_noise(png_bytes: bytes) -> bytes:
+    """Remove InSPyReNet's ordered-dither cutout artifacts from a generated sprite.
+
+    InSPyReNet's pyramid decoder leaves faint checkerboard-dither bands across flat,
+    low-contrast garment regions (most visible as a horizontal noise stripe on plain
+    fabric). Threshold + morphological close/open + keep-largest-component removes
+    it without any model-level change (Story 8.2 follow-up, 2026-07-08).
+    # ponytail: fixed kernel sizes tuned against live 832x1216 sprite renders.
+    """
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from scipy import ndimage
+
+    im = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+    arr = np.array(im)
+    alpha = arr[:, :, 3]
+    binary = alpha > 100
+    binary = ndimage.binary_closing(binary, structure=np.ones((25, 25)))
+    binary = ndimage.binary_opening(binary, structure=np.ones((7, 7)))
+    labeled, num_components = ndimage.label(binary)
+    if num_components == 0:
+        return png_bytes
+    sizes = ndimage.sum(binary, labeled, range(1, num_components + 1))
+    largest = int(np.argmax(sizes)) + 1
+    keep_mask = labeled == largest
+    # Snap to fully opaque/transparent — the mask already decided foreground vs
+    # not, so keeping the original dithered alpha here would just re-draw the
+    # noise band we closed over.
+    arr[:, :, 3] = np.where(keep_mask, 255, 0).astype(np.uint8)
+    out = io.BytesIO()
+    Image.fromarray(arr, "RGBA").save(out, format="PNG")
+    return out.getvalue()
+
 # ── Protocol ──────────────────────────────────────────────────────────────────
 
 
@@ -119,7 +155,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i generation succeeded (%dx%d)", width, height)
-            return result
+            return _clean_alpha_noise(result)
 
         # Try i2i with reference image
         try:
@@ -128,14 +164,14 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._inject_reference_image(workflow, uploaded_name)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI i2i generation succeeded (%dx%d)", width, height)
-            return result
+            return _clean_alpha_noise(result)
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
             # Fallback: bypass the reference-image conditioning and use t2i
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i fallback succeeded (%dx%d)", width, height)
-            return result
+            return _clean_alpha_noise(result)
 
     def _load_workflow(self) -> dict:
         """Load ComfyUI workflow JSON template.
