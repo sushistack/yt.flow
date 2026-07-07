@@ -134,6 +134,40 @@ def test_build_sound_design_filter_binds_duration_and_ducking():
     assert "amix=inputs=2:duration=first:normalize=0" in fragment
 
 
+# ── include_stinger (Story 5.17 AC:7) ───────────────────────────────────────
+
+
+def test_build_sound_design_args_omits_stinger_when_include_stinger_false():
+    args = build_sound_design_args("dread", include_stinger=False)
+    assert args == [
+        "-stream_loop", "-1", "-i", "data/audio/bgm/dread.mp3",
+        "-stream_loop", "-1", "-i", "data/audio/ambient/dread.mp3",
+    ]
+    assert "data/audio/sfx/dread_stinger.mp3" not in args
+
+
+def test_build_sound_design_args_include_stinger_default_true():
+    assert build_sound_design_args("dread") == build_sound_design_args("dread", include_stinger=True)
+
+
+def test_build_sound_design_filter_include_stinger_false_uses_two_input_amix():
+    fragment, label = build_sound_design_filter("dread", 5.0, "[1:a]", 2, include_stinger=False)
+    assert label == "[aout]"
+    assert "[2:a]" in fragment  # bgm
+    assert "[3:a]" in fragment  # ambient
+    assert "[4:a]" not in fragment  # no stinger input at all
+    assert "apad=whole_dur=" not in fragment  # only the stinger fragment used apad
+    assert "amix=inputs=2:duration=first[bgmix]" in fragment
+    assert "amix=inputs=2:duration=first:normalize=0[aout]" in fragment
+
+
+def test_build_sound_design_filter_include_stinger_true_matches_default():
+    default_fragment, default_label = build_sound_design_filter("dread", 5.0, "[1:a]", 2)
+    explicit_fragment, explicit_label = build_sound_design_filter("dread", 5.0, "[1:a]", 2, include_stinger=True)
+    assert default_fragment == explicit_fragment
+    assert default_label == explicit_label
+
+
 def test_no_db_api_service_imports():
     """AD-1: sound_design.py must not import db, api, or services layers."""
     source = Path("src/yt_flow/pipeline/nodes/sound_design.py").read_text()

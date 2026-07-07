@@ -8,7 +8,7 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"scenes\": [{\"scene_num\": 1, \"act\": \"hook\", \"synopsis\": \"A guard is found dead with a broken neck, no weapon present.\", \"key_points\": [\"14 deaths total\", \"no weapon found\"], \"emotional_beat\": \"tension\", \"estimated_duration_sec\": 45, \"fact_references\": [\"death_count\"], \"mood\": \"escalation\"}, {\"scene_num\": 2, \"act\": \"mystery_expansion\", \"synopsis\": \"Security footage shows the room was empty seconds before.\", \"key_points\": [\"footage anomaly\"], \"emotional_beat\": \"mystery\", \"estimated_duration_sec\": 75, \"fact_references\": [\"camera_blind_spot\"]}]}"
+        "content": "{\"scenes\": [{\"scene_num\": 1, \"act\": \"hook\", \"synopsis\": \"A guard is found dead with a broken neck, no weapon present.\", \"key_points\": [\"14 deaths total\", \"no weapon found\"], \"emotional_beat\": \"tension\", \"estimated_duration_sec\": 45, \"fact_references\": [\"death_count\"], \"mood\": \"escalation\", \"title\": \"목이 꺾인 채\", \"kicker\": \"무기는 없었다\"}, {\"scene_num\": 2, \"act\": \"mystery_expansion\", \"synopsis\": \"Security footage shows the room was empty seconds before.\", \"key_points\": [\"footage anomaly\"], \"emotional_beat\": \"mystery\", \"estimated_duration_sec\": 75, \"fact_references\": [\"camera_blind_spot\"]}]}"
       }
     }
   ],

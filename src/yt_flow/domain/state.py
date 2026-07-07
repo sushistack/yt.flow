@@ -44,6 +44,9 @@ class SceneState(TypedDict):
     word_timings: list[WordTiming]
     subtitle_path: str | None
     mood: str  # one of sound_design.MOOD_VALUES; drives BGM/ambient/stinger selection
+    title: str  # chapter-card title for this scene; "" = card falls back to "- N -" (Story 5.17)
+    kicker: str  # chapter-card one-line context below the title; "" = no kicker line (Story 5.17)
+    display_narration: str  # pre-normalization original writing text; subtitles render this, TTS speaks `narration` (Story 5.18)
 
 
 class SearchResult(TypedDict):

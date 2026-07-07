@@ -45,7 +45,9 @@ For each scene (8-12 total), include:
   "emotional_beat": "tension/mystery/horror/revelation/etc",
   "estimated_duration_sec": 45,
   "fact_references": ["fact_key_1", "fact_key_2"],
-  "mood": "dread/clinical/escalation/revelation"
+  "mood": "dread/clinical/escalation/revelation",
+  "title": "짧은 한국어 씬 제목",
+  "kicker": "상황을 알리는 한 줄 (스포일러 금지)"
 }
 ```
 
@@ -53,6 +55,12 @@ For each scene (8-12 total), include:
 4-value axis from `emotional_beat`, not a synonym for it: `dread` (tense unease,
 default), `clinical` (calm Foundation-procedural tone), `escalation` (rising
 action/containment breach/chase), `revelation` (climax/dramatic reveal).
+
+`title` and `kicker` are the text shown on this scene's chapter card (the card
+that plays right before this scene) — a documentary title-card orienting the
+viewer after a scene jump, not a wiki label:
+- `title`: 한국어, 시청자에게 보여줄 짧은 제목 (최대 약 14자). "hook"/"mystery_expansion" 같은 내부 라벨이 아니라 시청자가 읽을 문구.
+- `kicker`: 상황 맥락을 한 줄로 (최대 약 24자, 한 줄). 이 씬에서 무슨 일이 일어나는지 미리 다 밝히지 마세요 — 스포일러 금지, 과한 문장부호 금지.
 
 ### Rules:
 1. Each scene's `key_points` must reference the Visual Identity Profile verbatim when the entity appears
@@ -63,5 +71,6 @@ action/containment breach/chase), `revelation` (climax/dramatic reveal).
 6. The last scene must leave an unresolved mystery
 7. **Adjacent scenes MUST have different emotional beats** — never repeat the same mood consecutively
 8. **Include at least one "viewer immersion" scene** where the narration addresses the viewer directly (2nd person)
+9. **`title`/`kicker` are viewer-facing Korean, not internal labels**: no reveal-spoilers, one line each, no reveal of the emotional_beat name itself
 
 Respond with ONLY a JSON object, no prose, no markdown fences: `{"scenes": [ ...scene objects as above... ]}`.

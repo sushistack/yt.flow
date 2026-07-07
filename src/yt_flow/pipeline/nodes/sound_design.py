@@ -46,34 +46,48 @@ def validate_mood_assets(mood: str) -> None:
             raise FileNotFoundError(f"sound design: mood {resolved!r} {role} file not found: {path}")
 
 
-def build_sound_design_args(mood: str) -> list[str]:
+def build_sound_design_args(mood: str, *, include_stinger: bool = True) -> list[str]:
     """Extra ffmpeg -i input args: bgm/ambient looped, stinger as a one-shot.
 
     Order (bgm, ambient, stinger) matches the index math build_sound_design_filter
-    assumes via input_offset.
+    assumes via input_offset. `include_stinger=False` (Story 5.17 AC:7) omits the
+    stinger input — for a scene immediately following a chapter card, which now
+    carries that boundary's stinger hit itself.
     """
     paths = MOOD_ASSET_PATHS[resolve_mood(mood)]
-    return [
+    args = [
         "-stream_loop", "-1", "-i", str(paths["bgm"]),
         "-stream_loop", "-1", "-i", str(paths["ambient"]),
-        "-i", str(paths["stinger"]),
     ]
+    if include_stinger:
+        args += ["-i", str(paths["stinger"])]
+    return args
 
 
 def build_sound_design_filter(
-    mood: str, duration: float, narration_label: str, input_offset: int,
+    mood: str, duration: float, narration_label: str, input_offset: int, *, include_stinger: bool = True,
 ) -> tuple[str, str]:
-    """Build the amix+sidechaincompress fragment ducking bgm/ambient/stinger under narration.
+    """Build the amix+sidechaincompress fragment ducking bgm/(ambient/stinger) under narration.
 
     `input_offset` is the ffmpeg input index of the first sound-design input
-    (bgm); ambient and stinger follow at +1/+2. Returns (filter_fragment, output_label).
+    (bgm); ambient follows at +1, stinger (when included) at +2. Returns
+    (filter_fragment, output_label). `include_stinger` must match the same flag
+    passed to `build_sound_design_args` — keeping the index math consistent is
+    the class of hazard this module's docstring already warns about.
     """
-    bgm_idx, ambient_idx, stinger_idx = input_offset, input_offset + 1, input_offset + 2
-    fragment = (
+    bgm_idx, ambient_idx = input_offset, input_offset + 1
+    bed_fragment = (
         f"[{bgm_idx}:a]volume={BGM_VOLUME}[bgm_v];"
         f"[{ambient_idx}:a]volume={AMBIENT_VOLUME}[amb_v];"
-        f"[{stinger_idx}:a]volume={STINGER_VOLUME},apad=whole_dur={duration}[stg_v];"
-        f"[bgm_v][amb_v][stg_v]amix=inputs=3:duration=first[bgmix];"
+    )
+    bed_labels, bed_count = "[bgm_v][amb_v]", 2
+    if include_stinger:
+        stinger_idx = input_offset + 2
+        bed_fragment += f"[{stinger_idx}:a]volume={STINGER_VOLUME},apad=whole_dur={duration}[stg_v];"
+        bed_labels, bed_count = bed_labels + "[stg_v]", 3
+    fragment = (
+        f"{bed_fragment}"
+        f"{bed_labels}amix=inputs={bed_count}:duration=first[bgmix];"
         f"[bgmix]{narration_label}sidechaincompress="
         f"threshold={SIDECHAIN_THRESHOLD}:ratio={SIDECHAIN_RATIO}:"
         f"attack={SIDECHAIN_ATTACK}:release={SIDECHAIN_RELEASE}[ducked];"

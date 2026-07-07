@@ -113,6 +113,14 @@ async def structure_step(scp_id: str, research: dict, format_guide: str, s, call
     scenes = data.get("scenes") if isinstance(data, dict) else None
     if not isinstance(scenes, list) or not scenes:
         raise ValueError("structure: payload must contain a non-empty 'scenes' list")
+    # title (Story 5.17 chapter-card text) is promised by the candidate prompt only;
+    # variant A/None keeps running the pre-promotion prompt, which doesn't emit it yet
+    # — absence there is backward-compat noise, not a regression (mirrors research_step).
+    if label:
+        for scene in scenes:
+            if not isinstance(scene, dict) or not str(scene.get("title") or "").strip():
+                num = scene.get("scene_num") if isinstance(scene, dict) else "?"
+                raise ValueError(f"structure: scene[{num}] missing non-empty 'title'")
     return scenes
 
 
@@ -303,9 +311,12 @@ async def tts_normalize_step(writing: dict, format_guide: str, s, call_deepseek,
                 len(split_sentences(original_narration)),
                 len(split_sentences(normalized_narration)),
             )
-            updated_scenes.append(original_scene)
+            # Mismatch degrades to single-track: display == spoken == original (AC:2).
+            updated_scenes.append({**original_scene, "display_narration": original_narration})
             continue
-        updated_scenes.append({**original_scene, "narration": normalized_narration})
+        updated_scenes.append(
+            {**original_scene, "narration": normalized_narration, "display_narration": original_narration}
+        )
 
     return {**writing, "scenes": updated_scenes}
 
@@ -315,6 +326,13 @@ def _fallback_prompt(scene: dict) -> str:
     location = scene.get("location") or "an unmarked containment area"
     atmosphere = scene.get("atmosphere") or "tense silence"
     return f"static wide shot, {location}, {atmosphere}, no visible subject"
+
+
+def _first_line(value: object) -> str:
+    """First non-empty line of a stripped string, or "" — the chapter-card
+    typography-restraint rule (Story 5.17 AC:4) enforced at data-assembly time."""
+    text = str(value or "").strip()
+    return text.splitlines()[0].strip() if text else ""
 
 
 def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) -> list:
@@ -342,6 +360,8 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
         if raw_mood not in MOOD_VALUES:
             logger.warning("scenario: scene %d mood %r not in %s; falling back to default", scene_num, raw_mood, MOOD_VALUES)
         mood = resolve_mood(raw_mood)
+        title = _first_line(structure_scene.get("title")) if isinstance(structure_scene, dict) else ""
+        kicker = _first_line(structure_scene.get("kicker")) if isinstance(structure_scene, dict) else ""
 
         shots: list = []
         for i, raw_shot in enumerate(raw_shots):
@@ -383,6 +403,9 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                 word_timings=[],
                 subtitle_path=None,
                 mood=mood,
+                title=title,
+                kicker=kicker,
+                display_narration=str(writing_scene.get("display_narration") or writing_scene["narration"]),
             )
         )
     return scenes

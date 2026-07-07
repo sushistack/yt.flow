@@ -180,6 +180,36 @@ async def test_structure_step_rejects_empty_scene_list(monkeypatch):
         await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
 
 
+async def test_structure_step_candidate_label_requires_title(monkeypatch):
+    # Story 5.17 AC:2 — variant B intentionally reads the candidate prompt, which
+    # always asks for title; an absent/empty title there is a real regression.
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scenes": [{"scene_num": 1, "act": "hook", "synopsis": "x", "mood": "dread"}]}
+        return json.dumps(payload), {}, "stop"
+
+    with pytest.raises(ValueError, match="title"):
+        await chain.structure_step("SCP-173", {"frozen_descriptor": "x"}, "guide", None, call, label="candidate")
+
+
+async def test_structure_step_label_none_tolerates_missing_title(monkeypatch):
+    # Variant A/None still reads the pre-promotion production prompt, which
+    # doesn't emit title/kicker at all yet — absence must not crash the pipeline.
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scenes": [{"scene_num": 1, "act": "hook", "synopsis": "x", "mood": "dread"}]}
+        return json.dumps(payload), {}, "stop"
+
+    scenes = await chain.structure_step("SCP-173", {"frozen_descriptor": "x"}, "guide", None, call)
+    assert scenes[0]["scene_num"] == 1
+
+
 async def test_writing_step_returns_scenes(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
@@ -367,6 +397,8 @@ async def test_tts_normalize_step_rewrites_narration(monkeypatch):
     # non-narration fields are preserved unchanged
     assert result["scenes"][0]["location"] == "underground containment chamber"
     assert result["scenes"][0]["characters_present"] == ["SCP-173"]
+    # dual track (Story 5.18 AC:1): display_narration keeps the pre-normalization original
+    assert result["scenes"][0]["display_narration"] == writing["scenes"][0]["narration"]
 
 
 async def test_tts_normalize_step_rejects_malformed_payload(monkeypatch):
@@ -449,6 +481,9 @@ async def test_tts_normalize_step_falls_back_per_scene_on_sentence_count_mismatc
     result = await chain.tts_normalize_step(writing, "guide", None, call)
     assert result["scenes"][0]["narration"] == "원본 첫 문장."  # fell back
     assert result["scenes"][1]["narration"] == "정규화된 둘째 문장."  # accepted
+    # Mismatch degrades to single-track (Story 5.18 AC:2): display == spoken == original.
+    assert result["scenes"][0]["display_narration"] == "원본 첫 문장."
+    assert result["scenes"][1]["display_narration"] == "원본 둘째 문장."
 
 
 async def test_tts_normalize_step_propagates_candidate_label(monkeypatch):
@@ -591,3 +626,58 @@ def test_build_scenes_writing_over_produces_trailing_scene_falls_back_with_warni
     assert scenes[0]["mood"] == "clinical"
     assert scenes[1]["mood"] == sound_design.DEFAULT_MOOD
     assert any("2" in r.message and "None" in r.message for r in caplog.records)
+
+
+# ── title/kicker fields (Story 5.17: sourced from structure, chapter-card text) ──
+
+
+def test_build_scenes_populates_title_and_kicker_from_structure():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(
+        writing, _ONE_SHOT_VISUAL, [{"title": "첫 면담", "kicker": "개체가 입을 열다"}]
+    )
+    assert scenes[0]["title"] == "첫 면담"
+    assert scenes[0]["kicker"] == "개체가 입을 열다"
+
+
+def test_build_scenes_title_and_kicker_default_empty_when_missing():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["title"] == ""
+    assert scenes[0]["kicker"] == ""
+
+
+def test_build_scenes_title_and_kicker_default_empty_when_structure_entry_non_dict():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, ["not-a-dict"])
+    assert scenes[0]["title"] == ""
+    assert scenes[0]["kicker"] == ""
+
+
+def test_build_scenes_title_and_kicker_stripped_to_first_line():
+    # Typography-restraint rule (AC:4) enforced at data-assembly time, not just
+    # by the prompt — a multi-line LLM title/kicker still becomes one line.
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(
+        writing, _ONE_SHOT_VISUAL,
+        [{"title": "  첫 면담  \n둘째 줄", "kicker": "상황 한 줄\n스포일러 줄"}],
+    )
+    assert scenes[0]["title"] == "첫 면담"
+    assert scenes[0]["kicker"] == "상황 한 줄"
+
+
+# ── display_narration field (Story 5.18: dual track — subtitle vs TTS) ──────────
+
+
+def test_build_scenes_copies_display_narration_from_writing_scene():
+    writing = {"scenes": [{"scene_num": 1, "narration": "정규화문.", "display_narration": "원문."}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["display_narration"] == "원문."
+    assert scenes[0]["narration"] == "정규화문."
+
+
+def test_build_scenes_display_narration_defaults_to_narration_when_absent():
+    # Old checkpoints / degraded scenes without a display_narration key (AC:7).
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["display_narration"] == "문장."

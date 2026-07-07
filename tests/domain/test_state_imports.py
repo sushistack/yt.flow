@@ -19,7 +19,7 @@ EXPECTED_FIELDS = {
     },
     "SceneState": {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
-        "word_timings", "subtitle_path", "mood",
+        "word_timings", "subtitle_path", "mood", "title", "kicker", "display_narration",
     },
     "SearchResult": {"url", "thumbnail_url", "title"},
     "ReferenceImage": {"id", "character_id", "url", "local_path", "width", "height", "created_at"},
