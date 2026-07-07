@@ -6,7 +6,21 @@ import httpx
 import pytest
 
 from yt_flow.domain.state import SearchResult
+from yt_flow.services import image_search as image_search_module
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ScpWikiImageFetch, _VQD_RE
+
+
+def _make_injecting_client(transport: httpx.MockTransport) -> type[httpx.AsyncClient]:
+    """AsyncClient subclass that forces the given transport — the monkeypatch target
+    used to drive DuckDuckGoImageSearch's real code path through a MockTransport
+    without adding a transport seam to the production class."""
+
+    class _Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs) -> None:
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    return _Client
 
 
 # ── Fake responses ───────────────────────────────────────────────────────────
@@ -14,6 +28,11 @@ from yt_flow.services.image_search import DuckDuckGoImageSearch, ScpWikiImageFet
 def _fake_vqd_html():
     # DuckDuckGo response: vqd token appears as vqd=3-314-abc123... (no quotes)
     return '<html><head>vqd=3-314-abc123-def456</head></html>'
+
+
+async def _no_sleep(_seconds: float) -> None:
+    """Stand-in for asyncio.sleep in retry tests — skips the real backoff delay."""
+    return None
 
 
 class TestDuckDuckGoImageSearch:
@@ -34,80 +53,101 @@ class TestDuckDuckGoImageSearch:
         assert sr["title"] == "Test"
 
     @pytest.mark.asyncio
-    async def test_search_with_mock_transport(self):
-        """Full search flow with MockTransport returns SearchResults."""
-        async def handler(request: httpx.Request) -> httpx.Response:
-            if request.method == "POST":
-                return httpx.Response(200, text=_fake_vqd_html(), request=request)
-            return httpx.Response(200, json={
-                "results": [
-                    {"image": "http://x.com/1.jpg", "thumbnail": "http://x.com/t1.jpg", "title": "One"},
-                    {"image": "http://x.com/2.jpg", "thumbnail": "http://x.com/t2.jpg", "title": "Two"},
-                ]
-            }, request=request)
+    async def test_acquire_vqd_sends_get_to_query_page(self, monkeypatch):
+        """AC1: vqd is acquired via GET to the query results page, not the homepage POST."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.method == "GET"
+            assert request.url.path == "/"
+            assert request.url.params["q"] == "SCP-096"
+            assert request.url.params["iax"] == "images"
+            assert request.url.params["ia"] == "images"
+            return httpx.Response(200, text=_fake_vqd_html(), request=request)
 
         transport = httpx.MockTransport(handler)
         search = DuckDuckGoImageSearch()
+        async with httpx.AsyncClient(transport=transport) as client:
+            vqd = await search._acquire_vqd(client, "SCP-096")
 
-        async with httpx.AsyncClient(
-            transport=transport,
-            timeout=httpx.Timeout(search._timeout),
-            headers=search._headers,
-        ) as client:
-            # Acquire VQD
-            resp = await client.post("https://duckduckgo.com", data={"q": "test"})
-            resp.raise_for_status()
-            match = _VQD_RE.search(resp.text)
-            assert match is not None
-            vqd = match.group(1)
+        assert vqd == "3-314-abc123-def456"
 
-            # Search
-            resp2 = await client.get("https://duckduckgo.com/i.js", params={
-                "q": "SCP-096", "vqd": vqd, "o": "json", "p": "1", "f": ",,,,,",
-            })
-            resp2.raise_for_status()
-            data = resp2.json()
+    @pytest.mark.asyncio
+    async def test_vqd_retry_on_failure(self, monkeypatch):
+        """AC1/AC5: retry loop with exponential backoff, preserved across the new GET path."""
+        monkeypatch.setattr(image_search_module.asyncio, "sleep", _no_sleep)
+        calls = {"n": 0}
 
-        results = [
-            SearchResult(url=item["image"], thumbnail_url=item["thumbnail"], title=item["title"])
-            for item in data["results"]
-        ]
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return httpx.Response(500, request=request)
+            return httpx.Response(200, text=_fake_vqd_html(), request=request)
+
+        transport = httpx.MockTransport(handler)
+        search = DuckDuckGoImageSearch()
+        async with httpx.AsyncClient(transport=transport) as client:
+            vqd = await search._acquire_vqd(client, "SCP-096")
+
+        assert vqd == "3-314-abc123-def456"
+        assert calls["n"] == 3
+
+    @pytest.mark.asyncio
+    async def test_vqd_retry_exhausted_raises(self, monkeypatch):
+        """AC5: exhausting all retries raises the same RuntimeError as before."""
+        monkeypatch.setattr(image_search_module.asyncio, "sleep", _no_sleep)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, request=request)
+
+        transport = httpx.MockTransport(handler)
+        search = DuckDuckGoImageSearch()
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(RuntimeError, match="VQD acquisition failed after 3 attempts"):
+                await search._acquire_vqd(client, "SCP-096")
+
+    @pytest.mark.asyncio
+    async def test_search_with_mock_transport(self, monkeypatch):
+        """AC2/AC3/AC6: full search() flow through the real code path — query-page vqd
+        acquisition + Referer header on i.js — returns real SearchResult objects."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/i.js":
+                assert request.headers.get("referer") == "https://duckduckgo.com/"
+                return httpx.Response(200, json={
+                    "results": [
+                        {"image": "http://x.com/1.jpg", "thumbnail": "http://x.com/t1.jpg", "title": "One"},
+                        {"image": "http://x.com/2.jpg", "thumbnail": "http://x.com/t2.jpg", "title": "Two"},
+                    ]
+                }, request=request)
+            assert request.url.params["q"] == "SCP-096"
+            return httpx.Response(200, text=_fake_vqd_html(), request=request)
+
+        transport = httpx.MockTransport(handler)
+        monkeypatch.setattr(image_search_module.httpx, "AsyncClient", _make_injecting_client(transport))
+
+        results = await DuckDuckGoImageSearch().search("SCP-096", max_results=5)
+
         assert len(results) == 2
         assert results[0]["url"] == "http://x.com/1.jpg"
         assert results[0]["title"] == "One"
 
     @pytest.mark.asyncio
-    async def test_max_results_limit(self):
-        """max_results limits the returned count."""
-        async def handler(request: httpx.Request) -> httpx.Response:
-            if request.method == "POST":
-                return httpx.Response(200, text=_fake_vqd_html(), request=request)
-            return httpx.Response(200, json={
-                "results": [
-                    {"image": f"http://x.com/{i}.jpg", "thumbnail": "", "title": ""}
-                    for i in range(1, 6)
-                ]
-            }, request=request)
+    async def test_max_results_limit(self, monkeypatch):
+        """max_results limits the returned count, through the real search() path."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/i.js":
+                return httpx.Response(200, json={
+                    "results": [
+                        {"image": f"http://x.com/{i}.jpg", "thumbnail": "", "title": ""}
+                        for i in range(1, 6)
+                    ]
+                }, request=request)
+            return httpx.Response(200, text=_fake_vqd_html(), request=request)
 
         transport = httpx.MockTransport(handler)
-        search = DuckDuckGoImageSearch()
+        monkeypatch.setattr(image_search_module.httpx, "AsyncClient", _make_injecting_client(transport))
 
-        async with httpx.AsyncClient(
-            transport=transport,
-            timeout=httpx.Timeout(search._timeout),
-            headers=search._headers,
-        ) as client:
-            resp = await client.post("https://duckduckgo.com", data={"q": "test"})
-            match = _VQD_RE.search(resp.text)
-            vqd = match.group(1) if match else "x"
+        results = await DuckDuckGoImageSearch().search("test", max_results=2)
 
-            resp2 = await client.get("https://duckduckgo.com/i.js", params={
-                "q": "test", "vqd": vqd, "o": "json", "p": "1", "f": ",,,,,",
-            })
-            data = resp2.json()
-            # Apply max_results=2
-            limited = data["results"][:2]
-            assert len(limited) == 2
+        assert len(results) == 2
 
 
 # ── ScpWikiImageFetch (Story 5.10, AC1-2) ────────────────────────────────────
