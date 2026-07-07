@@ -15,13 +15,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from yt_flow.config import Settings
 from yt_flow.db.models import Character as CharacterModel
+from yt_flow.db.models import CharacterCard as CharacterCardModel
 from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
+from yt_flow.domain.png import has_alpha
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
 
 logger = logging.getLogger(__name__)
@@ -49,13 +52,25 @@ _PRIVATE_NETS = [
 
 # Canonical angles for character generation — single source of truth
 _ANGLE_DESCRIPTIONS: dict[str, str] = {
-    "front": "character front view, facing camera, full body",
-    "back": "character back view, seen from behind, full body",
-    "side": "character side profile view, full body",
-    "three_quarter": "character three-quarter view, 45 degree angle, full body",
+    "front": "front view, facing camera, full body, feet visible",
+    "back": "from behind, back view, facing away, full body, feet visible",
+    "side": "side profile view, from side, facing left, full body, feet visible",
+    "three_quarter": "three-quarter view, 45 degree angle, facing slightly left, full body, feet visible",
 }
 _CANONICAL_ANGLES = list(_ANGLE_DESCRIPTIONS.keys())  # ["front", "back", "side", "three_quarter"]
 CANONICAL_ANGLES = _CANONICAL_ANGLES  # public alias for API-layer validation
+# ponytail: live-tuned starting points; frontal references need less pull as view diverges.
+_ANGLE_IPADAPTER_WEIGHTS: dict[str, float] = {
+    "front": 0.2,
+    "three_quarter": 0.35,
+    "side": 0.25,
+    "back": 0.15,
+}
+_POSE_DESCRIPTIONS: dict[str, str] = {
+    "standing": "standing upright",
+    "sitting": "sitting on a plain simple chair, seated pose",
+}
+_VALID_CARD_POSES = frozenset(_POSE_DESCRIPTIONS)
 
 # Fields that can be updated via update_character — guards against injection
 _UPDATE_ALLOWLIST = frozenset({
@@ -119,6 +134,11 @@ async def _is_private_host(host: str) -> bool:
 def _sanitize_scp_id(scp_id: str) -> str:
     """Strip path separators and dangerous chars from scp_id for filesystem use."""
     return _PATH_UNSAFE_RE.sub("_", scp_id)
+
+
+def _validate_card_pose(pose: str) -> None:
+    if pose not in _VALID_CARD_POSES:
+        raise ValidationError("pose", f"must be one of {sorted(_VALID_CARD_POSES)}")
 
 
 # ── Service ───────────────────────────────────────────────────────────────────
@@ -208,6 +228,39 @@ class CharacterService:
         self._session.refresh(model)
         logger.info("Character updated: id=%s fields=%s", id, list(fields.keys()))
         return model
+
+    def save_card(self, scp_id: str, pose: str, angle: str, image_path: str) -> CharacterCardModel:
+        """Upsert a pose-aware character card row."""
+        _validate_card_pose(pose)
+        existing = self.get_card(scp_id, pose, angle)
+        if existing is None:
+            model = CharacterCardModel(scp_id=scp_id, pose=pose, angle=angle, image_path=image_path)
+        else:
+            model = existing
+            model.image_path = image_path
+        self._session.add(model)
+        try:
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            model = self.get_card(scp_id, pose, angle)
+            if model is None:
+                raise
+            model.image_path = image_path
+            self._session.add(model)
+            self._session.commit()
+        self._session.refresh(model)
+        return model
+
+    def get_card(self, scp_id: str, pose: str, angle: str) -> CharacterCardModel | None:
+        """Return the card row for a `(scp_id, pose, angle)` key, or None."""
+        return self._session.exec(
+            select(CharacterCardModel).where(
+                CharacterCardModel.scp_id == scp_id,
+                CharacterCardModel.pose == pose,
+                CharacterCardModel.angle == angle,
+            )
+        ).first()
 
     def delete_character(self, id: str) -> None:
         """Delete a character and all associated records (references, candidates)."""
@@ -542,8 +595,9 @@ class CharacterService:
     async def generate_candidates_from_reference(
         self,
         scp_id: str,
-        ref_image_path: str,
+        ref_image_path: str | None,
         angles: list[str] | None = None,
+        pose: str = "standing",
     ) -> list[str]:
         """Generate character images for each angle using the configured provider.
 
@@ -559,6 +613,7 @@ class CharacterService:
         Returns:
             List of saved image file paths.
         """
+        _validate_card_pose(pose)
         if angles is None:
             angles = list(_CANONICAL_ANGLES)
 
@@ -569,6 +624,10 @@ class CharacterService:
         chars_dir.mkdir(parents=True, exist_ok=True)
 
         provider = self._get_image_provider()
+        if not getattr(provider, "produces_alpha", True):
+            raise RuntimeError(
+                f"{provider.__class__.__name__} does not produce alpha sprites; use the ComfyUI character provider"
+            )
         visual_desc = self._get_visual_descriptor(scp_id)
 
         saved_paths: list[str] = []
@@ -576,22 +635,30 @@ class CharacterService:
 
         for angle in angles:
             angle_desc = _ANGLE_DESCRIPTIONS.get(angle, f"character {angle} view, full body")
+            pose_desc = _POSE_DESCRIPTIONS.get(pose, pose)
             prompt = self._compile_generation_prompt(
                 visual_descriptor=visual_desc or "",
                 angle=angle,
-                angle_description=angle_desc,
+                angle_description=f"{angle_desc}, {pose_desc}",
                 scp_id=scp_id,
             )
 
-            out_path = chars_dir / f"{angle}_candidate_1.png"
+            out_path = chars_dir / (
+                f"{angle}_candidate_1.png" if pose == "standing" else f"{pose}_{angle}.png"
+            )
             try:
                 img_bytes = await provider.generate(
                     prompt=prompt,
                     ref_image_path=ref_image_path,
                     width=s.character_image_width,
                     height=s.character_image_height,
+                    ipadapter_weight=_ANGLE_IPADAPTER_WEIGHTS.get(angle),
                 )
+                if not has_alpha(img_bytes):
+                    raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
                 out_path.write_bytes(img_bytes)
+                if pose != "standing":
+                    self.save_card(scp_id, pose, angle, str(out_path))
                 saved_paths.append(str(out_path))
                 logger.info(
                     "Generated %s candidate for %s → %s (%d bytes, i2i=%s)",
@@ -608,6 +675,75 @@ class CharacterService:
         if failed_angles and not saved_paths:
             logger.error("All %d angles failed for %s: %s", len(failed_angles), scp_id, failed_angles)
         return saved_paths
+
+    async def generate_cards_from_descriptor(
+        self,
+        card_key: str,
+        descriptor: str,
+        *,
+        pose: str = "standing",
+        anchor_path: str | None = None,
+        angles: list[str] | None = None,
+    ) -> list[str]:
+        """Generate and persist a card library from a descriptor.
+
+        Front is generated t2i by default, then non-front angles self-reference the
+        front card for identity consistency. An explicit anchor can condition the
+        front angle instead.
+        """
+        _validate_card_pose(pose)
+        if angles is None:
+            angles = list(_CANONICAL_ANGLES)
+
+        character = self._ensure_character(card_key)
+        if descriptor and character.visual_descriptor != descriptor:
+            character = self.update_character(character.id, visual_descriptor=descriptor)
+
+        saved: list[str] = []
+        front_path: str | None = anchor_path
+        angle_paths: dict[str, str] = {}
+        for angle in angles:
+            if angle != "front" and front_path is None:
+                logger.warning(
+                    "Skipping %s card for %s pose=%s because no front/anchor image is available",
+                    angle, card_key, pose,
+                )
+                continue
+            ref_path = anchor_path if angle == "front" else front_path
+            generated = await self.generate_candidates_from_reference(
+                card_key,
+                ref_image_path=ref_path,
+                angles=[angle],
+                pose=pose,
+            )
+            if not generated:
+                continue
+            path = generated[0]
+            saved.append(path)
+            if angle == "front":
+                front_path = path
+            if pose == "standing":
+                angle_paths[angle] = path
+
+        if pose == "standing" and angle_paths:
+            updates: dict[str, str] = {f"angle_{angle}_path": path for angle, path in angle_paths.items()}
+            if "front" in angle_paths:
+                updates["selected_image_path"] = angle_paths["front"]
+            self.update_character(character.id, **updates)
+        return saved
+
+    def _ensure_character(self, scp_id: str) -> CharacterModel:
+        character = self.check_existing_character(scp_id)
+        if character is not None:
+            return character
+        try:
+            return self.create_character(scp_id, scp_id)
+        except IntegrityError:
+            self._session.rollback()
+            character = self.check_existing_character(scp_id)
+            if character is None:
+                raise
+            return character
 
     def _get_image_provider(self):
         """Lazy-init the CharacterImageProvider from settings."""
@@ -659,8 +795,12 @@ class CharacterService:
             f"Character visual description: {visual_descriptor}\n"
             f"Angle: {angle} — {angle_description}\n"
             f"SCP ID: {scp_id}\n\n"
-            "Full-body character illustration, clean composition, suitable for video compositing. "
-            "Consistent character design, proportions, and color palette."
+            "Create a transparent-sprite source image: one single subject, full body, feet visible, "
+            "centered on canvas, clean silhouette, no crop, no bust portrait. Place the subject on a "
+            "plain flat light-gray studio background only, with no scenery, room, furniture, props, "
+            "environment detail, text, watermark, border, or extra characters. Suitable for later "
+            "background removal and video compositing. Maintain consistent character design, proportions, "
+            "and color palette across all angles."
         )
 
     # ── Candidate Tracking (AC4) ──────────────────────────────────────────

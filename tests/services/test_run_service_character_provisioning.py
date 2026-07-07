@@ -17,6 +17,7 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Character as CharacterModel
 from yt_flow.services import character_service, run_service
 from yt_flow.services.character_service import CANONICAL_ANGLES
+from tests.stubs.fakes import TINY_PNG
 
 
 class _FakeImageSearch:
@@ -36,11 +37,11 @@ class _FakeProvider:
         self._ok = generate_ok
         self.calls = 0
 
-    async def generate(self, prompt, ref_image_path, *, width=1664, height=928):
+    async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
         self.calls += 1
         if not self._ok:
             raise RuntimeError("provider unavailable")
-        return b"fake-png-bytes"
+        return TINY_PNG
 
 
 def _settings(tmp_path) -> Settings:
@@ -165,10 +166,10 @@ async def test_partial_generation_failure_keeps_only_successful_angles(monkeypat
         def __init__(self):
             self.calls = 0
 
-        async def generate(self, prompt, ref_image_path, *, width=1664, height=928):
+        async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
             self.calls += 1
             if self.calls == 1:  # first angle ("front") succeeds, the rest fail
-                return b"fake-png-bytes"
+                return TINY_PNG
             raise RuntimeError("provider unavailable")
 
     provider = _PartialProvider()
@@ -230,9 +231,9 @@ async def test_enrichment_success_persists_descriptor_before_generation(monkeypa
         def __init__(self):
             self.prompts: list[str] = []
 
-        async def generate(self, prompt, ref_image_path, *, width=1664, height=928):
+        async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
             self.prompts.append(prompt)
-            return b"fake-png-bytes"
+            return TINY_PNG
 
     provider = _CapturingProvider()
 

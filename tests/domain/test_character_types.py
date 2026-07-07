@@ -7,7 +7,7 @@ from typing import get_type_hints
 
 import yt_flow.domain.state as state
 from yt_flow import db
-from yt_flow.db.models import Character, ReferenceImage
+from yt_flow.db.models import Character, CharacterCard, ReferenceImage
 
 
 class TestCharacterTypedDict:
@@ -47,7 +47,29 @@ class TestSQLModelTables:
         inspector = inspect(_engine)
         tables = set(inspector.get_table_names())
         assert "characters" in tables
+        assert "character_cards" in tables
         assert "reference_images" in tables
+
+    def test_character_card_creation_and_persistence(self):
+        db.init("sqlite://")
+        from sqlmodel import Session
+        from yt_flow.db import _engine
+
+        with Session(_engine) as s:
+            card = CharacterCard(
+                scp_id="SCP-049",
+                pose="sitting",
+                angle="front",
+                image_path="/tmp/sitting_front.png",
+            )
+            s.add(card)
+            s.commit()
+            s.refresh(card)
+
+            assert card.id is not None
+            assert card.scp_id == "SCP-049"
+            assert card.pose == "sitting"
+            assert card.angle == "front"
 
     def test_character_creation_and_persistence(self):
         db.init("sqlite://")

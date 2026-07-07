@@ -119,7 +119,15 @@ class _FakeCharacterImageProvider:
 
     supports_i2i = True
 
-    async def generate(self, prompt: str, ref_image_path: str, *, width: int = 1664, height: int = 928) -> bytes:
+    async def generate(
+        self,
+        prompt: str,
+        ref_image_path: str | None,
+        *,
+        width: int = 832,
+        height: int = 1216,
+        ipadapter_weight: float | None = None,
+    ) -> bytes:
         return TINY_PNG
 
 

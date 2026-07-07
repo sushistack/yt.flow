@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+
+def _drop_reference_only_nodes(workflow: dict) -> None:
+    """Remove disconnected i2i-only nodes after t2i fallback rewiring."""
+    for node_id, node in list(workflow.items()):
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced", "LoadImage"):
+            workflow.pop(node_id, None)
+
 # ── Protocol ──────────────────────────────────────────────────────────────────
 
 
@@ -34,18 +43,20 @@ class CharacterImageProvider(ABC):
     async def generate(
         self,
         prompt: str,
-        ref_image_path: str,
+        ref_image_path: str | None,
         *,
-        width: int = 1664,
-        height: int = 928,
+        width: int = 832,
+        height: int = 1216,
+        ipadapter_weight: float | None = None,
     ) -> bytes:
         """Generate a character image. Returns raw PNG bytes.
 
         Args:
             prompt: The angle-specific generation prompt.
-            ref_image_path: Path to the reference image for i2i base.
+            ref_image_path: Path to the reference image for i2i base, or None for t2i.
             width: Target image width.
             height: Target image height.
+            ipadapter_weight: Optional IPAdapter conditioning weight.
 
         Returns:
             Raw image bytes (PNG format).
@@ -57,6 +68,11 @@ class CharacterImageProvider(ABC):
     def supports_i2i(self) -> bool:
         """Whether this provider supports image-to-image generation."""
         ...
+
+    @property
+    def produces_alpha(self) -> bool:
+        """Whether provider output is expected to be an RGBA/alpha sprite."""
+        return True
 
 
 # ── ComfyUI Implementation ────────────────────────────────────────────────────
@@ -84,10 +100,11 @@ class ComfyUICharacterProvider(CharacterImageProvider):
     async def generate(
         self,
         prompt: str,
-        ref_image_path: str,
+        ref_image_path: str | None,
         *,
-        width: int = 1664,
-        height: int = 928,
+        width: int = 832,
+        height: int = 1216,
+        ipadapter_weight: float | None = None,
     ) -> bytes:
         from yt_flow.services.comfyui_client import submit_and_fetch, upload_image
 
@@ -95,6 +112,14 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         workflow = self._inject_prompt(workflow, prompt)
         workflow = self._inject_dimensions(workflow, width, height)
         workflow = self._inject_seed(workflow)
+        if ipadapter_weight is not None:
+            workflow = self._inject_ipadapter_weight(workflow, ipadapter_weight)
+
+        if ref_image_path is None:
+            workflow = self._remove_i2i_input(workflow)
+            result = await submit_and_fetch(self._base_url, workflow)
+            logger.info("ComfyUI t2i generation succeeded (%dx%d)", width, height)
+            return result
 
         # Try i2i with reference image
         try:
@@ -168,6 +193,14 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         return workflow
 
     @staticmethod
+    def _inject_ipadapter_weight(workflow: dict, weight: float) -> dict:
+        """Inject per-call IPAdapter conditioning weight."""
+        for node in workflow.values():
+            if isinstance(node, dict) and node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced"):
+                node.setdefault("inputs", {})["weight"] = weight
+        return workflow
+
+    @staticmethod
     def _inject_reference_image(workflow: dict, image_name: str) -> dict:
         """Inject the uploaded reference image's filename into the Load Image node.
 
@@ -211,6 +244,8 @@ class ComfyUICharacterProvider(CharacterImageProvider):
                     logger.warning(
                         "t2i fallback: no KSampler references IPAdapter node %s; workflow left i2i-wired", node_id
                     )
+                    return workflow
+                _drop_reference_only_nodes(workflow)
                 return workflow
 
         # Legacy shape: find the EmptyLatentImage node ID
@@ -256,7 +291,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             },
             "5": {
                 "class_type": "EmptyLatentImage",
-                "inputs": {"width": 1664, "height": 928, "batch_size": 1},
+                "inputs": {"width": 832, "height": 1216, "batch_size": 1},
             },
             "6": {
                 "class_type": "CLIPTextEncode",
@@ -298,19 +333,25 @@ class QwenCharacterProvider(CharacterImageProvider):
     def supports_i2i(self) -> bool:
         return False  # Qwen image gen is t2i only
 
+    @property
+    @override
+    def produces_alpha(self) -> bool:
+        return False
+
     @override
     async def generate(
         self,
         prompt: str,
-        ref_image_path: str,
+        ref_image_path: str | None,
         *,
-        width: int = 1664,
-        height: int = 928,
+        width: int = 832,
+        height: int = 1216,
+        ipadapter_weight: float | None = None,
     ) -> bytes:
         if not self._api_key:
             raise RuntimeError("Qwen API key not configured (YTFLOW_CHARACTER_QWEN_API_KEY)")
 
-        # Qwen accepts size like "1664*928"
+        # Qwen accepts size like "832*1216"
         size_str = f"{width}*{height}"
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:

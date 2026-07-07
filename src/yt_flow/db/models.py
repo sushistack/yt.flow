@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import JSON, Column, Field, SQLModel
 
 
@@ -37,6 +38,18 @@ class Character(SQLModel, table=True):
     angle_three_quarter_path: str | None = None
     created_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
+
+
+class CharacterCard(SQLModel, table=True):
+    __tablename__ = "character_cards"
+    __table_args__ = (UniqueConstraint("scp_id", "pose", "angle"),)
+
+    id: str = Field(primary_key=True, default_factory=lambda: str(uuid4()))
+    scp_id: str = Field(index=True)
+    pose: str
+    angle: str
+    image_path: str
+    created_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
 
 
 class ReferenceImage(SQLModel, table=True):

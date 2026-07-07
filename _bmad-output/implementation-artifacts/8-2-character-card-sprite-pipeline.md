@@ -17,7 +17,7 @@ related:
 
 # Story 8.2: Character Card Sprite Pipeline + Stock Cast Seeding
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -76,34 +76,34 @@ Key insight from the epic: cutting a character out of a **plain studio backgroun
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `domain/png.py` + move (AC: 4, 11)
-  - [ ] Create `src/yt_flow/domain/png.py` with `has_alpha(png_bytes: bytes) -> bool` moved verbatim from `image.py:109-117` (stdlib-only, keep the color_type-byte docstring). Update `image.py` to import it (its layered path still calls it until 8.3). Port/extend tests.
-- [ ] Task 2 — Sprite workflow authoring + validation (AC: 1, 5)
-  - [ ] Extend `data/workflows/comfyui_character_multi_angle_api.json`: `VAEDecode(8) → InspyrenetRembg(new node, torchscript_jit "default" like layered node 12) → SaveImage(9)`. Single SaveImage stays (5-10: `submit_and_fetch` returns first output's bytes — no node-ID-keyed variant needed).
-  - [ ] Change `Settings.character_image_width/height` defaults to `832/1216` (`config.py:79-80`) and document in `.env.example`.
-  - [ ] Validate directly against local ComfyUI (memory: `$HOME/workspaces/ComfyUI`, `./run.sh`, :8188; InSPyReNet node installed since 5-6): `POST /prompt`, poll `/history/{prompt_id}`, all 4 angle prompts, no `node_errors`, outputs pass `has_alpha` (5-10 Task 2 procedure; update `data/workflows/README-character-multi-angle.md`).
-- [ ] Task 3 — Sprite prompts (AC: 2)
-  - [ ] Update `_ANGLE_DESCRIPTIONS` (`character_service.py:51-57`) with the strengthened view tags; it is the single source of truth (5-10 guardrail) — no second list.
-  - [ ] Update `prompts/character/generation.md` + the built-in fallback in `_compile_generation_prompt` (`character_service.py:657-664`) with the studio-background/full-body sprite requirements; re-seed via `scripts/seed_character_prompts.py`; run the PROMPT_POLICY rule-4 substitute check (compile comparison) and record it.
-  - [ ] Also add background-exclusion negatives to the workflow's negative node 7 text (scenery, room, background detail) — belt and suspenders for the cutout.
-- [ ] Task 4 — Per-angle IPAdapter weight (AC: 3, 5)
-  - [ ] `_inject_ipadapter_weight(workflow, weight)` in `character_image_provider.py` (pattern: `_inject_seed`, lines 160-168; target `class_type in ("IPAdapter", "IPAdapterAdvanced")`, set `inputs["weight"]`). Thread `weight: float | None` through `generate()`.
-  - [ ] `_ANGLE_IPADAPTER_WEIGHTS` module table in `character_service.py`; pass per angle from `generate_candidates_from_reference` (`character_service.py:577-599` loop). `# ponytail:` the values as live-tuned starting points.
-  - [ ] Live D5 check: generate SCP-049's 4 angles, eyeball side/back truthfulness, iterate weights/prompt tags until side=profile and back=from-behind; record final values + evidence paths in Dev Agent Record.
-- [ ] Task 5 — RGBA save validation (AC: 4)
-  - [ ] In `generate_candidates_from_reference`, after `provider.generate(...)` returns bytes: `if not has_alpha(img_bytes): raise ValueError(...)` inside the existing per-angle try (`character_service.py:586-606`) so it logs + continues per angle, naming the card_key/angle in the message.
-- [ ] Task 6 — Descriptor-driven card generation + stock seeding (AC: 6, 7, 8)
-  - [ ] Provider: expose deliberate t2i (e.g. `generate(prompt, ref_image_path=None, ...)` → skip upload/injection and apply `_remove_i2i_input` up front; today `ref_image_path` is required and t2i only fires on exception, `character_image_provider.py:99-113`).
-  - [ ] Service: `generate_cards_from_descriptor(card_key)` — front via t2i, then side/back/three_quarter i2i with the front card as IPAdapter reference; reuse the AC3 weight table; persist via existing `update_character`.
-  - [ ] `scripts/seed_stock_cast.py`: built-in descriptor table for `STOCK_CAST_KEYS` (import from `yt_flow.domain.state` — 8.1; if 8.1 hasn't merged yet, define the tuple locally in the script with a `# ponytail:` note and swap to the domain import on rebase), `--key/--descriptor` for derived entities, `--pose` (default `standing`) per AC6/AC13, `--force` re-generation, idempotent skip, `--anchor-search`/`--anchor <path>` optional anchor sourcing per AC7 (search leg gated on 5.19; curation is a human stop, not automated selection). Follow `scripts/seed_character_prompts.py` structure (settings/session bootstrapping).
-  - [ ] Live-run the script for the 3 stock keys against real ComfyUI (standing only — AC13); verify all 12 cards meet the artifact contract; record evidence.
-- [ ] Task 6b — Pose axis (AC: 12, 13)
-  - [ ] Add the `CharacterCard` model to `db/models.py` per Interfaces #4 (unique `(scp_id, pose, angle)` via `UniqueConstraint` in `__table_args__`); confirm `create_all` bootstrap picks it up; add a thin upsert helper on `CharacterService` (e.g. `save_card(scp_id, pose, angle, image_path)`) plus a lookup (`get_card(scp_id, pose, angle)`) — 8.3/8.4 consume the lookup.
-  - [ ] `_POSE_DESCRIPTIONS` module table; thread `pose: str = "standing"` through `generate_candidates_from_reference` / `generate_cards_from_descriptor` (prompt compose + `{pose}_{angle}.png` naming + `character_cards` persistence for non-standing). `# ponytail:` the sitting descriptor as a live-tuned starting point.
-  - [ ] Generate SCP-049's sitting × 4 library (i2i, standing front card as reference); eyeball seated truthfulness like the D5 check; record evidence.
-- [ ] Task 7 — SCP-049 regeneration + regression (AC: 9, 10, 11)
-  - [ ] Regenerate SCP-049's 4 standing cards under the new pipeline (evidence for 8.3's A/B DoD); sitting × 4 covered by Task 6b.
-  - [ ] Regression gate (5-8/5-10 suite): `uv run pytest tests/services/test_run_service_character_provisioning.py tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/pipeline/nodes/test_image.py -q` plus new tests; full suite green.
+- [x] Task 1 — `domain/png.py` + move (AC: 4, 11)
+  - [x] Create `src/yt_flow/domain/png.py` with `has_alpha(png_bytes: bytes) -> bool` moved verbatim from `image.py:109-117` (stdlib-only, keep the color_type-byte docstring). Update `image.py` to import it (its layered path still calls it until 8.3). Port/extend tests.
+- [x] Task 2 — Sprite workflow authoring + validation (AC: 1, 5)
+  - [x] Extend `data/workflows/comfyui_character_multi_angle_api.json`: `VAEDecode(8) → InspyrenetRembg(new node, torchscript_jit "default" like layered node 12) → SaveImage(9)`. Single SaveImage stays (5-10: `submit_and_fetch` returns first output's bytes — no node-ID-keyed variant needed).
+  - [x] Change `Settings.character_image_width/height` defaults to `832/1216` (`config.py:79-80`) and document in `.env.example`.
+  - [x] Validate directly against local ComfyUI (memory: `$HOME/workspaces/ComfyUI`, `./run.sh`, :8188; InSPyReNet node installed since 5-6): `POST /prompt`, poll `/history/{prompt_id}`, all 4 angle prompts, no `node_errors`, outputs pass `has_alpha` (5-10 Task 2 procedure; update `data/workflows/README-character-multi-angle.md`).
+- [x] Task 3 — Sprite prompts (AC: 2)
+  - [x] Update `_ANGLE_DESCRIPTIONS` (`character_service.py:51-57`) with the strengthened view tags; it is the single source of truth (5-10 guardrail) — no second list.
+  - [x] Update `prompts/character/generation.md` + the built-in fallback in `_compile_generation_prompt` (`character_service.py:657-664`) with the studio-background/full-body sprite requirements; re-seed via `scripts/seed_character_prompts.py`; run the PROMPT_POLICY rule-4 substitute check (compile comparison) and record it.
+  - [x] Also add background-exclusion negatives to the workflow's negative node 7 text (scenery, room, background detail) — belt and suspenders for the cutout.
+- [x] Task 4 — Per-angle IPAdapter weight (AC: 3, 5)
+  - [x] `_inject_ipadapter_weight(workflow, weight)` in `character_image_provider.py` (pattern: `_inject_seed`, lines 160-168; target `class_type in ("IPAdapter", "IPAdapterAdvanced")`, set `inputs["weight"]`). Thread `weight: float | None` through `generate()`.
+  - [x] `_ANGLE_IPADAPTER_WEIGHTS` module table in `character_service.py`; pass per angle from `generate_candidates_from_reference` (`character_service.py:577-599` loop). `# ponytail:` the values as live-tuned starting points.
+  - [x] Live D5 check: generate SCP-049's 4 angles, eyeball side/back truthfulness, iterate weights/prompt tags until side=profile and back=from-behind; record final values + evidence paths in Dev Agent Record.
+- [x] Task 5 — RGBA save validation (AC: 4)
+  - [x] In `generate_candidates_from_reference`, after `provider.generate(...)` returns bytes: `if not has_alpha(img_bytes): raise ValueError(...)` inside the existing per-angle try (`character_service.py:586-606`) so it logs + continues per angle, naming the card_key/angle in the message.
+- [x] Task 6 — Descriptor-driven card generation + stock seeding (AC: 6, 7, 8)
+  - [x] Provider: expose deliberate t2i (e.g. `generate(prompt, ref_image_path=None, ...)` → skip upload/injection and apply `_remove_i2i_input` up front; today `ref_image_path` is required and t2i only fires on exception, `character_image_provider.py:99-113`).
+  - [x] Service: `generate_cards_from_descriptor(card_key)` — front via t2i, then side/back/three_quarter i2i with the front card as IPAdapter reference; reuse the AC3 weight table; persist via existing `update_character`.
+  - [x] `scripts/seed_stock_cast.py`: built-in descriptor table for `STOCK_CAST_KEYS` (import from `yt_flow.domain.state` — 8.1; if 8.1 hasn't merged yet, define the tuple locally in the script with a `# ponytail:` note and swap to the domain import on rebase), `--key/--descriptor` for derived entities, `--pose` (default `standing`) per AC6/AC13, `--force` re-generation, idempotent skip, `--anchor-search`/`--anchor <path>` optional anchor sourcing per AC7 (search leg gated on 5.19; curation is a human stop, not automated selection). Follow `scripts/seed_character_prompts.py` structure (settings/session bootstrapping).
+  - [x] Live-run the script for the 3 stock keys against real ComfyUI (standing only — AC13); verify all 12 cards meet the artifact contract; record evidence.
+- [x] Task 6b — Pose axis (AC: 12, 13)
+  - [x] Add the `CharacterCard` model to `db/models.py` per Interfaces #4 (unique `(scp_id, pose, angle)` via `UniqueConstraint` in `__table_args__`); confirm `create_all` bootstrap picks it up; add a thin upsert helper on `CharacterService` (e.g. `save_card(scp_id, pose, angle, image_path)`) plus a lookup (`get_card(scp_id, pose, angle)`) — 8.3/8.4 consume the lookup.
+  - [x] `_POSE_DESCRIPTIONS` module table; thread `pose: str = "standing"` through `generate_candidates_from_reference` / `generate_cards_from_descriptor` (prompt compose + `{pose}_{angle}.png` naming + `character_cards` persistence for non-standing). `# ponytail:` the sitting descriptor as a live-tuned starting point.
+  - [x] Generate SCP-049's sitting × 4 library (i2i, standing front card as reference); eyeball seated truthfulness like the D5 check; record evidence.
+- [x] Task 7 — SCP-049 regeneration + regression (AC: 9, 10, 11)
+  - [x] Regenerate SCP-049's 4 standing cards under the new pipeline (evidence for 8.3's A/B DoD); sitting × 4 covered by Task 6b.
+  - [x] Regression gate (5-8/5-10 suite): `uv run pytest tests/services/test_run_service_character_provisioning.py tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/pipeline/nodes/test_image.py -q` plus new tests; full suite green.
 - [ ] Task 8 — Look-dev comparison + anchor adoption (AC: 14)
   - [ ] Produce frontier counterparts for 2-3 representative subjects (manual, no integration; transparent-bg model) into a `lookdev/` review directory; run the side-by-side with Jay at the Task 5/6 QA stop.
   - [ ] Apply the adoption rule per subject class (frontier file → `--anchor <path>` input, or direct adoption if it passes the sprite contract); validate adopted files with `domain.png.has_alpha` + framing check.
@@ -173,14 +173,61 @@ No new provider class, and pose is ONE approved axis, not a matrix (2026-07-06, 
 
 ### Agent Model Used
 
+GPT-5 Codex
+
 ### Debug Log References
+
+- `uv run pytest tests/domain/test_png.py tests/pipeline/nodes/test_image.py -q` → 44 passed.
+- `uv run pytest tests/services/test_character_service_generation.py::TestMultiAngleGeneration::test_generate_candidates_passes_angle_specific_ipadapter_weights tests/services/test_character_service_generation.py::TestReferenceImageInjectionAndFallback::test_inject_ipadapter_weight_targets_only_ipadapter_nodes -q` → 2 passed.
+- `uv run pytest tests/services/test_character_service_generation.py::TestMultiAngleGeneration::test_generate_candidates_rejects_opaque_png_per_angle -q` → 1 passed.
+- `uv run pytest tests/domain/test_character_types.py::TestSQLModelTables::test_tables_created tests/domain/test_character_types.py::TestSQLModelTables::test_character_card_creation_and_persistence tests/services/test_character_service_generation.py::TestMultiAngleGeneration::test_save_card_upserts_unique_pose_angle tests/services/test_character_service_generation.py::TestMultiAngleGeneration::test_generate_sitting_candidates_write_pose_rows tests/services/test_character_service_generation.py::TestMultiAngleGeneration::test_generate_cards_from_descriptor_front_t2i_then_self_references -q` → 5 passed.
+- `uv run pytest tests/test_seed_stock_cast.py -q` → 2 passed.
+- `uv run pytest tests/services/test_character_service_generation.py tests/services/test_run_service_character_provisioning.py tests/domain/test_character_types.py tests/domain/test_png.py tests/pipeline/nodes/test_image.py tests/test_seed_stock_cast.py -q` → 108 passed.
+- `uv run pytest tests/services/test_run_service_character_provisioning.py tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/pipeline/nodes/test_image.py tests/domain tests/test_seed_stock_cast.py -q` → 160 passed.
+- `uv run ruff check src tests scripts/seed_stock_cast.py` → All checks passed.
+- `uv run pytest -q` → 820 passed, 1 skipped, 1 warning.
+- Live ComfyUI validation: local ComfyUI started from `$HOME/workspaces/ComfyUI/run.sh` on `127.0.0.1:8188`; InSPyReNet and IPAdapter nodes loaded; SCP-049 standing+sitting and stock standing cards generated through the real workflow with no `node_errors` surfaced to the client.
+- Live evidence: `_bmad-output/implementation-artifacts/8-2-live-validation/character-card-contact-sheet.png`.
 
 ### Completion Notes List
 
+- Moved PNG alpha detection to `yt_flow.domain.png.has_alpha` and kept `image.py` compatible via import alias.
+- Updated the character multi-angle workflow to output RGBA sprites via `VAEDecode(8) -> InspyrenetRembg(12) -> SaveImage(9)`, with portrait `832x1216` defaults.
+- Strengthened character generation prompt sources (repo prompt, built-in fallback, Langfuse candidate seed) for full-body single-subject sprite generation on a plain light-gray studio background; added negative prompt exclusions for scenery/rooms/props/crops.
+- Added per-call IPAdapter weight injection and live-tuned angle weights to `front=0.2`, `three_quarter=0.35`, `side=0.25`, `back=0.15` after SCP-049 live validation showed the original front/back weights over-followed the cropped reference.
+- Enforced RGBA at save time for every generated card; opaque outputs are treated as per-angle generation failures and do not poison the batch.
+- Added descriptor-driven `generate_cards_from_descriptor`, deliberate ComfyUI t2i generation, stock/derived seed script, and optional `--anchor-search` human-curation stop.
+- Added additive `CharacterCard` table plus `save_card`/`get_card` helpers and pose-aware generation; standing remains in `Character.angle_*_path`, non-standing persists in `character_cards`.
+- Live generated SCP-049 standing x4 and sitting x4, plus stock cast standing x12. All inspected generated PNGs are `832x1216`, color type 6, alpha true. Contact sheet shows side/back angles are materially distinct from front for the regenerated library.
+- Code-review hardening applied during the 8.1 review pass: t2i fallback now removes disconnected IPAdapter/LoadImage placeholder nodes; Qwen image generation is fail-fast unsupported for RGBA card sprites until a real background-removal path exists; descriptor generation skips non-front angles when no front/anchor image exists; stock seeding completion validates existing files as alpha PNGs; `--anchor` requires `--key`; pose values are restricted to the closed `standing`/`sitting` enum; PNG alpha detection validates IHDR structure/CRC instead of trusting a header byte.
+- HALT: Task 8 is intentionally incomplete because AC14 requires Jay to produce/review frontier-model counterparts and make the look-dev adoption decision. No code can honestly complete that human judgment step.
+
 ### File List
+
+- `.env.example`
+- `_bmad-output/implementation-artifacts/8-2-character-card-sprite-pipeline.md`
+- `_bmad-output/implementation-artifacts/8-2-live-validation/character-card-contact-sheet.png`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `data/workflows/README-character-multi-angle.md`
+- `data/workflows/comfyui_character_multi_angle_api.json`
+- `prompts/character/generation.md`
+- `scripts/seed_stock_cast.py`
+- `src/yt_flow/config.py`
+- `src/yt_flow/db/models.py`
+- `src/yt_flow/domain/png.py`
+- `src/yt_flow/pipeline/nodes/image.py`
+- `src/yt_flow/services/character_image_provider.py`
+- `src/yt_flow/services/character_service.py`
+- `tests/domain/test_character_types.py`
+- `tests/domain/test_png.py`
+- `tests/services/test_character_service_generation.py`
+- `tests/services/test_run_service_character_provisioning.py`
+- `tests/stubs/fakes.py`
+- `tests/test_seed_stock_cast.py`
 
 ## Change Log
 
+- 2026-07-07: Implemented Tasks 1-7. Added RGBA sprite workflow, png domain helper, prompt updates, per-angle IPAdapter weights, RGBA save validation, descriptor/stock seeding, pose-aware `CharacterCard` storage, SCP-049 and stock live generated evidence, and regression tests. Story remains `in-progress` because Task 8 requires Jay's manual look-dev comparison/adoption decision.
 - 2026-07-06: Story created from Epic 8 architecture decision (E2E baseline run 272b05a4). Owns the Epic 8 card artifact contract (RGBA sprite) and stock-cast seeding.
 - 2026-07-07: optional anchor sourcing added per Jay — `--anchor-search` (image search per stock key, human curation stop) + `--anchor <path>` → front-angle IPAdapter reference (`anchor_path` param). Opt-in; default path byte-identical. Search leg depends on Story 5.19.
 - 2026-07-07: look-dev/production split formalized per Jay (AC14 + Task 8) — frontier models allowed for library look definition (manual, file-drop, no integration; adopted outputs feed `anchor_path` or become cards if contract-compliant), all runtime production stays ComfyUI. Supersedes the earlier Saved-Question framing.

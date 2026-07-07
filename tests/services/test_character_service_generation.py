@@ -15,12 +15,17 @@ from sqlmodel import Session
 
 from yt_flow import db
 from yt_flow.config import Settings
+from yt_flow.domain.exceptions import ValidationError
 from yt_flow.services.character_service import CharacterService
+from tests.stubs.fakes import TINY_PNG
 from yt_flow.services.character_image_provider import (
     ComfyUICharacterProvider,
     QwenCharacterProvider,
     create_provider,
 )
+
+
+RGB_PNG_HEADER_ONLY = b"\x89PNG\r\n\x1a\n" + (b"\x00" * 17) + b"\x02"
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -177,7 +182,7 @@ class TestMultiAngleGeneration:
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
-        mock_provider.generate = AsyncMock(return_value=b"fake-png-bytes")
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider):
             paths = asyncio_run(
@@ -187,7 +192,7 @@ class TestMultiAngleGeneration:
         assert len(paths) == 4
         for path in paths:
             assert Path(path).exists()
-            assert Path(path).read_bytes() == b"fake-png-bytes"
+            assert Path(path).read_bytes() == TINY_PNG
 
     def test_generate_candidates_with_custom_angles(self, service, temp_ref_image, tmp_path):
         """Generate only specified angles."""
@@ -197,7 +202,7 @@ class TestMultiAngleGeneration:
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
-        mock_provider.generate = AsyncMock(return_value=b"fake-bytes")
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider):
             paths = asyncio_run(
@@ -219,7 +224,7 @@ class TestMultiAngleGeneration:
         mock_provider.supports_i2i = True
         # First call fails, subsequent calls succeed
         mock_provider.generate = AsyncMock(
-            side_effect=[RuntimeError("oops"), b"ok1", b"ok2", b"ok3"]
+            side_effect=[RuntimeError("oops"), TINY_PNG, TINY_PNG, TINY_PNG]
         )
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider):
@@ -239,7 +244,7 @@ class TestMultiAngleGeneration:
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
-        mock_provider.generate = AsyncMock(return_value=b"fake-bytes")
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider):
             asyncio_run(
@@ -261,7 +266,7 @@ class TestMultiAngleGeneration:
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
-        mock_provider.generate = AsyncMock(return_value=b"fake-bytes")
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider):
             paths = asyncio_run(
@@ -275,6 +280,152 @@ class TestMultiAngleGeneration:
         assert "SCP-049" in paths[0]
         assert "characters" in paths[0]
         assert "front_candidate_1.png" in paths[0]
+
+    def test_generate_candidates_passes_angle_specific_ipadapter_weights(
+        self, service, temp_ref_image, tmp_path
+    ):
+        s = Settings(workspace_path=str(tmp_path))
+        service._settings = s
+        service.create_character("SCP-049", "Plague Doctor")
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            asyncio_run(
+                service.generate_candidates_from_reference(
+                    "SCP-049", temp_ref_image, angles=["front", "side", "back"]
+                )
+            )
+
+        weights = [call.kwargs["ipadapter_weight"] for call in mock_provider.generate.call_args_list]
+        assert weights == [0.2, 0.25, 0.15]
+
+    def test_generate_candidates_rejects_opaque_png_per_angle(
+        self, service, temp_ref_image, tmp_path
+    ):
+        s = Settings(workspace_path=str(tmp_path))
+        service._settings = s
+        service.create_character("SCP-049", "Plague Doctor")
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(side_effect=[TINY_PNG, RGB_PNG_HEADER_ONLY, TINY_PNG])
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_candidates_from_reference(
+                    "SCP-049", temp_ref_image, angles=["front", "side", "back"]
+                )
+            )
+
+        assert len(paths) == 2
+        assert [Path(p).name for p in paths] == ["front_candidate_1.png", "back_candidate_1.png"]
+        assert not (tmp_path / "SCP-049" / "characters" / "side_candidate_1.png").exists()
+
+    def test_generate_sitting_candidates_write_pose_rows(self, service, temp_ref_image, tmp_path):
+        s = Settings(workspace_path=str(tmp_path))
+        service._settings = s
+        service.create_character("SCP-049", "Plague Doctor")
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_candidates_from_reference(
+                    "SCP-049", temp_ref_image, angles=["front"], pose="sitting"
+                )
+            )
+
+        assert Path(paths[0]).name == "sitting_front.png"
+        card = service.get_card("SCP-049", "sitting", "front")
+        assert card is not None
+        assert card.image_path == paths[0]
+
+    def test_save_card_upserts_unique_pose_angle(self, service):
+        first = service.save_card("SCP-049", "sitting", "front", "/tmp/a.png")
+        second = service.save_card("SCP-049", "sitting", "front", "/tmp/b.png")
+
+        assert second.id == first.id
+        assert service.get_card("SCP-049", "sitting", "front").image_path == "/tmp/b.png"
+
+    def test_generate_cards_from_descriptor_front_t2i_then_self_references(
+        self, service, tmp_path
+    ):
+        s = Settings(workspace_path=str(tmp_path))
+        service._settings = s
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="gaunt human in orange jumpsuit",
+                    angles=["front", "side", "back"],
+                )
+            )
+
+        assert len(paths) == 3
+        calls = mock_provider.generate.call_args_list
+        assert calls[0].kwargs["ref_image_path"] is None
+        assert calls[1].kwargs["ref_image_path"] == paths[0]
+        assert calls[2].kwargs["ref_image_path"] == paths[0]
+        character = service.check_existing_character("STOCK-d-class")
+        assert character is not None
+        assert character.angle_front_path == paths[0]
+        assert character.angle_side_path == paths[1]
+        assert character.angle_back_path == paths[2]
+
+    def test_generate_cards_from_descriptor_skips_later_angles_without_front_anchor(
+        self, service, tmp_path
+    ):
+        s = Settings(workspace_path=str(tmp_path))
+        service._settings = s
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.produces_alpha = True
+        mock_provider.generate = AsyncMock(side_effect=[RuntimeError("front failed"), TINY_PNG, TINY_PNG])
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="gaunt human in orange jumpsuit",
+                    angles=["front", "side", "back"],
+                )
+            )
+
+        assert paths == []
+        assert mock_provider.generate.call_count == 1
+
+    def test_generate_candidates_rejects_provider_without_alpha_sprites(
+        self, service, temp_ref_image, tmp_path
+    ):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        service.create_character("SCP-049", "Plague Doctor")
+
+        mock_provider = MagicMock()
+        mock_provider.produces_alpha = False
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            with pytest.raises(RuntimeError, match="does not produce alpha sprites"):
+                asyncio_run(service.generate_candidates_from_reference("SCP-049", temp_ref_image, angles=["front"]))
+
+    def test_generate_candidates_rejects_unknown_pose(self, service, temp_ref_image, tmp_path):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        with pytest.raises(ValidationError, match="pose"):
+            asyncio_run(
+                service.generate_candidates_from_reference(
+                    "SCP-049", temp_ref_image, angles=["front"], pose="crouching"
+                )
+            )
 
 
 # ── Provider Selection (AC7) ─────────────────────────────────────────────────
@@ -307,6 +458,7 @@ class TestProviderSelection:
         s = Settings(character_image_provider="qwen")
         provider = create_provider(s)
         assert provider.supports_i2i is False
+        assert provider.produces_alpha is False
 
     def test_load_workflow_resolves_against_project_root_not_cwd(self, monkeypatch, tmp_path):
         """Story 5.10 Dev Notes: the configured path must not silently miss when the
@@ -352,6 +504,10 @@ class TestReferenceImageInjectionAndFallback:
         updated = ComfyUICharacterProvider._remove_i2i_input(workflow)
 
         assert updated[sampler_id]["inputs"]["model"] == upstream_model
+        assert not any(
+            n.get("class_type") in ("IPAdapter", "IPAdapterAdvanced", "LoadImage")
+            for n in updated.values()
+        )
 
     def test_remove_i2i_input_legacy_shape_reconnects_latent(self):
         """Legacy VAEEncode-i2i workflow shape (no IPAdapter node) still falls
@@ -387,6 +543,16 @@ class TestReferenceImageInjectionAndFallback:
         )
         assert new_seed != original_seed
         assert isinstance(new_seed, int)
+
+    def test_inject_ipadapter_weight_targets_only_ipadapter_nodes(self, workflow):
+        updated = ComfyUICharacterProvider._inject_ipadapter_weight(workflow, 0.4)
+        ipadapter_nodes = [
+            node for node in updated.values()
+            if node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced")
+        ]
+        assert len(ipadapter_nodes) == 1
+        assert ipadapter_nodes[0]["inputs"]["weight"] == 0.4
+        assert updated["7"]["inputs"]["text"]
 
 
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────

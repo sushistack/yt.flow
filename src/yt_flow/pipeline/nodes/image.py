@@ -32,6 +32,7 @@ from pathlib import Path
 from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
+from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.services import comfyui_client
 
@@ -110,15 +111,7 @@ def _mock_character_source() -> Path | None:
     return p if p.exists() else None
 
 
-def _has_alpha(png_bytes: bytes) -> bool:
-    """Check PNG color_type byte to detect RGBA or grayscale+alpha channel.
-
-    Offset 25 in a valid PNG is color_type in the IHDR chunk:
-    4=grayscale+alpha, 6=RGBA. No Pillow needed. [ponytail: stdlib-only]
-    """
-    if len(png_bytes) < 26 or png_bytes[:8] != b'\x89PNG\r\n\x1a\n':
-        return False
-    return png_bytes[25] in (4, 6)
+_has_alpha = has_alpha
 
 
 def _shot_base(scene_num: int, shot: ShotData) -> str:

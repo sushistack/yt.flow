@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     character_comfyui_workflow_path: str = "data/workflows/comfyui_character_multi_angle_api.json"
     character_qwen_model: str = "qwen-image-max"
     character_qwen_api_key: str = ""
-    character_image_width: int = 1664
-    character_image_height: int = 928
+    character_image_width: int = 832
+    character_image_height: int = 1216
 
     # Vision LLM descriptor enrichment (Story 5.13). DashScope Qwen-VL — the DeepSeek
     # account has no vision-capable model at all (text-only), so this is a distinct

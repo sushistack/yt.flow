@@ -14,8 +14,10 @@ workflows (see [`README-layered-assets.md`](README-layered-assets.md)):
 `AnimagineXL_v31.safetensors` (node `"4"`) → `horror.safetensors` LoRA (node
 `"10"`) → `darkness_xl_v2.safetensors` LoRA (node `"11"`) →
 `CLIPTextEncode` positive/negative (nodes `"6"`/`"7"`) → `KSampler` (node
-`"3"`) → `VAEDecode` (node `"8"`) → `SaveImage` (node `"9"`). Single output —
-one character portrait per angle, no background/inpaint branch.
+`"3"`) → `VAEDecode` (node `"8"`) → `InspyrenetRembg` (node `"12"`) →
+`SaveImage` (node `"9"`). Single output — one transparent RGBA character sprite
+per angle. The prompt path asks for a full-body subject on a plain light-gray
+studio background so the background-removal node gets a clean cutout problem.
 
 The reference image conditions generation via **IPAdapter**, not a
 VAEEncode-based img2img denoise:
@@ -82,15 +84,21 @@ environment along with both model files, no install step needed.
 
 ## `.env` variables
 
-No new variables — `Settings.character_comfyui_workflow_path` already
-defaults to `data/workflows/comfyui_character_multi_angle_api.json`; this
-story just makes that path exist as a valid workflow.
+`Settings.character_comfyui_workflow_path` already defaults to
+`data/workflows/comfyui_character_multi_angle_api.json`. Character card
+generation now defaults to a portrait SDXL bucket:
+
+```bash
+YTFLOW_CHARACTER_IMAGE_WIDTH=832
+YTFLOW_CHARACTER_IMAGE_HEIGHT=1216
+```
 
 ## Direct ComfyUI validation procedure
 
 Same procedure as the layered-assets README, but a real reference image must
 be uploaded first (the workflow's `LoadImage` node has a placeholder filename
-that fails validation on its own):
+that fails validation on its own). Validate all four canonical angles and check
+that each returned PNG has an alpha channel with `yt_flow.domain.png.has_alpha`:
 
 ```bash
 python3 - <<'EOF'
