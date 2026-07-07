@@ -1260,6 +1260,7 @@ async def test_video_node_background_only_sound_design_enabled(monkeypatch, tmp_
     assert "[aout]" in args
     fc = args[args.index("-filter_complex") + 1]
     assert "subtitles=" in fc
+    assert "fontsdir='" in fc  # Story 5.18 AC:6 — bundled Pretendard, background-only sound-design branch too
     assert "zoompan" in fc
 
 

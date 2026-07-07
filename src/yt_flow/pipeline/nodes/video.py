@@ -380,6 +380,18 @@ def _card_font() -> str:
     return str(CARD_FONT_PATH)
 
 
+def _subtitle_fontsdir() -> Path:
+    """Resolve the bundled subtitle font directory. [Story 5.18 AC:6]
+
+    Fails fast if missing: a silently-absent fontsdir doesn't error in ffmpeg,
+    it just falls back to whatever system font libass finds — same repo-corruption
+    guard as _card_font().
+    """
+    if not SUBTITLE_FONT_DIR.is_dir():
+        raise RuntimeError(f"bundled subtitle font directory not found: {SUBTITLE_FONT_DIR}")
+    return SUBTITLE_FONT_DIR
+
+
 def _card_label(scene: SceneState) -> str:
     """Chapter-card title for the upcoming scene, falling back to "- N -"
     when the scenario stage hasn't produced one yet. [Story 5.1 AC:3] [Story 5.17 AC:8]"""
@@ -544,7 +556,7 @@ async def _compose_scene(
     spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
-    fontsdir = _escape_subtitles_path(SUBTITLE_FONT_DIR.resolve())
+    fontsdir = _escape_subtitles_path(_subtitle_fontsdir().resolve())
     mood = scene.get("mood")
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
     # so every chain below degrades to today's byte-for-byte ungraded output.
