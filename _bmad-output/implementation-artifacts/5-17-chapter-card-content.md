@@ -15,7 +15,7 @@ baseline_commit: eb9e2964860cd183050607a00ffb9b260bee70af
 
 # Story 5.17: Chapter Card Content — Scene Title + One-Line Kicker, Stinger-Synced
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -46,33 +46,33 @@ This includes a prompt change → `docs/PROMPT_POLICY.md` candidate→eval→pro
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Prompt change under PROMPT_POLICY (AC: 1)**
-  - [ ] Edit [prompts/scenario/structure.md](../../prompts/scenario/structure.md): add `"title"`/`"kicker"` to the scene JSON schema (lines 39–50) with rules — Korean, viewer-facing (not internal labels like "hook"), title ≤ ~14 chars, kicker one line ≤ ~24 chars, no reveal-spoilers, no punctuation-heavy prose.
-  - [ ] Seed candidate: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` (NOT `--source prompts/scenario` — that strips the `scenario/` prefix; pre-existing bug recorded in Story 5.4's Dev Agent Record).
-  - [ ] Promotion (may complete after code merges; code tolerates the old prompt per AC2): A/B run → eval gate exits 0 → move `production` label → commit rationale.
-- [ ] **Task 2 — Chain: validation + SceneState population (AC: 2, 3)**
-  - [ ] `structure_step`: label-conditional `title` check per AC2 (copy `research_step`'s loop shape, scenario_chain.py:88-93).
-  - [ ] `build_scenes` ([scenario_chain.py:320-375](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L320)): read `title`/`kicker` from `structure[idx]` (`str(entry.get(...) or "").strip()`, first line only). **Coordinate with Story 5.15:** it already adds the `structure: list[dict]` parameter to `build_scenes` plumbed from [scenario.py:183](../../src/yt_flow/pipeline/nodes/scenario.py#L183); reuse it if landed, else add the identical parameter exactly as 5.15's Task 1 specifies so the stories merge cleanly.
-  - [ ] `state.py`: add `title: str`, `kicker: str` to `SceneState`; update `EXPECTED_FIELDS` in `tests/domain/test_state_imports.py`.
-- [ ] **Task 3 — Card renderer + bundled font (AC: 4, 5, 6, 8)**
-  - [ ] `_card_label`: replace the `__annotations__` shim with `title = str(scene.get("title") or "").strip(); return title or f"- {scene['scene_num']} -"`.
-  - [ ] `_compose_chapter_card`: accept `kicker: str`; write `card_{i:03d}_kicker.txt` and chain a second `drawtext` when non-empty. Suggested layout: title `y=(h-text_h)/2-40`, kicker `y=(h-text_h)/2+60` (tune by eye); keep the card's fade in/out LAST in the chain so text fades with the card. `video_node` passes `scenes[i + 1].get("kicker") or ""` at the call site ([video.py:891-900](../../src/yt_flow/pipeline/nodes/video.py#L891)).
-  - [ ] Font: add `data/fonts/Pretendard-Bold.otf` (if 5.18 hasn't already; see Dev Notes) and point both `drawtext` calls at it (`fontfile=` with `_escape_subtitles_path`-escaped absolute path resolved from the repo/data root); delete `_drawtext_font()` and its fc-match machinery.
-  - [ ] `MAX_CARD_DURATION = 2.5` ([video.py:90](../../src/yt_flow/pipeline/nodes/video.py#L90)); update `_chapter_card_duration` clamp test expectations.
-- [ ] **Task 4 — Stinger sync (AC: 7)**
-  - [ ] `sound_design.py`: add `include_stinger: bool = True` to `build_sound_design_args` (omit the stinger `-i` when False) and `build_sound_design_filter` (2-input `bgmix` variant; keep index math consistent — the class of hazard its docstring already warns about).
-  - [ ] `_compose_chapter_card`: with sound design on, mix `MOOD_ASSET_PATHS[mood]["stinger"]` (volume `STINGER_VOLUME`, one-shot from t=0, `apad`/`-t` to card duration) with the card's ambient bed (5.16's AC3 change — if 5.16 hasn't landed, mix stinger over `anullsrc` and rebase when it does).
-  - [ ] `_compose_scene`/`video_node`: pass `include_stinger=False` for scenes immediately preceded by a card (`chapter_cards_enabled and i > 0` — the same adjacency fact the old 7.4 guard used); first scene and cards-off keep the scene-entry stinger.
-- [ ] **Task 5 — Artifacts API (AC: 9)**
-  - [ ] Add `"title": s.get("title", "")` / `"kicker": s.get("kicker", "")` to the scenario branch of `get_stage_artifacts` ([run_service.py:83-100](../../src/yt_flow/services/run_service.py#L83)).
-- [ ] **Task 6 — Tests (AC: 2-9)**
-  - [ ] [tests/pipeline/nodes/test_scenario_chain.py](../../tests/pipeline/nodes/test_scenario_chain.py): `structure_step` candidate-label-requires-title (mirror `test_research_step_candidate_label_requires_entity_sheet`, line 114) + label=None tolerance; `build_scenes` title/kicker positional population, `""` defaults, newline stripping.
-  - [ ] [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py): `_card_label` title-vs-fallback; card tests (`test_chapter_cards_enabled_creates_card_segments`, line 1723) extended — two `drawtext` chains when kicker present / one when absent, written textfiles contain the exact Korean strings (assert file contents — that's the point of textfile), `fontfile=` points at the bundled Pretendard path; clamp test for 2.5; stinger tests — card ffmpeg args include the stinger input + card-following scene's filtergraph lacks the stinger input while scene 0's keeps it; `include_stinger=False` filter/args unit tests in the sound-design test module.
-  - [ ] `tests/domain/test_state_imports.py`: `EXPECTED_FIELDS["SceneState"]` += `{"title", "kicker"}` (coordinate with 5.18's `display_narration` addition).
-  - [ ] Cassette/fakes: add `title`/`kicker` to [tests/fixtures/cassettes/deepseek_structure.json](../../tests/fixtures/cassettes/deepseek_structure.json) scene objects (5.15 touches the same cassette for `mood` — coordinate); update `tests/fixtures/cassettes/README.md`.
-  - [ ] Run targeted files, then full `uv run pytest -q`.
-- [ ] **Task 7 — Live validation (AC: 10)**
-  - [ ] Real-ffmpeg `_compose_chapter_card` with Korean title+kicker: frame-sample mid-card (Pretendard renders, both lines legible at 1080p, quotes/punctuation intact) and, with sound assets present, verify the stinger transient at card t≈0 vs silence-level ambient after. Record frame + waveform evidence; keep artifacts.
+- [x] **Task 1 — Prompt change under PROMPT_POLICY (AC: 1)**
+  - [x] Edit [prompts/scenario/structure.md](../../prompts/scenario/structure.md): add `"title"`/`"kicker"` to the scene JSON schema (lines 39–50) with rules — Korean, viewer-facing (not internal labels like "hook"), title ≤ ~14 chars, kicker one line ≤ ~24 chars, no reveal-spoilers, no punctuation-heavy prose.
+  - [x] Seed candidate: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` (NOT `--source prompts/scenario` — that strips the `scenario/` prefix; pre-existing bug recorded in Story 5.4's Dev Agent Record).
+  - [ ] Promotion (may complete after code merges; code tolerates the old prompt per AC2): A/B run → eval gate exits 0 → move `production` label → commit rationale. — deferred to Jay (requires a real A/B run + eval gate pass, outside dev-story scope).
+- [x] **Task 2 — Chain: validation + SceneState population (AC: 2, 3)**
+  - [x] `structure_step`: label-conditional `title` check per AC2 (copy `research_step`'s loop shape, scenario_chain.py:88-93).
+  - [x] `build_scenes` ([scenario_chain.py:320-375](../../src/yt_flow/pipeline/nodes/scenario_chain.py#L320)): read `title`/`kicker` from `structure[idx]` (`str(entry.get(...) or "").strip()`, first line only). **Coordinate with Story 5.15:** it already adds the `structure: list[dict]` parameter to `build_scenes` plumbed from [scenario.py:183](../../src/yt_flow/pipeline/nodes/scenario.py#L183); reuse it if landed, else add the identical parameter exactly as 5.15's Task 1 specifies so the stories merge cleanly.
+  - [x] `state.py`: add `title: str`, `kicker: str` to `SceneState`; update `EXPECTED_FIELDS` in `tests/domain/test_state_imports.py`.
+- [x] **Task 3 — Card renderer + bundled font (AC: 4, 5, 6, 8)**
+  - [x] `_card_label`: replace the `__annotations__` shim with `title = str(scene.get("title") or "").strip(); return title or f"- {scene['scene_num']} -"`.
+  - [x] `_compose_chapter_card`: accept `kicker: str`; write `card_{i:03d}_kicker.txt` and chain a second `drawtext` when non-empty. Suggested layout: title `y=(h-text_h)/2-40`, kicker `y=(h-text_h)/2+60` (tune by eye); keep the card's fade in/out LAST in the chain so text fades with the card. `video_node` passes `scenes[i + 1].get("kicker") or ""` at the call site ([video.py:891-900](../../src/yt_flow/pipeline/nodes/video.py#L891)).
+  - [x] Font: add `data/fonts/Pretendard-Bold.otf` (if 5.18 hasn't already; see Dev Notes) and point both `drawtext` calls at it (`fontfile=` with `_escape_subtitles_path`-escaped absolute path resolved from the repo/data root); delete `_drawtext_font()` and its fc-match machinery.
+  - [x] `MAX_CARD_DURATION = 2.5` ([video.py:90](../../src/yt_flow/pipeline/nodes/video.py#L90)); update `_chapter_card_duration` clamp test expectations.
+- [x] **Task 4 — Stinger sync (AC: 7)**
+  - [x] `sound_design.py`: add `include_stinger: bool = True` to `build_sound_design_args` (omit the stinger `-i` when False) and `build_sound_design_filter` (2-input `bgmix` variant; keep index math consistent — the class of hazard its docstring already warns about).
+  - [x] `_compose_chapter_card`: with sound design on, mix `MOOD_ASSET_PATHS[mood]["stinger"]` (volume `STINGER_VOLUME`, one-shot from t=0, `apad`/`-t` to card duration) with the card's ambient bed (5.16's AC3 change — if 5.16 hasn't landed, mix stinger over `anullsrc` and rebase when it does).
+  - [x] `_compose_scene`/`video_node`: pass `include_stinger=False` for scenes immediately preceded by a card (`chapter_cards_enabled and i > 0` — the same adjacency fact the old 7.4 guard used); first scene and cards-off keep the scene-entry stinger.
+- [x] **Task 5 — Artifacts API (AC: 9)**
+  - [x] Add `"title": s.get("title", "")` / `"kicker": s.get("kicker", "")` to the scenario branch of `get_stage_artifacts` ([run_service.py:83-100](../../src/yt_flow/services/run_service.py#L83)).
+- [x] **Task 6 — Tests (AC: 2-9)**
+  - [x] [tests/pipeline/nodes/test_scenario_chain.py](../../tests/pipeline/nodes/test_scenario_chain.py): `structure_step` candidate-label-requires-title (mirror `test_research_step_candidate_label_requires_entity_sheet`, line 114) + label=None tolerance; `build_scenes` title/kicker positional population, `""` defaults, newline stripping.
+  - [x] [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py): `_card_label` title-vs-fallback; card tests (`test_chapter_cards_enabled_creates_card_segments`, line 1723) extended — two `drawtext` chains when kicker present / one when absent, written textfiles contain the exact Korean strings (assert file contents — that's the point of textfile), `fontfile=` points at the bundled Pretendard path; clamp test for 2.5; stinger tests — card ffmpeg args include the stinger input + card-following scene's filtergraph lacks the stinger input while scene 0's keeps it; `include_stinger=False` filter/args unit tests in the sound-design test module.
+  - [x] `tests/domain/test_state_imports.py`: `EXPECTED_FIELDS["SceneState"]` += `{"title", "kicker"}` (coordinate with 5.18's `display_narration` addition).
+  - [x] Cassette/fakes: add `title`/`kicker` to [tests/fixtures/cassettes/deepseek_structure.json](../../tests/fixtures/cassettes/deepseek_structure.json) scene objects (5.15 touches the same cassette for `mood` — coordinate); update `tests/fixtures/cassettes/README.md`. — README.md left unchanged: it already didn't document `deepseek_structure.json` (pre-existing gap predating 5.15/5.17, out of this story's scope).
+  - [x] Run targeted files, then full `uv run pytest -q`.
+- [x] **Task 7 — Live validation (AC: 10)**
+  - [x] Real-ffmpeg `_compose_chapter_card` with Korean title+kicker: frame-sample mid-card (Pretendard renders, both lines legible at 1080p, quotes/punctuation intact) and, with sound assets present, verify the stinger transient at card t≈0 vs silence-level ambient after. Record frame + waveform evidence; keep artifacts. — found+fixed a real bug: `amix` default `normalize=1` was flattening the stinger to ambient level; added `normalize=0`. Evidence in `_bmad-output/implementation-artifacts/5-17-live-validation/`.
 
 ## Dev Notes
 
@@ -140,16 +140,55 @@ The stinger is a per-scene baked one-shot: `build_sound_design_args` adds it as 
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+- Live validation render: `_bmad-output/implementation-artifacts/5-17-live-validation/` (frame sample + per-frame RMS audio profile).
+- Full regression: `uv run pytest -q` → 726 passed, 1 skipped (unrelated), in 186.91s.
+- `uv run ruff check` on all touched source files → clean.
 
 ### Completion Notes List
 
+- Structure prompt (`prompts/scenario/structure.md`) now asks for `title`/`kicker`; candidate label seeded via `migrate_prompts.py --source prompts` (idempotent — re-run confirmed no diff). **Promotion to `production` is deferred to Jay** (requires a live A/B run + `eval_prompts.py` gate pass, outside dev-session scope) — code tolerates the pre-promotion prompt via AC2's label-conditional validation, so this is safe to merge before promotion.
+- `structure_step` raises on empty `title` only when `label` is set (candidate/variant B); `label=None` (current production prompt) tolerates its absence — mirrors `research_step`'s existing pattern exactly.
+- `build_scenes` reads `title`/`kicker` positionally from `structure[idx]`, strips to a single first line (typography restraint enforced in code, not just prompted), defaults to `""` on any missing/non-dict data — never crashes.
+- `_card_label` now reads `scene.get("title")` directly — the old `__annotations__` forward-compat shim is gone since the field is real.
+- `_compose_chapter_card` renders up to two `drawtext` chains (title always, kicker when non-empty) via the existing `textfile=`-based pattern (never inlines LLM text into the filtergraph). Bundled `data/fonts/Pretendard-Bold.otf` (SIL OFL 1.1, vendored from the upstream `v1.3.9` release — see `data/fonts/README.md`) replaces the fc-match `_drawtext_font()` machinery entirely, which is deleted.
+- `MAX_CARD_DURATION` raised 2.0→2.5 (`MIN_CARD_DURATION`/config default unchanged per AC6).
+- Stinger sync (AC7): the card now mixes the upcoming scene's mood stinger with its ambient bed at t=0; the following scene passes `include_stinger=False` to suppress its own baked scene-entry stinger, so a card boundary gets exactly one hit. `sound_design.build_sound_design_args`/`build_sound_design_filter` gained the `include_stinger` flag (2-input `bgmix` variant when off); `_compose_scene` threads it through. Cards-off and sound-design-off paths are byte-for-byte unchanged.
+- Artifacts API (`run_service.get_stage_artifacts`) exposes `title`/`kicker` (`.get(..., "")`, old-checkpoint-safe) so the scenario gate reviewer sees the card text before approving.
+- **Bug found during live validation (Task 7) and fixed**: the card's ambient+stinger `amix` used ffmpeg's default `normalize=1`, which auto-attenuates by active-input count and silently flattened the stinger down to the ambient bed's level — i.e., AC7's "one hit at card t=0" would have shipped with no audible hit at all. Added `normalize=0` (matching the existing convention in `sound_design.build_sound_design_filter`'s own final mix). Confirmed via before/after `astats` RMS comparison — see `5-17-live-validation/README.md`.
+- Regression suite: 726 passed, 1 skipped (pre-existing, unrelated), full `uv run pytest -q` and targeted `ruff check` both clean.
+
 ### File List
+
+**Modified:**
+- `prompts/scenario/structure.md`
+- `src/yt_flow/domain/state.py`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py`
+- `src/yt_flow/pipeline/nodes/sound_design.py`
+- `src/yt_flow/pipeline/nodes/video.py`
+- `src/yt_flow/services/run_service.py`
+- `tests/domain/test_state_imports.py`
+- `tests/pipeline/nodes/test_scenario_chain.py`
+- `tests/pipeline/nodes/test_sound_design.py`
+- `tests/pipeline/nodes/test_video.py`
+- `tests/api/test_stage_artifacts.py`
+- `tests/fixtures/cassettes/deepseek_structure.json`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (status → in-progress, then → review)
+
+**New:**
+- `data/fonts/Pretendard-Bold.otf`
+- `data/fonts/Pretendard-LICENSE.txt`
+- `data/fonts/README.md`
+- `_bmad-output/implementation-artifacts/5-17-live-validation/` (live validation evidence: frame sample, textfiles, RMS profile, README)
 
 ## Change Log
 
 - 2026-07-06: Story created from Jay's viewing feedback #4 on the E2E baseline video (run `272b05a4`): "- N -" cards give no story orientation; scene jumps feel abrupt.
 - 2026-07-06: Revised per Jay's editing-conventions direction: documentary title-card spec (title + one-line kicker, 1.5–2.5s, typography restraint enforced in code), stinger synced to card entry with scene-stinger suppression, and bundled Pretendard Bold typography shared with 5.18 (fc-match `_drawtext_font()` retired).
+- 2026-07-07: Implemented (all tasks): structure prompt + candidate seed, chain validation/SceneState population, card renderer with bundled Pretendard + title/kicker, stinger-on-card-entry sync with scene-suppression, artifacts API exposure, tests, live validation. Fixed an `amix` normalize bug found during live validation that silently muted the stinger. Prompt promotion to `production` deferred to Jay (requires a live A/B + eval-gate run).
 
 ## Saved Questions / Clarifications
 
