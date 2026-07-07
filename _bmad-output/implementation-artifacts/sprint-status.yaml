@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-07  # Story 5.15 코드리뷰 완료 → done
+# last_updated: 2026-07-07  # Story 5.16 코드리뷰 완료 → done
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-07  # pose dimension added to epic-8 (8-1..8-3 amended, 8-4 created ready-for-dev)
+last_updated: 2026-07-07  # Story 5.16 코드리뷰 완료 → done
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -113,7 +113,7 @@ development_status:
   5-13-character-vision-provider-swap: done  # DeepSeek 계정에 비전 모델이 없다는 5.12 발견을 해결: Qwen-VL(DashScope, qwen-vl-plus)로 프로바이더 교체. config.py에 character_vision_model/character_vision_api_key 신설, character_service.py의 HTTP 타겟만 교체(메시지 구성/예외 처리 무변경). 라이브 검증 완료(SCP-682 실제 참조 이미지로 실제 디스크립터 수신 — 5.12가 못 닫은 AC2 갭 해소). 코드 리뷰(5-12와 공동, bmad-code-review) 완료 — findings 2건 이 스토리 귀속 수정(AttributeError 미포착 추가, 엔드포인트/모델 회귀 테스트 추가). 회귀 스위트 그린(628 passed, 기존 skip 1건 유지)
   5-14-pipeline-resilience-shot-resume: done  # E2E 베이스라인 D6/D8 — image_node 샷 단위 재개(sidecar 센티널: bg+char>1KB+프롬프트일치 시 스킵) + ComfyUI check_health(lazy)/POST 연결 bounded retry(3회×2s, TransportError만) 구현. tests/conftest.py stub_profile 픽스처에 check_health fake 누락 회귀 발견+수정(5-15 세션이 "동시진행중 5-14 소관"으로 관찰했던 그 1건 실패가 이것). 코드리뷰(3-레이어) 완료: 패치 6건 수정(sidecar non-dict/TOCTOU 크래시, layered img_dest 사이즈 미검증, 클라이언트 코멘트 오기, AC3/health-check-dedup 테스트 누락), 보류 2건, 노이즈 6건 드롭. 회귀 스위트 639 passed/1 skipped/1 failed(baseline에도 동일 재현되는 무관 기존 실패, git stash로 확인). 라이브 kill/restart 드릴 + run.sh 와치독 적용은 인프라 밖 작업이라 Jay에게 위임. done.
   5-15-mood-wiring-fix: done  # E2E 베이스라인 D1/D2 (major) 수정: build_scenes가 structure에서 positional로 mood를 읽어 resolve_mood+WARNING으로 정규화(기존 writing 자유형 mood 무시), 아티팩트 API에 mood 노출; Task4(프롬프트 정리, AC7)는 권장대로 스킵. 코드리뷰(2026-07-07) 완료: patch 2건 적용(mood 대소문자/공백 정규화, structure 배선 검증 노드 테스트 추가), 12건 기각. 5-14 WIP 격리 재검증 690 passed/1 skip/0 fail, ruff clean
-  5-16-transition-boundary-integrity: ready-for-dev  # Jay 시청 피드백 #2 — xfade 오버랩이 이미지·음성 꼬리 소비, 페이드아웃→검은 홀드→페이드인 + 오디오 무겹침으로 교체; 7-4와 조정 필요
+  5-16-transition-boundary-integrity: done  # Jay 시청 피드백 #2 — xfade 오버랩이 이미지·음성 꼬리 소비, 페이드아웃→검은 홀드→페이드인 + 오디오 무겹침으로 교체 완료(_join_with_fades, 7-4 MOOD_XFADE_MAP 전량 폐기, 카드/홀드 앰비언트 베드). eb522cf9 세그먼트로 라이브 검증(길이식/블랙딥 순도/무침묵 확인). 코드리뷰(3-레이어) 완료: patch 3건 적용(짧은 씬 페이드 윈도우 겹침 클램프, 카드/홀드 ffmpeg -map 명시, 블랙홀드 캐시 원자적 쓰기), 7건 기각(오탐/스펙 의도). 705 passed/1 skip, ruff clean
   5-17-chapter-card-content: ready-for-dev  # Jay 시청 피드백 #4 — 카드에 씬 제목+상황 한 줄 (structure가 title 산출), 5-16 직후 착수
   5-18-subtitle-display-text-dual-track: ready-for-dev  # Jay 시청 피드백 #3 — 자막은 원문(SCP-049), TTS는 정규화문(5-4 결정 번복); 가라오케(7-5) 은퇴 + Pretendard 타이포 업그레이드
   5-19-ddg-image-search-fallback-repair: backlog  # 2026-07-07 라이브 실측 — 403 원인은 구식 vqd 획득(홈페이지→쿼리 페이지로 변경)+Referer 누락; 소형 수정, 위키 우선 폴백 지위 불변

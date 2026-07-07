@@ -13,7 +13,7 @@ baseline_commit: eb9e2964860cd183050607a00ffb9b260bee70af
 
 # Story 5.16: Transition Boundary Integrity — Audio-Bridged Dip-to-Black, No Overlap
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -46,29 +46,29 @@ The replacement grammar, in convention terms:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Rebuild the join as fade + concat (AC: 1, 2, 6)**
-  - [ ] Read `_join_with_xfade` fully first ([video.py:715-802](../../src/yt_flow/pipeline/nodes/video.py#L715)) — its docstring documents exactly what is being deleted.
-  - [ ] Replace with a concat-based join (suggested `_join_with_fades`). Suggested signature: `segments: list[tuple[Path, float, float, float]]` = (path, duration, fade_in_sec, fade_out_sec), fades precomputed by `video_node` (0.0 for cards and holds, which self-fade or are already black; 0.0 fade-in for the first segment and 0.0 fade-out for the last, matching today's no-fade head/tail).
-  - [ ] Per-input filter: `[i:v]fade=t=in:st=0:d={fi},fade=t=out:st={dur-fo:.3f}:d={fo}[vN]` (skip zero fades; clamp fade duration to segment duration defensively); then one `concat=n={n}:v=1:a=1[vout][aout]`. Audio passes through untouched — no gain, no overlap.
-  - [ ] Add `BLACK_HOLD_DURATION = 0.3  # seconds — dip-to-black hold at card-less act breaks` beside the fade constants; a constant, not a `Settings` field (Ponytail: add a knob only when a run needs a different hold).
-  - [ ] Delete: `running_offset` accumulator + offset formula, `assert offset >= 0` ([video.py:768-772](../../src/yt_flow/pipeline/nodes/video.py#L768)), `adelay`/`amix` graph ([video.py:773-780](../../src/yt_flow/pipeline/nodes/video.py#L773)), and the `≥ 2×XFADE_DURATION` min-scene-length ponytail comment ([video.py:742-747](../../src/yt_flow/pipeline/nodes/video.py#L742)) — concat has no minimum-duration constraint.
-- [ ] **Task 2 — Retire 7.4's type map + rewire video_node (AC: 4, 5)**
-  - [ ] Apply the AC4 deletion list. Rename `XFADE_DURATION` → `FADE_DURATION = 0.5`; keep `XFADE_TRANSITION` deleted or repurpose its comment block to document the dip grammar.
-  - [ ] Remove `transition_variety_enabled` from `Settings` ([config.py:97](../../src/yt_flow/config.py#L97)) and from the `_settings_ns` test helper ([tests/pipeline/nodes/test_video.py:42](../../tests/pipeline/nodes/test_video.py#L42)).
-  - [ ] Rewire `video_node`'s `join_segments` construction ([video.py:883-901](../../src/yt_flow/pipeline/nodes/video.py#L883)): scenes get `FADE_DURATION` in/out fades (edges excepted); cards get 0.0 join-fades; insert a black-hold segment (0.0 fades) between two scenes only when no card was inserted there.
-- [ ] **Task 3 — Ambient bed on cards/holds (AC: 3)**
-  - [ ] `_compose_chapter_card` ([video.py:666-712](../../src/yt_flow/pipeline/nodes/video.py#L666)): when `sound_design_enabled`, replace the `anullsrc` input with the upcoming mood's ambient asset (`MOOD_ASSET_PATHS[resolve_mood(mood)]["ambient"]`, `-stream_loop -1`, `volume=AMBIENT_VOLUME`, `-t duration`); the `mood` parameter already exists (7.2 grading). Validate via the existing `validate_mood_assets` fail-fast path ([video.py:511-512](../../src/yt_flow/pipeline/nodes/video.py#L511)). `sound_design_enabled=false` → `anullsrc` unchanged.
-  - [ ] Black-hold segment: render once per run (black `color` source + the same ambient-or-anullsrc audio recipe, no drawtext, no self-fades — it sits between two faded-to-black frames); reuse the file at every card-less boundary. Use the *incoming* scene's mood for its ambient when moods differ (the hold announces the next act — same rule cards already use for their grade, [video.py:893-898](../../src/yt_flow/pipeline/nodes/video.py#L893)); note holds only exist when cards are off, and each boundary needs its own hold file only if moods differ — render per-boundary when `sound_design_enabled`, else one shared silent file (keep it simple).
-- [ ] **Task 4 — Tests (AC: 1-7)** — all in [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py); reuse the `async _capture` monkeypatch of `video._run_ffmpeg` grabbing `-filter_complex` (pattern at test_video.py:314+).
-  - [ ] Replace the xfade-era join tests — `test_xfade_offset_math_3_scenes` (314), `test_xfade_video_crossfades_audio_does_not` (344), `test_xfade_audio_delay_matches_video_offset_3_scenes` (376), `test_xfade_uses_fadeblack_transition` (405), `test_xfade_offset_negative_raises` (438) — with: filtergraph has `concat=n=..:v=1:a=1`, per-input `fade=t=out`/`fade=t=in` at correct `st` values, NO `xfade=`/`acrossfade`/`adelay`/`amix` tokens.
-  - [ ] Delete 7.4's type-map tests — `test_resolve_transition_maps_each_mood` (463), `test_resolve_transition_unknown_falls_back_to_dread` (470), `test_join_with_xfade_per_boundary_transition` (475), `test_video_node_mood_varied_scene_transition` (1804), `test_video_node_multiple_mood_boundaries_each_independent` (1830), `test_video_node_card_adjacency_uses_mood_transition` (1857) — replaced by constant-fade assertions (AC4's "replaced per Task 4").
-  - [ ] New: black-hold insertion — cards off → exactly (n−1) hold inputs; cards on → zero hold inputs (AC5); card/hold audio input is the mood ambient asset when `sound_design_enabled` and `anullsrc` when not (AC3); cards keep their internal `fade=t=in/out` while receiving zero join-fades.
-  - [ ] Update the live-ffmpeg `test_xfade_join_integration` (1472): expected duration = Σdur + holds × `BLACK_HOLD_DURATION` (no overlap subtraction); assert `v:0`/`a:0` stream durations independently (5.9 pattern).
-  - [ ] Update `test_trace_receives_transition_metadata` (824), card tests `test_chapter_cards_enabled_creates_card_segments` (1723) / `test_chapter_cards_disabled_no_card_render` (1775), and the `Settings` default test for the removed flag.
-  - [ ] Run `uv run pytest tests/pipeline/nodes/test_video.py -q`, then full `uv run pytest -q` (config-flag removal can ripple — grep `transition_variety` across the repo).
-- [ ] **Task 5 — Live validation (AC: 8)**
-  - [ ] Reuse real rendered segments from a prior production run (5.9 used `seg_001-003.mp4` from run `eb522cf9`; run `272b05a4` segments exist under `workspace/`) and run the new join + a real card/hold render with real ffmpeg.
-  - [ ] Verify: ffprobe durations (both streams) = Σdur + holds; dip frames pure black; RMS waveform shows full-level narration to the boundary, then the ambient bed level (not −∞ silence) through the dip, then the next scene's stinger+narration. Record figures and keep the output file.
+- [x] **Task 1 — Rebuild the join as fade + concat (AC: 1, 2, 6)**
+  - [x] Read `_join_with_xfade` fully first ([video.py:715-802](../../src/yt_flow/pipeline/nodes/video.py#L715)) — its docstring documents exactly what is being deleted.
+  - [x] Replace with a concat-based join (suggested `_join_with_fades`). Suggested signature: `segments: list[tuple[Path, float, float, float]]` = (path, duration, fade_in_sec, fade_out_sec), fades precomputed by `video_node` (0.0 for cards and holds, which self-fade or are already black; 0.0 fade-in for the first segment and 0.0 fade-out for the last, matching today's no-fade head/tail).
+  - [x] Per-input filter: `[i:v]fade=t=in:st=0:d={fi},fade=t=out:st={dur-fo:.3f}:d={fo}[vN]` (skip zero fades; clamp fade duration to segment duration defensively); then one `concat=n={n}:v=1:a=1[vout][aout]`. Audio passes through untouched — no gain, no overlap.
+  - [x] Add `BLACK_HOLD_DURATION = 0.3  # seconds — dip-to-black hold at card-less act breaks` beside the fade constants; a constant, not a `Settings` field (Ponytail: add a knob only when a run needs a different hold).
+  - [x] Delete: `running_offset` accumulator + offset formula, `assert offset >= 0` ([video.py:768-772](../../src/yt_flow/pipeline/nodes/video.py#L768)), `adelay`/`amix` graph ([video.py:773-780](../../src/yt_flow/pipeline/nodes/video.py#L773)), and the `≥ 2×XFADE_DURATION` min-scene-length ponytail comment ([video.py:742-747](../../src/yt_flow/pipeline/nodes/video.py#L742)) — concat has no minimum-duration constraint.
+- [x] **Task 2 — Retire 7.4's type map + rewire video_node (AC: 4, 5)**
+  - [x] Apply the AC4 deletion list. Rename `XFADE_DURATION` → `FADE_DURATION = 0.5`; keep `XFADE_TRANSITION` deleted or repurpose its comment block to document the dip grammar.
+  - [x] Remove `transition_variety_enabled` from `Settings` ([config.py:97](../../src/yt_flow/config.py#L97)) and from the `_settings_ns` test helper ([tests/pipeline/nodes/test_video.py:42](../../tests/pipeline/nodes/test_video.py#L42)).
+  - [x] Rewire `video_node`'s `join_segments` construction ([video.py:883-901](../../src/yt_flow/pipeline/nodes/video.py#L883)): scenes get `FADE_DURATION` in/out fades (edges excepted); cards get 0.0 join-fades; insert a black-hold segment (0.0 fades) between two scenes only when no card was inserted there.
+- [x] **Task 3 — Ambient bed on cards/holds (AC: 3)**
+  - [x] `_compose_chapter_card` ([video.py:666-712](../../src/yt_flow/pipeline/nodes/video.py#L666)): when `sound_design_enabled`, replace the `anullsrc` input with the upcoming mood's ambient asset (`MOOD_ASSET_PATHS[resolve_mood(mood)]["ambient"]`, `-stream_loop -1`, `volume=AMBIENT_VOLUME`, `-t duration`); the `mood` parameter already exists (7.2 grading). Validate via the existing `validate_mood_assets` fail-fast path ([video.py:511-512](../../src/yt_flow/pipeline/nodes/video.py#L511)). `sound_design_enabled=false` → `anullsrc` unchanged.
+  - [x] Black-hold segment: render once per run (black `color` source + the same ambient-or-anullsrc audio recipe, no drawtext, no self-fades — it sits between two faded-to-black frames); reuse the file at every card-less boundary. Use the *incoming* scene's mood for its ambient when moods differ (the hold announces the next act — same rule cards already use for their grade, [video.py:893-898](../../src/yt_flow/pipeline/nodes/video.py#L893)); note holds only exist when cards are off, and each boundary needs its own hold file only if moods differ — render per-boundary when `sound_design_enabled`, else one shared silent file (keep it simple).
+- [x] **Task 4 — Tests (AC: 1-7)** — all in [tests/pipeline/nodes/test_video.py](../../tests/pipeline/nodes/test_video.py); reuse the `async _capture` monkeypatch of `video._run_ffmpeg` grabbing `-filter_complex` (pattern at test_video.py:314+).
+  - [x] Replace the xfade-era join tests — `test_xfade_offset_math_3_scenes` (314), `test_xfade_video_crossfades_audio_does_not` (344), `test_xfade_audio_delay_matches_video_offset_3_scenes` (376), `test_xfade_uses_fadeblack_transition` (405), `test_xfade_offset_negative_raises` (438) — with: filtergraph has `concat=n=..:v=1:a=1`, per-input `fade=t=out`/`fade=t=in` at correct `st` values, NO `xfade=`/`acrossfade`/`adelay`/`amix` tokens.
+  - [x] Delete 7.4's type-map tests — `test_resolve_transition_maps_each_mood` (463), `test_resolve_transition_unknown_falls_back_to_dread` (470), `test_join_with_xfade_per_boundary_transition` (475), `test_video_node_mood_varied_scene_transition` (1804), `test_video_node_multiple_mood_boundaries_each_independent` (1830), `test_video_node_card_adjacency_uses_mood_transition` (1857) — replaced by constant-fade assertions (AC4's "replaced per Task 4"). Also deleted `test_video_node_transition_variety_disabled_all_fadeblack` and `test_config_transition_variety_enabled_default_true` (same dead-flag family, not individually named in the draft but covering the same retired surface).
+  - [x] New: black-hold insertion — cards off → exactly (n−1) hold inputs; cards on → zero hold inputs (AC5); card/hold audio input is the mood ambient asset when `sound_design_enabled` and `anullsrc` when not (AC3); cards keep their internal `fade=t=in/out` while receiving zero join-fades.
+  - [x] Update the live-ffmpeg `test_xfade_join_integration` (1472) → renamed `test_join_with_fades_integration`: expected duration = Σdur + holds × `BLACK_HOLD_DURATION` (no overlap subtraction); assert `v:0`/`a:0` stream durations independently (5.9 pattern).
+  - [x] Update `test_trace_receives_transition_metadata` (824) — added `test_record_trace_reports_dip_to_black_grammar` calling the real `_record_trace` (the autouse `_silent_trace` fixture stubs it in every other test) to assert `transition`/`fade_duration`/`black_hold_sec`; card tests `test_chapter_cards_enabled_creates_card_segments` (1723) / `test_chapter_cards_disabled_no_card_render` (1775) updated for concat tokens and hold insertion; the `Settings` default test for the removed flag deleted.
+  - [x] Run `uv run pytest tests/pipeline/nodes/test_video.py -q`, then full `uv run pytest -q` (config-flag removal can ripple — grep `transition_variety` across the repo). Both green; `ruff check` clean.
+- [x] **Task 5 — Live validation (AC: 8)**
+  - [x] Reused real rendered segments from prior production run `eb522cf9` (`seg_001.mp4` 17.600s, `seg_002.mp4` 23.120s) and ran the new join + a real black-hold render (dread ambient bed, `sound_design_enabled=True`) with real ffmpeg.
+  - [x] Verified: ffprobe durations — expected 41.020s, actual video 41.040s / audio 41.049s (within 5.9's documented AAC-rounding tolerance); dip frame sampled at the hold midpoint is flat `YAVG=16.0` (limited-range black, no blended imagery) with a visible monotonic fade ramp on both sides (27.6→16.0→18.9); windowed RMS (`astats`, 0.1s windows) across the boundary never drops toward digital silence (stays in the −20 to −30 dB band through the dip, consistent with the ambient bed at `AMBIENT_VOLUME`, not `-inf`). Output artifacts kept on disk at `_bmad-output/implementation-artifacts/5-16-live-validation/` (`joined.mp4`, `hold_001.mp4`, `dip_frame.png`) — not committed to git (binary media, no repo precedent for committing prior live-validation artifacts; `_bmad-output/` is not gitignored so the files remain available locally for review).
 
 ## Dev Notes
 
@@ -131,16 +131,46 @@ The outgoing scene's fade-out overlaps the last ~0.5s of *its own* narration (th
 
 ### Agent Model Used
 
+claude-sonnet-5
+
 ### Debug Log References
+
+- Test env has real `ffmpeg`/`ffprobe`/`fc-match` installed; full unmocked suite run takes ~3 minutes (704 passed, 1 skipped) — not a regression, just the live-ffmpeg integration tests running for real.
+- Live validation script: `/tmp` scratch (not committed) reusing `_compose_black_hold` + `_join_with_fades` directly against `workspace/eb522cf9-.../seg_001.mp4`/`seg_002.mp4`.
 
 ### Completion Notes List
 
+- Replaced `_join_with_xfade` (offset accounting + `adelay`/`amix`) with `_join_with_fades` (per-segment in-place `fade=t=in`/`fade=t=out` + `concat`). Net LOC went down as predicted by the story's Ponytail note.
+- Retired 7.4 outright: `MOOD_XFADE_MAP`, `resolve_transition`, the mood-key-set assert, `XFADE_TRANSITION`, `transition_variety_enabled` (Settings + test helper), and the per-boundary mood-transition wiring in `video_node`. `FADE_DURATION = 0.5` replaces `XFADE_DURATION` as the (now constant, no variety axis) fade length.
+- Added `_compose_black_hold` (new) for card-less boundaries and extended `_compose_chapter_card` with a `sound_design_enabled` param — both share a `_card_hold_audio_input` helper that swaps `anullsrc` for the upcoming scene's looped mood-ambient bed at `AMBIENT_VOLUME`, matching AC3.
+- `video_node`'s join-segment construction now computes per-segment `(fade_in, fade_out)` (0.0 at the overall head/tail, `FADE_DURATION` at every internal scene edge, 0.0 for cards/holds) and inserts a black hold only at boundaries with no card (AC5).
+- Trace metadata (`_record_trace`) now reports `transition: "dip-to-black"`, `fade_duration`, `black_hold_sec` instead of the retired xfade fields (AC7).
+- Test suite: rewrote the join-math tests around `_join_with_fades` (concat tokens, per-segment fade points, zero-fade skip, defensive clamp), deleted the entire 7.4 type-map test family (6 tests) plus the now-dead `transition_variety_enabled` variety/disabled tests and its `Settings` default test, added a black-hold insertion test family (cards-off count, cards-on zero, ambient-vs-anullsrc for both card and hold, zero join-fades on card/hold), and updated the live-ffmpeg integration test to the new no-overlap duration formula. One correction during the review: `test_record_trace_reports_dip_to_black_grammar` initially failed because the file's autouse `_silent_trace` fixture stubs `_record_trace` in every test — fixed by capturing the real function object (`_REAL_RECORD_TRACE`) at import time, before the fixture patches it.
+- Live validation (AC8, Task 5): see the Task 5 checklist above for the ffprobe/frame/RMS results. Duration, black-dip purity, and no-silence-through-the-dip all confirmed against real segments from run `eb522cf9`.
+- `chapter_card_count` in trace metadata is unchanged in meaning; no `black_hold_count` field was added (not required by any AC — Ponytail YAGNI).
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/video.py` — modified (join rewrite, 7.4 retirement, card/hold ambient bed, trace metadata)
+- `src/yt_flow/config.py` — modified (removed `transition_variety_enabled`)
+- `tests/pipeline/nodes/test_video.py` — modified (join/transition-variety test rewrite, new black-hold tests, trace metadata test)
 
 ## Change Log
 
 - 2026-07-06: Story created from Jay's viewing feedback #2 on the E2E baseline video (run `272b05a4`): pre-transition image and narration cut off at scene boundaries. Root cause pre-confirmed in code (overlap-consuming xfade offsets shared by video and 5.9's audio graph).
 - 2026-07-06: Revised per Jay's editing-conventions direction: audio bridging (bed carries the boundary via card/hold ambient), dip-to-black reserved for act breaks (hold 0.3s, card is the dip), MOOD_XFADE_MAP retired outright (earlier fade-duration-variety proposal dropped), `transition_variety_enabled` flag deleted.
+- 2026-07-07: Implemented — dip-to-black fade+concat join, 7.4 retirement, card/hold ambient bed, trace metadata, full test rewrite (704 passed/1 skipped, ruff clean), live validation against real `eb522cf9` segments. Status → review.
+- 2026-07-07: Reviewed (`bmad-code-review`) — 3 patch findings fixed (short-scene fade overlap clamp, explicit `-map` on card/hold ffmpeg calls, atomic write for the black-hold cache), 7 dismissed as false positives/spec-intentional. Full suite re-verified (705 passed/1 skipped, ruff clean). Status → done.
+
+## Review Findings
+
+Reviewed via `bmad-code-review` (2026-07-07): Blind Hunter + Edge Case Hunter + Acceptance Auditor, run in parallel against the uncommitted `video.py`/`config.py`/`test_video.py` diff. Acceptance Auditor confirmed all 8 ACs satisfied, including a repo-wide grep confirming zero remaining references to the AC4 deletion list (`MOOD_XFADE_MAP`, `resolve_transition`, `XFADE_TRANSITION`, `XFADE_DURATION`, `transition_variety_enabled`, `wipeleft`, `fadewhite`). 3 real gaps survived triage; 7 other raised findings were dismissed as false positives or spec-intentional behavior (already-covered validation, structurally-guaranteed dict sync, explicitly-deferred audio de-click, spec-mandated `AMBIENT_VOLUME` reuse, spec-intentional card/hold duration difference, a docstring misread).
+
+- [x] [Review][Patch] Short-scene fade windows could overlap on one segment [video.py:791-798] — `fade_out` was clamped only against `dur`, not against `dur - fade_in`; a scene shorter than `FADE_DURATION×2` (1.0s) got overlapping fade-in/fade-out windows on its own frames (cosmetic over-darkening, not a cross-scene blend — AC1's actual guarantee held regardless). Fixed: clamp `fade_out = min(fade_out, dur - fade_in)`; also formatted both `d=` fade durations to `:.3f` for consistency with the existing `st=` formatting. New test: `test_join_with_fades_overlapping_windows_dont_double_up`.
+- [x] [Review][Patch] Card/hold ffmpeg calls had no explicit `-map` [video.py:707-719, 749-763] — every other multi-input ffmpeg invocation in this file uses explicit `-map` after `-filter_complex`; the card/hold calls relied on default stream auto-selection, which was safe with `anullsrc` (audio-only) but risks picking up an embedded cover-art video stream from a real ambient `.mp3` (Story 5.16 AC:3's new input) instead of the intended black background. Fixed: added `-map 0:v -map 1:a` to both `_compose_chapter_card` and `_compose_black_hold`.
+- [x] [Review][Patch] `_compose_black_hold`'s file-reuse cache could serve a truncated file after a crash [video.py:744-767] — the `hold_path.exists()` cache check trusted any file at that path, including one left incomplete by a killed/crashed prior render (unlike the atomic `segs[0].replace(output)` pattern already used elsewhere in this file for exactly this hazard class). Fixed: render to a `.tmp.mp4` path and `Path.replace()` it into place atomically, so the cache check only ever sees a fully-written file.
+
+All 3 patches verified: `uv run pytest tests/pipeline/nodes/test_video.py -q` (127 passed) and full `uv run pytest -q` (705 passed, 1 skipped), `ruff check` clean.
 
 ## Saved Questions / Clarifications
 
