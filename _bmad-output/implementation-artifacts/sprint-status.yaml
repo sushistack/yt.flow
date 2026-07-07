@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-07  # Story 8.1 shot-cast-metadata-bg-prompts → in-progress
+last_updated: 2026-07-07  # Story 9.1 content-language-config-switch 코드리뷰 완료 → done
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -144,4 +144,4 @@ development_status:
 
   # ── Epic 9: Localization Config — 콘텐츠 언어 스위치 ────────────────────────
   epic-9: in-progress
-  9-1-content-language-config-switch: review  # 2026-07-07 구현 완료 — Settings.content_language(기본 "ko") + scenario_node 진입 시 non-ko fail-fast 가드 + subtitle.py WhisperX 아직-하드코딩된 "ko" 리터럴 배선. 프롬프트/타이포그래피 다국어화는 명시적 범위 제외(YAGNI). 전체 스위트 733 passed/1 skipped, 무관한 pre-existing 실패 3건(Epic 8 8-1 동시 세션 WIP)
+  9-1-content-language-config-switch: done  # 2026-07-07 코드리뷰 완료 — subtitle_node에 독립 fail-fast 가드 추가(retry_stage 우회 버그 수정), config.py 코멘트에 qwen_tts_voice 커플링 보강, scenario 테스트 강화. 전체 스위트 754 passed/1 skipped/0 failed
