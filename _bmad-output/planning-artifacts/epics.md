@@ -1009,6 +1009,10 @@ visual_breakdown에 스토리 로그라인 + 씬 역할 + 개체 시각 정의�
 
 SCP 콘텐츠 상업화(수익화)의 라이선스 준수 자동화(Jay, 2026-07-07). SCP 위키 콘텐츠는 CC BY-SA — 원작 표기 + 동일 라이선스 고지 의무. ① video_node 마지막에 **엔딩 크레딧 카드**(2~3초): "Based on 'SCP-XXX' from the SCP Foundation Wiki / CC BY-SA 3.0" + 문서 URL, 5-17 카드 렌더러·Pretendard 재사용. ② run 산출물에 **`description.txt` 아티팩트**: 유튜브 설명란용 표기 블록(문서 링크, 라이선스 링크, 파생물 고지, 사용된 위키 이미지 출처 — 5-10이 이미 CC BY-SA 출처 메타데이터를 보존함) — 게이트에서 복사해가면 됨. 저자명은 위키 페이지에서 확보 가능하면 포함, 불가하면 문서 링크로 충분(위키 관례). 비치명적 — 크레딧 생성 실패가 run을 죽이지 않음. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.21: TTS 보이스 클론 배선 + 배속 설정
+
+Jay 지시(2026-07-07). `.env`의 클론 변수(`CLONE_MODEL`/`CLONE_VOICE_PATH`)가 Settings에 선언조차 없는 죽은 설정임을 베이스라인 후속 확인에서 발견 — 나레이션은 스톡 보이스(Cherry)로 나가고 있었음. ① 클론 배선: DashScope 보이스 등록(1회성·영구 voice id, `scripts/seed_voice_clone.py` idempotent)+ `qwen3-tts-vc` 합성, 명시적 `clone_enabled` 스위치(기본 OFF — 켰는데 voice id 없으면 시끄럽게 실패, 무음 폴백 금지). ② **배속**: API에 숫자 배속 파라미터 부재 확인 → ffmpeg `atempo` 후처리, `YTFLOW_QWEN_TTS_SPEED` 기본 **1.2**(범위 검증 0.5~2.0), duration 측정 전 적용이라 자막·전환·씬 길이 자동 적응. DoD: 동일 나레이션 스톡 vs 클론 A/B 청취를 Jay가 판정(클론 우위를 전제하지 않음 — 운율 저하 리스크 명시). ⚠️ 현재 레퍼런스 `sutak.mp3`가 7.68초/스테레오(권장 10~20초/모노 미달) — 재녹음 필요 가능성. (2026-07-07 create-story 완료 — 상세는 스토리 파일)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.

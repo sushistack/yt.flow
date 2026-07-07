@@ -118,6 +118,7 @@ development_status:
   5-18-subtitle-display-text-dual-track: done  # Jay 시청 피드백 #3 — 자막은 원문(SCP-049), TTS는 정규화문(5-4 결정 번복); 가라오케(7-5) 은퇴 + Pretendard 타이포 업그레이드; 구현 완료(6개 태스크), 실사 오디오+실제 ffmpeg 번인 검증. 병렬 5.17 세션 커밋에 Task 1/3/4 일부 편입됨(데이터 손실 없음, story doc 참고). 코드리뷰(3-레이어) 완료: patch 3건 적용(AC7 위반 — word_timings 개수 불일치 시 display 트랙이 계속 렌더되던 버그를 spoken 폴백으로 수정, fontsdir 디렉토리 부재 시 fail-fast 가드 추가, sound-design filter_complex 분기 fontsdir 테스트 추가), 3건 보류, 10건 기각. 회귀 스위트 731 passed/1 skip, ruff clean
   5-19-ddg-image-search-fallback-repair: done  # 2026-07-07 라이브 실측 — 403 원인은 구식 vqd 획득(홈페이지→쿼리 페이지로 변경)+Referer 누락; 소형 수정, 위키 우선 폴백 지위 불변. 구현+라이브 재검증 완료(SCP-173 폴백 성공, SCP-049 위키 우선 hit 확인). 코드리뷰(3-레이어) 완료: patch 4건 적용(vqd GET params= 통일, i.js 헤더 중복 병합 제거, 재시도소진 테스트 상수화, 지수백오프 시퀀스 검증 추가), 6건 보류, 6건 기각. 회귀 스위트 726 passed/1 skip, ruff clean
   5-20-cc-attribution-credits: backlog  # CC BY-SA 준수 자동화 — 엔딩 크레딧 카드(5-17 렌더러 재사용) + description.txt 아티팩트(문서·라이선스·이미지 출처), 비치명적
+  5-21-tts-voice-clone-wiring: ready-for-dev  # 클론 배선(1회성 voice id 등록, clone_enabled 기본 OFF, 무음 폴백 금지) + 배속 YTFLOW_QWEN_TTS_SPEED 기본 1.2(atempo, duration 측정 전 적용); DoD=스톡vs클론 A/B 청취; ⚠️ sutak.mp3 7.68s 스테레오 — 재녹음 필요 가능
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
   epic-6: in-progress
