@@ -56,8 +56,10 @@ def test_spa_deep_link_serves_index_html(tmp_path):
     assert client.get("/app/assets/app.js").status_code == 200
 
 
-def test_unknown_route_outside_app_still_json_404():
+def test_unknown_route_outside_app_still_json_404(tmp_path):
+    """Non-/app routes must still 404 as JSON on the SAME app that has the SPA mounted."""
     app = FastAPI()
+    mount_static_spa(app, _make_dist(tmp_path))
     client = TestClient(app)
     res = client.get("/nonexistent")
     assert res.status_code == 404

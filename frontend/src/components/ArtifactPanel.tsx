@@ -370,7 +370,9 @@ function SubtitlePanel({
   }, [subtitles])
 
   if (text === null) return <p className="text-muted-foreground">불러오는 중…</p>
-  const cueCount = (text.match(/-->/g) ?? []).length + (text.match(/^Dialogue:/gm) ?? []).length
+  // Per-line OR, not two summed regexes: a Dialogue event's own text can contain
+  // a literal "-->" (e.g. narration with an arrow), which would double-count it.
+  const cueCount = text.split("\n").filter((l) => l.startsWith("Dialogue:") || l.includes("-->")).length
   return (
     <div>
       <p className="mb-3 text-muted-foreground">자막 {cueCount}개</p>

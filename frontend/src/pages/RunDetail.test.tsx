@@ -141,6 +141,9 @@ describe("RunDetail", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/runs/r1/stages/image/retry", expect.objectContaining({ method: "POST" })),
     )
+    // AC1.2: exactly one retry request fires.
+    const retryCalls = fetchMock.mock.calls.filter(([url]) => url === "/runs/r1/stages/image/retry")
+    expect(retryCalls).toHaveLength(1)
   })
 
   it("retries a stage that was already failed on fresh load (regression guard)", async () => {
