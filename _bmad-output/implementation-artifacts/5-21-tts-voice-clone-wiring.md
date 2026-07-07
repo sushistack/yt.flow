@@ -11,7 +11,7 @@ depends_on:
 
 # Story 5.21: TTS Voice Clone Wiring + Speech Speed
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -50,38 +50,48 @@ Known risk found during story prep: `data/voices/sutak.mp3` probed (ffprobe, 202
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Live-verify the enrollment API contract before coding (AC: 3)** *(Story 5.13 precedent: throwaway live call before implementing against assumed docs)*
-  - [ ] Confirm the enrollment endpoint works off the project's existing base host: `POST {qwen_tts_endpoint}/api/v1/services/audio/tts/customization` with `{"model": "qwen-voice-enrollment", "input": {"action": "list", ...}}`. The docs show Beijing (`dashscope.aliyuncs.com`) and a Singapore workspace host (`{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com`) and call the intl domain "legacy" — but the account's existing key already synthesizes fine against `dashscope-intl.aliyuncs.com` (same `/api/v1/services/...` family). Try `dashscope-intl` first; only if it 404s/errors, record the workspace host requirement in Dev Agent Record and use it in the script (still no new Settings field unless the host genuinely diverges from `qwen_tts_endpoint` — ponytail: no config for a value that never varies).
-  - [ ] Confirm with a cheap `action=list` (free) — do NOT `create` until the script is ready (each create costs USD 0.01).
-  - [ ] Note: `qwen3-tts-vc-2026-01-22` is documented as requiring a Singapore-region API key — the existing key works against the intl endpoint, which is the Singapore-region international surface; if enrollment rejects the key region, record it and stop for Jay (account-level fix, not code).
-- [ ] **Task 2 — Settings fields (AC: 1, 7, 8)**
-  - [ ] Add the four clone fields to the `qwen_tts_*` block in `src/yt_flow/config.py:51-58` with defaults per AC1. Switch design: **explicit `qwen_tts_clone_enabled` bool**, not voice-id-presence — presence-based would activate the clone the instant enrollment fills the id, coupling "enrolled" to "shipped"; the explicit bool keeps enrollment safe, lets Jay flip freely after the A/B verdict, and keeps the id in `.env` even while running stock.
-  - [ ] Add `qwen_tts_speed: float = Field(1.2, ge=0.5, le=2.0)` (`from pydantic import Field` — one import; the constraint is the whole validation story, AC8).
-  - [ ] Update `.env.example` (add `YTFLOW_QWEN_TTS_CLONE_ENABLED=false`, `YTFLOW_QWEN_TTS_CLONE_VOICE_ID=`, `YTFLOW_QWEN_TTS_SPEED=1.2` next to the existing lines 12-19 TTS block). `.env` itself is operator-owned — Jay flips it after the verdict.
-- [ ] **Task 3 — Enrollment script `scripts/seed_voice_clone.py` (AC: 3)**
-  - [ ] House precedent: `scripts/seed_character_prompts.py` (idempotent, `--dry-run`, docstring with usage). Flow: load `Settings` → `action=list` (page through, find a voice whose id embeds the preferred name `sutak` and whose `target_model` == `qwen_tts_clone_model`) → if found, print id + the exact `.env` line and exit → else `action=create` with `preferred_name="sutak"`, `target_model=settings.qwen_tts_clone_model`, `audio.data` as `data:audio/mpeg;base64,<...>` of `qwen_tts_clone_voice_path` → print `output.voice` + `.env` line. Voice id storage decision: **`.env` var via the `qwen_tts_clone_voice_id` Settings field** — it is one string, `.env` already holds every other TTS knob, and a JSON sidecar next to the mp3 would add a second config surface plus a read path in production code for zero benefit.
-  - [ ] Preflight the sample: file exists, <10 MB. Probed values (2026-07-07): 7.68s / stereo / 48kHz — docs specify mono and recommend 10–20s. Try enrolling as-is first (the API may downmix); if it rejects stereo, downmix once (`ffmpeg -i data/voices/sutak.mp3 -ac 1 data/voices/sutak_mono.mp3`) and point the path setting at the mono file. Record in Dev Agent Record that the sample is below the recommended length — that caveat belongs next to the A/B verdict (AC10).
-  - [ ] `--dry-run` prints the create payload (audio field elided) without any write. No new deps: `httpx` + stdlib `base64`/`pathlib`.
-- [ ] **Task 4 — Clone wiring in `tts_node` (AC: 2, 4, 5, 6)**
-  - [ ] In `_synthesize` (`tts.py:78-103`): select `model`/`voice` by mode — clone enabled → (`s.qwen_tts_clone_model`, `s.qwen_tts_clone_voice_id`), else (`s.qwen_tts_model`, `s.qwen_tts_voice`). Guard: clone enabled + empty voice id → `RuntimeError("qwen_tts_clone_enabled but YTFLOW_QWEN_TTS_CLONE_VOICE_ID is empty — run scripts/seed_voice_clone.py")` (mirrors the existing missing-api-key guard at `tts.py:87-88`; surfaces via the node's existing except → `stage=tts` error, `tts.py:180-184`). No fallback-to-stock (AC5 rationale).
-  - [ ] Everything else in `_synthesize` stays: same `_GENERATION_PATH`, same auth header, same `output.audio.url` download (`tts.py:97-103`) — the voice-clone synthesis payload is documented as identical in shape (`input.text` + `input.voice`), only the model/voice values differ.
-  - [ ] `_record_trace` (`tts.py:125-145`): add a `voice_mode` kwarg (`"clone"` if clone enabled else `"stock"`), pass the actually-used model/voice at both call sites (`tts.py:177-178` success, `tts.py:181-183` error; error path uses `"?"` when settings never constructed, as today). The voice id is an opaque provider handle, not a secret — fine in trace metadata.
-- [ ] **Task 5 — Speech speed (AC: 7, 8)**
-  - [ ] API allows no numeric rate param (see API Research) → ffmpeg path. In `tts_node`'s per-scene loop: non-mock, `speed != 1.0` → synthesize to a temp sibling (e.g. `scene_XXX.src.wav`), then `ffmpeg -i src -filter:a atempo=<speed> -c:a pcm_s16le <final>`, unlink the temp — all **before** `_wav_duration(path)` at `tts.py:168`, which is the single point every downstream duration consumer hangs off (provisional timings `tts.py:173`, whisperx alignment, subtitle cues, video scene lengths — all read the measured file, so they adapt with zero changes). `atempo` accepts 0.5–2.0 per filter instance — exactly the validated Settings range, single instance suffices, pitch-preserving.
-  - [ ] Spawn pattern: reuse `_run_ffmpeg` from `src/yt_flow/pipeline/nodes/video.py:498-508` (same-layer import, generic spawn returning `(returncode, stderr)`) **if** importing `video.py` from `tts.py` is side-effect-free at module load (verify — the font fail-fast lives inside a function, but confirm); otherwise inline the same 6-line `asyncio.create_subprocess_exec` locally. Either way this is `tts.py`'s first subprocess call — keep it to the one invocation. Non-zero returncode → raise with stderr tail (whole-stage failure per NFR-8, same as any synthesis error).
-  - [ ] Mock mode: no subprocess — scale `_write_mock_wav`'s frame count by `1/speed` (`tts.py:61-75`), keeping mock durations meaningful and tests hermetic.
-  - [ ] Note the incidental benefit: the ffmpeg re-encode also produces an honest WAV header, but `_wav_duration`'s streamed-header defense (`tts.py:41-58`) stays — the speed=1.0 path still writes the raw streamed file.
-- [ ] **Task 6 — Tests (AC: 2, 4, 5, 6, 7, 8, 9)**
-  - [ ] `tests/pipeline/nodes/test_tts.py` — extend the `_settings()` SimpleNamespace helper (`test_tts.py:25-33`) with the new fields, defaulting `clone_enabled=False`, `clone_voice_id=""`, `speed=1.0` so every existing test passes unchanged.
-  - [ ] New tests: (a) clone enabled → mocked `httpx.AsyncClient.post` receives `model=<clone model>`, `voice=<voice id>` (5.13 pattern: the payload-target assertion that makes a silent revert impossible); (b) default/disabled → payload carries stock model/voice (AC2 regression guard); (c) clone enabled + empty voice id → `stage=tts` error mentioning `seed_voice_clone`; (d) trace captures `voice_mode` in success and error paths (extend `test_trace_receives_metrics` pattern, `test_tts.py:174-192`); (e) speed=1.2 non-mock (fake `_synthesize` writes a wav, monkeypatched spawn captures argv) → `atempo=1.2` present, final wav measured after processing; (f) speed=1.0 → zero ffmpeg spawns; (g) mock mode at speed=2.0 → duration ≈ half of speed=1.0's for the same narration.
-  - [ ] `tests/test_config.py`: default `qwen_tts_speed == 1.2`; `YTFLOW_QWEN_TTS_SPEED=12` → `ValidationError` (existing `_env_file=None` hermetic pattern); clone defaults (`enabled False`, id `""`).
-  - [ ] Optionally extend the opt-in live smoke (`YTFLOW_QWEN_TTS_SMOKE=1`, `test_tts.py:251-260`) with a clone-mode variant gated on a non-empty voice id — never runs in CI. No script unit tests: `seed_voice_clone.py` is a live operator tool validated by Task 7, matching the untested `seed_*.py` precedent.
-- [ ] **Task 7 — Enroll + A/B listening comparison (AC: 3, 10)**
-  - [ ] Run `scripts/seed_voice_clone.py` live; paste the printed id into `.env`; re-run to prove idempotency (no second voice created — check `action=list` count). Record the voice id and both run outputs in Dev Agent Record.
-  - [ ] Generate the A/B pair: same narration text (a scene from run `272b05a4`), same `qwen_tts_speed`, two synthesis calls (stock settings vs clone settings — a throwaway snippet reusing `tts._synthesize` with two `Settings`-shaped objects is fine, need not be committed) → `workspace/voice-ab/stock.wav` + `workspace/voice-ab/clone.wav`.
-  - [ ] Hand to Jay. Record the verdict in Dev Agent Record: which voice ships (i.e. whether Jay flips `YTFLOW_QWEN_TTS_CLONE_ENABLED=true` in `.env`), with the prosody/naturalness assessment and the short-sample caveat. If the verdict is pending at review time, the story still completes — the wiring and evidence files are the deliverable; the code default stays `false` either way.
-- [ ] **Task 8 — Regression (AC: 11)**
-  - [ ] `uv run pytest tests/pipeline/nodes/test_tts.py tests/test_config.py -q`, then full `uv run pytest -q`; record counts in Dev Agent Record.
+- [x] **Task 1 — Live-verify the enrollment API contract before coding (AC: 3)** *(Story 5.13 precedent: throwaway live call before implementing against assumed docs)*
+  - [x] Confirm the enrollment endpoint works off the project's existing base host: `POST {qwen_tts_endpoint}/api/v1/services/audio/tts/customization` with `{"model": "qwen-voice-enrollment", "input": {"action": "list", ...}}`. The docs show Beijing (`dashscope.aliyuncs.com`) and a Singapore workspace host (`{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com`) and call the intl domain "legacy" — but the account's existing key already synthesizes fine against `dashscope-intl.aliyuncs.com` (same `/api/v1/services/...` family). Try `dashscope-intl` first; only if it 404s/errors, record the workspace host requirement in Dev Agent Record and use it in the script (still no new Settings field unless the host genuinely diverges from `qwen_tts_endpoint` — ponytail: no config for a value that never varies).
+  - [x] Confirm with a cheap `action=list` (free) — do NOT `create` until the script is ready (each create costs USD 0.01).
+  - [x] Note: `qwen3-tts-vc-2026-01-22` is documented as requiring a Singapore-region API key — the existing key works against the intl endpoint, which is the Singapore-region international surface; if enrollment rejects the key region, record it and stop for Jay (account-level fix, not code).
+- [x] **Task 2 — Settings fields (AC: 1, 7, 8)**
+  - [x] Add the four clone fields to the `qwen_tts_*` block in `src/yt_flow/config.py:51-58` with defaults per AC1. Switch design: **explicit `qwen_tts_clone_enabled` bool**, not voice-id-presence — presence-based would activate the clone the instant enrollment fills the id, coupling "enrolled" to "shipped"; the explicit bool keeps enrollment safe, lets Jay flip freely after the A/B verdict, and keeps the id in `.env` even while running stock.
+  - [x] Add `qwen_tts_speed: float = Field(1.2, ge=0.5, le=2.0)` (`from pydantic import Field` — one import; the constraint is the whole validation story, AC8).
+  - [x] Update `.env.example` (add `YTFLOW_QWEN_TTS_CLONE_ENABLED=false`, `YTFLOW_QWEN_TTS_CLONE_VOICE_ID=`, `YTFLOW_QWEN_TTS_SPEED=1.2` next to the existing lines 12-19 TTS block). `.env` itself is operator-owned — Jay flips it after the verdict.
+- [x] **Task 3 — Enrollment script `scripts/seed_voice_clone.py` (AC: 3)**
+  - [x] House precedent: `scripts/seed_character_prompts.py` (idempotent, `--dry-run`, docstring with usage). Flow: load `Settings` → `action=list` (page through, find a voice whose id embeds the preferred name `sutak` and whose `target_model` == `qwen_tts_clone_model`) → if found, print id + the exact `.env` line and exit → else `action=create` with `preferred_name="sutak"`, `target_model=settings.qwen_tts_clone_model`, `audio.data` as `data:audio/mpeg;base64,<...>` of `qwen_tts_clone_voice_path` → print `output.voice` + `.env` line. Voice id storage decision: **`.env` var via the `qwen_tts_clone_voice_id` Settings field** — it is one string, `.env` already holds every other TTS knob, and a JSON sidecar next to the mp3 would add a second config surface plus a read path in production code for zero benefit.
+  - [x] Preflight the sample: file exists, <10 MB. Probed values (2026-07-07): 7.68s / stereo / 48kHz — docs specify mono and recommend 10–20s. Try enrolling as-is first (the API may downmix); if it rejects stereo, downmix once (`ffmpeg -i data/voices/sutak.mp3 -ac 1 data/voices/sutak_mono.mp3`) and point the path setting at the mono file. Record in Dev Agent Record that the sample is below the recommended length — that caveat belongs next to the A/B verdict (AC10).
+  - [x] `--dry-run` prints the create payload (audio field elided) without any write. No new deps: `httpx` + stdlib `base64`/`pathlib`.
+- [x] **Task 4 — Clone wiring in `tts_node` (AC: 2, 4, 5, 6)**
+  - [x] In `_synthesize` (`tts.py:78-103`): select `model`/`voice` by mode — clone enabled → (`s.qwen_tts_clone_model`, `s.qwen_tts_clone_voice_id`), else (`s.qwen_tts_model`, `s.qwen_tts_voice`). Guard: clone enabled + empty voice id → `RuntimeError("qwen_tts_clone_enabled but YTFLOW_QWEN_TTS_CLONE_VOICE_ID is empty — run scripts/seed_voice_clone.py")` (mirrors the existing missing-api-key guard at `tts.py:87-88`; surfaces via the node's existing except → `stage=tts` error, `tts.py:180-184`). No fallback-to-stock (AC5 rationale).
+  - [x] Everything else in `_synthesize` stays: same `_GENERATION_PATH`, same auth header, same `output.audio.url` download (`tts.py:97-103`) — the voice-clone synthesis payload is documented as identical in shape (`input.text` + `input.voice`), only the model/voice values differ.
+  - [x] `_record_trace` (`tts.py:125-145`): add a `voice_mode` kwarg (`"clone"` if clone enabled else `"stock"`), pass the actually-used model/voice at both call sites (`tts.py:177-178` success, `tts.py:181-183` error; error path uses `"?"` when settings never constructed, as today). The voice id is an opaque provider handle, not a secret — fine in trace metadata.
+- [x] **Task 5 — Speech speed (AC: 7, 8)**
+  - [x] API allows no numeric rate param (see API Research) → ffmpeg path. In `tts_node`'s per-scene loop: non-mock, `speed != 1.0` → synthesize to a temp sibling (e.g. `scene_XXX.src.wav`), then `ffmpeg -i src -filter:a atempo=<speed> -c:a pcm_s16le <final>`, unlink the temp — all **before** `_wav_duration(path)` at `tts.py:168`, which is the single point every downstream duration consumer hangs off (provisional timings `tts.py:173`, whisperx alignment, subtitle cues, video scene lengths — all read the measured file, so they adapt with zero changes). `atempo` accepts 0.5–2.0 per filter instance — exactly the validated Settings range, single instance suffices, pitch-preserving.
+  - [x] Spawn pattern: reuse `_run_ffmpeg` from `src/yt_flow/pipeline/nodes/video.py:498-508` (same-layer import, generic spawn returning `(returncode, stderr)`) **if** importing `video.py` from `tts.py` is side-effect-free at module load (verify — the font fail-fast lives inside a function, but confirm); otherwise inline the same 6-line `asyncio.create_subprocess_exec` locally. Either way this is `tts.py`'s first subprocess call — keep it to the one invocation. Non-zero returncode → raise with stderr tail (whole-stage failure per NFR-8, same as any synthesis error).
+  - [x] Mock mode: no subprocess — scale `_write_mock_wav`'s frame count by `1/speed` (`tts.py:61-75`), keeping mock durations meaningful and tests hermetic.
+  - [x] Note the incidental benefit: the ffmpeg re-encode also produces an honest WAV header, but `_wav_duration`'s streamed-header defense (`tts.py:41-58`) stays — the speed=1.0 path still writes the raw streamed file.
+- [x] **Task 6 — Tests (AC: 2, 4, 5, 6, 7, 8, 9)**
+  - [x] `tests/pipeline/nodes/test_tts.py` — extend the `_settings()` SimpleNamespace helper (`test_tts.py:25-33`) with the new fields, defaulting `clone_enabled=False`, `clone_voice_id=""`, `speed=1.0` so every existing test passes unchanged.
+  - [x] New tests: (a) clone enabled → mocked `httpx.AsyncClient.post` receives `model=<clone model>`, `voice=<voice id>` (5.13 pattern: the payload-target assertion that makes a silent revert impossible); (b) default/disabled → payload carries stock model/voice (AC2 regression guard); (c) clone enabled + empty voice id → `stage=tts` error mentioning `seed_voice_clone`; (d) trace captures `voice_mode` in success and error paths (extend `test_trace_receives_metrics` pattern, `test_tts.py:174-192`); (e) speed=1.2 non-mock (fake `_synthesize` writes a wav, monkeypatched spawn captures argv) → `atempo=1.2` present, final wav measured after processing; (f) speed=1.0 → zero ffmpeg spawns; (g) mock mode at speed=2.0 → duration ≈ half of speed=1.0's for the same narration.
+  - [x] `tests/test_config.py`: default `qwen_tts_speed == 1.2`; `YTFLOW_QWEN_TTS_SPEED=12` → `ValidationError` (existing `_env_file=None` hermetic pattern); clone defaults (`enabled False`, id `""`).
+  - [x] Optionally extend the opt-in live smoke (`YTFLOW_QWEN_TTS_SMOKE=1`, `test_tts.py:251-260`) with a clone-mode variant gated on a non-empty voice id — never runs in CI. No script unit tests: `seed_voice_clone.py` is a live operator tool validated by Task 7, matching the untested `seed_*.py` precedent.
+- [x] **Task 7 — Enroll + A/B listening comparison (AC: 3, 10)**
+  - [x] Run `scripts/seed_voice_clone.py` live; paste the printed id into `.env`; re-run to prove idempotency (no second voice created — check `action=list` count). Record the voice id and both run outputs in Dev Agent Record.
+  - [x] Generate the A/B pair: same narration text (a scene from run `272b05a4`), same `qwen_tts_speed`, two synthesis calls (stock settings vs clone settings — a throwaway snippet reusing `tts._synthesize` with two `Settings`-shaped objects is fine, need not be committed) → `workspace/voice-ab/stock.wav` + `workspace/voice-ab/clone.wav`.
+  - [x] Hand to Jay. Record the verdict in Dev Agent Record: which voice ships (i.e. whether Jay flips `YTFLOW_QWEN_TTS_CLONE_ENABLED=true` in `.env`), with the prosody/naturalness assessment and the short-sample caveat. If the verdict is pending at review time, the story still completes — the wiring and evidence files are the deliverable; the code default stays `false` either way.
+- [x] **Task 8 — Regression (AC: 11)**
+  - [x] `uv run pytest tests/pipeline/nodes/test_tts.py tests/test_config.py -q`, then full `uv run pytest -q`; record counts in Dev Agent Record.
+
+### Review Findings
+
+- [x] [Review][Patch] Keep unrelated sprint/config changes out of the 5.21 commit [`_bmad-output/implementation-artifacts/sprint-status.yaml`, `src/yt_flow/config.py`]
+- [x] [Review][Patch] Make clone misconfiguration trace `voice_mode=clone` and allow mock mode without a clone id [`src/yt_flow/pipeline/nodes/tts.py`]
+- [x] [Review][Patch] Strip whitespace-only clone voice ids before provider use [`src/yt_flow/pipeline/nodes/tts.py`]
+- [x] [Review][Patch] Remove temp/final audio artifacts when ffmpeg speed processing fails [`src/yt_flow/pipeline/nodes/tts.py`]
+- [x] [Review][Patch] Make seed dry-run avoid reading/base64-encoding the sample audio [`scripts/seed_voice_clone.py`]
+- [x] [Review][Patch] Make existing voice detection robust to provider name fields and pagination without `total_count` [`scripts/seed_voice_clone.py`]
+- [x] [Review][Patch] Reject directory and empty-file voice samples before enrollment [`scripts/seed_voice_clone.py`]
 
 ## Dev Notes
 
@@ -144,14 +154,42 @@ Mock-based only in CI (AC9): no live DashScope call, no real ffmpeg spawn, no `a
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5 Codex
 
 ### Debug Log References
 
+- 2026-07-07: Activation loaded `bmad-dev-story`; no prepend/append activation steps; no project-context.md present.
+- 2026-07-07: Live `action=list` against `https://dashscope-intl.aliyuncs.com/api/v1/services/audio/tts/customization` returned 200 with `output.voice_list`; no workspace-host override needed.
+- 2026-07-07: Initial seed script pagination used `page_index=1`; provider returned an empty list for that page, so the first two live script runs created two `sutak` voices. Fixed script to use provider-compatible zero-based pagination (`page_index=0`); final two reruns both printed `found existing voice; no create call made` with voice id `qwen-tts-vc-sutak-voice-20260707211054527-0f76`.
+- 2026-07-07: Generated A/B files from baseline run `272b05a4-78c6-4874-89a7-13c7e6df405e` scene 001 ASS text at speed 1.2: `workspace/voice-ab/stock.wav` (18.07s, 867392 bytes) and `workspace/voice-ab/clone.wav` (13.33s, 640124 bytes).
+- 2026-07-07: Validation: `uv run pytest tests/pipeline/nodes/test_tts.py tests/test_config.py tests/test_seed_voice_clone.py -q` => 44 passed, 1 skipped. `uv run ruff check src/yt_flow/pipeline/nodes/tts.py scripts/seed_voice_clone.py tests/pipeline/nodes/test_tts.py tests/test_seed_voice_clone.py` => all checks passed. Full `uv run pytest -q` => 799 passed, 1 skipped, 1 warning.
+
 ### Completion Notes List
 
+- Added typed clone settings and speed validation while keeping `qwen_tts_clone_enabled` default false and `.env` clone-enabled false.
+- Added `scripts/seed_voice_clone.py` with list-before-create behavior, dry-run payload printing, sample preflight, and final verified idempotency on the existing DashScope international host.
+- Wired `tts_node` to select stock vs clone model/voice explicitly, fail fast when clone mode lacks a voice id, and record `voice_mode` plus actual model/voice on success and error traces.
+- Implemented speed control through ffmpeg `atempo` before duration measurement; mock mode scales WAV frame count without subprocess.
+- Code review fixes: clone misconfiguration now records `voice_mode=clone`, mock clone mode remains hermetic without a voice id, whitespace-only voice ids fail fast, ffmpeg failure cleans temp/final audio, and seed enrollment dry-run/idempotency/sample validation are hardened.
+- Prepared Jay listening evidence under `workspace/voice-ab/`. Verdict is pending Jay's ear; code default remains stock (`qwen_tts_clone_enabled=false`). Caveat: the reference sample remains 7.68s/stereo, below the recommended 10-20s mono guidance, though enrollment and synthesis succeeded as-is.
+
 ### File List
+
+- `.env` (operator config updated with clone id, clone-enabled false, speed 1.2)
+- `.env.example`
+- `_bmad-output/implementation-artifacts/5-21-tts-voice-clone-wiring.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `scripts/seed_voice_clone.py`
+- `src/yt_flow/config.py`
+- `src/yt_flow/pipeline/nodes/tts.py`
+- `tests/pipeline/nodes/test_tts.py`
+- `tests/test_seed_voice_clone.py`
+- `tests/test_config.py`
+- `workspace/voice-ab/stock.wav`
+- `workspace/voice-ab/clone.wav`
 
 ## Change Log
 
 - 2026-07-07: Story drafted (create-story workflow) from the E2E baseline 2026-07-06 finding (narration confirmed stock voice; the `.env` clone vars are dead config never declared in `Settings`) + Jay's 2026-07-07 direction. Scope addition same day: configurable TTS speech speed, deliberate 1.2x default. API research resolved the two open design questions: enrollment is one-time/persistent (voice id via `qwen-voice-enrollment`, `action=list` enables an idempotent seed script), and the synthesis API has no numeric speed parameter (→ ffmpeg `atempo` before duration measurement). Clone ships behind `qwen_tts_clone_enabled=false`; Jay's A/B listening verdict — not an assumption — decides the operational default.
+- 2026-07-07: Implemented voice clone settings, idempotent enrollment script, stock/clone TTS payload selection, clone misconfiguration fail-fast, trace `voice_mode`, ffmpeg `atempo` speed processing, CI tests, live enrollment verification, and A/B listening files. Story ready for review; Jay verdict on `workspace/voice-ab/stock.wav` vs `workspace/voice-ab/clone.wav` remains pending.
+- 2026-07-07: Code review completed and findings patched: trace/mock clone edge cases, ffmpeg cleanup, seed-script dry-run/idempotency/pagination/sample validation, and focused 5.21 commit scope. Story marked done.
