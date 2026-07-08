@@ -66,7 +66,10 @@ assert set(LOCATION_PROMPTS) == set(LOCATION_KEYS), "LOCATION_PROMPTS must cover
 
 
 def _load_workflow(path: str) -> dict:
-    workflow = json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        workflow = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
+        sys.exit(f"cannot load ComfyUI workflow at {path!r}: {exc}")
     for node_id in (POSITIVE_NODE, NEGATIVE_NODE, ANCHOR_NODE, IPADAPTER_NODE):
         if node_id not in workflow:
             raise ValueError(f"location plate workflow at {path!r} missing node {node_id!r}")

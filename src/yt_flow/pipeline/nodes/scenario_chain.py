@@ -45,7 +45,7 @@ _VALID_POSES = {"standing", "sitting"}
 _POSE_HINT_MAX_CHARS = 80
 _VALID_MOTION_STYLES = {"hold", "breath", "sway", "tremble", "pulse", "glitch"}
 _VALID_MOTION_ENERGIES = {"low", "medium", "high"}
-_VALID_LOCATION_KEYS = set(LOCATION_KEYS)
+_LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
 
 
 def _normalize_card_key(card_key: str) -> str:
@@ -130,10 +130,11 @@ def parse_location_key(raw: object) -> LocationKey | None:
     """
     if not isinstance(raw, str):
         return None
-    if raw not in _VALID_LOCATION_KEYS:
+    canonical = _LOCATION_KEY_CANONICAL.get(raw.strip().lower())
+    if canonical is None:
         logger.warning("visual_breakdown emitted unknown location_key %r, falling back to generation", raw)
         return None
-    return cast(LocationKey, raw)
+    return cast(LocationKey, canonical)
 
 
 def split_sentences(text: str) -> list[str]:

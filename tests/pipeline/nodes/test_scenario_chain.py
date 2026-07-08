@@ -995,9 +995,15 @@ def test_parse_cast_invalid_motion_energy_normalizes_to_medium(bad_energy):
 # ── parse_location_key (Story 8.5: closed LocationKey vocabulary leniency) ──────
 
 
-@pytest.mark.parametrize("key", sorted(chain._VALID_LOCATION_KEYS))
+@pytest.mark.parametrize("key", sorted(chain._LOCATION_KEY_CANONICAL.values()))
 def test_parse_location_key_every_valid_key_passes_through(key):
     assert chain.parse_location_key(key) == key
+
+
+def test_parse_location_key_tolerates_whitespace_and_casing(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert chain.parse_location_key("  Corridor  ") == "corridor"
+    assert caplog.text == ""
 
 
 def test_parse_location_key_unknown_string_falls_back_to_none_with_warning(caplog):

@@ -43,15 +43,24 @@ class LocationService:
         plates = self.get_approved_plates(location_key)
         return plates[0] if plates else None
 
+    def resolve_stock_plates(self, location_key: str) -> list[dict]:
+        """image_node's STOCK fast-path contract: approved plates as {variant, path}."""
+        return [
+            {"variant": p.variant, "path": self._abs_asset_path(p.image_path)}
+            for p in self.get_approved_plates(location_key)
+        ]
+
     def approve_plate(self, plate_id: str) -> LocationPlate:
         plate = self._session.get(LocationPlate, plate_id)
         if plate is None:
             raise LookupError(f"LocationPlate not found: {plate_id}")
+        # Manifest first: if this raises (unknown/retired asset), the DB row stays
+        # untouched instead of drifting out of sync with manifest.json.
+        self._asset_service.approve_asset(f"{plate.location_key}/{plate.variant}")
         plate.status = "approved"
         self._session.add(plate)
         self._session.commit()
         self._session.refresh(plate)
-        self._asset_service.approve_asset(f"{plate.location_key}/{plate.variant}")
         return plate
 
     def reject_plate(self, plate_id: str) -> LocationPlate:

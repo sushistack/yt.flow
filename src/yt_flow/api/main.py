@@ -42,10 +42,7 @@ async def lifespan(app: FastAPI):
     async def _resolve_location(location_key: str) -> list[dict]:
         with Session(db._engine) as session:
             svc = LocationService(session, settings=settings)
-            return [
-                {"variant": p.variant, "path": svc._abs_asset_path(p.image_path)}
-                for p in svc.get_approved_plates(location_key)
-            ]
+            return svc.resolve_stock_plates(location_key)
 
     inject_location_service(_resolve_location)
 

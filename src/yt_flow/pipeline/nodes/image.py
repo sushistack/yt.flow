@@ -25,6 +25,7 @@ runs.
 """
 
 import copy
+import hashlib
 import json
 import logging
 import shutil
@@ -205,8 +206,15 @@ def _record_trace(
 
 def _plate_variant_index(run_id: str, scene_num: int, location_key: str, count: int) -> int:
     """Deterministic per-run variant pick: same run always picks the same variant
-    for the same scene (spatial continuity); different runs vary naturally."""
-    return hash(f"{run_id}:{scene_num}:{location_key}") % count
+    for the same scene (spatial continuity); different runs vary naturally.
+
+    Uses sha256, not the builtin ``hash()`` — CPython salts str hashing per
+    process (PYTHONHASHSEED), so ``hash()`` would pick a different variant for
+    the same run/scene after a process restart (e.g. a resumed run), breaking
+    the continuity guarantee this function exists for.
+    """
+    digest = hashlib.sha256(f"{run_id}:{scene_num}:{location_key}".encode()).hexdigest()
+    return int(digest, 16) % count
 
 
 @observe(name="image")
@@ -225,6 +233,7 @@ async def image_node(state: PipelineState) -> dict:
         out_dir.mkdir(parents=True, exist_ok=True)
         template = None if s.comfyui_mock else _load_workflow(s.comfyui_workflow_path)
 
+        plate_cache: dict[str, list[dict]] = {}  # one lookup per location_key per run, not per shot
         new_scenes: list[SceneState] = []
         for scene in state.get("scenes", []):
             new_shots: list[ShotData] = []
@@ -238,23 +247,30 @@ async def image_node(state: PipelineState) -> dict:
 
                 location_key = shot.get("location_key")
                 if location_key and _location_service is not None:
-                    plates = await _location_service(location_key)
-                    if plates:
-                        plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
-                        dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
-                        shutil.copyfile(plate["path"], dest)
-                        _write_sidecar(out_dir, scene["scene_num"], shot)
-                        image_count += 1
-                        stock_plate_count += 1
-                        logger.info(
-                            "shot %s using STOCK plate %s variant %s",
-                            shot["shot_id"], location_key, plate["variant"],
+                    try:
+                        if location_key not in plate_cache:
+                            plate_cache[location_key] = await _location_service(location_key)
+                        plates = plate_cache[location_key]
+                        if plates:
+                            plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
+                            dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
+                            shutil.copyfile(plate["path"], dest)
+                            _write_sidecar(out_dir, scene["scene_num"], shot)
+                            image_count += 1
+                            stock_plate_count += 1
+                            logger.info(
+                                "shot %s using STOCK plate %s variant %s",
+                                shot["shot_id"], location_key, plate["variant"],
+                            )
+                            new_shots.append({**shot, "image_path": str(dest)})
+                            continue
+                        logger.warning(
+                            "location_key %r has no approved plates, falling back to generation", location_key,
                         )
-                        new_shots.append({**shot, "image_path": str(dest)})
-                        continue
-                    logger.warning(
-                        "location_key %r has no approved plates, falling back to generation", location_key,
-                    )
+                    except Exception as exc:  # noqa: BLE001 — AD-10: plate lookup is best-effort, never fails the stage
+                        logger.warning(
+                            "stock plate resolution failed for %r, falling back to generation: %s", location_key, exc,
+                        )
 
                 if not s.comfyui_mock and not health_checked:
                     await comfyui_client.check_health(s.comfyui_url)

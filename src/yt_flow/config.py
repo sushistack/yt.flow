@@ -132,6 +132,6 @@ class Settings(BaseSettings):
     # Stock location plates (Story 8.5): IPAdapter style-anchor weight for the
     # seed script's bulk plate generation. Tunable without a code change if the
     # anchor bleeds content (lower) or the style doesn't hold (raise).
-    location_ipadapter_weight: float = 0.4
+    location_ipadapter_weight: float = Field(0.4, ge=0.0, le=1.0)
     location_plate_workflow_path: str = "data/workflows/comfyui_location_plate_api.json"
     location_anchor_dir: str = "data/anchors/locations"
