@@ -17,7 +17,7 @@ related:
 
 # Story 8.3: image_node Background-Only Generation + video_node Multi-Card Compositing
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -81,28 +81,38 @@ class CastMember(TypedDict):
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — image_node rewrite (AC: 1, 2, 3, 11)
-  - [ ] Delete layered machinery per AC1; unify on the flat path; add `BG_NEGATIVE_SUFFIX` at injection (`_inject_prompts` call sites); keep mock path, `_load_workflow`, `POSITIVE_NODE`/`NEGATIVE_NODE`, tracing (minus layered fields), and the AD-4 copy-not-mutate shot handling (295-302).
-  - [ ] Remove the four Settings fields + `.env.example` lines; sweep `rg "comfyui_layered|comfyui_background_node|comfyui_character_node|flat_fallback"` across src/tests until zero hits.
-  - [ ] README note marking the layered workflows retired.
-- [ ] Task 2 — ShotData slim + serializer (AC: 4)
-  - [ ] Remove the three fields from `state.py`; update drift guard; drop kwargs in `build_scenes`; drop `layered_fallback` from the image artifact serializer (`run_service.py:106-110`); sweep `rg '"character_path"|"background_path"|"layered_fallback"' src tests` and fix every producer/consumer (expect hits in `image.py`, `video.py`, `character_service.py:851`, fixtures).
-- [ ] Task 3 — Cast resolver service (AC: 5)
-  - [ ] Rework `select_character_angles` → `resolve_cast_cards` in `character_service.py` per AC5; keep `_ANGLE_DESCRIPTIONS` as truth, keep the LLM prompt/fallback plumbing (`_load_angle_selection_prompt`, `_angle_fallback` — re-shape outputs to per-member lists), keep the hallucination guards (928-948).
-  - [ ] Pose lookup per Interfaces: `pose == "standing"` → `angle_*_path` columns; else `get_card(scp_id, pose, angle)` (8.2's helper) with standing fallback + `logger.warning` + `fallback: true` on a miss. Pure dict/DB lookup — no LLM involvement in pose, no new prompt.
-  - [ ] Update `api/main.py` wiring (`inject_cast_resolver`); confirm `test_state_imports.py::test_api_imports_no_pipeline`'s main.py exception (96-101) still matches (module path unchanged; refresh the comment).
-- [ ] Task 4 — video_node multi-card composition (AC: 6, 7, 8, 9, 10)
-  - [ ] Constants: `_DEPTH_ORDER`, `_DEPTH_SCALE`, `_DEPTH_PARALLAX`, `_POSITION_X_FRAC = {"left": 1/3, "center": 0.5, "right": 2/3}` (rule-of-thirds anchors), `PHASE_STEP` (e.g. 2.1 rad) — module-level, `# ponytail:` live-tuned like `ZOOM_IN_MAX`'s history. Tuning target = standard shot framing: far ≈ 30–50% frame height (wide), mid ≈ 60–70% (medium), near ≤ ~85% (close) — never full-frame (D13).
-  - [ ] Generalize `_character_scale_filter(depth)` / `_overlay_filter(position, k, spec, duration, depth)` / `_character_spec(bg_spec, depth)` — keep the `eval=frame` requirements and the sign conventions documented at 287-298 & 314-336 intact.
-  - [ ] `_compose_scene(scene, ..., cards: list[dict])`: N-input assembly, sorted overlay chain, subtitle-burn-last, sound-design index math (`narration_label`/`input_offset` from N), `-t` cap, empty-cards → existing background-only branch verbatim.
-  - [ ] `video_node`: replace the 1.13 block (823-855) with resolver call + per-scene card lists (local dict — do not write card paths back into state shots); alpha-validate unique paths (AC10); keep AD-10 non-fatal handling of resolver *LLM* failures (fallback angles, never fail the run) while asset errors (opaque card) do fail the stage; update `_record_trace` (`character_scenes` → per-scene card counts, `angle_selection` → cast resolution metadata).
-  - [ ] Note the motion-safe box: `CHAR_MAX_W/H` (126-127) assumed a centered card; left/right anchors can clip a near-plane card's sine excursion at the frame edge — ffmpeg `overlay` crops gracefully, so ship with constants, verify live, tighten only if it visibly clips (`# ponytail:`).
-- [ ] Task 5 — Tests (AC: 11, 12)
-  - [ ] Per AC12; put the opaque-card fixture in `tests/fixtures/images/` (a 1×1 RGB PNG); reuse `_settings_ns` fixture in `test_video.py` (remove dead layered fields from it).
-  - [ ] Focused gate: `uv run pytest tests/pipeline/nodes/test_image.py tests/pipeline/nodes/test_video.py tests/services/test_character_angle_selector.py tests/domain/test_state_imports.py tests/pipeline/test_stub_profile_smoke.py tests/api/test_e2e_stub_run.py tests/test_config.py -q`, then full suite.
-- [ ] Task 6 — Live validation + DoD A/B (AC: 13)
-  - [ ] Local render smoke: 2-scene real-ffmpeg run with 0, 1, and 2 cards (reuse baseline artifacts like 7.1's live validation did) — confirm termination, duration, stacking, no lockstep sway.
-  - [ ] Full SCP-049 re-render + A/B vs baseline 272b05a4 per AC13; judge J2/J3/J4 with the baseline rubric; frame-sample evidence; record in Dev Agent Record. Flag any judge-vs-Jay calibration gaps per the baseline's own rule.
+- [x] Task 1 — image_node rewrite (AC: 1, 2, 3, 11)
+  - [x] Delete layered machinery per AC1; unify on the flat path; add `BG_NEGATIVE_SUFFIX` at injection (`_inject_prompts` call sites); keep mock path, `_load_workflow`, `POSITIVE_NODE`/`NEGATIVE_NODE`, tracing (minus layered fields), and the AD-4 copy-not-mutate shot handling (295-302).
+  - [x] Remove the four Settings fields + `.env.example` lines; sweep `rg "comfyui_layered|comfyui_background_node|comfyui_character_node|flat_fallback"` across src/tests until zero hits.
+  - [x] README note marking the layered workflows retired.
+- [x] Task 2 — ShotData slim + serializer (AC: 4)
+  - [x] Remove the three fields from `state.py`; update drift guard; drop kwargs in `build_scenes`; drop `layered_fallback` from the image artifact serializer (`run_service.py:106-110`); sweep `rg '"character_path"|"background_path"|"layered_fallback"' src tests` and fix every producer/consumer (expect hits in `image.py`, `video.py`, `character_service.py:851`, fixtures).
+- [x] Task 3 — Cast resolver service (AC: 5)
+  - [x] Rework `select_character_angles` → `resolve_cast_cards` in `character_service.py` per AC5; keep `_ANGLE_DESCRIPTIONS` as truth, keep the LLM prompt/fallback plumbing (`_load_angle_selection_prompt`, `_angle_fallback` — re-shape outputs to per-member lists), keep the hallucination guards (928-948).
+  - [x] Pose lookup per Interfaces: `pose == "standing"` → `angle_*_path` columns; else `get_card(scp_id, pose, angle)` (8.2's helper) with standing fallback + `logger.warning` + `fallback: true` on a miss. Pure dict/DB lookup — no LLM involvement in pose, no new prompt.
+  - [x] Update `api/main.py` wiring (`inject_cast_resolver`); confirm `test_state_imports.py::test_api_imports_no_pipeline`'s main.py exception (96-101) still matches (module path unchanged; refresh the comment).
+- [x] Task 4 — video_node multi-card composition (AC: 6, 7, 8, 9, 10)
+  - [x] Constants: `_DEPTH_ORDER`, `_DEPTH_SCALE`, `_DEPTH_PARALLAX`, `_POSITION_X_FRAC = {"left": 1/3, "center": 0.5, "right": 2/3}` (rule-of-thirds anchors), `PHASE_STEP` (e.g. 2.1 rad) — module-level, `# ponytail:` live-tuned like `ZOOM_IN_MAX`'s history. Tuning target = standard shot framing: far ≈ 30–50% frame height (wide), mid ≈ 60–70% (medium), near ≤ ~85% (close) — never full-frame (D13).
+  - [x] Generalize `_character_scale_filter(depth)` / `_overlay_filter(position, k, spec, duration, depth)` / `_character_spec(bg_spec, depth)` — keep the `eval=frame` requirements and the sign conventions documented at 287-298 & 314-336 intact.
+  - [x] `_compose_scene(scene, ..., cards: list[dict])`: N-input assembly, sorted overlay chain, subtitle-burn-last, sound-design index math (`narration_label`/`input_offset` from N), `-t` cap, empty-cards → existing background-only branch verbatim.
+  - [x] `video_node`: replace the 1.13 block (823-855) with resolver call + per-scene card lists (local dict — do not write card paths back into state shots); alpha-validate unique paths (AC10); keep AD-10 non-fatal handling of resolver *LLM* failures (fallback angles, never fail the run) while asset errors (opaque card) do fail the stage; update `_record_trace` (`character_scenes` → per-scene card counts, `angle_selection` → cast resolution metadata).
+  - [x] Note the motion-safe box: `CHAR_MAX_W/H` (126-127) assumed a centered card; left/right anchors can clip a near-plane card's sine excursion at the frame edge — ffmpeg `overlay` crops gracefully, so ship with constants, verify live, tighten only if it visibly clips (`# ponytail:`).
+- [x] Task 5 — Tests (AC: 11, 12)
+  - [x] Per AC12; opaque/RGBA card fixtures generated in-file (`_make_png`, matching `test_image.py`'s existing `RGB_PNG`/`RGBA_PNG` convention) rather than a committed binary under `tests/fixtures/images/` — same coverage, no extra binary asset (ponytail); `_settings_ns` fixture in `test_video.py` carries no layered fields (never did).
+  - [x] Focused gate + full suite green: `uv run pytest -q` → 824 passed, 1 skipped (pre-existing ffmpeg-unavailable skip); `ruff check .` clean repo-wide.
+- [x] Task 6 — Live validation + DoD A/B (AC: 13)
+  - [x] Local render smoke: real-ffmpeg `_compose_scene` calls at N=0/1/2 cards (isolated) plus a full real 3-scene `video_node` join (below) — all terminated, durations matched audio, stacking/positions/phase-decorrelation confirmed both via unit assertions and visually.
+  - [x] Full SCP-049 live render vs baseline 272b05a4 — see Dev Agent Record for method, evidence, and the 8.1 blocker discovered along the way. Judged J2/J3/J4 improved vs baseline's 2/2/2 (evidence below); DoD's literal "re-render + A/B via the candidate prompt variant" mechanism could not be used as originally envisioned because 8.1's cast-emitting prompt does not yet populate `cast` (documented, pre-existing gap, out of this story's scope). Per Jay's implementation-time approval, 8.3 accepted a substituted validation using hand-crafted cast metadata over real baseline backgrounds + real Story 8.2 card assets; this validates 8.3's compositor/resolver/alpha paths and the image-node path via separate live smoke, but does **not** validate 8.1's candidate prompt leg.
+
+### Review Findings
+
+- [x] [Review][Patch] Legacy image resume sidecars can bypass `BG_NEGATIVE_SUFFIX` after Story 8.3 [`src/yt_flow/pipeline/nodes/image.py:121`]
+- [x] [Review][Patch] Retired layered-assets README still described removed fallback fields/flags [`data/workflows/README-layered-assets.md:214`]
+- [x] [Review][Patch] Malformed checkpoint cast members can abort all cast resolution [`src/yt_flow/services/character_service.py:1063`]
+- [x] [Review][Patch] Non-entity stock/derived cards with no front path are skipped despite another usable angle [`src/yt_flow/services/character_service.py:1080`]
+- [x] [Review][Patch] Malformed injected resolver card entries can crash video validation instead of degrading per-card [`src/yt_flow/pipeline/nodes/video.py:1115`]
+- [x] [Review][Patch] AC13 evidence overstated the substituted validation path [`_bmad-output/implementation-artifacts/8-3-bg-only-generation-multicard-compositing.md:103`]
+- [x] [Review][Defer] Skipped cast members are only visible in logs, not in gate/UI artifacts — deferred, follow-up product visibility improvement
 
 ## Dev Notes
 
@@ -158,7 +168,7 @@ Biggest diff in the epic, but net-negative lines: the layered generator, inpaint
 ## Project Structure Notes
 
 - Modified: `src/yt_flow/pipeline/nodes/image.py`, `video.py`, `src/yt_flow/domain/state.py`, `src/yt_flow/services/character_service.py`, `src/yt_flow/services/run_service.py` (serializer line), `src/yt_flow/api/main.py`, `src/yt_flow/config.py`, `.env.example`, `data/workflows/README-layered-assets.md`, tests (`test_image.py`, `test_video.py`, `test_character_angle_selector.py`, `test_state_imports.py`, `test_config.py`, `fakes.py`, fixtures).
-- No new runtime modules. New test fixture: opaque RGB PNG.
+- No new runtime modules. Opaque/RGBA PNG fixtures are generated in test code with `_make_png` to avoid another committed binary while still covering real PNG color types.
 - Concurrency: this story collides with 8.1 on `state.py`/`scenario_chain.py`/`run_service.py`/drift guard, and with 8.2 on `image.py`/`config.py`/`character_service.py` — **merge after both** (depends_on is real, not decorative); rebase rather than parallel-edit (memory: repeated sprint-status/shared-file collisions).
 
 ## References
@@ -176,16 +186,59 @@ Biggest diff in the epic, but net-negative lines: the layered generator, inpaint
 
 ### Agent Model Used
 
+claude-sonnet-5
+
 ### Debug Log References
+
+- Full regression: `uv run pytest -q` → 824 passed, 1 skipped, 216s → later re-verified 824 passed after test rewrites; code-review fixes re-verified `828 passed, 1 skipped`.
+- `uv run ruff check .` → clean, repo-wide (re-verified after code-review fixes).
+- Live ComfyUI started (`~/workspaces/ComfyUI/run.sh`, RX 9060 XT ROCm) — confirmed reachable at `:8188` before live validation.
+- `image_node` live smoke against real ComfyUI: `workspace/story-8-3-image-smoke/images/scene_001_S001.png` generated successfully via the new single-path flow with `BG_NEGATIVE_SUFFIX` — no person/character in the output.
+- `video_node` live smoke: `workspace/story-8-3-live-ab/video.mp4` (85.2s, h264+aac, real audio/subtitle/mood/sound-design/post-fx/parallax/chapter-cards/cc-attribution all on, per `.env` defaults).
 
 ### Completion Notes List
 
+- **Scope delivered per AC1-12**: image_node is single-path background-only (layered/inpaint/flat-fallback machinery deleted, 4 config flags + `.env.example` lines retired); `ShotData` slimmed to drop `background_path`/`character_path`/`layered_fallback`; `CharacterService.select_character_angles` reworked into `resolve_cast_cards` (entity-gated LLM angle pick + deterministic-front for stock/derived extras + pose-aware card resolution with standing fallback); `video_node`/`_compose_scene` generalized to N-card compositing (depth-derived stacking, depth-scaled size caps, rule-of-thirds position anchors, phase-decorrelated idle motion, depth-scaled parallax) with a hard `has_alpha` gate before any ffmpeg call. Full regression green (824 passed), ruff clean.
+- **AC13 DoD — substituted validation, with explicit limitation**: while preparing the live SCP-049 A/B, discovered Story 8.1's `candidate` scenario prompt still does not reliably populate `cast` (0/125 shots across every tested run per 8.1's own Dev Agent Record — a documented, pre-existing gap in 8.1's scope, not touched here). Running the literal AC13 recipe (A/B via the candidate prompt variant) would have rendered background-only on both legs and proven nothing about multi-card compositing. Per Jay's direction, substituted: real baseline backgrounds from run `272b05a4` + real Story 8.2 card assets (SCP-049 standing/sitting + STOCK-d-class) + hand-authored `cast` metadata standing in for the not-yet-reliable LLM step, run through the real `resolve_cast_cards`/`video_node`/ffmpeg pipeline end-to-end against a live ComfyUI server. This validates 8.3's compositor/resolver/alpha behavior with zero mocking; `image_node` was validated separately by a live ComfyUI smoke, and the real 8.1 candidate-prompt leg remains deferred outside this story.
+- **Live evidence (frame samples, `workspace/story-8-3-live-ab/video.mp4`, 85.2s)**:
+  - Scene 1 (SCP-049 alone, center/near, standing): clean single-card alpha composite over a real distinct background — no inpaint scars, no ghost cutout (D10/D11 gone).
+  - Scene 2 (SCP-049 left/near + STOCK-d-class right/far): two-card stacking visibly correct — far card renders smaller (depth scale) and at the 2/3 anchor, near card larger at the 1/3 anchor; both composited cleanly with no full-frame takeover.
+  - Scene 3 (empty `cast`): renders as a clean background-only shot — no forced opaque card the way the baseline's all-shots override did (D13 structurally gone: this scene's cast is empty and *nothing* overlays it).
+  - Judged vs baseline `272b05a4`'s 2/2/2: **J2 (역동성) improved** — 3 visually distinct real backgrounds instead of one repeated frame; **J3 (합성) improved** — clean RGBA composites vs the baseline's opaque full-frame picture-in-picture; **J4 (정합) improved** — cards appear only where cast says so, with real placement/depth variety, matching narrative presence per scene.
+  - No judge-vs-Jay calibration gap to flag — this was a code-author self-assessment against the same J2/J3/J4 rubric the baseline report defined, not an independent judge run; Jay should treat these scores as directional pending his own look.
+  - Opaque-card hard-fail (AC10) verified in the unit suite (`test_opaque_card_fails_the_stage`) against production code, not re-run live (no reason a live opaque card would behave differently from the unit-tested path).
+- **Saved Question 1 resolved**: DoD ran against neither `production` nor a working `candidate` leg (8.1's gap), so the answer is "sequencing call needed" was correct — Jay chose to proceed anyway via hand-crafted cast rather than block 8.3 on 8.1's unrelated prompt-compliance fix.
+- ComfyUI server left running at `:8188` (`~/workspaces/ComfyUI/run.sh`, pid visible via `ps aux | grep main.py`) for Jay's own inspection/follow-up; stop it manually when done.
+- Test file `test_image.py`/`test_character_angle_selector.py`/`test_video.py` were substantially rewritten (not just patched) since the layered-mode and 1.13-angle-selector test surface no longer exists; `test_video.py` gained a `_card`/`_cast_member`/`_inject_resolver` helper trio mirroring the removed `character=`/`background=` kwargs.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/image.py` — background-only rewrite (AC1-3,11)
+- `src/yt_flow/pipeline/nodes/video.py` — N-card compositing, cast resolver injection, alpha validation (AC6-10)
+- `src/yt_flow/services/character_service.py` — `resolve_cast_cards` + `_resolve_card_path` + `_select_entity_angles` (replaces `select_character_angles`) (AC5)
+- `src/yt_flow/domain/state.py` — `ShotData` slimmed (AC4)
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` — `build_scenes` drops removed kwargs (AC4)
+- `src/yt_flow/services/run_service.py` — image artifact serializer + `_nullify` drop removed fields; docstring refresh (AC4)
+- `src/yt_flow/api/main.py` — `inject_cast_resolver` wiring (AC5)
+- `src/yt_flow/config.py` — 4 retired ComfyUI layered/flat-fallback flags removed (AC3)
+- `.env.example` — retired flag lines removed (AC3)
+- `data/workflows/README-layered-assets.md` — retirement note (AC3)
+- `tests/pipeline/nodes/test_image.py` — rewritten for background-only + `BG_NEGATIVE_SUFFIX` (AC12)
+- `tests/pipeline/nodes/test_video.py` — rewritten/extended for N-card compositing, resolver injection, alpha validation, trace metadata (AC12)
+- `tests/services/test_character_angle_selector.py` — rewritten for `resolve_cast_cards` (AC12)
+- `tests/domain/test_state_imports.py` — drift guard + injection-exception comment updated (AC4,5)
+- `tests/api/test_stage_artifacts.py` — fixtures + assertions updated for removed fields
+- `tests/api/test_stages.py` — fixtures + assertions updated for removed fields
+- `tests/pipeline/test_stub_profile_smoke.py` — fixture shot literal updated
+- `tests/services/test_run_service_character_provisioning.py` — stale docstring comment refreshed
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 8-3 status tracking
 
 ## Change Log
 
 - 2026-07-06: Story created from Epic 8 architecture decision (E2E baseline run 272b05a4). Deletes the 1.6b/5-6/5-7 same-frame lineage; delivers N-card compositing; DoD = SCP-049 A/B beating baseline J2/J3/J4.
 - 2026-07-06: pose dimension added per Jay — industry-standard sprite-library tiering. `resolve_cast_cards` now picks a `(pose, angle)` pair per member (pose is pure data from `CastMember.pose`, no LLM); pose-miss → standing fallback + warning (`fallback: true`); card dict gains `"pose"`; alpha validation covers all pose cards. Storage lookup per 8.2 Interfaces #4; `hint:*` extension reserved for Story 8.4.
+- 2026-07-08: Implemented end-to-end (Tasks 1-6). Full regression green (824 passed, ruff clean). Live-validated against a real ComfyUI server: image_node background-only generation confirmed live; video_node N-card compositing (0/1/2 cards), depth stacking, alpha hard-fail, and the full sound-design/post-fx/parallax/chapter-card/cc-attribution stack confirmed via a real 3-scene render. AC13's literal candidate-prompt A/B mechanism was blocked by a pre-existing, out-of-scope gap in 8.1's cast-emitting prompt (documented in 8.1's own Dev Agent Record); substituted hand-crafted cast metadata over real baseline backgrounds + real 8.2 card assets per Jay's direction — see Dev Agent Record for full method and frame-sample findings. Status → review.
+- 2026-07-08: Code review findings patched: image resume sidecar now pins the effective negative prompt incl. `BG_NEGATIVE_SUFFIX`; malformed cast/card entries degrade per-member/per-card; non-entity partial angle rows use an available standing card; retired README and AC13 validation wording corrected. 8.1 candidate-prompt A/B leg remains deferred.
 
 ## Saved Questions / Clarifications
 

@@ -1095,6 +1095,14 @@ Jay 지시(2026-07-07): 재사용 자산(캐릭터 카드, 로케이션 플레�
 ### Story 8.7: 합성 조화(콜라주 룩 해소) — 표준 컴포지팅 사다리
 
 deferred-work(2026-07-07 #1)의 콜라주 룩 리스크를 업계 표준 기법 사다리로 스토리화(Jay, 2026-07-07; 착수 게이트: iteration 1에서 콜라주 룩 실측 확인 시). 2D 합성 표준 기법을 비용 순으로: **Tier 1 (ffmpeg 수준, 저비용)** — ① mood별 스프라이트 틴트(장면 광원과 톤 일치 — 게임 2D 라이팅 관행의 gradient tint), ② **컨택트 섀도**(카드 발밑 타원 그림자 — 접지감이 최대 리얼리즘 신호), ③ 그레이드·그레인을 합성 **후** 전체 프레임에 적용해 통일(8-3이 이미 post-fx last 순서 보장 — 검증만). **Tier 2** — 라이트 랩(배경색이 스프라이트 가장자리로 번지는 VFX 표준). **Tier 3 (AI, ComfyUI 네이티브)** — **IC-Light 배경 조건 리라이팅**: 카드를 플레이트 광원에 맞춰 리라이트. 핵심 최적화: STOCK 카드 × STOCK 플레이트 조합은 유한하므로 **리라이트 결과를 (card, location) 쌍으로 사전 계산해 8-6 라이브러리에 캐싱** — 런타임 비용 0. Tier 1부터 적용하고 A/B로 각 티어의 기여를 측정, 충분해지면 상위 티어 중단(YAGNI). 참고: IC-Light ComfyUI 노드, DreamLight, harmonization diffusion 계열. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.8: 캐릭터 마이크로 모션 기법 선택 — 닫힌 enum + procedural overlay
+
+Jay 지시(2026-07-08): 캐릭터의 역동성을 위한 떨림 등 다양한 업계 표준 기법을 추가. 1.9c/7.3의 고정 sway/bob/parallax를 확장하되, LLM이 자유 숫자나 자유 텍스트를 만들지 않도록 cast 멤버에 닫힌 `motion_style`/`motion_energy` enum을 추가한다. 후보 스타일: `hold`, `breath`, `sway`, `tremble`, `pulse`, `glitch`; 강도: `low|medium|high`. 구현은 새 workflow stage가 아니라 기존 `visual_breakdown` cast schema 확장 + `scenario_chain.parse_cast` lenient normalization + `video_node`의 FFmpeg per-frame overlay/scale expression 소비. 업계 표준 근거: game animation의 state/blend-tree식 제어 파라미터, motion graphics의 procedural wiggle, 2D animation의 secondary motion/follow-through를 이 프로젝트 비용 구조에 맞게 정적 RGBA 카드 변환으로 근사. 8.9와 분리 — 이 스토리는 제자리 생동감/secondary motion만 담당.
+
+### Story 8.9: 캐릭터 이동·블로킹 — screen-space locomotion enum
+
+Jay 지시(2026-07-08): 캐릭터 이동에 대한 업계 표준 기법 추가. 8.8과 분리해 이동/블로킹 전용 안전 문제(클리핑, 자막 침범, depth 변화, z-order 안정성)를 다룬다. cast 멤버에 닫힌 `movement_mode`/`movement_direction`/`movement_pace` enum을 추가한다. 후보 모드: `anchored`, `drift`, `enter`, `exit`, `cross`, `approach`, `retreat`; 방향: `none|left|right|in|out`; 속도: `slow|medium|fast`. 구현은 새 workflow stage가 아니라 기존 `visual_breakdown` cast schema 확장 + `video_node` screen-space transform curve 소비. `position`/`depth`는 안정된 composition contract로 유지하고, movement enum은 카드가 그 위치에 도착/이탈/접근/후퇴하는 방식을 기술한다. 진짜 walk-cycle/rigging/generated video는 명시적 non-goal — 필요 시 별도 아키텍처 결정.
 ## Epic 9: Localization Config — 콘텐츠 언어 스위치
 
 Jay 결정(2026-07-07): SCP 채널은 한국어로 확정 진행하되, 향후 언어 피벗 가능성에 대비해 "한국어 하드코딩"을 명시적 config 스위치 뒤로 옮긴다. Scope는 스위치 자체뿐 — 실제 다국어 생성(프롬프트 번역, TTS 자연화 규칙, 자막 타이포그래피 재조정)은 이 Epic의 범위가 아니다(YAGNI). 지금 하드코딩된 지점(scenario LLM 프롬프트 5개, TTS 자연화 단계, subtitle.py 타이포 상수)을 건드리지 않고, 새 config 값이 "ko" 외의 값으로 바뀌면 파이프라인이 조용히 깨진 결과물을 만들지 않고 즉시 명확하게 실패하도록 만든다.

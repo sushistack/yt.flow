@@ -218,3 +218,8 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 - **`scp_id` defaulting to `""` via `state.get("scp_id", "")` would produce a dead wiki URL and blank attribution text if ever missing** [src/yt_flow/pipeline/nodes/video.py `video_node`] — pre-existing pattern from Story 1.13's angle-selector code (same expression, unchanged by this diff); no known caller path leaves `scp_id` unset.
 - **`run_id` is interpolated directly into a filesystem path with no format validation** [src/yt_flow/services/run_service.py `get_stage_artifacts`/`_initial_state`] — pre-existing pattern used identically throughout `run_service.py` (e.g. the scenario-artifact path); `run_id` is server-generated, not attacker-controlled.
+
+## Deferred from: code review of 8-3-bg-only-generation-multicard-compositing (2026-07-08)
+
+- **Skipped cast members are only visible in logs, not in gate/UI artifacts** [src/yt_flow/services/character_service.py `resolve_cast_cards`] — current story explicitly specifies missing rows/card assets as warn+skip degradation; surfacing skipped members in image/video gate artifacts is a product visibility improvement for a follow-up story, not required to make 8.3's compositor contract safe.
+- **8.1 candidate-prompt A/B leg remains unvalidated** [_bmad-output/implementation-artifacts/8-3-bg-only-generation-multicard-compositing.md AC13] — 8.3 validated compositor/resolver/alpha behavior with hand-authored cast metadata after Jay's implementation-time approval; the real candidate prompt still needs a separate 8.1 prompt-compliance repair/validation pass.
