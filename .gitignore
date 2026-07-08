@@ -36,3 +36,6 @@ _bmad
 # live-server / MCP session artifacts
 .playwright-mcp/
 server-live.log
+
+# eval-prompts debug artifacts (Story 8.4a)
+tmp/
