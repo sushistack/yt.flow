@@ -30,6 +30,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from typing import Any
 
 from yt_flow.observability import get_client, observe
 
@@ -41,6 +42,23 @@ logger = logging.getLogger(__name__)
 
 POSITIVE_NODE = "6"
 NEGATIVE_NODE = "7"
+
+# ── Location plate resolution injection (Story 8.5) ────────────────────────
+# Injected by the service layer to avoid AD-1 violation (LocationService needs
+# a DB session). Same pattern as video.py's inject_cast_resolver.
+_location_service: Any = None
+
+
+def inject_location_service(fn: Any) -> None:
+    """Inject the approved-plate lookup callable.
+
+    ``fn`` signature: ``async fn(location_key: str) -> list[dict]`` returning
+    approved plates for the key ordered by variant, each
+    ``{"variant": str, "path": <absolute file path>}``. Empty list = no
+    approved plate — image_node falls back to generation.
+    """
+    global _location_service
+    _location_service = fn
 
 # Story 5.14: integrity floor for resume — matches the E2E baseline's deterministic
 # image-gate check ("0-byte/placeholder ≤1KB"). ponytail: module constant, no config.
@@ -164,6 +182,7 @@ def _record_trace(
     image_count,
     latency_ms,
     skipped_count=0,
+    stock_plate_count=0,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -175,12 +194,19 @@ def _record_trace(
                 "comfyui_request_count": request_count,
                 "image_count": image_count,
                 "skipped_count": skipped_count,
+                "stock_plate_count": stock_plate_count,
                 "latency_ms": latency_ms,
                 **({"error": repr(error)} if error is not None else {}),
             },
         )
     except Exception:  # noqa: BLE001 — a tracing failure must never break the pipeline
         pass
+
+
+def _plate_variant_index(run_id: str, scene_num: int, location_key: str, count: int) -> int:
+    """Deterministic per-run variant pick: same run always picks the same variant
+    for the same scene (spatial continuity); different runs vary naturally."""
+    return hash(f"{run_id}:{scene_num}:{location_key}") % count
 
 
 @observe(name="image")
@@ -191,6 +217,7 @@ async def image_node(state: PipelineState) -> dict:
     request_count = 0
     image_count = 0
     skipped_count = 0
+    stock_plate_count = 0
     health_checked = False  # Story 5.14: lazy — never touched at all if every shot resumes
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
@@ -208,6 +235,26 @@ async def image_node(state: PipelineState) -> dict:
                     image_count += 1
                     new_shots.append({**shot, "image_path": existing})
                     continue
+
+                location_key = shot.get("location_key")
+                if location_key and _location_service is not None:
+                    plates = await _location_service(location_key)
+                    if plates:
+                        plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
+                        dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
+                        shutil.copyfile(plate["path"], dest)
+                        _write_sidecar(out_dir, scene["scene_num"], shot)
+                        image_count += 1
+                        stock_plate_count += 1
+                        logger.info(
+                            "shot %s using STOCK plate %s variant %s",
+                            shot["shot_id"], location_key, plate["variant"],
+                        )
+                        new_shots.append({**shot, "image_path": str(dest)})
+                        continue
+                    logger.warning(
+                        "location_key %r has no approved plates, falling back to generation", location_key,
+                    )
 
                 if not s.comfyui_mock and not health_checked:
                     await comfyui_client.check_health(s.comfyui_url)
@@ -237,7 +284,7 @@ async def image_node(state: PipelineState) -> dict:
         _record_trace(
             comfyui_url=s.comfyui_url, workflow_path=s.comfyui_workflow_path,
             request_count=request_count, image_count=image_count,
-            skipped_count=skipped_count, latency_ms=_ms(t0),
+            skipped_count=skipped_count, stock_plate_count=stock_plate_count, latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
@@ -245,6 +292,6 @@ async def image_node(state: PipelineState) -> dict:
             comfyui_url=s.comfyui_url if s else "?",
             workflow_path=s.comfyui_workflow_path if s else "?",
             request_count=request_count, image_count=image_count,
-            skipped_count=skipped_count, latency_ms=_ms(t0), error=exc,
+            skipped_count=skipped_count, stock_plate_count=stock_plate_count, latency_ms=_ms(t0), error=exc,
         )
         return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}"}

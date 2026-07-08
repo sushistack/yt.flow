@@ -21,6 +21,8 @@ from yt_flow.domain.state import (
     CastPosition,
     CharacterMotionEnergy,
     CharacterMotionStyle,
+    LOCATION_KEYS,
+    LocationKey,
     STOCK_CAST_KEYS,
     SceneState,
     ShotData,
@@ -43,6 +45,7 @@ _VALID_POSES = {"standing", "sitting"}
 _POSE_HINT_MAX_CHARS = 80
 _VALID_MOTION_STYLES = {"hold", "breath", "sway", "tremble", "pulse", "glitch"}
 _VALID_MOTION_ENERGIES = {"low", "medium", "high"}
+_VALID_LOCATION_KEYS = set(LOCATION_KEYS)
 
 
 def _normalize_card_key(card_key: str) -> str:
@@ -115,6 +118,22 @@ def parse_cast(raw: object) -> list[CastMember]:
             member["motion_energy"] = cast(CharacterMotionEnergy, motion_energy)
         members.append(member)
     return members
+
+
+def parse_location_key(raw: object) -> LocationKey | None:
+    """Story 8.5 leniency rule: a taxonomy violation degrades to generation,
+    it never fails the scenario stage (same philosophy as ``parse_cast``).
+
+    Non-string / ``None`` / missing -> ``None`` with no warning (absence is
+    normal — most shots are entity-specific and never emit this field).
+    A string outside the closed vocabulary -> ``None`` with a warning.
+    """
+    if not isinstance(raw, str):
+        return None
+    if raw not in _VALID_LOCATION_KEYS:
+        logger.warning("visual_breakdown emitted unknown location_key %r, falling back to generation", raw)
+        return None
+    return cast(LocationKey, raw)
 
 
 def split_sentences(text: str) -> list[str]:
@@ -370,6 +389,7 @@ async def visual_breakdown_step(
             "numbered_sentences": numbered,
             "sentence_count": len(sentences),
             "cast_by_sentence": json.dumps(cast_by_sentence, ensure_ascii=False, indent=2),
+            "location_keys": ", ".join(LOCATION_KEYS),
         },
         s,
         call_deepseek,
@@ -563,6 +583,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     camera_movement=None,  # yt.pipe's visual_breakdown has no equivalent field
                     image_path=None,
                     cast=parse_cast(raw_shot.get("cast")),
+                    location_key=parse_location_key(raw_shot.get("location_key")),
                 )
             )
 

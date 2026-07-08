@@ -14,7 +14,7 @@ EXPECTED_FIELDS = {
     "WordTiming": {"word", "start_sec", "end_sec"},
     "ShotData": {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
-        "camera_angle", "camera_movement", "image_path", "cast",
+        "camera_angle", "camera_movement", "image_path", "cast", "location_key",
     },
     "CastMember": {"card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy"},
     "SceneState": {
@@ -94,10 +94,12 @@ def test_api_imports_no_pipeline():
     # AD-1: api layer must never import from pipeline. Exception: api/main.py
     # imports `inject_cast_resolver` from pipeline.nodes.video — the sole AD-1
     # injection point for the cast card resolver service (Story 1.13, reworked
-    # in Story 8.3).
+    # in Story 8.3) — and `inject_location_service` from pipeline.nodes.image
+    # (Story 8.5), the equivalent seam for the location plate resolver.
     pkg = Path(state.__file__).resolve().parents[1]
+    allowed = {"yt_flow.pipeline.nodes.video", "yt_flow.pipeline.nodes.image"}
     for py in (pkg / "api").rglob("*.py"):
         for mod in _yt_flow_imports(py):
-            if py.name == "main.py" and mod == "yt_flow.pipeline.nodes.video":
+            if py.name == "main.py" and mod in allowed:
                 continue  # allowed: injection seam
             assert not mod.startswith("yt_flow.pipeline"), f"{py.name}: imports {mod}"

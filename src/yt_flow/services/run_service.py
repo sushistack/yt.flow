@@ -97,6 +97,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
                         "camera_angle": sh["camera_angle"],
                         "camera_movement": sh["camera_movement"],
                         "cast": sh.get("cast", []),
+                        "location_key": sh.get("location_key"),
                     }
                     for sh in s["shots"]
                 ],

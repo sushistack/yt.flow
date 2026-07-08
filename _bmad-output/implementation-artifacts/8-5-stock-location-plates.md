@@ -19,7 +19,7 @@ related:
 
 # Story 8.5: Stock Location Plates — Pre-Built Background Set Library
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -151,41 +151,41 @@ The `visual_breakdown.md` prompt (post-8.1 rewrite) gains a `location_key` field
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Domain types + drift guard (AC: 1)
-  - [ ] Add `LocationKey` Literal (14 values per Interfaces) and `location_key: LocationKey | None` to `ShotData` in `src/yt_flow/domain/state.py` (near `CastPose`, before `CastMember`). Pure stdlib typing.
-  - [ ] Update `tests/domain/test_state_imports.py` `EXPECTED_FIELDS["ShotData"]` and the Literal-names list.
-- [ ] Task 2 — Location service (AC: 4)
-  - [ ] Create `src/yt_flow/services/location_service.py` with `LocationService` class per AC4. Uses the 8.6 `LocationPlate` model (import from `db.models` — the table exists from 8.6). Pure service-layer pattern: session injection, no AD-1 violations.
-  - [ ] Wire into `api/main.py` lifespan for the image_node injection seam (same pattern as `inject_angle_selector` and 8.3's `inject_cast_resolver`).
-- [ ] Task 3 — ComfyUI workflow (AC: 3)
-  - [ ] Export `data/workflows/comfyui_location_plate_api.json` from ComfyUI: SDXL + IPAdapter (reference → CLIP vision → IPAdapter apply, weight ~0.4) + standard positive/negative CLIPTextEncode nodes 6/7 + SaveImage. Canvas 1920×1080. The workflow must accept: positive prompt injection at node 6, negative at node 7, IPAdapter reference image path(s). Document the node IDs in a comment at the top of the seed script.
-- [ ] Task 4 — Seed script (AC: 2, 3, 13)
-  - [ ] Create `scripts/seed_location_plates.py` per AC2. `LOCATION_PROMPTS` dict built into the script (one sentence per key — these are curated by Jay during lookdev, the script ships with sensible defaults). Mock mode support per AC13. Non-fatal per-plate loop (error on one plate doesn't stop the batch). Uses the 5-14 bounded retry for ComfyUI calls.
-  - [ ] IPAdapter anchor loading: reads `data/anchors/locations/*.png` / `*.jpg`, passes all to the workflow. No anchor files → `sys.exit("No anchor images found in data/anchors/locations/ — run the lookdev gate first (see LOOKDEV_DECISION.md)")`.
-  - [ ] Lookdev decision gate: checks for `data/anchors/locations/LOOKDEV_DECISION.md` existence; if absent, prints instructions and exits. Does not parse the markdown beyond checking the file exists.
-- [ ] Task 5 — CURATION CLI (AC: 9)
-  - [ ] Create `scripts/approve_location_plate.py`: `--key <location_key> --variant <a|b|c>` → calls `LocationService.approve_plate` on the matching draft row. Prints before/after state. Thin CLI — argparse + service call only.
-  - [ ] (Optional, Ponytail-gated) `scripts/reject_location_plate.py` — same pattern for reject. Only create if the approve flow actually needs a paired reject during curation.
-- [ ] Task 6 — image_node fast path (AC: 5)
-  - [ ] Add `_location_service` injection seam to `image.py` (match video.py:38-48 pattern exactly).
-  - [ ] Per-shot, before generation: `location_key` truthy → `get_approved_plate` → on hit: variant-select → copy → `continue`. On miss: warning → fall through. Mock mode: same copy path with fixture.
-  - [ ] Wire injection in `api/main.py` lifespan.
-  - [ ] `_record_trace` gains `stock_plate_count`.
-- [ ] Task 7 — visual_breakdown prompt (AC: 6, 8)
-  - [ ] Add `location_key` to the per-shot output schema in `prompts/scenario/visual_breakdown.md` (post-8.1 rewrite). Add the location_key teaching section per AC6. Pass `LOCATION_KEYS` as template variable from `visual_breakdown_step` (`scenario_chain.py`).
-  - [ ] Add `"location_key": sh.get("location_key")` to the scenario artifact serializer (`run_service.py`) — same line as 8.1 AC7. Extend the serializer test.
-  - [ ] Prompt rollout per PROMPT_POLICY: repo file edited → `candidate` seed → golden-set gate → evidence recorded. Promotion is Jay's move.
-- [ ] Task 8 — Parser (AC: 7)
-  - [ ] Add `parse_location_key(raw: object) -> LocationKey | None` to `scenario_chain.py` per AC7. Wire into `build_scenes` `ShotData(...)` construction.
-  - [ ] Table-driven unit tests in `test_scenario_chain.py`.
-- [ ] Task 9 — Config (AC: 11)
-  - [ ] Add `location_ipadapter_weight`, `location_plate_workflow_path`, `location_anchor_dir` to `config.py` Settings class.
-  - [ ] Add corresponding lines to `.env.example`.
-- [ ] Task 10 — Tests + regression (AC: 12)
-  - [ ] Per AC12: `test_location_key_parse`, `test_location_service.py`, `test_image.py` plate fast-path, `test_scenario_chain.py` build_scenes+parser, `test_state_imports.py`, `test_config.py`.
-  - [ ] Mock-mode seed script test: `YTFLOW_COMFYUI_MOCK=true uv run python scripts/seed_location_plates.py` → verify 42 rows + 42 files.
-  - [ ] Confirm stub-profile smoke and e2e-stub API tests pass unmodified.
-  - [ ] Full suite: `uv run pytest -q` green.
+- [x] Task 1 — Domain types + drift guard (AC: 1)
+  - [x] Add `LocationKey` Literal (14 values per Interfaces) and `location_key: LocationKey | None` to `ShotData` in `src/yt_flow/domain/state.py` (near `CastPose`, before `CastMember`). Pure stdlib typing.
+  - [x] Update `tests/domain/test_state_imports.py` `EXPECTED_FIELDS["ShotData"]` and the Literal-names list.
+- [x] Task 2 — Location service (AC: 4)
+  - [x] Create `src/yt_flow/services/location_service.py` with `LocationService` class per AC4. Uses the 8.6 `LocationPlate` model (import from `db.models` — the table exists from 8.6). Pure service-layer pattern: session injection, no AD-1 violations.
+  - [x] Wire into `api/main.py` lifespan for the image_node injection seam (same pattern as `inject_angle_selector` and 8.3's `inject_cast_resolver`).
+- [x] Task 3 — ComfyUI workflow (AC: 3)
+  - [x] Export `data/workflows/comfyui_location_plate_api.json` from ComfyUI: SDXL + IPAdapter (reference → CLIP vision → IPAdapter apply, weight ~0.4) + standard positive/negative CLIPTextEncode nodes 6/7 + SaveImage. Canvas 1920×1080. The workflow must accept: positive prompt injection at node 6, negative at node 7, IPAdapter reference image path(s). Document the node IDs in a comment at the top of the seed script.
+- [x] Task 4 — Seed script (AC: 2, 3, 13)
+  - [x] Create `scripts/seed_location_plates.py` per AC2. `LOCATION_PROMPTS` dict built into the script (one sentence per key — these are curated by Jay during lookdev, the script ships with sensible defaults). Mock mode support per AC13. Non-fatal per-plate loop (error on one plate doesn't stop the batch). Uses the 5-14 bounded retry for ComfyUI calls.
+  - [x] IPAdapter anchor loading: reads `data/anchors/locations/*.png` / `*.jpg`, passes all to the workflow. No anchor files → `sys.exit("No anchor images found in data/anchors/locations/ — run the lookdev gate first (see LOOKDEV_DECISION.md)")`.
+  - [x] Lookdev decision gate: checks for `data/anchors/locations/LOOKDEV_DECISION.md` existence; if absent, prints instructions and exits. Does not parse the markdown beyond checking the file exists.
+- [x] Task 5 — CURATION CLI (AC: 9)
+  - [x] Create `scripts/approve_location_plate.py`: `--key <location_key> --variant <a|b|c>` → calls `LocationService.approve_plate` on the matching draft row. Prints before/after state. Thin CLI — argparse + service call only.
+  - [x] (Optional, Ponytail-gated) `scripts/reject_location_plate.py` — evaluated and skipped: AC9's re-run-the-seed-script flow already overwrites a draft cleanly (verified live), so a paired reject CLI would be unused code. `LocationService.reject_plate` exists for a future curation UI if one is ever built.
+- [x] Task 6 — image_node fast path (AC: 5)
+  - [x] Add `_location_service` injection seam to `image.py` (match video.py:38-48 pattern exactly).
+  - [x] Per-shot, before generation: `location_key` truthy → `get_approved_plate` → on hit: variant-select → copy → `continue`. On miss: warning → fall through. Mock mode: same copy path with fixture.
+  - [x] Wire injection in `api/main.py` lifespan.
+  - [x] `_record_trace` gains `stock_plate_count`.
+- [x] Task 7 — visual_breakdown prompt (AC: 6, 8)
+  - [x] Add `location_key` to the per-shot output schema in `prompts/scenario/visual_breakdown.md` (post-8.1 rewrite). Add the location_key teaching section per AC6. Pass `LOCATION_KEYS` as template variable from `visual_breakdown_step` (`scenario_chain.py`).
+  - [x] Add `"location_key": sh.get("location_key")` to the scenario artifact serializer (`run_service.py`) — same line as 8.1 AC7. Extend the serializer test.
+  - [x] Prompt rollout per PROMPT_POLICY: repo file edited → `candidate` seed via `scripts/migrate_prompts.py --label candidate --source prompts` (done, confirmed "created: scenario/visual_breakdown"). Golden-set gate + promotion left to Jay's move, per the story's own framing and precedent (5.17/6.1 prompt rollouts).
+- [x] Task 8 — Parser (AC: 7)
+  - [x] Add `parse_location_key(raw: object) -> LocationKey | None` to `scenario_chain.py` per AC7. Wire into `build_scenes` `ShotData(...)` construction.
+  - [x] Table-driven unit tests in `test_scenario_chain.py`.
+- [x] Task 9 — Config (AC: 11)
+  - [x] Add `location_ipadapter_weight`, `location_plate_workflow_path`, `location_anchor_dir` to `config.py` Settings class.
+  - [x] Add corresponding lines to `.env.example`.
+- [x] Task 10 — Tests + regression (AC: 12)
+  - [x] Per AC12: `test_location_key_parse`, `test_location_service.py`, `test_image.py` plate fast-path, `test_scenario_chain.py` build_scenes+parser, `test_state_imports.py`, `test_config.py`.
+  - [x] Mock-mode seed script test: `YTFLOW_COMFYUI_MOCK=true uv run python scripts/seed_location_plates.py` → verified 42 rows + 42 files (live-ran in an isolated tmp DB/assets root).
+  - [x] Confirm stub-profile smoke and e2e-stub API tests pass unmodified.
+  - [x] Full suite: `uv run pytest -q` green (1013 passed, 1 skipped).
 
 ## Dev Notes
 
@@ -274,15 +274,50 @@ Fourteen string constants, one optional TypedDict field, one service class (~60 
 
 ### Agent Model Used
 
+claude-sonnet-5 (bmad-dev-story)
+
 ### Debug Log References
+
+- `PYTHONPATH=$PWD/src uv run pytest -q` → 1013 passed, 1 skipped, 212.81s.
+- `uv run ruff check` on every touched file → all clean.
+- `YTFLOW_COMFYUI_MOCK=true uv run python scripts/seed_location_plates.py` against an isolated tmp DB/assets root → 42 rows, 42 files, 42 manifest entries; re-run for one draft overwrote cleanly (no unique-constraint violation); re-run after approving skipped without `--force`, regenerated with `--force`.
+- `uv run python scripts/migrate_prompts.py --label candidate --source prompts` → `created: scenario/visual_breakdown` (candidate seeded to Langfuse; reachability confirmed against `langfuse.eli.kr`).
 
 ### Completion Notes List
 
+- **Interfaces/actual-schema deviation.** The story's Interfaces section speculatively described a `LocationPlate` table with `file_path`, `sha256`, `workflow_hash`, `seed`, `anchor_set`, `prompt`, `approved_at`. Story 8.6 (landed since) actually shipped a leaner table — `id`, `location_key`, `variant`, `image_path`, `status`, `style_epoch`, `created_at` — with `sha256`/provenance living in `AssetService`'s `manifest.json` instead (same pattern as `CharacterCard`). `LocationService` and the seed script were built against the real 8.6 schema, not the speculative Interfaces one. Seeds/renders still record a per-plate seed for ComfyUI reproducibility, but it isn't persisted anywhere (no column, no manifest kwarg support in 8.6's `add_location_plate`) — out of scope to extend 8.6's already-closed `AssetService` for this.
+- **Seed-script upsert logic.** `AssetService.add_location_plate` always inserts a fresh row, which would violate the `(location_key, variant)` unique constraint on re-run. The seed script handles this itself: looks up an existing row first, skips if `status="approved"` (unless `--force`), otherwise deletes it before regenerating — this is what makes AC9's "re-running overwrites the draft" true in practice.
+- **Multi-anchor IPAdapter wiring.** ComfyUI's `LoadImage` loads one file; 3–5 curated anchors are combined into one batched IMAGE tensor via chained `ImageBatch` nodes, injected dynamically per anchor count rather than baked into the static workflow JSON (`_inject_anchors` in the seed script).
+- **Task 5's optional reject CLI was not created** — AC9's re-seed flow already covers rejection (verified live); `LocationService.reject_plate` exists in case a future curation UI needs it.
+- **Prompt rollout stopped at candidate seeding** — the golden-set A/B gate and `production` label promotion are Jay's move per the story's own text and precedent (5.17/6.1).
+- **Concurrent-edit note:** another session was actively modifying `sprint-status.yaml`, `scripts/eval_prompts.py`, `tests/test_eval_prompts.py`, `.gitignore`, and `8-4a-special-pose-prompt-gate-decomposition.md` during this session (Story 8.4a). None of those files were touched here; only this story's own `sprint-status.yaml` entry was updated.
+
 ### File List
+
+- `src/yt_flow/domain/state.py` — `LocationKey` Literal + `LOCATION_KEYS`, `ShotData.location_key`
+- `src/yt_flow/services/location_service.py` — new: `LocationService`
+- `src/yt_flow/pipeline/nodes/image.py` — `_location_service`/`inject_location_service` seam, STOCK fast path, `stock_plate_count` trace metadata
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` — `parse_location_key`, `location_key` wired into `build_scenes`, `location_keys` template variable
+- `src/yt_flow/services/run_service.py` — scenario artifact serializer gains `location_key`
+- `src/yt_flow/api/main.py` — `inject_location_service` wiring
+- `src/yt_flow/config.py` — `location_ipadapter_weight`, `location_plate_workflow_path`, `location_anchor_dir`
+- `.env.example` — matching env var documentation
+- `prompts/scenario/visual_breakdown.md` — `location_key` output field + teaching section + self-check line
+- `data/workflows/comfyui_location_plate_api.json` — new: IPAdapter-equipped location plate workflow
+- `data/anchors/locations/.gitkeep`, `data/anchors/locations/.gitignore` — new: anchor image directory (binaries gitignored)
+- `scripts/seed_location_plates.py` — new: plate generation seed script
+- `scripts/approve_location_plate.py` — new: curation CLI
+- `tests/domain/test_state_imports.py` — `location_key` drift guard + `image.py` AD-1 injection allowlist
+- `tests/services/test_location_service.py` — new: `LocationService` unit tests
+- `tests/pipeline/nodes/test_image.py` — STOCK fast-path tests
+- `tests/pipeline/nodes/test_scenario_chain.py` — `parse_location_key` + `build_scenes` location_key tests
+- `tests/api/test_stage_artifacts.py` — scenario artifact `location_key` serializer tests
+- `tests/test_config.py` — location plate config defaults test
 
 ## Change Log
 
 - 2026-07-07: Story created from Epic 8. Owning the location-plate domain contract (`LocationKey` vocabulary, `location_key` on `ShotData`, `LocationService`, `LocationPlate` consumption from 8.6), the IPAdapter style-anchor seed pipeline, the image_node STOCK fast-path, and the visual_breakdown prompt extension. Gated behind 8.3 iteration 1 A/B + 8.6 prerequisite per epic draft. Lookdev/production split per Jay's 2026-07-07 industry-standard protocol.
+- 2026-07-09: Implemented all 13 ACs. Adapted `LocationService`/seed script to 8.6's actual (leaner) `LocationPlate` schema rather than the story's speculative Interfaces draft (see Completion Notes). Candidate prompt seeded to Langfuse; golden-set gate + promotion deferred to Jay. Full suite green (1013 passed, 1 skipped), ruff clean. Status → review.
 
 ## Saved Questions / Clarifications
 

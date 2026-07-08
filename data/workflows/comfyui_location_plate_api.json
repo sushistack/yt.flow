@@ -1,0 +1,119 @@
+{
+    "4": {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+            "ckpt_name": "AnimagineXL_v31.safetensors"
+        }
+    },
+    "10": {
+        "class_type": "LoraLoader",
+        "inputs": {
+            "lora_name": "horror.safetensors",
+            "strength_model": 0.6,
+            "strength_clip": 0.6,
+            "model": ["4", 0],
+            "clip": ["4", 1]
+        }
+    },
+    "11": {
+        "class_type": "LoraLoader",
+        "inputs": {
+            "lora_name": "darkness_xl_v2.safetensors",
+            "strength_model": 0.5,
+            "strength_clip": 0.5,
+            "model": ["10", 0],
+            "clip": ["10", 1]
+        }
+    },
+    "6": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {"title": "Positive Prompt"},
+        "inputs": {
+            "text": "location plate placeholder",
+            "clip": ["11", 1]
+        }
+    },
+    "7": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {"title": "Negative Prompt"},
+        "inputs": {
+            "text": "lowres, bad anatomy, worst quality, person, people, human, character",
+            "clip": ["11", 1]
+        }
+    },
+    "5": {
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+            "width": 1920,
+            "height": 1080,
+            "batch_size": 1
+        }
+    },
+    "20": {
+        "class_type": "LoadImage",
+        "_meta": {"title": "Style Anchor Reference (uploaded per-run; seed script batches additional anchors as 20_extra_N / 20_batch_N)"},
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "21": {
+        "class_type": "CLIPVisionLoader",
+        "_meta": {"title": "IPAdapter CLIP Vision"},
+        "inputs": {
+            "clip_name": "clip_vision_vit_h.safetensors"
+        }
+    },
+    "22": {
+        "class_type": "IPAdapterModelLoader",
+        "_meta": {"title": "IPAdapter Model"},
+        "inputs": {
+            "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+        }
+    },
+    "23": {
+        "class_type": "IPAdapterAdvanced",
+        "_meta": {"title": "Apply IPAdapter (style anchor conditioning, low weight)"},
+        "inputs": {
+            "model": ["11", 0],
+            "ipadapter": ["22", 0],
+            "image": ["20", 0],
+            "clip_vision": ["21", 0],
+            "weight": 0.4,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 1.0,
+            "embeds_scaling": "V only"
+        }
+    },
+    "3": {
+        "class_type": "KSampler",
+        "inputs": {
+            "seed": 0,
+            "steps": 30,
+            "cfg": 7.5,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "model": ["23", 0],
+            "positive": ["6", 0],
+            "negative": ["7", 0],
+            "latent_image": ["5", 0]
+        }
+    },
+    "8": {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": ["3", 0],
+            "vae": ["4", 2]
+        }
+    },
+    "9": {
+        "class_type": "SaveImage",
+        "_meta": {"title": "Location Plate Output (RGB, no rembg — full background frame)"},
+        "inputs": {
+            "filename_prefix": "ytflow_location_plate",
+            "images": ["8", 0]
+        }
+    }
+}

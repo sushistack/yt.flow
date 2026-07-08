@@ -66,6 +66,21 @@ def test_sound_design_enabled_defaults_true(monkeypatch):
     assert Settings(_env_file=None).sound_design_enabled is True
 
 
+def test_location_plate_defaults(monkeypatch):
+    _base_env(monkeypatch)
+    for key in (
+        "YTFLOW_LOCATION_IPADAPTER_WEIGHT",
+        "YTFLOW_LOCATION_PLATE_WORKFLOW_PATH",
+        "YTFLOW_LOCATION_ANCHOR_DIR",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.location_ipadapter_weight == 0.4
+    assert s.location_plate_workflow_path == "data/workflows/comfyui_location_plate_api.json"
+    assert s.location_anchor_dir == "data/anchors/locations"
+
+
 def test_content_language_defaults_ko(monkeypatch):
     _base_env(monkeypatch)
     monkeypatch.delenv("YTFLOW_CONTENT_LANGUAGE", raising=False)

@@ -468,3 +468,163 @@ async def test_resume_skipped_count_in_trace(monkeypatch, tmp_path):
     assert out.get("error") is None
     assert captured["skipped_count"] == 1
     assert captured["request_count"] == 2  # S001 skip=0, S002/S003 normal=1 each
+
+
+# ── STOCK location plate fast path (Story 8.5) ──────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _reset_location_service():
+    img._location_service = None
+    yield
+    img._location_service = None
+
+
+def _stock_state(location_key="corridor", **shot_over):
+    shot = {
+        "shot_id": "S001", "sentence_indices": [0], "image_prompt": "a dark room",
+        "negative_prompt": "blurry", "camera_angle": "wide", "camera_movement": None,
+        "image_path": None, "cast": [], "location_key": location_key,
+    }
+    shot.update(shot_over)
+    return {
+        "run_id": "run-stock-1", "scp_text": "SCP-173",
+        "scenes": [{
+            "scene_num": 1, "narration": "n1", "audio_path": None, "audio_duration": None,
+            "word_timings": [], "subtitle_path": None, "shots": [shot],
+        }],
+        "video_path": None, "current_stage": "", "gate_states": {},
+        "prompt_variant": None, "error": None,
+    }
+
+
+async def test_stock_plate_hit_copies_file_and_skips_generation(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        assert location_key == "corridor"
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    async def boom_fetch(*a, **k):
+        raise AssertionError("submit_and_fetch must not be called on a STOCK plate hit")
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", boom_fetch)
+
+    async def boom_health(*a, **k):
+        raise AssertionError("check_health must not be called on a STOCK plate hit")
+    monkeypatch.setattr(img.comfyui_client, "check_health", boom_health)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["image_path"] and (tmp_path / shot["image_path"]).is_file()
+
+
+async def test_stock_plate_miss_falls_through_to_generation(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+
+    async def resolve(location_key):
+        return []
+    img.inject_location_service(resolve)
+
+    fetch_called = False
+
+    async def fake_fetch(url, workflow):
+        nonlocal fetch_called
+        fetch_called = True
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    assert fetch_called
+
+
+async def test_stock_plate_no_service_injected_falls_through_to_generation(monkeypatch, tmp_path):
+    """No injection wired (e.g. a fresh test process) — location_key must not crash the node."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    assert out["scenes"][0]["shots"][0]["image_path"]
+
+
+async def test_stock_plate_hit_in_mock_mode_still_copies_plate(monkeypatch, tmp_path):
+    _mock_settings(monkeypatch, tmp_path)
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    shot = out["scenes"][0]["shots"][0]
+    assert (tmp_path / shot["image_path"]).read_bytes() == plate_src.read_bytes()
+
+
+async def test_stock_variant_selection_matches_plate_bytes(monkeypatch, tmp_path):
+    """AC5: variant-select via hash(run_id:scene_num:location_key) % count."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    plates = []
+    for v, marker in (("a", b"AAAA"), ("b", b"BBBB"), ("c", b"CCCC")):
+        p = tmp_path / f"plate_{v}.png"
+        p.write_bytes(RGB_PNG + marker + b"\x00" * 1200)
+        plates.append({"variant": v, "path": str(p)})
+
+    async def resolve(location_key):
+        return plates
+    img.inject_location_service(resolve)
+
+    expected_idx = img._plate_variant_index("run-stock-1", 1, "corridor", len(plates))
+    out = await img.image_node(_stock_state())
+    shot = out["scenes"][0]["shots"][0]
+    from pathlib import Path
+    assert Path(shot["image_path"]).read_bytes() == Path(plates[expected_idx]["path"]).read_bytes()
+
+
+async def test_stock_plate_count_recorded_in_trace(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    captured = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    assert captured["stock_plate_count"] == 1
+    assert captured["request_count"] == 0
+
+
+async def test_no_location_key_shot_unaffected_by_injected_service(monkeypatch, tmp_path):
+    """A shot without location_key must never consult _location_service (AD-10:
+    plate lookup is opt-in per-shot, not global)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+
+    async def boom(location_key):
+        raise AssertionError("must not be called for a shot without location_key")
+    img.inject_location_service(boom)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_stock_state(location_key=None))
+    assert out.get("error") is None

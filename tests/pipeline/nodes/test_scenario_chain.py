@@ -992,6 +992,33 @@ def test_parse_cast_invalid_motion_energy_normalizes_to_medium(bad_energy):
     assert chain.parse_cast(raw)[0]["motion_energy"] == "medium"
 
 
+# ── parse_location_key (Story 8.5: closed LocationKey vocabulary leniency) ──────
+
+
+@pytest.mark.parametrize("key", sorted(chain._VALID_LOCATION_KEYS))
+def test_parse_location_key_every_valid_key_passes_through(key):
+    assert chain.parse_location_key(key) == key
+
+
+def test_parse_location_key_unknown_string_falls_back_to_none_with_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert chain.parse_location_key("moon-base") is None
+    assert "unknown location_key" in caplog.text
+
+
+def test_parse_location_key_missing_returns_none_no_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert chain.parse_location_key(None) is None
+    assert caplog.text == ""
+
+
+@pytest.mark.parametrize("bad", [None, 5, ["corridor"], {"key": "corridor"}, 3.5])
+def test_parse_location_key_non_string_returns_none_no_warning(bad, caplog):
+    with caplog.at_level(logging.WARNING):
+        assert chain.parse_location_key(bad) is None
+    assert caplog.text == ""
+
+
 # ── cast field (Story 8.1: build_scenes attaches parsed cast per shot) ──────────
 
 
@@ -1046,6 +1073,35 @@ def test_build_scenes_fallback_backfill_shot_gets_empty_cast():
     }
     scenes = chain.build_scenes(writing, visual_by_scene, [{}])
     assert scenes[0]["shots"][0]["cast"] == []
+
+
+# ── location_key field (Story 8.5: build_scenes attaches parsed location_key) ───
+
+
+def test_build_scenes_attaches_valid_location_key_to_shot():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    visual_by_scene = {0: [{
+        "image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1,
+        "camera_type": "wide", "location_key": "corridor",
+    }]}
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
+    assert scenes[0]["shots"][0]["location_key"] == "corridor"
+
+
+def test_build_scenes_unknown_location_key_degrades_to_none():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    visual_by_scene = {0: [{
+        "image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1,
+        "camera_type": "wide", "location_key": "moon-base",
+    }]}
+    scenes = chain.build_scenes(writing, visual_by_scene, [{}])
+    assert scenes[0]["shots"][0]["location_key"] is None
+
+
+def test_build_scenes_legacy_payload_without_location_key_defaults_none():
+    # Old production prompt (pre-8.5) never emits "location_key" at all.
+    scenes = chain.build_scenes({"scenes": [{"scene_num": 1, "narration": "문장."}]}, _ONE_SHOT_VISUAL, [{}])
+    assert scenes[0]["shots"][0]["location_key"] is None
 
 
 # ── display_narration field (Story 5.18: dual track — subtitle vs TTS) ──────────

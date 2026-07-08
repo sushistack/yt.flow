@@ -232,6 +232,14 @@ evidence-of-narrative element.
 
 MUST start with: `"extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, "` then add scene-specific terms (e.g., "blurry, watermark, text, low quality, bright colors, cheerful, cartoon"). Because `image_prompt` is background-only, also append person-exclusion terms belt-and-suspenders style: `"person, human figure, character, silhouette of a person"`.
 
+### `location_key` (Optional — Stock Location Plates)
+
+For shots set in a standard SCP Foundation facility room, emit `location_key` from this closed vocabulary: {{location_keys}}
+
+- `image_prompt` is still populated (a human reviews it at the gate) but is **ignored for generation** when `location_key` is set — a pre-built plate is copied instead.
+- Omit `location_key` entirely for entity-specific environments that a generic room can't capture: inside-anomaly spaces, anomaly-distorted rooms, dream/hallucination sequences, or any environment tied to this specific SCP's effects.
+- Never invent a key outside the closed vocabulary — an unrecognized value is discarded and the shot falls back to normal generation.
+
 ### `camera_type` Values
 
 One of: wide, medium, close-up, low-angle, high-angle, over-the-shoulder, POV
@@ -294,11 +302,14 @@ Output a JSON object:
       "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
       "sentence_start": 1,
       "sentence_end": 1,
-      "camera_type": "wide"
+      "camera_type": "wide",
+      "location_key": "containment-chamber"
     }
   ]
 }
 ```
+
+`location_key` is optional — omit the key entirely (do not emit `null` or `""`) for entity-specific environments where no standard room applies.
 
 No `cast` field — cast is Pre-Decided (see above) and attached automatically; do not include it in your output.
 
@@ -315,6 +326,7 @@ Before producing JSON, verify EVERY non-empty `image_prompt`:
 - [ ] Camera type matches the narrative beat type
 - [ ] The shot still reads as consistent with the Story Logline and Scene Narrative Role above
 - [ ] `pose_hint` is used sparingly (≤ ~3 distinct hints per scenario) and never as a substitute for `pose`
+- [ ] `location_key` values are from the allowed vocabulary or absent; `image_prompt` is always populated
 - [ ] Total shot count == {{sentence_count}}
 - [ ] Each shot: `sentence_start == sentence_end`
 - [ ] `camera_type` varies between consecutive shots

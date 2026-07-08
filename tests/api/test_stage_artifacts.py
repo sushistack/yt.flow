@@ -22,6 +22,7 @@ def _scene(
     title="첫 면담", kicker="개체가 입을 열다", include_title_kicker=True,
     display_narration=None, include_display_narration=True,
     cast=None, include_cast=True,
+    location_key=None, include_location_key=True,
 ):
     shot = {
         "shot_id": f"S00{n}",
@@ -34,6 +35,8 @@ def _scene(
     }
     if include_cast:
         shot["cast"] = cast if cast is not None else []
+    if include_location_key:
+        shot["location_key"] = location_key
     scene = {
         "scene_num": n,
         "narration": f"narration {n}",
@@ -170,6 +173,21 @@ def test_scenario_artifacts_pre_8_1_checkpoint_cast_defaults_empty(client, monke
     _mock_graph(monkeypatch, _state([_scene(1, include_cast=False)]))
     body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
     assert body["scenes"][0]["shots"][0]["cast"] == []
+
+
+def test_scenario_artifacts_includes_location_key(client, monkeypatch):
+    """[Story 8.5 AC:8] location_key is exposed at the scenario gate so a human
+    reviewer can see which shots use a STOCK plate before approving."""
+    _mock_graph(monkeypatch, _state([_scene(1, location_key="corridor")]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["shots"][0]["location_key"] == "corridor"
+
+
+def test_scenario_artifacts_pre_8_5_checkpoint_location_key_defaults_null(client, monkeypatch):
+    """Old checkpoints without a location_key key: defaults to null, not a KeyError."""
+    _mock_graph(monkeypatch, _state([_scene(1, include_location_key=False)]))
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenes"][0]["shots"][0]["location_key"] is None
 
 
 def test_image_artifacts(client, monkeypatch):

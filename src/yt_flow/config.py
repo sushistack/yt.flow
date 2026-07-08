@@ -128,3 +128,10 @@ class Settings(BaseSettings):
     # every monetized SCP video. Off for dry-runs/non-SCP content where the license
     # doesn't apply — skips both outputs entirely, no HTTP calls, no file writes.
     cc_attribution: bool = True
+
+    # Stock location plates (Story 8.5): IPAdapter style-anchor weight for the
+    # seed script's bulk plate generation. Tunable without a code change if the
+    # anchor bleeds content (lower) or the style doesn't hold (raise).
+    location_ipadapter_weight: float = 0.4
+    location_plate_workflow_path: str = "data/workflows/comfyui_location_plate_api.json"
+    location_anchor_dir: str = "data/anchors/locations"

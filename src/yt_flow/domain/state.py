@@ -8,7 +8,7 @@ These are TypedDicts, not Pydantic models, because LangGraph state is the
 source of truth and must stay plain JSON-serializable for checkpointing. [AD-2]
 """
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, get_args
 
 StageName = Literal["scenario", "image", "tts", "subtitle", "video"]
 GateState = Literal["pending", "approved", "rejected", "n/a"]
@@ -26,6 +26,27 @@ CharacterMotionStyle = Literal["hold", "breath", "sway", "tremble", "pulse", "gl
 CharacterMotionEnergy = Literal["low", "medium", "high"]
 
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
+
+# Story 8.5 — closed location key vocabulary for pre-built stock background
+# plates. Closed because an LLM emitting an unknown key degrades to free-text
+# image_prompt generation (parse_location_key), the existing safe behavior.
+LocationKey = Literal[
+    "containment-chamber",   # primary SCP holding cell — cold, concrete, reinforced
+    "observation-room",      # scientists viewing through reinforced glass/monitors
+    "corridor",               # facility hallway — dim utilitarian, pipes/conduits
+    "interview-room",         # interrogation/interview — table, two chairs, bare walls
+    "autopsy-room",           # medical/autopsy suite — stainless steel, drain channels
+    "control-room",           # monitoring stations, banks of screens, consoles
+    "facility-exterior",      # outside the Site — brutalist architecture, fences, night
+    "server-room",            # data center rows, blinking lights, climate control
+    "storage-vault",          # high-security artifact storage — lockers, cages, dim
+    "medical-bay",            # infirmary/treatment room — bed, IV stands, clinical
+    "cafeteria",              # mess hall — empty, fluorescent, unsettlingly normal
+    "office",                 # researcher office/desk work
+    "maintenance-tunnel",     # below-grade service access — pipes, steam, grates
+    "entrance-checkpoint",    # security screening/airlock entry
+]
+LOCATION_KEYS = get_args(LocationKey)  # single source of truth for prompt template + parser
 
 
 class CastMember(TypedDict):
@@ -54,6 +75,8 @@ class ShotData(TypedDict):
     camera_movement: str | None
     image_path: str | None       # background-only render (Story 8.3); character overlays live in `cast`
     cast: list[CastMember]       # [] == background-only shot: downstream does NO overlay work at all
+    location_key: LocationKey | None  # Story 8.5: STOCK plate to copy instead of generating.
+                                       # None == use image_prompt (existing generation behavior).
 
 
 class SceneState(TypedDict):

@@ -12,9 +12,11 @@ from yt_flow.api.routes import characters, progress, runs, scps, stages
 from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
+from yt_flow.pipeline.nodes.image import inject_location_service
 from yt_flow.pipeline.nodes.video import inject_cast_resolver
 from yt_flow.services import run_service
 from yt_flow.services.character_service import CharacterService
+from yt_flow.services.location_service import LocationService
 
 __all__ = ["app", "ScpEntry"]
 
@@ -35,6 +37,17 @@ async def lifespan(app: FastAPI):
             return await svc.resolve_cast_cards(scp_id, scenes)
 
     inject_cast_resolver(_resolve_cast)
+
+    # Story 8.5: inject approved-plate lookup into image_node's STOCK fast path
+    async def _resolve_location(location_key: str) -> list[dict]:
+        with Session(db._engine) as session:
+            svc = LocationService(session, settings=settings)
+            return [
+                {"variant": p.variant, "path": svc._abs_asset_path(p.image_path)}
+                for p in svc.get_approved_plates(location_key)
+            ]
+
+    inject_location_service(_resolve_location)
 
     scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]
