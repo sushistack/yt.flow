@@ -49,6 +49,21 @@ class CharacterCard(SQLModel, table=True):
     pose: str
     angle: str
     image_path: str
+    status: str = "draft"  # draft | approved | retired (Story 8.6)
+    style_epoch: int = 1
+    created_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
+
+
+class LocationPlate(SQLModel, table=True):
+    __tablename__ = "location_plates"
+    __table_args__ = (UniqueConstraint("location_key", "variant", name="uq_location_plate"),)
+
+    id: str = Field(primary_key=True, default_factory=lambda: str(uuid4()))
+    location_key: str = Field(index=True)
+    variant: str
+    image_path: str
+    status: str = "draft"
+    style_epoch: int = 1
     created_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
 
 

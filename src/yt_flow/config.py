@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"
 
+    # Reusable asset library root (character cards, location plates, look-dev
+    # anchors) — distinct from workspace_path so run cleanup can never touch
+    # library assets (Story 8.6). [AD-10]
+    assets_path: str = "./assets"
+    # Current style-anchor generation; AssetService's manifest is the persisted
+    # source of truth once it exists — this is only the bootstrap seed.
+    style_epoch: int = 1
+
     # Qwen TTS via Alibaba DashScope (international). Model/voice are config-pinned,
     # never hardcoded in nodes. ponytail: api_key defaults to "" so Settings() stays
     # constructible in tests/tooling; tts_node guards for a missing key at call time.

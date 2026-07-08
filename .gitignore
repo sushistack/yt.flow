@@ -15,6 +15,10 @@ htmlcov/
 yt_flow.db*
 workspace/
 
+# asset library — binaries gitignored, manifest.json is the committed audit trail
+assets/*
+!assets/manifest.json
+
 # node (root — e2e/)
 node_modules/
 

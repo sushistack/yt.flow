@@ -1,5 +1,5 @@
 import type { CharacterDetail } from "@/lib/types"
-import { fileUrl } from "@/lib/api"
+import { assetFileUrl } from "@/lib/api"
 
 type Props = {
   character: CharacterDetail
@@ -33,7 +33,7 @@ export function AngleGallery({ character }: Props) {
           >
             {path ? (
               <img
-                src={fileUrl(path)}
+                src={assetFileUrl(path)}
                 alt={`${character.canonical_name} ${ANGLE_LABELS[angle]}`}
                 className="aspect-square w-full object-cover"
                 loading="lazy"

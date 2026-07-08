@@ -27,7 +27,7 @@ from tests.stubs import fakes
 
 
 @pytest.fixture
-def stub_profile(monkeypatch):
+def stub_profile(monkeypatch, tmp_path):
     """Wire the external seams to offline fakes (zero network/subprocess).
 
     Patches: Langfuse Prompt Hub (`scenario.get_prompt`), DeepSeek (`scenario._call_deepseek`),
@@ -47,6 +47,8 @@ def stub_profile(monkeypatch):
     import yt_flow.pipeline.nodes.video as video
     import yt_flow.services.comfyui_client as comfyui_client
     import yt_flow.services.prompt_service as prompt_service
+    from yt_flow.config import Settings
+    from yt_flow.services import run_service
 
     # scenario.py's own one format_guide fetch uses the bare imported name...
     monkeypatch.setattr(scenario, "get_prompt", fakes.fake_get_prompt_for_chain)
@@ -61,6 +63,14 @@ def stub_profile(monkeypatch):
     monkeypatch.setattr(comfyui_client, "check_health", fakes.fake_check_health)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
     fakes.patch_character_reference_seams(monkeypatch)
+    # Story 8.6: _ensure_character_reference/_ensure_special_pose_cards resolve paths
+    # via run_service._settings() — without this override the (now-successful, thanks
+    # to the fakes above) generation writes real files into the repo's ./workspace and
+    # ./assets instead of tmp_path.
+    monkeypatch.setattr(
+        run_service, "_settings",
+        lambda: Settings(workspace_path=str(tmp_path / "ws"), assets_path=str(tmp_path / "assets")),
+    )
     return fakes
 
 @pytest.fixture

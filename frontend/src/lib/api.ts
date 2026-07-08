@@ -102,6 +102,15 @@ export function fileUrl(serverPath: string): string {
   return "/files/" + rel
 }
 
+// Character card / location plate paths are stored relative to assets_path
+// (e.g. "characters/SCP-049/epoch_1/front.png", no root prefix) — the
+// /asset-files static mount serves them (Story 8.6).
+export function assetFileUrl(serverPath: string): string {
+  let rel = serverPath.replace(/^[\\/]+/, "")
+  rel = rel.replace(/\.\.(\/|\\)/g, "").replace(/^\.\.$/, "")
+  return "/asset-files/" + rel
+}
+
 export const videoDownloadUrl = (id: string) => `/runs/${id}/artifact`
 
 export function parseGateStates(

@@ -18,6 +18,7 @@ from langgraph.graph import END, START, StateGraph
 from sqlmodel import Session
 
 from yt_flow import db
+from yt_flow.config import Settings
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.services import run_service
@@ -75,6 +76,14 @@ async def spy(tmp_path, monkeypatch):
     # Story 5.8: start_run now auto-triggers character reference search/generation
     # for a never-before-seen scp_id — keep these resume/restart orchestration tests offline (B-2).
     fakes.patch_character_reference_seams(monkeypatch)
+    # _ensure_character_reference resolves paths via run_service._settings() — without
+    # this override it defaults to the real ./workspace and ./assets (Story 8.6 gotcha:
+    # this test's fake-but-successful generation was silently writing real card-sized
+    # files into the repo's asset library and workspace/).
+    monkeypatch.setattr(
+        run_service, "_settings",
+        lambda: Settings(workspace_path=str(tmp_path / "ws"), assets_path=str(tmp_path / "assets")),
+    )
     db.init("sqlite://")
     conn = await aiosqlite.connect(str(tmp_path / "cp.db"))
     saver = AsyncSqliteSaver(conn)

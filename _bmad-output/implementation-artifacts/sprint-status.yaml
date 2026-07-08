@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-07  # Story 5.20 코드리뷰 완료 → done
+# last_updated: 2026-07-08  # Story 8.6 dev-story 구현 완료 → review
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -140,7 +140,7 @@ development_status:
   8-3-bg-only-generation-multicard-compositing: done  # image_node 세그/인페인트 제거, video_node 다중 카드 합성(스케일/위치/z-order+카드별 모션), 1.13 오버라이드를 cast 게이팅으로 (D10/D13 해소); 코드리뷰 패치 6건 적용(sidecar effective negative prompt, retired README, malformed cast/card 방어, stock partial angle fallback, AC13 증거 정정), deferred 2건; 828 passed/1 skipped, ruff clean; 라이브 검증(실 ComfyUI+3씬 렌더) 완료 — DoD A/B는 8.1 cast 프롬프트 미작동 이슈로 手동 cast 메타데이터 대체 수행(Jay 승인), 프레임 증거로 J2/J3/J4 개선 확인
   8-4-on-demand-special-pose-cards: in-progress  # pose_hint 자유텍스트 → run 중 키아트 카드 온디맨드 생성(scenario 게이트 승인 훅, non-fatal, hint:sha256 캐싱, run당 3장 캡); depends on 8-1~8-3
   8-5-stock-location-plates: ready-for-dev  # 2026-07-07 created
-  8-6-asset-library-management: ready-for-dev  # assets/ 루트 분리(workspace 스크래치와 격리) + manifest.json(출처·sha256 커밋) + style_epoch 버저닝 + draft/approved 수명주기 + 8-2 카드 이주; 8-5보다 선행 필수
+  8-6-asset-library-management: review  # assets/ 루트 분리 + manifest.json + style_epoch + draft/approved 수명주기(파이프라인 자동생성 카드는 approved 직행, Jay 승인) + 8-2 카드 실이주 완료; /asset-files 서빙 추가 구현(범위 확장, Jay 승인); 사전 존재하던 테스트 격리 버그 발견·수정(실 assets/DB 오염 방지); 그로 인한 SCP-096(165 run, ComfyUI 재생성 완료)/SCP-173(고아 row, 정리)/SCP-3007×4(미사용, 정리) 카드 사전 유실 전부 해결(Jay 승인)
   8-7-composite-harmonization: ready-for-dev  # 콜라주 룩 해소 — Tier1 ffmpeg(mood 틴트+컨택트 섀도+합성 후 그레이드) → Tier2 라이트 랩 → Tier3 IC-Light 리라이팅((card,location) 쌍 사전 계산·8-6 캐싱); 착수 게이트 = iteration 1 실측
   8-8-character-micro-motion-techniques: done  # cast motion_style/motion_energy enum + procedural FFmpeg micro-motion, no new workflow stage; motion_style/motion_energy taught in cast_decision.md (8.10 split) not visual_breakdown.md; golden-set eval FAILed (SCP-096 article_fidelity -1.00), candidate not promoted; found+fixed missing production label for cast_decision (Jay-approved). 코드리뷰 패치 4건 적용(motion_style_counts 렌더된 카드만 집계, axis_terms KeyError→degrade, off-frame pan 회귀 테스트 보강, hold+parallax 테스트 추가), deferred 7건(8.4/8.10 소유 파일); 914 passed/1 skipped, ruff clean
   8-9-character-locomotion-blocking: ready-for-dev  # cast movement_mode/direction/pace enum + screen-space blocking/locomotion curves; no new workflow stage

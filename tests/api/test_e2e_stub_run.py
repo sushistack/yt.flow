@@ -38,6 +38,7 @@ async def _noop_lifespan(application):
 @pytest.fixture
 async def api_env(tmp_path, monkeypatch, stub_profile):
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
+    monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(tmp_path / "assets"))
     db.init("sqlite://")
     app.state.scps = [ScpEntry(id="SCP-096", nickname="Shy Guy", object_class="Euclid", rating=4.8)]
     app.state.workspace_path = str(tmp_path / "ws")

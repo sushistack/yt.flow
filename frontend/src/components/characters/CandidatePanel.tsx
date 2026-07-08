@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ApiError, fileUrl, finalizeCharacter, generateCandidates } from "@/lib/api"
+import { ApiError, assetFileUrl, finalizeCharacter, generateCandidates } from "@/lib/api"
 import type { CharacterCandidate } from "@/lib/types"
 
 type Props = {
@@ -131,7 +131,7 @@ export function CandidatePanel({ charId, candidates, onCandidatesRefresh, hasRef
               >
                 {candidate?.status === "ready" && candidate.image_path ? (
                   <img
-                    src={fileUrl(candidate.image_path)}
+                    src={assetFileUrl(candidate.image_path)}
                     alt={`${ANGLE_LABELS[angle]} 후보`}
                     className="aspect-square w-full object-cover"
                     loading="lazy"

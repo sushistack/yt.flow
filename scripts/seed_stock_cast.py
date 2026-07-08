@@ -34,7 +34,7 @@ STOCK_DESCRIPTORS = {
 VALID_POSES = ("standing", "sitting")
 
 
-def _is_alpha_png_file(path: str | None) -> bool:
+def _is_alpha_png_file(path: str | Path | None) -> bool:
     if not path:
         return False
     try:
@@ -43,19 +43,21 @@ def _is_alpha_png_file(path: str | None) -> bool:
         return False
 
 
-def _all_standing_paths_ready(character) -> bool:
+def _all_standing_paths_ready(character, assets_path: Path) -> bool:
     return all(
-        _is_alpha_png_file(getattr(character, f"angle_{angle}_path"))
+        _is_alpha_png_file(assets_path / p)
         for angle in ("front", "back", "side", "three_quarter")
-    )
+        if (p := getattr(character, f"angle_{angle}_path"))
+    ) and all(getattr(character, f"angle_{angle}_path") for angle in ("front", "back", "side", "three_quarter"))
 
 
 def _pose_complete(service: CharacterService, key: str, pose: str) -> bool:
+    assets_path = Path(service._settings.assets_path)
     if pose == "standing":
         character = service.check_existing_character(key)
-        return character is not None and _all_standing_paths_ready(character)
+        return character is not None and _all_standing_paths_ready(character, assets_path)
     return all(
-        (card := service.get_card(key, pose, angle)) is not None and _is_alpha_png_file(card.image_path)
+        (card := service.get_card(key, pose, angle)) is not None and _is_alpha_png_file(assets_path / card.image_path)
         for angle in ("front", "back", "side", "three_quarter")
     )
 

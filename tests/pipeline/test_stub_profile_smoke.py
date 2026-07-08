@@ -25,6 +25,7 @@ from yt_flow.services import run_service
 @pytest_asyncio.fixture
 async def graph_env(tmp_path, monkeypatch):
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
+    monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(tmp_path / "assets"))
     db.init("sqlite://")
     settings = Settings(
         langfuse_host="http://localhost",

@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     settings = Settings()
     db.init(f"sqlite:///{settings.db_path}")
     app.state.workspace_path = str(Path(settings.workspace_path).resolve())
+    app.state.assets_path = str(Path(settings.assets_path).resolve())
     app.state.sse_registry = SSEQueueRegistry()
     saver = await run_service.init(settings)  # services builds the graph; api stays off pipeline (AD-1)
 
@@ -77,6 +78,17 @@ def mount_workspace_files(application: FastAPI, workspace_dir: Path) -> None:
     application.mount("/files", StaticFiles(directory=workspace_dir), name="files")
 
 
+def mount_asset_files(application: FastAPI, assets_dir: Path) -> None:
+    """Serve library assets (character cards, location plates) at /asset-files (Story 8.6).
+
+    Card/plate paths are stored relative to assets_path (not workspace_path) — a
+    separate mount from /files keeps the two roots (and their cleanup semantics)
+    from ever being conflated.
+    """
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    application.mount("/asset-files", StaticFiles(directory=assets_dir), name="asset-files")
+
+
 app = FastAPI(title="yt.flow API", lifespan=lifespan)
 app.include_router(characters.router)
 app.include_router(runs.router)
@@ -85,3 +97,4 @@ app.include_router(scps.router)
 app.include_router(stages.router)
 mount_static_spa(app, Path(__file__).parents[3] / "frontend" / "dist")
 mount_workspace_files(app, Path(Settings().workspace_path).resolve())
+mount_asset_files(app, Path(Settings().assets_path).resolve())

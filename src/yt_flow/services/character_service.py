@@ -26,6 +26,7 @@ from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.domain.png import has_alpha
+from yt_flow.services.asset_service import AssetService
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,15 @@ class CharacterService:
         self._settings = settings or Settings()
         self._wiki_fetch = wiki_fetch or ScpWikiImageFetch()
 
+    @property
+    def _asset_service(self) -> "AssetService":
+        from yt_flow.services.asset_service import AssetService
+        return AssetService(self._settings.assets_path, self._session)
+
+    def _abs_asset_path(self, path: str) -> str:
+        """Resolve a stored assets/-relative path to a real filesystem path (Story 8.6)."""
+        return str(Path(self._settings.assets_path) / path)
+
     # ── CRUD ──────────────────────────────────────────────────────────────
 
     def create_character(
@@ -268,38 +278,62 @@ class CharacterService:
         return model
 
     def save_card(self, scp_id: str, pose: str, angle: str, image_path: str) -> CharacterCardModel:
-        """Upsert a pose-aware character card row."""
+        """Upsert a pose-aware character card row.
+
+        Pipeline-generated cards are auto-approved (Story 8.6, Jay 2026-07-08) — there
+        is no human curation step mid-run, so gating them behind a manual approval
+        would silently break 8.4's on-demand special-pose cards (generated and
+        consumed within the same run).
+        """
         _validate_card_pose(pose)
         _validate_card_angle(angle)
-        existing = self.get_card(scp_id, pose, angle)
+        epoch = self._asset_service.style_epoch
+        existing = self.get_card(scp_id, pose, angle, include_drafts=True)
         if existing is None:
-            model = CharacterCardModel(scp_id=scp_id, pose=pose, angle=angle, image_path=image_path)
+            model = CharacterCardModel(
+                scp_id=scp_id, pose=pose, angle=angle, image_path=image_path,
+                status="approved", style_epoch=epoch,
+            )
         else:
             model = existing
             model.image_path = image_path
+            model.status = "approved"
+            model.style_epoch = epoch
         self._session.add(model)
         try:
             self._session.commit()
         except IntegrityError:
             self._session.rollback()
-            model = self.get_card(scp_id, pose, angle)
+            model = self.get_card(scp_id, pose, angle, include_drafts=True)
             if model is None:
                 raise
             model.image_path = image_path
+            model.status = "approved"
+            model.style_epoch = epoch
             self._session.add(model)
             self._session.commit()
         self._session.refresh(model)
         return model
 
-    def get_card(self, scp_id: str, pose: str, angle: str) -> CharacterCardModel | None:
-        """Return the card row for a `(scp_id, pose, angle)` key, or None."""
-        return self._session.exec(
+    def get_card(
+        self, scp_id: str, pose: str, angle: str, *, include_drafts: bool = False,
+    ) -> CharacterCardModel | None:
+        """Return the card row for a `(scp_id, pose, angle)` key, or None.
+
+        Pipeline consumers only ever see approved cards (AC4) — pass
+        ``include_drafts=True`` only for identity lookups (upsert) that must find
+        the row regardless of status.
+        """
+        card = self._session.exec(
             select(CharacterCardModel).where(
                 CharacterCardModel.scp_id == scp_id,
                 CharacterCardModel.pose == pose,
                 CharacterCardModel.angle == angle,
             )
         ).first()
+        if card is None or include_drafts:
+            return card
+        return card if card.status == "approved" else None
 
     def delete_character(self, id: str) -> None:
         """Delete a character and all associated records (references, candidates, cards)."""
@@ -650,7 +684,8 @@ class CharacterService:
 
         For each angle, compiles an angle-specific prompt, calls the provider's
         ``generate()`` (i2i with t2i fallback), and saves the result to
-        ``workspace/{scp_id}/characters/{angle}_candidate_1.png``.
+        ``assets/characters/{scp_id}/epoch_{style_epoch}/{angle}_candidate_1.png``
+        (Story 8.6 — the asset library, not the run-scoped workspace).
 
         Args:
             scp_id: The SCP identifier (e.g. "SCP-096").
@@ -658,7 +693,7 @@ class CharacterService:
             angles: List of angle names; defaults to all 4 canonical angles.
 
         Returns:
-            List of saved image file paths.
+            List of saved image file paths, relative to ``assets_path``.
         """
         _validate_card_pose(pose)
         if angles is None:
@@ -667,9 +702,11 @@ class CharacterService:
             _validate_card_angle(angle)
 
         s = self._settings
-        workspace = Path(s.workspace_path)
+        assets_root = Path(s.assets_path)
         safe_scp = _sanitize_scp_id(scp_id)
-        chars_dir = workspace / safe_scp / "characters"
+        asset_service = self._asset_service
+        epoch = asset_service.style_epoch
+        chars_dir = assets_root / "characters" / safe_scp / f"epoch_{epoch}"
         chars_dir.mkdir(parents=True, exist_ok=True)
 
         provider = self._get_image_provider()
@@ -706,9 +743,16 @@ class CharacterService:
                 if not has_alpha(img_bytes):
                     raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
                 out_path.write_bytes(img_bytes)
+                rel_path = str(out_path.relative_to(assets_root))
                 if pose != "standing":
-                    self.save_card(scp_id, pose, angle, str(out_path))
-                saved_paths.append(str(out_path))
+                    self.save_card(scp_id, pose, angle, rel_path)
+                asset_service.add_asset(
+                    f"{safe_scp}/{pose}_{angle}", rel_path,
+                    source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS.get(angle)},
+                    card_key=safe_scp, pose=pose, angle=angle,
+                )
+                asset_service.approve_asset(f"{safe_scp}/{pose}_{angle}")
+                saved_paths.append(rel_path)
                 logger.info(
                     "Generated %s candidate for %s → %s (%d bytes, i2i=%s)",
                     angle, scp_id, out_path, len(img_bytes), provider.supports_i2i,
@@ -762,7 +806,9 @@ class CharacterService:
                     angle, card_key, pose,
                 )
                 continue
-            ref_path = anchor_path if angle == "front" else front_path
+            ref_path = anchor_path if angle == "front" else (
+                self._abs_asset_path(front_path) if front_path else None
+            )
             generated = await self.generate_candidates_from_reference(
                 card_key,
                 ref_image_path=ref_path,
@@ -779,7 +825,7 @@ class CharacterService:
                 # Describe the just-generated face/mask/insignia in text so the
                 # self-referencing angles below stay the same person, not just
                 # the same outfit — IPAdapter alone doesn't lock facial identity.
-                enriched = await self.enrich_descriptor_from_references(card_key, [path])
+                enriched = await self.enrich_descriptor_from_references(card_key, [self._abs_asset_path(path)])
                 if enriched:
                     character = self.update_character(character.id, visual_descriptor=enriched)
             if pose == "standing":
@@ -804,6 +850,7 @@ class CharacterService:
         if not front_path:
             logger.warning("generate_special_pose_card: no standing front card for %s", card_key)
             return None
+        front_path = self._abs_asset_path(front_path)
 
         provider = self._get_image_provider()
         if not getattr(provider, "produces_alpha", True):
@@ -824,7 +871,10 @@ class CharacterService:
             scp_id=card_key,
         )
 
-        chars_dir = Path(self._settings.workspace_path) / _sanitize_scp_id(card_key) / "characters"
+        safe_scp = _sanitize_scp_id(card_key)
+        assets_root = Path(self._settings.assets_path)
+        asset_service = self._asset_service
+        chars_dir = assets_root / "characters" / safe_scp / f"epoch_{asset_service.style_epoch}"
         chars_dir.mkdir(parents=True, exist_ok=True)
         out_path = chars_dir / f"{hint_key.replace(':', '_')}_front.png"
         try:
@@ -838,9 +888,16 @@ class CharacterService:
             if not has_alpha(img_bytes):
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
             out_path.write_bytes(img_bytes)
-            self.save_card(card_key, hint_key, "front", str(out_path))
+            rel_path = str(out_path.relative_to(assets_root))
+            self.save_card(card_key, hint_key, "front", rel_path)
+            asset_service.add_asset(
+                f"{safe_scp}/{hint_key}_front", rel_path,
+                source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS["front"]},
+                card_key=safe_scp, pose=hint_key, angle="front",
+            )
+            asset_service.approve_asset(f"{safe_scp}/{hint_key}_front")
             logger.info("Generated special-pose card for %s pose=%s -> %s", card_key, hint_key, out_path)
-            return str(out_path)
+            return rel_path
         except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:
             logger.warning(
                 "generate_special_pose_card: failed for %s pose_hint=%r: %s",
@@ -1163,7 +1220,7 @@ class CharacterService:
                                 "card_key": card_key,
                                 "pose": hint_pose,
                                 "angle": "front",
-                                "path": hint_card.image_path,
+                                "path": self._abs_asset_path(hint_card.image_path),
                                 "fallback": False,
                                 "angle_fallback": False,
                                 "asset_fallback": False,
@@ -1247,7 +1304,7 @@ class CharacterService:
         if pose != "standing":
             card = self.get_card(character.scp_id, pose, angle)
             if card is not None:
-                return card.image_path, pose, False
+                return self._abs_asset_path(card.image_path), pose, False
             logger.warning(
                 "resolve_cast_cards: no %s card for %s angle=%s, falling back to standing",
                 pose, character.scp_id, angle,
@@ -1255,7 +1312,7 @@ class CharacterService:
         path = getattr(character, angle_field)
         if not path:
             return None
-        return path, "standing", pose != "standing"
+        return self._abs_asset_path(path), "standing", pose != "standing"
 
     async def _select_entity_angles(
         self, scp_id: str, shot_catalogue: list[dict],

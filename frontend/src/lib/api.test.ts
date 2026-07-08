@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { fileUrl, parseGateStates, getStageArtifacts, getRun, ApiError } from "./api"
+import { fileUrl, assetFileUrl, parseGateStates, getStageArtifacts, getRun, ApiError } from "./api"
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -8,6 +8,19 @@ describe("fileUrl", () => {
     expect(fileUrl("workspace/run-1/images/scene_001.png")).toBe("/files/run-1/images/scene_001.png")
     expect(fileUrl("./workspace/run-1/audio/scene_001.wav")).toBe("/files/run-1/audio/scene_001.wav")
     expect(fileUrl("/home/u/workspace/run-1/video.mp4")).toBe("/files/run-1/video.mp4")
+  })
+})
+
+describe("assetFileUrl", () => {
+  it("maps an assets-relative path to the /asset-files mount", () => {
+    expect(assetFileUrl("characters/SCP-049/epoch_1/front.png")).toBe(
+      "/asset-files/characters/SCP-049/epoch_1/front.png",
+    )
+  })
+
+  it("strips a leading slash and path-traversal sequences", () => {
+    expect(assetFileUrl("/characters/SCP-049/front.png")).toBe("/asset-files/characters/SCP-049/front.png")
+    expect(assetFileUrl("../../etc/passwd")).toBe("/asset-files/etc/passwd")
   })
 })
 

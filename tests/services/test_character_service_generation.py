@@ -179,7 +179,7 @@ class TestMultiAngleGeneration:
 
     def test_generate_candidates_creates_files(self, service, temp_ref_image, tmp_path):
         """AC3: Generate candidates saves files for all 4 angles."""
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-096", "Shy Guy")
 
@@ -194,12 +194,12 @@ class TestMultiAngleGeneration:
 
         assert len(paths) == 4
         for path in paths:
-            assert Path(path).exists()
-            assert Path(path).read_bytes() == TINY_PNG
+            assert (tmp_path / path).exists()
+            assert (tmp_path / path).read_bytes() == TINY_PNG
 
     def test_generate_candidates_with_custom_angles(self, service, temp_ref_image, tmp_path):
         """Generate only specified angles."""
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-173", "The Sculpture")
 
@@ -219,7 +219,7 @@ class TestMultiAngleGeneration:
 
     def test_failed_angle_doesnt_block_others(self, service, temp_ref_image, tmp_path):
         """AC3: One angle failing doesn't prevent others from generating."""
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-096", "Shy Guy")
 
@@ -240,7 +240,7 @@ class TestMultiAngleGeneration:
 
     def test_generate_candidates_uses_visual_descriptor(self, service, temp_ref_image, tmp_path):
         """Uses Character.visual_descriptor in compiled prompt."""
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         c = service.create_character("SCP-096", "Shy Guy")
         service.update_character(c.id, visual_descriptor="Pale humanoid, 2.38m tall")
@@ -262,8 +262,8 @@ class TestMultiAngleGeneration:
         assert "Pale humanoid" in prompt
 
     def test_generate_uses_workspace_path(self, service, temp_ref_image, tmp_path):
-        """Generated files go to workspace/{scp_id}/characters/."""
-        s = Settings(workspace_path=str(tmp_path))
+        """Generated files go to assets/characters/{scp_id}/epoch_{n}/ (Story 8.6)."""
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-049", "Plague Doctor")
 
@@ -287,7 +287,7 @@ class TestMultiAngleGeneration:
     def test_generate_candidates_passes_angle_specific_ipadapter_weights(
         self, service, temp_ref_image, tmp_path
     ):
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-049", "Plague Doctor")
 
@@ -308,7 +308,7 @@ class TestMultiAngleGeneration:
     def test_generate_candidates_rejects_opaque_png_per_angle(
         self, service, temp_ref_image, tmp_path
     ):
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-049", "Plague Doctor")
 
@@ -328,7 +328,7 @@ class TestMultiAngleGeneration:
         assert not (tmp_path / "SCP-049" / "characters" / "side_candidate_1.png").exists()
 
     def test_generate_sitting_candidates_write_pose_rows(self, service, temp_ref_image, tmp_path):
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
         service.create_character("SCP-049", "Plague Doctor")
 
@@ -365,7 +365,7 @@ class TestMultiAngleGeneration:
         assert pose_hint_key("kneeling over a corpse").startswith("hint:")
 
     def test_generate_special_pose_card_success_upserts_hint_card(self, service, tmp_path):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         character = service.create_character("SCP-049", "Plague Doctor")
         service.update_character(
             character.id,
@@ -381,7 +381,7 @@ class TestMultiAngleGeneration:
             path = asyncio_run(service.generate_special_pose_card("SCP-049", "kneeling over a corpse"))
 
         assert path is not None
-        assert Path(path).exists()
+        assert (tmp_path / path).exists()
         assert Path(path).name == f"{pose_hint_key('kneeling over a corpse').replace(':', '_')}_front.png"
         card = service.get_card("SCP-049", pose_hint_key("kneeling over a corpse"), "front")
         assert card is not None
@@ -389,7 +389,7 @@ class TestMultiAngleGeneration:
         assert mock_provider.generate.call_args.kwargs["ref_image_path"] == str(tmp_path / "front.png")
 
     def test_generate_special_pose_card_missing_front_returns_none(self, service, tmp_path):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service.create_character("SCP-049", "Plague Doctor")
 
         path = asyncio_run(service.generate_special_pose_card("SCP-049", "kneeling over a corpse"))
@@ -398,7 +398,7 @@ class TestMultiAngleGeneration:
         assert service.get_card("SCP-049", pose_hint_key("kneeling over a corpse"), "front") is None
 
     def test_generate_special_pose_card_rejects_opaque_without_row(self, service, tmp_path):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         character = service.create_character("SCP-049", "Plague Doctor")
         service.update_character(character.id, angle_front_path=str(tmp_path / "front.png"))
         mock_provider = MagicMock()
@@ -419,7 +419,7 @@ class TestMultiAngleGeneration:
     def test_generate_cards_from_descriptor_front_t2i_then_self_references(
         self, service, tmp_path
     ):
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
 
         mock_provider = MagicMock()
@@ -438,8 +438,8 @@ class TestMultiAngleGeneration:
         assert len(paths) == 3
         calls = mock_provider.generate.call_args_list
         assert calls[0].kwargs["ref_image_path"] is None
-        assert calls[1].kwargs["ref_image_path"] == paths[0]
-        assert calls[2].kwargs["ref_image_path"] == paths[0]
+        assert calls[1].kwargs["ref_image_path"] == str(tmp_path / paths[0])
+        assert calls[2].kwargs["ref_image_path"] == str(tmp_path / paths[0])
         character = service.check_existing_character("STOCK-d-class")
         assert character is not None
         assert character.angle_front_path == paths[0]
@@ -447,7 +447,7 @@ class TestMultiAngleGeneration:
         assert character.angle_back_path == paths[2]
 
     def test_generate_cards_from_descriptor_runs_front_first(self, service, tmp_path):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -469,12 +469,12 @@ class TestMultiAngleGeneration:
         ]
         calls = mock_provider.generate.call_args_list
         assert calls[0].kwargs["ref_image_path"] is None
-        assert calls[1].kwargs["ref_image_path"] == paths[0]
+        assert calls[1].kwargs["ref_image_path"] == str(tmp_path / paths[0])
 
     def test_generate_cards_from_descriptor_anchor_only_conditions_front(
         self, service, tmp_path
     ):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         anchor = str(tmp_path / "curated.png")
         Path(anchor).write_bytes(TINY_PNG)
 
@@ -495,13 +495,13 @@ class TestMultiAngleGeneration:
         calls = mock_provider.generate.call_args_list
         assert len(paths) == 3
         assert calls[0].kwargs["ref_image_path"] == anchor
-        assert calls[1].kwargs["ref_image_path"] == paths[0]
-        assert calls[2].kwargs["ref_image_path"] == paths[0]
+        assert calls[1].kwargs["ref_image_path"] == str(tmp_path / paths[0])
+        assert calls[2].kwargs["ref_image_path"] == str(tmp_path / paths[0])
 
     def test_generate_cards_from_descriptor_skips_later_angles_without_front_anchor(
         self, service, tmp_path
     ):
-        s = Settings(workspace_path=str(tmp_path))
+        s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
 
         mock_provider = MagicMock()
@@ -524,7 +524,7 @@ class TestMultiAngleGeneration:
     def test_generate_candidates_rejects_provider_without_alpha_sprites(
         self, service, temp_ref_image, tmp_path
     ):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service.create_character("SCP-049", "Plague Doctor")
 
         mock_provider = MagicMock()
@@ -535,7 +535,7 @@ class TestMultiAngleGeneration:
                 asyncio_run(service.generate_candidates_from_reference("SCP-049", temp_ref_image, angles=["front"]))
 
     def test_generate_candidates_rejects_unknown_pose(self, service, temp_ref_image, tmp_path):
-        service._settings = Settings(workspace_path=str(tmp_path))
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         with pytest.raises(ValidationError, match="pose"):
             asyncio_run(
                 service.generate_candidates_from_reference(

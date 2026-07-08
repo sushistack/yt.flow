@@ -50,6 +50,7 @@ def _settings(tmp_path) -> Settings:
         langfuse_public_key="pk",
         langfuse_secret_key="sk",
         workspace_path=str(tmp_path / "ws"),
+        assets_path=str(tmp_path / "assets"),
     )
 
 

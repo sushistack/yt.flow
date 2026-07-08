@@ -59,6 +59,7 @@ async def env(tmp_path, monkeypatch, stub_stage_nodes):
     # stubbed to instant successes: these tests exercise gate/status mechanics,
     # and a genuinely failing stage no longer reaches its gate (error routes to END).
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
+    monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(tmp_path / "assets"))
     # Story 5.8: start_run now auto-triggers character reference search/generation
     # for a never-before-seen scp_id — keep these gate/status-mechanics tests offline (B-2).
     fakes.patch_character_reference_seams(monkeypatch)
@@ -283,6 +284,7 @@ async def test_resume_run_reports_running_while_stage_in_flight(tmp_path, monkey
     from yt_flow.pipeline import nodes
 
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "ws"))
+    monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(tmp_path / "assets"))
     fakes.patch_character_reference_seams(monkeypatch)
     db.init("sqlite://")
 
