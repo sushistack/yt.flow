@@ -14,8 +14,7 @@ EXPECTED_FIELDS = {
     "WordTiming": {"word", "start_sec", "end_sec"},
     "ShotData": {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
-        "camera_angle", "camera_movement", "image_path",
-        "background_path", "character_path", "layered_fallback", "cast",
+        "camera_angle", "camera_movement", "image_path", "cast",
     },
     "CastMember": {"card_key", "position", "depth", "pose"},
     "SceneState": {
@@ -93,8 +92,9 @@ def test_pipeline_imports_no_db():
 
 def test_api_imports_no_pipeline():
     # AD-1: api layer must never import from pipeline. Exception: api/main.py
-    # imports `inject_angle_selector` from pipeline.nodes.video — the sole AD-1
-    # injection point for the angle selection service (Story 1.13).
+    # imports `inject_cast_resolver` from pipeline.nodes.video — the sole AD-1
+    # injection point for the cast card resolver service (Story 1.13, reworked
+    # in Story 8.3).
     pkg = Path(state.__file__).resolve().parents[1]
     for py in (pkg / "api").rglob("*.py"):
         for mod in _yt_flow_imports(py):

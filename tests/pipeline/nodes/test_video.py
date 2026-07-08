@@ -76,20 +76,29 @@ def _shot(
     image_path: str | None = None,
     camera_movement: str | None = None,
     *,
-    background_path: str | None = None,
-    character_path: str | None = None,
+    shot_id: str = "S001",
+    cast: list[dict] | None = None,
 ) -> ShotData:
     return {  # type: ignore[return-value]
-        "shot_id": "S001",
+        "shot_id": shot_id,
         "sentence_indices": [0],
         "image_prompt": "p",
         "negative_prompt": "n",
         "camera_angle": None,
         "camera_movement": camera_movement,
         "image_path": image_path,
-        "background_path": background_path,
-        "character_path": character_path,
-        "cast": [],
+        "cast": cast or [],
+    }
+
+
+def _card(
+    path: str, *, card_key: str = "SCP-096", position: str = "center", depth: str = "near",
+    pose: str = "standing", angle: str = "front", fallback: bool = False,
+) -> dict:
+    """A resolved card dict, the shape resolve_cast_cards returns (Story 8.3 Interfaces)."""
+    return {
+        "card_key": card_key, "pose": pose, "angle": angle, "path": path,
+        "fallback": fallback, "position": position, "depth": depth,
     }
 
 
@@ -100,16 +109,14 @@ def _scene(
     audio: str | None = None,
     subtitle: str | None = None,
     camera_movement: str | None = None,
-    background: str | None = None,
-    character: str | None = None,
+    cast: list[dict] | None = None,
     audio_duration: float = 2.0,
     **over,
 ) -> SceneState:
     base: dict = {
         "scene_num": scene_num,
         "narration": f"narration {scene_num}",
-        "shots": [_shot(image, camera_movement,
-                        background_path=background, character_path=character)],
+        "shots": [_shot(image, camera_movement, cast=cast)],
         "audio_path": audio,
         "audio_duration": audio_duration,
         "word_timings": [],
@@ -134,6 +141,29 @@ def _state(scenes: list, run_id: str = "run-001", **over) -> PipelineState:
     return base  # type: ignore[return-value]
 
 
+def _png_chunk(name: bytes, data: bytes) -> bytes:
+    import struct
+    import zlib
+    crc = zlib.crc32(name + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + name + data + struct.pack(">I", crc)
+
+
+def _make_png(color_type: int) -> bytes:
+    """Minimal 1x1 PNG with the given color_type (2=RGB opaque, 6=RGBA)."""
+    import struct
+    import zlib
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, color_type, 0, 0, 0))
+    raw = b"\x00\xff\x00\x00\x80" if color_type == 6 else b"\x00\xff\x80\x40"
+    idat = _png_chunk(b"IDAT", zlib.compress(raw))
+    iend = _png_chunk(b"IEND", b"")
+    return sig + ihdr + idat + iend
+
+
+RGBA_CARD_BYTES = _make_png(6)
+OPAQUE_CARD_BYTES = _make_png(2)
+
+
 @pytest.fixture
 def assets(tmp_path) -> SimpleNamespace:
     image = tmp_path / "image.png"
@@ -143,9 +173,14 @@ def assets(tmp_path) -> SimpleNamespace:
     subtitle = tmp_path / "scene.srt"
     subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n\n", encoding="utf-8")
     character = tmp_path / "character.png"
-    character.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    character.write_bytes(RGBA_CARD_BYTES)
+    character2 = tmp_path / "character2.png"
+    character2.write_bytes(RGBA_CARD_BYTES)
+    opaque_card = tmp_path / "opaque_card.png"
+    opaque_card.write_bytes(OPAQUE_CARD_BYTES)
     return SimpleNamespace(
-        image=str(image), audio=str(audio), subtitle=str(subtitle), character=str(character)
+        image=str(image), audio=str(audio), subtitle=str(subtitle),
+        character=str(character), character2=str(character2), opaque_card=str(opaque_card),
     )
 
 
@@ -919,10 +954,11 @@ def test_overlay_filter_parallax_off_is_unchanged():
 
 def test_overlay_filter_parallax_pan_adds_term_over_sines():
     """spec=pan-right ⇒ a macro pan term rides on top of the sway/bob sines. [AC:3]"""
-    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX))
-    f = _overlay_filter(ch, duration=2.0)
+    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX), "near")
+    f = _overlay_filter(spec=ch, duration=2.0, depth="near")
     assert f.count("sin(t*") == 2                       # sway/bob preserved
-    assert f"({-video.CHAR_PAN_AMPLITUDE_PX})*t/2.0" in f   # pan-right drifts -x on-screen
+    near_amp = video.CHAR_PAN_AMPLITUDE_PX * video._DEPTH_PARALLAX["near"]
+    assert f"({-near_amp})*t/2.0" in f   # pan-right drifts -x on-screen, full amplitude at near
     assert f != _overlay_filter()                       # differs from parallax-off
 
 
@@ -930,7 +966,56 @@ def test_overlay_filter_center_directions_contribute_zero_pan():
     """in-center/out-center have no apparent drift ⇒ overlay == parallax-off string. [AC:3]"""
     for d in ("in-center", "out-center"):
         ch = _character_spec(EffectSpec(direction=d, start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX))
-        assert _overlay_filter(ch, duration=2.0) == _overlay_filter()
+        assert _overlay_filter(spec=ch, duration=2.0) == _overlay_filter()
+
+
+# ── Multi-card cast compositing (Story 8.3) ───────────────────────────────────
+
+
+def test_overlay_filter_position_anchors_rule_of_thirds():
+    """position selects a 1/3, 1/2, or 2/3 horizontal anchor. [AC:6]"""
+    for position, frac in video._POSITION_X_FRAC.items():
+        f = _overlay_filter(position=position)
+        assert f"main_w*{frac}" in f
+
+
+def test_overlay_filter_phase_decorrelates_by_index():
+    """Card index k offsets the sine phase so N cards never sway in lockstep. [AC:6]"""
+    f0 = _overlay_filter(position="center", k=0)
+    f1 = _overlay_filter(position="center", k=1)
+    assert f0 != f1
+    assert f"+{video.PHASE_STEP})" in f1 or f"+{1 * video.PHASE_STEP})" in f1
+
+
+def test_overlay_filter_pan_amplitude_scales_by_depth():
+    """Parallax pan amplitude is scaled down for mid/far cards vs near. [AC:7]"""
+    spec = EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    near = _overlay_filter(position="center", spec=spec, duration=2.0, depth="near")
+    mid = _overlay_filter(position="center", spec=spec, duration=2.0, depth="mid")
+    far = _overlay_filter(position="center", spec=spec, duration=2.0, depth="far")
+    for depth, filt in (("near", near), ("mid", mid), ("far", far)):
+        amp = video.CHAR_PAN_AMPLITUDE_PX * video._DEPTH_PARALLAX[depth]
+        assert f"({-amp})*t/2.0" in filt
+
+
+def test_character_scale_filter_depth_caps():
+    """Depth-scaled size cap: far < mid < near, all within the motion-safe box. [AC:6]"""
+    near = _character_scale_filter("near")
+    mid = _character_scale_filter("mid")
+    far = _character_scale_filter("far")
+    assert str(video.CHAR_MAX_W) in near and str(video.CHAR_MAX_H) in near
+    assert str(video.CHAR_MAX_W * video._DEPTH_SCALE["mid"]) in mid
+    assert str(video.CHAR_MAX_W * video._DEPTH_SCALE["far"]) in far
+    assert far != mid != near
+
+
+def test_character_spec_depth_scales_amplification():
+    """Depth scales the zoom-delta amplification — near amplifies most. [AC:7]"""
+    bg = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    near = _character_spec(bg, "near")
+    mid = _character_spec(bg, "mid")
+    far = _character_spec(bg, "far")
+    assert near.end_zoom > mid.end_zoom > far.end_zoom > bg.end_zoom
 
 
 def test_char_max_box_reserves_zoom_growth():
@@ -953,27 +1038,40 @@ def test_config_parallax_enabled_default_true():
     assert Settings.model_fields["parallax_enabled"].default is True
 
 
+def _cast_member(card_key="SCP-096", *, position="center", depth="near", pose="standing"):
+    return {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
+
+
+def _inject_resolver(monkeypatch, mapping: dict[str, list[dict]] | None = None, *, fn=None):
+    """Wire video._cast_resolver like api/main.py does — mapping keyed by "scene:shot"."""
+    async def _default(scp_id, scenes):
+        return mapping or {}
+    monkeypatch.setattr(video, "_cast_resolver", fn or _default)
+
+
 async def test_video_node_parallax_on_adds_char_zoom_and_pan(monkeypatch, tmp_path, assets):
-    """parallax_enabled=True: character stream gets a scale-zoom ramp + the overlay
+    """parallax_enabled=True: card stream gets a scale-zoom ramp + the overlay
     carries a pan term, on top of the existing scale-cap + sway/bob. [AC:2,3,5]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, parallax_enabled=True))
     fake, captured = _capture_arg_flag("-filter_complex")
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
     scene = _scene(
-        1, image=assets.image, background=assets.image, character=assets.character,
+        1, image=assets.image, cast=[_cast_member()],
         audio=assets.audio, subtitle=assets.subtitle, camera_movement="pan right",
     )
     out = await video_node(_state([scene]))
 
     assert out.get("error") is None
     fc = captured[0]
-    # character chain = scale-cap , scale-zoom(eval=frame) → two scale= on the [char] branch
-    char_branch = fc.split("[char]")[0].split("[bg];")[-1]
+    # card chain = scale-cap , scale-zoom(eval=frame) → two scale= on the [c0] branch
+    char_branch = fc.split("[c0]")[0].split("[bg];")[-1]
     assert char_branch.count("scale=") == 2
     assert "eval=frame" in char_branch
     # overlay carries the pan term for pan-right
-    assert f"({-video.CHAR_PAN_AMPLITUDE_PX})*t/" in fc
+    near_amp = video.CHAR_PAN_AMPLITUDE_PX * video._DEPTH_PARALLAX["near"]
+    assert f"({-near_amp})*t/" in fc
 
 
 async def test_video_node_parallax_off_no_char_zoom(monkeypatch, tmp_path, assets):
@@ -981,42 +1079,41 @@ async def test_video_node_parallax_off_no_char_zoom(monkeypatch, tmp_path, asset
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, parallax_enabled=False))
     fake, captured = _capture_arg_flag("-filter_complex")
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
     scene = _scene(
-        1, image=assets.image, background=assets.image, character=assets.character,
+        1, image=assets.image, cast=[_cast_member()],
         audio=assets.audio, subtitle=assets.subtitle, camera_movement="pan right",
     )
     out = await video_node(_state([scene]))
 
     assert out.get("error") is None
     fc = captured[0]
-    char_branch = fc.split("[char]")[0].split("[bg];")[-1]
+    char_branch = fc.split("[c0]")[0].split("[bg];")[-1]
     assert char_branch.count("scale=") == 1   # only the cap, no zoom ramp
-    assert "t/" not in fc.split("[ov]")[0]     # no pan-term ramp in the overlay
+    assert "t/" not in fc.split("[o0]")[0]     # no pan-term ramp in the overlay
 
 
 async def test_video_node_character_uses_filter_complex(monkeypatch, tmp_path, assets):
-    """A shot with character_path renders via filter_complex overlay + eval=frame. [AC:1,2]"""
+    """A shot with a resolved cast card renders via filter_complex overlay + eval=frame. [AC:1,2]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     fake, captured = _capture_arg_flag("-filter_complex")
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
-    scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-    )
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
     out = await video_node(_state([scene]))
 
     assert out.get("error") is None
-    assert captured, "filter_complex not used for a character shot"
+    assert captured, "filter_complex not used for a cast-card shot"
     fc = captured[0]
     assert "zoompan" in fc          # background still gets Ken Burns
-    assert "overlay=" in fc         # character composited on top
+    assert "overlay=" in fc         # card composited on top
     assert "eval=frame" in fc       # motion animates per-frame
     assert "subtitles=" in fc       # subtitles burned last
-    assert "fontsdir='" in fc       # Story 5.18 AC:6 — bundled Pretendard, character-path branch too
-    assert "scale=" in fc           # character normalized to motion-safe box
-    assert "[char]" in fc           # scaled character feeds the overlay
+    assert "fontsdir='" in fc       # Story 5.18 AC:6 — bundled Pretendard, cast-card branch too
+    assert "scale=" in fc           # card normalized to motion-safe box
+    assert "[c0]" in fc             # scaled card feeds the overlay
 
 
 async def test_video_node_character_maps_output_and_audio(monkeypatch, tmp_path, assets):
@@ -1030,22 +1127,20 @@ async def test_video_node_character_maps_output_and_audio(monkeypatch, tmp_path,
 
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(video, "_run_ffmpeg", _rec)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
-    scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-    )
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
     out = await video_node(_state([scene]))
     assert out.get("error") is None
 
     args = list(calls[0])
     assert "[out]" in args          # -map [out]
-    # audio is the 3rd input (idx 2): bg, character, audio
+    # audio is the 3rd input (idx 2): bg, card, audio
     assert "2:a" in args
 
 
 async def test_video_node_no_character_uses_vf_fallback(monkeypatch, tmp_path, assets):
-    """No character_path → unchanged 1.9b -vf Ken-Burns path, no overlay. [AC:3]"""
+    """Empty cast → unchanged 1.9b -vf Ken-Burns path, no overlay. [AC:3,8]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     fake_vf, captured_vf = _capture_arg_flag("-vf")
     monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
@@ -1059,19 +1154,50 @@ async def test_video_node_no_character_uses_vf_fallback(monkeypatch, tmp_path, a
     assert "zoompan" in captured_vf[0]
 
 
+async def test_video_node_two_cards_stacking_and_positions(monkeypatch, tmp_path, assets):
+    """N=2 cards: far-before-near overlay chain order, distinct rule-of-thirds x anchors. [AC:6]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    # cast order: near first, far second — resolver output preserves cast order,
+    # but the compositor must still paint far before near (stable depth sort).
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, card_key="SCP-096", position="left", depth="near"),
+        _card(assets.character2, card_key="STOCK-d-class", position="right", depth="far"),
+    ]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member("SCP-096", position="left", depth="near"),
+              _cast_member("STOCK-d-class", position="right", depth="far")],
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    # cast order is [near, far] but stacking is derived (stable sort by depth):
+    # far (STOCK-d-class) must be input 1 / [c0], near (SCP-096) input 2 / [c1].
+    assert fc.index("[c0]") < fc.index("[c1]")
+    left_anchor = f"main_w*{video._POSITION_X_FRAC['left']}"
+    right_anchor = f"main_w*{video._POSITION_X_FRAC['right']}"
+    assert left_anchor in fc and right_anchor in fc
+    # far/right's overlay stage is painted before near/left's
+    assert fc.index(right_anchor) < fc.index(left_anchor)
+
+
 # ── Post-processing filters integration (Story 7.2) ────────────────────────────
 
 
 async def test_video_node_character_post_fx_placement(monkeypatch, tmp_path, assets):
-    """Post filter sits after overlay, before subtitles, on the layered path. [AC:4,6]"""
+    """Post filter sits after overlay, before subtitles, on the cast-card path. [AC:4,6]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, post_fx_enabled=True))
     fake, captured = _capture_arg_flag("-filter_complex")
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
     scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-        mood="dread",
+        1, image=assets.image, cast=[_cast_member()],
+        audio=assets.audio, subtitle=assets.subtitle, mood="dread",
     )
     out = await video_node(_state([scene]))
 
@@ -1223,15 +1349,13 @@ def sound_assets(tmp_path, monkeypatch):
 
 
 async def test_video_node_character_sound_design_enabled(monkeypatch, tmp_path, assets, sound_assets):
-    """Character branch + sound_design_enabled: bgm/ambient/stinger inputs + [aout] map. [AC:3,4]"""
+    """Cast-card branch + sound_design_enabled: bgm/ambient/stinger inputs + [aout] map. [AC:3,4]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, sound_design_enabled=True))
     fake, calls = _capture_ffmpeg_calls()
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
-    scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-    )
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
     out = await video_node(_state([scene]))
 
     assert out.get("error") is None
@@ -1287,7 +1411,7 @@ async def test_video_node_sound_design_disabled_unchanged(monkeypatch, tmp_path,
 async def test_video_node_character_sound_design_and_post_fx_together(
     monkeypatch, tmp_path, assets, sound_assets,
 ):
-    """[Review] Story 7.1 + 7.2 intersection, layered path: sound-design mix and the
+    """[Review] Story 7.1 + 7.2 intersection, cast-card path: sound-design mix and the
     post-fx fragment both land in the same filter_complex."""
     monkeypatch.setattr(
         video, "_settings",
@@ -1295,11 +1419,11 @@ async def test_video_node_character_sound_design_and_post_fx_together(
     )
     fake, calls = _capture_ffmpeg_calls()
     monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
     scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-        mood="dread",
+        1, image=assets.image, cast=[_cast_member()],
+        audio=assets.audio, subtitle=assets.subtitle, mood="dread",
     )
     out = await video_node(_state([scene]))
 
@@ -1360,36 +1484,18 @@ def test_validate_scene_assets_sound_design_disabled_skips_check(assets):
     _validate_scene_assets([scene], sound_design_enabled=False)  # must not raise
 
 
-def test_validate_character_path_set_but_missing(assets):
-    """A set-but-missing character_path fails loudly (not silently dropped). [AC:1]"""
-    scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character="/no/such/character.png", audio=assets.audio, subtitle=assets.subtitle,
-    )
-    with pytest.raises(FileNotFoundError, match="character_path"):
-        _validate_scene_assets([scene])
-
-
-def test_validate_none_character_ok(assets):
-    """character_path=None is a valid background-only shot. [AC:3]"""
-    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
-    _validate_scene_assets([scene])  # must not raise
-
-
-async def test_trace_records_character_motion(monkeypatch, tmp_path, assets):
-    """Trace metadata gains character-overlay flag + motion params + count. [AC:4]"""
+async def test_trace_records_card_counts(monkeypatch, tmp_path, assets):
+    """Trace metadata gains per-scene card counts + motion params. [AC:4] [Story 8.3]"""
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
     monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
-    scene = _scene(
-        1, image=assets.image, background=assets.image,
-        character=assets.character, audio=assets.audio, subtitle=assets.subtitle,
-    )
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
     await video_node(_state([scene]))
 
-    assert captured.get("character_scenes") == 1
+    assert captured.get("card_counts") == [1]
     effects = captured["effects"]
     assert effects[0]["character_overlay"] is True
 
@@ -1403,8 +1509,23 @@ async def test_trace_character_overlay_false_when_absent(monkeypatch, tmp_path, 
     scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
     await video_node(_state([scene]))
 
-    assert captured.get("character_scenes") == 0
+    assert captured.get("card_counts") == [0]
     assert captured["effects"][0]["character_overlay"] is False
+
+
+async def test_trace_records_cast_resolution_metadata(monkeypatch, tmp_path, assets):
+    """cast_resolution metadata (replaces 1.13's angle_selection) reports fallback usage."""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, fallback=True)]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene]))
+
+    assert captured["cast_resolution"]["total_cards"] == 1
+    assert captured["cast_resolution"]["fallback_used"] == 1
 
 
 # ── integration test (skipped without ffmpeg+ffprobe) ────────────────────────
@@ -1545,13 +1666,13 @@ async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_pa
     out_dir = tmp_path / "out"
     out_dir.mkdir()
 
-    for label, scene_num, character in (("background-only", 1, None), ("character", 2, bg)):
+    for label, scene_num, cards in (("background-only", 1, []), ("cast-card", 2, [_card(str(bg))])):
         scene = _scene(
             scene_num, image=str(bg), audio=str(narration), subtitle=str(subtitle),
-            character=str(character) if character else None, audio_duration=narration_dur,
+            audio_duration=narration_dur,
         )
         seg_path, _spec, _has_char = await asyncio.wait_for(
-            video._compose_scene(scene, scene_num, out_dir, sound_design_enabled=True),
+            video._compose_scene(scene, scene_num, out_dir, cards=cards, sound_design_enabled=True),
             timeout=15,
         )
         assert seg_path.exists()
@@ -1562,93 +1683,115 @@ async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_pa
         )
 
 
-# ── Story 1.13: LLM angle pre-selection integration ───────────────────────────
+# ── Story 1.13 / 8.3: cast card resolver injection integration ────────────────
 
 
-async def test_angle_selector_injection_sets_character_path(monkeypatch, tmp_path, assets):
-    """When angle selector is injected, character_path is overwritten with the selected angle."""
+async def test_cast_resolver_injection_composites_card(monkeypatch, tmp_path, assets):
+    """When the resolver is injected, its card is composited into the segment."""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character)]})
 
-    angle_asset = tmp_path / "angle_front.png"
-    angle_asset.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
-
-    async def _selector(scp_id, scenes):
-        return {"1:S001": {"angle": "front", "path": str(angle_asset)}}
-
-    monkeypatch.setattr(video, "_angle_selector", _selector)
-
-    scene = _scene(
-        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
-        character=assets.character,
-    )
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
     state = _state([scene], scp_id="SCP-096")
     out = await video_node(state)
 
     assert out.get("error") is None
-    # character_path should have been overwritten by the angle selector
-    assert scene["shots"][0]["character_path"] == str(angle_asset)
+    assert "overlay=" in captured[0]
 
 
-async def test_angle_selector_not_injected_does_not_crash(monkeypatch, tmp_path, assets):
-    """Without an injected selector, video_node should work normally (no angle selection)."""
+async def test_cast_resolver_receives_scp_id_and_scenes(monkeypatch, tmp_path, assets):
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
-    monkeypatch.setattr(video, "_angle_selector", None)
+    calls = []
 
-    scene = _scene(
-        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
-        character=assets.character,
-    )
-    state = _state([scene])
-    out = await video_node(state)
+    async def _resolver(scp_id, scenes):
+        calls.append((scp_id, scenes))
+        return {}
+
+    _inject_resolver(monkeypatch, fn=_resolver)
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert calls[0][0] == "SCP-096"
+    assert calls[0][1][0]["scene_num"] == 1
+
+
+async def test_cast_resolver_not_injected_renders_background_only(monkeypatch, tmp_path, assets):
+    """Without an injected resolver, video_node works normally — background-only. [AD-10]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+    monkeypatch.setattr(video, "_cast_resolver", None)
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
 
     assert out.get("error") is None
-    # character_path should remain unchanged
-    assert scene["shots"][0]["character_path"] == assets.character
+    assert "overlay=" not in captured_vf[0]
 
 
-async def test_angle_selector_failure_is_non_fatal(monkeypatch, tmp_path, assets):
-    """Angle selection failure must never fail the pipeline (AD-10)."""
+async def test_cast_resolver_failure_is_non_fatal(monkeypatch, tmp_path, assets):
+    """Resolver/LLM failure must never fail the pipeline — degrades to background-only. [AD-10]"""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
 
-    async def _failing_selector(scp_id, scenes):
+    async def _failing_resolver(scp_id, scenes):
         raise RuntimeError("LLM down")
 
-    monkeypatch.setattr(video, "_angle_selector", _failing_selector)
+    _inject_resolver(monkeypatch, fn=_failing_resolver)
 
-    scene = _scene(
-        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
-        character=assets.character,
-    )
-    state = _state([scene])
-    out = await video_node(state)
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
 
     assert out.get("error") is None  # pipeline must not fail
-    # character_path should remain unchanged (existing value preserved)
-    assert scene["shots"][0]["character_path"] == assets.character
+    assert "overlay=" not in captured_vf[0]
 
 
-async def test_angle_selector_returns_none_skips(monkeypatch, tmp_path, assets):
-    """When selector returns None (no character), shots keep their existing character_path."""
+async def test_cast_resolver_empty_dict_renders_background_only(monkeypatch, tmp_path, assets):
+    """Resolver returning {} (nothing to overlay anywhere) → background-only render."""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+    _inject_resolver(monkeypatch, {})
 
-    async def _selector(scp_id, scenes):
-        return None
-
-    monkeypatch.setattr(video, "_angle_selector", _selector)
-
-    scene = _scene(
-        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
-        character=assets.character,
-    )
-    state = _state([scene])
-    out = await video_node(state)
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
 
     assert out.get("error") is None
-    assert scene["shots"][0]["character_path"] == assets.character
+    assert "overlay=" not in captured_vf[0]
+
+
+async def test_cast_resolver_malformed_cards_are_skipped(monkeypatch, tmp_path, assets):
+    """Malformed resolver entries degrade per-card, not by crashing video_node."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake_vf, captured_vf = _capture_arg_flag("-vf")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake_vf)
+    _inject_resolver(monkeypatch, {"1:S001": ["bad-card", {"card_key": "SCP-096"}]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    assert "overlay=" not in captured_vf[0]
+
+
+async def test_opaque_card_fails_the_stage(monkeypatch, tmp_path, assets):
+    """AC10: a resolved card that isn't RGBA is a hard, named error — no silent skip (D13)."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.opaque_card, card_key="SCP-096", angle="front")]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is not None
+    assert "SCP-096" in out["error"]
+    assert "front" in out["error"]
+    assert "opaque" in out["error"]
 
 
 # ── chapter cards (Story 5.1) ─────────────────────────────────────────────────
@@ -2173,37 +2316,6 @@ async def test_compose_chapter_card_bounds_infinite_audio(monkeypatch, tmp_path)
     args = list(captured[0])
     assert "-t" in args
     assert args[args.index("-t") + 1] == "1.750"
-
-
-async def test_angle_selector_trace_metadata(monkeypatch, tmp_path, assets):
-    """Trace metadata includes angle_selection info when selector runs."""
-    captured: dict = {}
-    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
-    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
-
-    angle_asset = tmp_path / "angle_front.png"
-    angle_asset.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
-
-    async def _selector(scp_id, scenes):
-        return {"1:S001": {"angle": "front", "path": str(angle_asset)}}
-
-    monkeypatch.setattr(video, "_angle_selector", _selector)
-
-    scene = _scene(
-        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
-        character=assets.character,
-    )
-    state = _state([scene], scp_id="SCP-096")
-    out = await video_node(state)
-
-    assert out.get("error") is None
-    assert "angle_selection" in captured
-    asel = captured["angle_selection"]
-    assert asel["scp_id"] == "SCP-096"  # AC6: scp_id in angle_selection metadata
-    assert asel["shots_analyzed"] == 1
-    assert "front" in asel["angles_selected"]
-    assert "latency_ms" in asel
 
 
 # ── CC BY-SA attribution (Story 5.20) ─────────────────────────────────────────

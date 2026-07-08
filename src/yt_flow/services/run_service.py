@@ -109,8 +109,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
         if not shots or any(sh["image_path"] is None for _, sh in shots):
             raise LookupError("Stage not reached")
         return {"stage": "image", "images": [
-            {"scene_num": n, "shot_id": sh["shot_id"], "image_path": sh["image_path"],
-             "layered_fallback": sh.get("layered_fallback", False)}
+            {"scene_num": n, "shot_id": sh["shot_id"], "image_path": sh["image_path"]}
             for n, sh in shots
         ]}
 
@@ -384,11 +383,10 @@ async def _ensure_character_reference(scp_id: str) -> None:
     exactly as the Character Management UI (Story 3.7) does — the only difference is this
     runs unattended, once per never-before-seen ``scp_id``. Skips entirely if a
     ``CharacterModel`` already exists (AC2/AC4 — no duplicate work). Best-effort and
-    non-fatal (AD-10): any failure here is logged and swallowed, leaving
-    ``image_node``'s same-frame segmentation cutout as the fallback (AC3) — a
-    ``CharacterModel`` with no angle paths set makes ``select_character_angles`` return
-    ``None`` (its own "no usable character" branch), so downstream code degrades
-    exactly like the pre-Story-5.8 no-character case.
+    non-fatal (AD-10): any failure here is logged and swallowed — a ``CharacterModel``
+    with no angle paths set makes ``resolve_cast_cards`` (Story 8.3) skip every cast member referencing it, so
+    downstream video_node degrades to a background-only render exactly like the
+    pre-Story-5.8 no-character case.
 
     After search succeeds, also calls ``CharacterService.enrich_descriptor_from_references``
     (Story 5.12) to populate ``visual_descriptor`` before generation runs, so the generation
@@ -567,7 +565,7 @@ def _nullify(stage: str, scenes: list) -> dict:
     for scene in new:
         if i <= 1:  # image + downstream
             for shot in scene.get("shots", []):
-                shot["image_path"] = shot["background_path"] = shot["character_path"] = None
+                shot["image_path"] = None
         if i <= 2:  # tts + downstream
             scene["audio_path"] = None
             scene["audio_duration"] = None

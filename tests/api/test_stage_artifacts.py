@@ -31,9 +31,6 @@ def _scene(
         "camera_angle": "medium",
         "camera_movement": "static",
         "image_path": image,
-        "background_path": None,
-        "character_path": None,
-        "layered_fallback": False,
     }
     if include_cast:
         shot["cast"] = cast if cast is not None else []
@@ -129,7 +126,7 @@ def test_scenario_artifacts_includes_title_and_kicker(client, monkeypatch):
 
 def test_scenario_artifacts_pre_5_17_checkpoint_title_and_kicker_default_empty(client, monkeypatch):
     """[Story 5.17 AC:9] Old checkpoints without title/kicker keys are safe — "",
-    matching the layered_fallback precedent, not a KeyError."""
+    matching the checkpoint-tolerant artifact precedent, not a KeyError."""
     _mock_graph(monkeypatch, _state([_scene(1, include_title_kicker=False)]))
     body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
     assert body["scenes"][0]["title"] == ""
@@ -177,7 +174,6 @@ def test_image_artifacts(client, monkeypatch):
     assert body["stage"] == "image"
     assert body["images"][0] == {
         "scene_num": 1, "shot_id": "S001", "image_path": "workspace/x/images/S001.png",
-        "layered_fallback": False,
     }
 
 

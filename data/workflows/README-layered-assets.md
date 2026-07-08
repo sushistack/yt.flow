@@ -1,6 +1,13 @@
-# Layered Assets (Story 5.2, cutout quality upgraded in Story 5.6)
+# Layered Assets (Story 5.2, cutout quality upgraded in Story 5.6) — retired by Epic 8
 
-Activates the already-built layered-image / character-overlay pipeline
+**Retired by Story 8.3**: `image_node` is background-only now (segmentation/
+inpaint deleted); character overlays come from Story 8.2's standalone card
+sprite pipeline composited by `video_node` (Story 8.3), not from a same-frame
+cutout. The workflow JSONs below stay on disk as the InSPyReNet reference
+Story 8.2's card generator grafts its cutout node from — they are no longer
+loaded by `image_node`.
+
+Activated the (now-retired) layered-image / character-overlay pipeline
 (Story 1.6b `image_node`, Story 1.9c `video_node`) against a real ComfyUI
 workflow that emits an opaque background PNG plus a transparent (RGBA)
 character PNG.
@@ -190,46 +197,16 @@ EOF
 
 Then poll `GET /history/{prompt_id}` until `outputs` contains both node
 `"9"` and node `"13"`, and confirm the node `"13"` PNG's IHDR color type
-byte (offset 25) is `4` or `6` (RGBA) — this is exactly what
-`image_node._has_alpha()` checks. For live validation, also inspect the alpha
-channel or extracted frames to confirm there are transparent pixels and useful
-foreground separation; the byte check proves format compatibility, not visual
-quality.
+byte (offset 25) is `4` or `6` (RGBA). For live validation, also inspect the
+alpha channel or extracted frames to confirm there are transparent pixels and
+useful foreground separation; the byte check proves format compatibility, not
+visual quality.
 
-The character cutout is still derived from the same generated frame as the
-background (Story 5.7 only fixed the background leaking the character —
-segmentation quality is Story 5.6's scope). If segmentation extracts too much
-foreground for a specific prompt, the inpaint pass will also erase that
-over-extracted region from the background; keep the run as background-only or
-follow up manually rather than treating either file as a semantic
-segmentation guarantee.
+## Retired runtime behavior
 
-## Fallback behavior
-
-If the character node alone produces no output for a shot (e.g. the
-segmentation node runs but the RGBA check fails), `image_node` sets
-`character_path = None` and keeps `background_path` set; `video_node` then
-falls back to the background-only Ken Burns path (Story 1.9b) for that shot
-instead of failing the run.
-
-**Story 5.7 changed this for one failure mode.** Before 5.7, node `"9"`
-(background) sourced directly from node `"8"` and was independent of node
-`"12"` (segmentation) — a segmentation failure only cost the character
-layer. After 5.7, node `"9"` depends on node `"12"`'s mask via the inpaint
-chain (`"16"`→`"17"`→`"18"`), so if segmentation itself errors (not just
-produces a bad cutout), **both** background and character outputs are
-missing from that ComfyUI submission.
-
-**Story 5.11 closed the resulting gap.** `image_node` now catches
-`ComfyUIError` per shot in the layered branch and retries with a second,
-plain (non-layered) ComfyUI submission using
-`comfyui_flat_fallback_workflow_path` (defaults to the same workflow the
-non-layered mode already uses). The failed shot degrades to a flat image —
-`character_path = None`, `background_path` set to the flat render,
-`layered_fallback = True` — while every other shot in the run is
-unaffected. A `logger.warning` is emitted and the flag is exposed via
-`GET /runs/{id}/stages/image/artifacts` so it's visible in the image gate
-artifact panel. If the fallback submission *also* raises `ComfyUIError`
-(e.g. ComfyUI itself is unreachable), that error propagates and the run
-fails exactly as it did before this story — the fallback only covers a
-real segmentation-specific failure, not a total ComfyUI outage.
+Story 8.3 retired the layered image-node runtime path outright. The JSON
+workflows documented here remain on disk only as historical references for
+InSPyReNet/card-generation work. Runtime `image_node` now generates one
+background-only image per shot; segmentation, inpaint, same-frame character
+cutouts, layered fallback, and the old layered config flags are no longer read
+by production code.

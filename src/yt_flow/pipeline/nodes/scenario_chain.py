@@ -435,8 +435,6 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     camera_angle=raw_shot.get("camera_type") if isinstance(raw_shot.get("camera_type"), str) else None,
                     camera_movement=None,  # yt.pipe's visual_breakdown has no equivalent field
                     image_path=None,
-                    background_path=None,
-                    character_path=None,
                     cast=parse_cast(raw_shot.get("cast")),
                 )
             )

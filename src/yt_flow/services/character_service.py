@@ -59,6 +59,15 @@ _ANGLE_DESCRIPTIONS: dict[str, str] = {
 }
 _CANONICAL_ANGLES = list(_ANGLE_DESCRIPTIONS.keys())  # ["front", "back", "side", "three_quarter"]
 CANONICAL_ANGLES = _CANONICAL_ANGLES  # public alias for API-layer validation
+
+# Story 8.3: standing-pose card storage — CharacterModel's fast-path columns,
+# keyed by angle. Non-standing poses live in CharacterCard rows instead (get_card).
+_ANGLE_FIELD_NAMES: dict[str, str] = {
+    "front": "angle_front_path",
+    "back": "angle_back_path",
+    "side": "angle_side_path",
+    "three_quarter": "angle_three_quarter_path",
+}
 # ponytail: live-tuned starting points; frontal references need less pull as view diverges.
 # Raised 2026-07-07 (Story 8.2 Task 8 follow-up) — the original values let the
 # self-referencing stock/derived chain (AC7) redraw the face/mask/insignia per
@@ -148,6 +157,20 @@ def _validate_card_pose(pose: str) -> None:
 def _validate_card_angle(angle: str) -> None:
     if angle not in _ANGLE_DESCRIPTIONS:
         raise ValidationError("angle", f"must be one of {list(_ANGLE_DESCRIPTIONS)}")
+
+
+def _normalize_pose(pose: object) -> str:
+    """Defensive pose mapping (Story 8.3 Interfaces): anything but "sitting" is
+    "standing" — covers an old checkpoint carrying a pre-8.1 or malformed value."""
+    return "sitting" if pose == "sitting" else "standing"
+
+
+def _first_available_angle(character: CharacterModel) -> str | None:
+    """Prefer front, otherwise return any standing angle path available on the row."""
+    for angle in ("front", "three_quarter", "side", "back"):
+        if getattr(character, _ANGLE_FIELD_NAMES[angle]):
+            return angle
+    return None
 
 
 # ── Service ───────────────────────────────────────────────────────────────────
@@ -998,74 +1021,172 @@ class CharacterService:
         logger.info("Character finalized: %s (%s)", id, character.scp_id)
         return character
 
-    # ── LLM Angle Selection (Story 1.13) ──────────────────────────────────
+    # ── Cast Resolution (Story 1.13 → reworked in Story 8.3) ────────────────
 
-    async def select_character_angles(
+    async def resolve_cast_cards(
         self,
         scp_id: str,
         scenes: list[dict],
-    ) -> dict[str, dict] | None:
-        """Select the best character angle per shot using LLM analysis of scene context.
+    ) -> dict[str, list[dict]]:
+        """Resolve every shot's ``cast`` into concrete card assets.
 
-        Analyzes all shots across scenes in a single LLM call. Shots without
-        ``character_path`` are skipped. Returns a dict mapping
-        ``{shot_key: {"angle": name, "path": file_path, "fallback": bool}}``,
-        or ``None`` if no Character record exists for the SCP ID. ``fallback`` is
-        True when the angle was not a clean LLM pick (error, invalid/unavailable
-        angle, or a shot the LLM omitted) — used for honest trace metrics [AC6].
+        Replaces the 1.13 all-shots angle override (D13): overlay membership
+        now comes from ``ShotData.cast`` (Story 8.1), not "does this shot have
+        a character_path". LLM angle selection is spent only on shots whose
+        cast contains the run's own entity (``scp_id``); every other cast
+        member (stock/derived extras) resolves deterministically to the
+        "front" angle — no LLM call for extras until variety is actually
+        wanted (Saved Question 3).
+
+        Returns ``{shot_key: [card, ...]}`` in cast order for every shot whose
+        cast is non-empty; a shot with an empty cast or zero resolvable cards
+        is simply absent — no tri-state ``None`` (that only ever meant "no
+        Character row for scp_id", which no longer applies since stock cards
+        exist independently of the entity). Each ``card`` dict carries
+        ``card_key``, ``pose``, ``angle``, ``path``, ``fallback`` (Interfaces)
+        plus ``position``/``depth`` copied straight from the cast member —
+        video_node needs them for stacking/scale/anchor and re-deriving them
+        after members are filtered out would just duplicate this method's
+        skip logic.
+        """
+        entity_catalogue: list[dict] = []
+        for scene in sorted(scenes, key=lambda s: s["scene_num"]):
+            for shot in scene.get("shots", []):
+                if any(isinstance(m, dict) and m.get("card_key") == scp_id for m in (shot.get("cast") or [])):
+                    entity_catalogue.append({
+                        "scene_num": scene["scene_num"],
+                        "shot_id": shot["shot_id"],
+                        "narration": scene.get("narration", ""),
+                        "camera_angle": shot.get("camera_angle") or "",
+                        "camera_movement": shot.get("camera_movement") or "",
+                    })
+
+        entity_angles = (
+            await self._select_entity_angles(scp_id, entity_catalogue) if entity_catalogue else {}
+        )
+
+        result: dict[str, list[dict]] = {}
+        for scene in scenes:
+            for shot in scene.get("shots", []):
+                cast = shot.get("cast") or []
+                if not cast:
+                    continue
+                shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
+                cards: list[dict] = []
+                for member in cast:
+                    if not isinstance(member, dict) or not member.get("card_key"):
+                        logger.warning(
+                            "resolve_cast_cards: malformed cast member in %s, skipping: %r",
+                            shot_key, member,
+                        )
+                        continue
+                    card_key = member["card_key"]
+                    character = self.check_existing_character(card_key)
+                    if character is None:
+                        logger.warning(
+                            "resolve_cast_cards: no character row for cast member %s, skipping", card_key,
+                        )
+                        continue
+                    if card_key == scp_id:
+                        pick = entity_angles.get(shot_key, {})
+                        angle = pick.get("angle", "front")
+                        angle_fallback = pick.get("fallback", False)
+                    else:
+                        angle = "front" if getattr(character, _ANGLE_FIELD_NAMES["front"]) else (
+                            _first_available_angle(character) or "front"
+                        )
+                        angle_fallback = False
+                    pose = _normalize_pose(member.get("pose"))
+                    resolved = self._resolve_card_path(character, pose, angle)
+                    if resolved is None:
+                        logger.warning(
+                            "resolve_cast_cards: no card asset for %s pose=%s angle=%s, skipping",
+                            card_key, pose, angle,
+                        )
+                        continue
+                    path, resolved_pose, pose_fallback = resolved
+                    cards.append({
+                        "card_key": card_key,
+                        "pose": resolved_pose,
+                        "angle": angle,
+                        "path": path,
+                        "fallback": angle_fallback or pose_fallback,
+                        "angle_fallback": angle_fallback,
+                        "asset_fallback": pose_fallback,
+                        "fallback_reason": (
+                            "angle+asset" if angle_fallback and pose_fallback
+                            else "angle" if angle_fallback
+                            else "asset" if pose_fallback
+                            else None
+                        ),
+                        "position": member.get("position", "center"),
+                        "depth": member.get("depth", "mid"),
+                    })
+                if cards:
+                    result[shot_key] = cards
+
+        logger.info(
+            "resolve_cast_cards: %d shot(s) with cards for %s", len(result), scp_id,
+        )
+        return result
+
+    def _resolve_card_path(
+        self, character: CharacterModel, pose: str, angle: str,
+    ) -> tuple[str, str, bool] | None:
+        """Return ``(path, resolved_pose, fallback)`` or ``None`` if unresolvable.
+
+        Non-standing poses read the pose-keyed ``character_cards`` table
+        (Story 8.2 Interfaces #4); a pose-miss falls back to the standing card
+        for the same angle (``fallback=True``) — standing always exists for a
+        resolvable card_key per 8.2's seeding contract, but the fallback
+        lookup can still miss on a partially-seeded row (skip, don't crash).
+        """
+        angle_field = _ANGLE_FIELD_NAMES.get(angle, "angle_front_path")
+        if pose != "standing":
+            card = self.get_card(character.scp_id, pose, angle)
+            if card is not None:
+                return card.image_path, pose, False
+            logger.warning(
+                "resolve_cast_cards: no %s card for %s angle=%s, falling back to standing",
+                pose, character.scp_id, angle,
+            )
+        path = getattr(character, angle_field)
+        if not path:
+            return None
+        return path, "standing", pose != "standing"
+
+    async def _select_entity_angles(
+        self, scp_id: str, shot_catalogue: list[dict],
+    ) -> dict[str, dict]:
+        """LLM angle pick per entity shot. Returns ``{shot_key: {"angle", "fallback"}}``.
+
+        Card-path resolution (including pose) happens separately in
+        ``_resolve_card_path`` — this only ever needs to pick an angle name.
         """
         character = self.check_existing_character(scp_id)
         if character is None:
-            logger.info("select_character_angles: no character for %s, skipping", scp_id)
-            return None
-
-        # Collect all shots with character_path, building a shot catalogue for the LLM
-        shot_catalogue: list[dict] = []
-        for scene in sorted(scenes, key=lambda s: s["scene_num"]):
-            for shot in scene.get("shots", []):
-                if shot.get("character_path") is None:
-                    continue  # AC5: skip non-character shots
-                shot_catalogue.append({
-                    "scene_num": scene["scene_num"],
-                    "shot_id": shot["shot_id"],
-                    "narration": scene.get("narration", ""),
-                    "camera_angle": shot.get("camera_angle") or "",
-                    "camera_movement": shot.get("camera_movement") or "",
-                })
-
-        if not shot_catalogue:
-            logger.info("select_character_angles: no shots with character_path for %s", scp_id)
+            logger.info("resolve_cast_cards: no character row for entity %s", scp_id)
             return {}
 
-        # Build available angle list
-        available_angles: dict[str, str] = {}
-        angle_fields = {
-            "front": character.angle_front_path,
-            "back": character.angle_back_path,
-            "side": character.angle_side_path,
-            "three_quarter": character.angle_three_quarter_path,
+        available_angles: dict[str, str] = {
+            angle_name: _ANGLE_DESCRIPTIONS[angle_name]
+            for angle_name in _CANONICAL_ANGLES
+            if getattr(character, _ANGLE_FIELD_NAMES[angle_name])
         }
-        for angle_name, path_val in angle_fields.items():
-            if path_val:
-                available_angles[angle_name] = _ANGLE_DESCRIPTIONS.get(angle_name, angle_name)
-
         if not available_angles:
-            logger.warning("select_character_angles: no angle paths set for %s", scp_id)
-            return None
+            logger.warning("resolve_cast_cards: no angle paths set for entity %s", scp_id)
+            return {}
 
         # Fallback angle used whenever a clean LLM pick isn't possible — prefer "front"
-        # but fall through to the first available angle so the path is always real [AC3].
-        fallback_angle = "front" if "front" in available_angles else next(iter(available_angles))
-        fallback_path = angle_fields[fallback_angle] or ""
+        # but fall through to the first available angle so the pick is always real [AC3].
+        fallback_angle = _first_available_angle(character) or next(iter(available_angles))
 
-        # Compile prompt
         prompt_text = self._load_angle_selection_prompt(
             scp_id=scp_id,
             shot_catalogue=shot_catalogue,
             available_angles=available_angles,
         )
 
-        # Call LLM
         s = self._settings
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
@@ -1083,23 +1204,21 @@ class CharacterService:
             data = resp.json()
             raw = data["choices"][0]["message"]["content"].strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            logger.warning("select_character_angles: LLM call failed for %s: %s", scp_id, exc)
-            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
+            logger.warning("resolve_cast_cards: LLM call failed for %s: %s", scp_id, exc)
+            return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
-        # Parse LLM response — JSON array of {scene_num, shot_id, angle}
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            logger.warning("select_character_angles: invalid JSON from LLM: %r", raw[:200])
-            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
+            logger.warning("resolve_cast_cards: invalid JSON from LLM: %r", raw[:200])
+            return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         if not isinstance(parsed, list):
-            logger.warning("select_character_angles: expected JSON array, got %s", type(parsed).__name__)
-            return self._angle_fallback(shot_catalogue, fallback_angle, fallback_path)
+            logger.warning("resolve_cast_cards: expected JSON array, got %s", type(parsed).__name__)
+            return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
-        # Build result map: shot_key → {angle, path, fallback}. Only catalogue shots
-        # are honored — hallucinated or malformed-id LLM entries are ignored and the
-        # affected shots get filled with the fallback angle below.
+        # Only catalogue shots are honored — hallucinated or malformed-id LLM
+        # entries are ignored and the affected shots get the fallback angle below.
         catalogue_keys = {f"{s['scene_num']}:{s['shot_id']}" for s in shot_catalogue}
         result: dict[str, dict] = {}
         for entry in parsed:
@@ -1109,29 +1228,23 @@ class CharacterService:
             if shot_key not in catalogue_keys:
                 continue
             raw_angle = (entry.get("angle") or "").lower()
-            angle = raw_angle if raw_angle in ("front", "back", "side", "three_quarter") else fallback_angle
+            angle = raw_angle if raw_angle in _CANONICAL_ANGLES else fallback_angle
             is_fallback = angle != raw_angle
-            # Requested angle asset missing → substitute the fallback angle
-            if not angle_fields.get(angle):
+            if angle not in available_angles:
                 angle = fallback_angle
                 is_fallback = True
-            result[shot_key] = {"angle": angle, "path": angle_fields[angle] or "", "fallback": is_fallback}
+            result[shot_key] = {"angle": angle, "fallback": is_fallback}
 
-        # Fill any catalogue shots the LLM omitted with the fallback angle
         for key in catalogue_keys:
             if key not in result:
-                result[key] = {"angle": fallback_angle, "path": fallback_path, "fallback": True}
+                result[key] = {"angle": fallback_angle, "fallback": True}
 
-        logger.info(
-            "select_character_angles: %d shots, %d angles assigned for %s",
-            len(shot_catalogue), len(result), scp_id,
-        )
         return result
 
     @staticmethod
-    def _angle_fallback(shot_catalogue: list[dict], angle: str, path: str) -> dict[str, dict]:
+    def _angle_fallback_map(shot_catalogue: list[dict], angle: str) -> dict[str, dict]:
         """Map every catalogued shot to the fallback angle (LLM failed / invalid data)."""
-        return {f"{s['scene_num']}:{s['shot_id']}": {"angle": angle, "path": path, "fallback": True}
+        return {f"{s['scene_num']}:{s['shot_id']}": {"angle": angle, "fallback": True}
                 for s in shot_catalogue}
 
     @staticmethod

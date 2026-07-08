@@ -122,10 +122,11 @@ async def test_search_failure_is_non_fatal(monkeypatch, tmp_path):
 
     await run_service._ensure_character_reference("SCP-096")  # must not raise (AC3)
 
-    # AD-10 fallback: select_character_angles sees no CharacterModel at all and
-    # returns None, same as the pre-Story-5.8 no-character case. The row this
-    # function created is rolled back (not left permanently empty) so a future
-    # run — after e.g. a transient rate limit clears — can retry the search.
+    # AD-10 fallback: resolve_cast_cards (Story 8.3) sees no CharacterModel at all
+    # and skips every cast member referencing it, same as the pre-Story-5.8
+    # no-character case. The row this function created is rolled back (not left
+    # permanently empty) so a future run — after e.g. a transient rate limit
+    # clears — can retry the search.
     assert _get_character("SCP-096") is None
 
 

@@ -37,14 +37,6 @@ class Settings(BaseSettings):
     comfyui_url: str = "http://127.0.0.1:8188"
     comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
     comfyui_mock: bool = False
-    # Layered-asset mode (Story 1.6b): emit separate background + transparent character PNGs.
-    # Node IDs are the SaveImage nodes in the layered workflow export (bg=9, char=13).
-    comfyui_layered: bool = False
-    comfyui_background_node: str = "9"
-    comfyui_character_node: str = "13"
-    # Story 5.11: per-shot flat-image fallback when segmentation errors in layered
-    # mode. Reuses the already-shipped plain non-layered workflow — no new asset.
-    comfyui_flat_fallback_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
 
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"

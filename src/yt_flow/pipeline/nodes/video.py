@@ -4,6 +4,9 @@ Story 1.9: per-scene segment render + concat → video.mp4
 Story 1.9b: Ken Burns zoompan per shot
 Story 1.13: LLM-based character angle pre-selection before FFmpeg composition
 Story 5.16: dip-to-black fade + concat scene boundaries (retires xfade/acrossfade)
+Story 8.3: N-card cast compositing replaces the single-character overlay —
+cast membership/placement comes from ``ShotData.cast`` (Story 8.1), card
+assets from Story 8.2's pose-keyed sprite library.
 
 Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 """
@@ -20,6 +23,7 @@ from typing import Any
 from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
+from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
@@ -34,20 +38,21 @@ from yt_flow.pipeline.nodes.sound_design import (
 
 logger = logging.getLogger(__name__)
 
-# ── Angle selection injection (Story 1.13) ────────────────────────────────────
+# ── Cast resolution injection (Story 1.13, reworked in Story 8.3) ─────────────
 # Injected by the service layer to avoid AD-1 violation. video_node calls this
-# to pre-select character angles via LLM before FFmpeg composition runs.
-_angle_selector: Any = None
+# to resolve every shot's cast into concrete card assets before FFmpeg runs.
+_cast_resolver: Any = None
 
 
-def inject_angle_selector(fn: Any) -> None:
-    """Inject the angle selection service callable.
+def inject_cast_resolver(fn: Any) -> None:
+    """Inject the cast card resolver service callable.
 
-    ``fn`` signature: ``async fn(scp_id: str, scenes: list) -> dict | None``
-    Returns ``{shot_key: {"angle": name, "path": file_path}}`` or ``None``.
+    ``fn`` signature: ``async fn(scp_id: str, scenes: list) -> dict[str, list[dict]]``
+    Returns ``{shot_key: [{"card_key","pose","angle","path","fallback",
+    "position","depth"}, ...]}`` — a shot with no resolvable cards is absent.
     """
-    global _angle_selector
-    _angle_selector = fn
+    global _cast_resolver
+    _cast_resolver = fn
 
 # ── Ken Burns constants ───────────────────────────────────────────────────────
 
@@ -126,6 +131,30 @@ CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR
 CHAR_MAX_W = (COMP_W - 2 * (SWAY_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
 CHAR_MAX_H = (COMP_H - 2 * (BOB_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
 
+# ── Multi-card cast compositing (Story 8.3) ───────────────────────────────────
+# Stacking order (far painted first, near painted last/on top) — never stored,
+# always derived from each cast member's `depth` via a stable sort.
+_DEPTH_ORDER: dict[str, int] = {"far": 0, "mid": 1, "near": 2}
+
+# Depth-scaled size cap, multiplied onto CHAR_MAX_W/H (Story 7.3's motion-safe
+# box). Tuning target = conventional shot framing: far ≈ wide-shot subject
+# (30-50% frame height), mid ≈ medium shot (60-70%), near ≤ ~85% (close) — a
+# card must never cover the frame the way the pre-8.3 override did (D13).
+# ponytail: live-tuned starting points (Task 6), same iteration style as
+# ZOOM_IN_MAX's 1.08→1.15 history — not per-scene config.
+_DEPTH_SCALE: dict[str, float] = {"near": 1.0, "mid": 0.75, "far": 0.55}
+
+# Parallax amplitude scale — near planes move more than far planes (Story 7.3
+# amplification and CHAR_PAN_AMPLITUDE_PX both scale by this per card).
+_DEPTH_PARALLAX: dict[str, float] = {"near": 1.0, "mid": 0.6, "far": 0.3}
+
+# Rule-of-thirds horizontal anchors for cast placement (fraction of main_w).
+_POSITION_X_FRAC: dict[str, float] = {"left": 1 / 3, "center": 0.5, "right": 2 / 3}
+
+# Phase offset (rad) per card index so N cards' idle sway/bob never lock step.
+# ponytail: eyeball-tuned like CHAR_PAN_AMPLITUDE_PX; not derived from anything.
+PHASE_STEP = 2.1
+
 
 # ── EffectSpec dataclass ──────────────────────────────────────────────────────
 
@@ -186,18 +215,23 @@ def select_effect(shot: ShotData, scene_index: int) -> EffectSpec:
     return EffectSpec(direction=direction, start_zoom=1.0, end_zoom=ZOOM_IN_MAX)
 
 
-def _character_spec(bg_spec: EffectSpec) -> EffectSpec:
-    """Derive the near-plane character spec from the far-plane background spec. [AC:1]
+def _character_spec(bg_spec: EffectSpec, depth: str = "near") -> EffectSpec:
+    """Derive a card's parallax spec from the background spec. [AC:1] [Story 8.3 AC:7]
 
     Same ``direction`` (parallax needs both planes moving the *same* way, only at
     different magnitude); the zoom deviation from 1.0 is amplified by
-    CHAR_DEPTH_FACTOR. Direction-agnostic and no special-casing — 'static'
+    CHAR_DEPTH_FACTOR, itself scaled down by ``_DEPTH_PARALLAX[depth]`` so a
+    near card gets the full amplification and a far card tracks closer to the
+    background's own zoom (near planes move more than far planes — that's what
+    parallax is). Direction-agnostic and no special-casing — 'static'
     (1.0→1.005) stays tiny after amplification.
     """
+    depth_amp = _DEPTH_PARALLAX.get(depth, _DEPTH_PARALLAX["mid"])
+    factor = 1.0 + (CHAR_DEPTH_FACTOR - 1.0) * depth_amp
     return EffectSpec(
         direction=bg_spec.direction,
-        start_zoom=1.0 + (bg_spec.start_zoom - 1.0) * CHAR_DEPTH_FACTOR,
-        end_zoom=1.0 + (bg_spec.end_zoom - 1.0) * CHAR_DEPTH_FACTOR,
+        start_zoom=1.0 + (bg_spec.start_zoom - 1.0) * factor,
+        end_zoom=1.0 + (bg_spec.end_zoom - 1.0) * factor,
     )
 
 
@@ -311,42 +345,58 @@ def _character_zoom_filter(spec: EffectSpec, duration: float) -> str:
     return f"scale=w='iw*{z}':h='ih*{z}':eval=frame"
 
 
-def _overlay_filter(spec: EffectSpec | None = None, duration: float | None = None) -> str:
-    """Character overlay, centered on the background, with idle motion. [AC:1,2,3]
+def _overlay_filter(
+    position: str = "center", k: int = 0,
+    spec: EffectSpec | None = None, duration: float | None = None,
+    depth: str = "near",
+) -> str:
+    """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
+    [AC:1,2,3] [Story 8.3 AC:6,7]
 
     ``eval=frame`` is REQUIRED and set explicitly: under the ``eval=init`` default
     for *some* builds the ``t``/``n`` timeline vars collapse to NAN and the
-    character freezes. Two sines (x sway, y bob) at different freq/amplitude give
-    the subtle "alive" drift without rigging.
+    card freezes. Two sines (x sway, y bob) at different freq/amplitude give the
+    subtle "alive" drift without rigging; a ``k*PHASE_STEP`` offset keeps N cards
+    from swaying in lockstep.
 
-    When ``spec`` is given (parallax on, Story 7.3), a direction-derived macro pan
-    term rides *on top of* the sway/bob sines — a slow shot-duration-scale depth
-    drift, ramped linearly like the zoom. ``spec=None`` reverts to the exact
-    fixed-size sway/bob-only string (parallax off). The centering base stays
-    correct under ``eval=frame`` even as the character scales.
+    ``position`` anchors the card horizontally at a rule-of-thirds fraction of
+    ``main_w`` (1/3, 1/2, or 2/3) instead of dead-centering it — multiple cards
+    need to occupy distinct screen positions. When ``spec`` is given (parallax
+    on, Story 7.3), a direction-derived macro pan term rides *on top of* the
+    sway/bob sines, its amplitude scaled by ``_DEPTH_PARALLAX[depth]``.
+    ``spec=None`` reverts to the fixed-size sway/bob-only string (parallax off).
     """
-    x = f"(main_w-overlay_w)/2 + sin(t*{SWAY_FREQ})*{SWAY_AMPLITUDE}"
-    y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ})*{BOB_AMPLITUDE}"
+    x_frac = _POSITION_X_FRAC.get(position, _POSITION_X_FRAC["center"])
+    phase = k * PHASE_STEP
+    x = f"main_w*{x_frac}-overlay_w/2 + sin(t*{SWAY_FREQ}+{phase})*{SWAY_AMPLITUDE}"
+    y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ}+{phase})*{BOB_AMPLITUDE}"
     if spec is not None and duration:
         sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
+        pan_amp = CHAR_PAN_AMPLITUDE_PX * _DEPTH_PARALLAX.get(depth, _DEPTH_PARALLAX["mid"])
         if sx:
-            x += f" + ({sx * CHAR_PAN_AMPLITUDE_PX})*t/{duration}"
+            x += f" + ({sx * pan_amp})*t/{duration}"
         if sy:
-            y += f" + ({sy * CHAR_PAN_AMPLITUDE_PX})*t/{duration}"
+            y += f" + ({sy * pan_amp})*t/{duration}"
     return f"overlay=x='{x}':y='{y}':eval=frame"
 
 
-def _character_scale_filter() -> str:
-    """Cap an oversized character to the motion-safe box before overlay. [review:1.9c]
+def _character_scale_filter(depth: str = "near") -> str:
+    """Cap an oversized card to its depth-scaled motion-safe box. [review:1.9c]
+    [Story 8.3 AC:6]
 
     Downscale-only (``min(iw,…)`` guards against upscaling a small cutout) and
-    aspect-preserving (``force_original_aspect_ratio=decrease``). The character is
-    never resized upstream, so without this an asset larger than the frame clips or
-    overflows; capping to COMP minus the sway/bob amplitude also keeps the centered
-    overlay's full sine excursion on-frame.
+    aspect-preserving (``force_original_aspect_ratio=decrease``). A card is never
+    resized upstream, so without this an asset larger than the frame clips or
+    overflows; capping to CHAR_MAX_W/H (minus sway/bob amplitude) times the
+    depth's scale factor keeps the anchored overlay's full sine excursion
+    on-frame and enforces the far/mid/near framing convention (never full-frame
+    — that's D13).
     """
+    scale = _DEPTH_SCALE.get(depth, _DEPTH_SCALE["mid"])
+    max_w = CHAR_MAX_W * scale
+    max_h = CHAR_MAX_H * scale
     return (
-        rf"scale=w='min(iw\,{CHAR_MAX_W})':h='min(ih\,{CHAR_MAX_H})'"
+        rf"scale=w='min(iw\,{max_w})':h='min(ih\,{max_h})'"
         ":force_original_aspect_ratio=decrease"
     )
 
@@ -502,8 +552,8 @@ def _record_trace(
     returncode: int | None = None,
     effects: list | None = None,
     upscale_pass: bool = True,
-    character_scenes: int = 0,
-    angle_selection: dict | None = None,
+    card_counts: list[int] | None = None,
+    cast_resolution: dict | None = None,
     chapter_cards_enabled: bool = False,
     chapter_card_duration: float | None = None,
     chapter_card_count: int = 0,
@@ -527,8 +577,8 @@ def _record_trace(
             "chapter_card_count": chapter_card_count,
             **({"chapter_card_duration": chapter_card_duration} if chapter_card_duration is not None else {}),
             "upscale_pass": upscale_pass,
-            # Character idle-motion params (Story 1.9c) — constant across scenes.
-            "character_scenes": character_scenes,
+            # Per-scene card counts (Story 8.3, replaces 1.9c's single character_scenes).
+            "card_counts": card_counts or [],
             "character_motion": {
                 "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
                 "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
@@ -537,9 +587,9 @@ def _record_trace(
             "ending_credit_error": ending_credit_error,
             **({"error": repr(error)} if error is not None else {}),
         }
-        # Story 1.13: angle selection tracing metadata
-        if angle_selection:
-            metadata["angle_selection"] = angle_selection
+        # Story 8.3: cast resolution tracing metadata (replaces 1.13's angle_selection)
+        if cast_resolution:
+            metadata["cast_resolution"] = cast_resolution
         get_client().update_current_span(metadata=metadata)
     except Exception:  # noqa: BLE001
         pass
@@ -566,12 +616,8 @@ def _validate_scene_assets(
         subtitle = scene.get("subtitle_path")
         if not subtitle or not Path(subtitle).exists():
             raise FileNotFoundError(f"scene {n}: subtitle_path missing or not found: {subtitle!r}")
-        # character_path is optional (None = background-only, AC:3). But if a shot
-        # *claims* a character layer, a missing file is a real error — fail loudly
-        # rather than silently dropping the character overlay. [AC:1]
-        character = shot.get("character_path")
-        if character and not Path(character).exists():
-            raise FileNotFoundError(f"scene {n}: character_path set but not found: {character!r}")
+        # Cast card existence/alpha validation happens after resolution, in video_node
+        # (Story 8.3 AC:10) — resolution runs after this check, so it can't live here.
         # audio_duration drives zoompan frame count + segment fade timing; a missing/≤0 value
         # would silently truncate the scene (via -shortest) or corrupt timing. Fail fast
         # instead of inventing a fallback duration. [review:D]
@@ -611,32 +657,35 @@ async def _compose_scene(
     scene_index: int,
     out_dir: Path,
     *,
+    cards: list[dict] | None = None,
     sound_design_enabled: bool = False,
     post_fx_enabled: bool = False,
     parallax_enabled: bool = False,
     include_stinger: bool = True,
 ) -> tuple[Path, EffectSpec, bool]:
-    """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with a
-    transparent character composited on top with idle motion, optionally with a
-    mood-driven BGM/ambient/stinger mix ducked under the narration, optionally
-    with a mood-driven color grade + constant vignette/grain applied before
-    subtitle burn-in. [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9]
+    """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with
+    N transparent cast cards composited on top with per-card idle motion,
+    optionally with a mood-driven BGM/ambient/stinger mix ducked under the
+    narration, optionally with a mood-driven color grade + constant
+    vignette/grain applied before subtitle burn-in.
+    [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9] [Story 8.3 AC:6,7,8,9]
 
     `include_stinger=False` (Story 5.17 AC:7) omits this scene's own baked
     scene-entry stinger — set by the caller for a scene immediately preceded
     by a chapter card, since the card now carries that boundary's stinger hit.
 
-    Returns (segment_path, effect_spec, character_overlaid).
+    `cards` (Story 8.3): resolved cast cards for the rendered shot, each
+    carrying ``path``/``position``/``depth`` (Interfaces + resolver output).
+    Empty/``None`` renders today's background-only branch verbatim (AC:8).
+
+    Returns (segment_path, effect_spec, cards_overlaid).
     """
     n = scene["scene_num"]
     shots = scene.get("shots") or []
     shot = next((s for s in shots if s.get("image_path")), None)
     if shot is None:  # defensive; _validate_scene_assets guarantees this upstream
         raise ValueError(f"scene {n}: no shot has a valid image_path")
-    # Prefer the opaque background layer for Ken Burns; fall back to image_path so
-    # 1.9/1.9b (non-layered) shots still render. [1.6b contract]
-    bg_path = shot.get("background_path") or shot["image_path"]
-    character_path = shot.get("character_path")  # None = background-only (AC:3)
+    bg_path = shot["image_path"]
     audio_path: str = scene["audio_path"]  # type: ignore[assignment]
     subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
     duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive upstream
@@ -653,36 +702,47 @@ async def _compose_scene(
     post_frag = f",{post_filter}" if post_fx_enabled else ""
     post_label = f"{post_filter}[graded];[graded]" if post_fx_enabled else ""
 
-    if character_path:
-        # Layered: zoompan the background, overlay the moving character, then burn
-        # subtitles on top. Two looped image inputs (0=bg, 1=char) + audio (2).
-        inputs = [
-            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
-            "-loop", "1", "-framerate", str(FPS), "-i", str(character_path),
-            "-i", audio_path,
-        ]
-        # Parallax (Story 7.3): couple the character's zoom/pan to the background's
-        # spec, amplified. Off → today's fixed-size, sway/bob-only overlay.
-        if parallax_enabled:
-            char_spec = _character_spec(spec)
-            char_chain = (
-                f"{_character_scale_filter()},"
-                f"{_character_zoom_filter(char_spec, duration)}"
-            )
-            overlay = _overlay_filter(char_spec, duration)
-        else:
-            char_chain = _character_scale_filter()
-            overlay = _overlay_filter()
-        video_chain = (
-            f"[0:v]{zp_chain}[bg];"
-            f"[1:v]{char_chain}[char];"
-            f"[bg][char]{overlay}[ov];"
-            f"[ov]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]"
-        )
+    # Stacking order (Story 8.3 AC:6): far painted first, near painted last/on
+    # top — stable sort so same-depth members keep cast order.
+    ordered_cards = sorted(cards or [], key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
+    num_cards = len(ordered_cards)
+
+    if num_cards:
+        # N-card compositing: bg=0, cards=1..N, narration=N+1. Each card is a
+        # looped still like the background; chained overlays far→near, subtitle
+        # burn last (Dev Notes "Overlay chain shape").
+        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        for card in ordered_cards:
+            inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
+        inputs += ["-i", audio_path]
+
+        chain_parts = [f"[0:v]{zp_chain}[bg]"]
+        prev_label = "bg"
+        for k, card in enumerate(ordered_cards):
+            depth = card.get("depth", "mid")
+            position = card.get("position", "center")
+            # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the
+            # background's spec, amplified per depth. Off → fixed-size sway/bob.
+            if parallax_enabled:
+                char_spec = _character_spec(spec, depth)
+                char_chain = (
+                    f"{_character_scale_filter(depth)},"
+                    f"{_character_zoom_filter(char_spec, duration)}"
+                )
+                overlay = _overlay_filter(position, k, char_spec, duration, depth)
+            else:
+                char_chain = _character_scale_filter(depth)
+                overlay = _overlay_filter(position, k, None, None, depth)
+            out_label = f"o{k}"
+            chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
+            chain_parts.append(f"[{prev_label}][c{k}]{overlay}[{out_label}]")
+            prev_label = out_label
+        chain_parts.append(f"[{prev_label}]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
+        video_chain = ";".join(chain_parts)
         video_map = "[out]"
-        narration_label = "[2:a]"
-        input_offset = 3
-        narration_map = "2:a"
+        narration_label = f"[{num_cards + 1}:a]"
+        input_offset = num_cards + 2
+        narration_map = f"{num_cards + 1}:a"
     else:
         # Background-only (1.9b): zoompan already emits COMP_W x COMP_H, just burn SRT.
         inputs = [
@@ -716,7 +776,7 @@ async def _compose_scene(
             "-t", str(duration),
             *_OUTPUT_ARGS, str(seg_path),
         ]
-    elif character_path:
+    elif num_cards:
         ffmpeg_args = [
             "-y", *inputs,
             "-filter_complex", video_chain,
@@ -738,7 +798,7 @@ async def _compose_scene(
         raise RuntimeError(f"FFmpeg scene {n} failed (rc={rc}): {stderr[-500:]}")
     if not seg_path.exists():
         raise RuntimeError(f"FFmpeg scene {n}: output not created: {seg_path}")
-    return seg_path, spec, bool(character_path)
+    return seg_path, spec, num_cards > 0
 
 
 def _card_hold_audio_input(mood: str | None, *, sound_design_enabled: bool) -> tuple[list[str], list[str]]:
@@ -1024,38 +1084,46 @@ async def video_node(state: PipelineState) -> dict:
         scp_id = state.get("scp_id", "")
         _validate_scene_assets(scenes, sound_design_enabled=s.sound_design_enabled)
 
-        # ── Story 1.13: LLM angle pre-selection ───────────────────────────
-        angle_meta: dict = {}
-        if _angle_selector is not None:
-            t_angle = time.perf_counter()
+        # ── Story 8.3: cast card resolution (replaces 1.13's angle override) ─
+        cast_cards: dict[str, list[dict]] = {}
+        cast_meta: dict = {}
+        if _cast_resolver is not None:
+            t_cast = time.perf_counter()
             try:
-                selections = await _angle_selector(scp_id, scenes)
-                if selections:
-                    angles_selected: list[str] = []
-                    fallback_used = 0
-                    for scene in scenes:
-                        for shot in scene.get("shots", []):
-                            key = f"{scene['scene_num']}:{shot['shot_id']}"
-                            sel = selections.get(key)
-                            if sel and sel.get("path"):
-                                shot["character_path"] = sel["path"]
-                                angles_selected.append(sel.get("angle", "?"))
-                                if sel.get("fallback"):
-                                    fallback_used += 1  # true fallback, not a legit "front" pick
-                            # ponytail: if no selection for this shot, leave character_path unchanged
-                    angle_meta = {
-                        "scp_id": scp_id,
-                        "shots_analyzed": len(angles_selected),
-                        "angles_selected": angles_selected,
-                        "fallback_used": fallback_used,
-                        "latency_ms": int((time.perf_counter() - t_angle) * 1000),
-                    }
-                    logger.info(
-                        "Angle selection: %d shots, %d angles in %dms",
-                        len(angles_selected), len(set(angles_selected)), angle_meta["latency_ms"],
-                    )
-            except Exception as exc:  # noqa: BLE001 — AD-10: never fail the pipeline
-                logger.warning("Angle selection failed, continuing with existing character_path: %s", exc)
+                cast_cards = await _cast_resolver(scp_id, scenes) or {}
+                total_cards = sum(len(v) for v in cast_cards.values())
+                fallback_used = sum(1 for v in cast_cards.values() for c in v if c.get("fallback"))
+                cast_meta = {
+                    "scp_id": scp_id,
+                    "shots_with_cards": len(cast_cards),
+                    "total_cards": total_cards,
+                    "fallback_used": fallback_used,
+                    "latency_ms": int((time.perf_counter() - t_cast) * 1000),
+                }
+                logger.info(
+                    "Cast resolution: %d shots, %d cards in %dms",
+                    len(cast_cards), total_cards, cast_meta["latency_ms"],
+                )
+            except Exception as exc:  # noqa: BLE001 — AD-10: resolver/LLM failures degrade, never fail the run
+                logger.warning("Cast resolution failed, continuing background-only: %s", exc)
+                cast_cards = {}
+
+        # AC:10 — hard alpha validation, after resolution (can't live in
+        # _validate_scene_assets, which runs before the resolver). Asset
+        # contract failures fail the stage loudly (unlike the AD-10 catch above).
+        seen_cards: dict[str, dict] = {}
+        for card_list in cast_cards.values():
+            for card in card_list:
+                if not isinstance(card, dict) or not card.get("path"):
+                    logger.warning("Cast resolver returned malformed card, skipping: %r", card)
+                    continue
+                seen_cards.setdefault(card["path"], card)
+        for path, card in seen_cards.items():
+            if not has_alpha(Path(path).read_bytes()):
+                raise ValueError(
+                    f"card {card['card_key']!r} angle {card['angle']!r} at {path} is opaque "
+                    "(not an RGBA sprite) — regenerate via Story 8.2's sprite pipeline"
+                )
 
         # ── Story 1.9/1.9b: FFmpeg composition ────────────────────────────
 
@@ -1068,14 +1136,23 @@ async def video_node(state: PipelineState) -> dict:
         chapter_cards_enabled = bool(s.chapter_cards) and len(scenes) >= 2
 
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
+        card_counts: list[int] = []
         for i, scene in enumerate(scenes):
+            shot_for_scene = next((sh for sh in scene.get("shots") or [] if sh.get("image_path")), None)
+            shot_key = f"{scene['scene_num']}:{shot_for_scene['shot_id']}" if shot_for_scene else None
+            scene_cards = [
+                card for card in (cast_cards.get(shot_key, []) if shot_key else [])
+                if isinstance(card, dict) and card.get("path")
+            ]
             seg_path, spec, has_char = await _compose_scene(
                 scene, i, run_dir,
+                cards=scene_cards,
                 sound_design_enabled=s.sound_design_enabled,
                 post_fx_enabled=s.post_fx_enabled,
                 parallax_enabled=s.parallax_enabled,
                 include_stinger=not (chapter_cards_enabled and i > 0),
             )
+            card_counts.append(len(scene_cards))
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))
 
@@ -1177,8 +1254,8 @@ async def video_node(state: PipelineState) -> dict:
             run_id=run_id, scene_count=len(scenes),
             latency_ms=_ms(t0), output_path=str(output),
             returncode=0, effects=effects_meta, upscale_pass=True,
-            character_scenes=sum(1 for *_, hc in segs_with_specs if hc),
-            angle_selection=angle_meta if angle_meta else None,
+            card_counts=card_counts,
+            cast_resolution=cast_meta if cast_meta else None,
             chapter_cards_enabled=chapter_cards_enabled,
             chapter_card_duration=card_duration,
             chapter_card_count=card_count,

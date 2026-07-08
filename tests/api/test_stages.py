@@ -69,8 +69,6 @@ def _scene(num=1, narration="old", image=True, audio=True, subtitle="/tmp/s.srt"
             "image_prompt": "p", "negative_prompt": "n",
             "camera_angle": None, "camera_movement": None,
             "image_path": "/tmp/img.png" if image else None,
-            "background_path": "/tmp/bg.png" if image else None,
-            "character_path": "/tmp/ch.png" if image else None,
             "cast": [],
         }],
         "audio_path": "/tmp/a.wav" if audio else None,
@@ -263,8 +261,6 @@ def test_retry_image_cascade_clears_paths(client):
     values, _ = g.updates[-1]
     shot = values["scenes"][0]["shots"][0]
     assert shot["image_path"] is None
-    assert shot["background_path"] is None
-    assert shot["character_path"] is None
     assert values["scenes"][0]["audio_path"] is None
     assert values["scenes"][0]["subtitle_path"] is None
     assert values["video_path"] is None
