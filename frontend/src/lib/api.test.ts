@@ -22,6 +22,11 @@ describe("assetFileUrl", () => {
     expect(assetFileUrl("/characters/SCP-049/front.png")).toBe("/asset-files/characters/SCP-049/front.png")
     expect(assetFileUrl("../../etc/passwd")).toBe("/asset-files/etc/passwd")
   })
+
+  it("does not re-form a traversal sequence from overlapping dots", () => {
+    expect(assetFileUrl("....//etc/passwd")).toBe("/asset-files/..../etc/passwd")
+    expect(assetFileUrl("a/../../b")).toBe("/asset-files/a/b")
+  })
 })
 
 describe("parseGateStates", () => {

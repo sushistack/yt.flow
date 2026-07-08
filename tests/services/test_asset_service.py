@@ -150,6 +150,16 @@ def test_retire_asset_noop_if_already_retired(svc, tmp_path):
     assert svc.get_asset("k", include_drafts=True)["status"] == "retired"
 
 
+def test_approve_unknown_key_raises_value_error(svc):
+    with pytest.raises(ValueError, match="unknown asset key"):
+        svc.approve_asset("nope")
+
+
+def test_retire_unknown_key_raises_value_error(svc):
+    with pytest.raises(ValueError, match="unknown asset key"):
+        svc.retire_asset("nope")
+
+
 # ── Versioning (AC5) ──────────────────────────────────────────────────────────
 
 
@@ -218,3 +228,20 @@ def test_location_plate_unique_constraint(svc, tmp_path, session):
     session.commit()
     with pytest.raises(IntegrityError):
         svc.add_location_plate("isolation-cell", "wide", "locations/isolation-cell/wide.png")
+
+
+def test_location_plate_unique_constraint_rolls_back_failed_transaction(svc, tmp_path, session):
+    """A duplicate-plate IntegrityError must not poison the session for later calls."""
+    from sqlalchemy.exc import IntegrityError
+
+    _write(tmp_path, "locations/isolation-cell/wide.png")
+    _write(tmp_path, "locations/isolation-cell/close.png")
+    svc.add_location_plate("isolation-cell", "wide", "locations/isolation-cell/wide.png")
+    session.commit()
+    with pytest.raises(IntegrityError):
+        svc.add_location_plate("isolation-cell", "wide", "locations/isolation-cell/wide.png")
+
+    # Session must still be usable — a bare `raise` without rollback would leave it
+    # in a failed-transaction state and this next call would raise PendingRollbackError.
+    plate = svc.add_location_plate("isolation-cell", "close", "locations/isolation-cell/close.png")
+    assert plate.id
