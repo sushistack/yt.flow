@@ -19,7 +19,7 @@ related:
 
 # Story 8.5: Stock Location Plates — Pre-Built Background Set Library
 
-Status: review
+Status: done
 
 ## Story
 
@@ -318,6 +318,23 @@ claude-sonnet-5 (bmad-dev-story)
 
 - 2026-07-07: Story created from Epic 8. Owning the location-plate domain contract (`LocationKey` vocabulary, `location_key` on `ShotData`, `LocationService`, `LocationPlate` consumption from 8.6), the IPAdapter style-anchor seed pipeline, the image_node STOCK fast-path, and the visual_breakdown prompt extension. Gated behind 8.3 iteration 1 A/B + 8.6 prerequisite per epic draft. Lookdev/production split per Jay's 2026-07-07 industry-standard protocol.
 - 2026-07-09: Implemented all 13 ACs. Adapted `LocationService`/seed script to 8.6's actual (leaner) `LocationPlate` schema rather than the story's speculative Interfaces draft (see Completion Notes). Candidate prompt seeded to Langfuse; golden-set gate + promotion deferred to Jay. Full suite green (1013 passed, 1 skipped), ruff clean. Status → review.
+- 2026-07-09: Code review (3-layer adversarial) found and fixed 8 patch-worthy issues — most notably an AD-10 violation (plate-lookup errors could fail the whole image stage instead of degrading) and a non-deterministic `hash()` call that could break spatial continuity across a resumed run. 1 finding deferred (`reject_plate`/manifest desync — unused code path, fix requires touching 8.6's closed `AssetService`). Full suite green (1014 passed, 1 skipped), ruff clean. Status → done.
+
+## Review Findings
+
+Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-09) against a diff scoped to this story's own file list (a concurrent session's unrelated 8.4a changes were excluded from the diff).
+
+- [x] [Review][Patch] STOCK plate lookup/copy wasn't fault-isolated — a resolver or `shutil.copyfile` exception aborted the whole image stage instead of degrading to generation (AD-10 violation) [`src/yt_flow/pipeline/nodes/image.py:239-273`]
+- [x] [Review][Patch] `_plate_variant_index` used Python's builtin `hash()`, which is salted per process — a resumed run in a new process could pick a different variant for the same scene, breaking spatial continuity [`src/yt_flow/pipeline/nodes/image.py:207-215`]
+- [x] [Review][Patch] Per-shot DB session churn — `_resolve_location` opened a fresh session on every shot referencing a location_key; added an in-run `plate_cache` so each key is resolved once per run [`src/yt_flow/pipeline/nodes/image.py:236`]
+- [x] [Review][Patch] `api/main.py` reached into `LocationService`'s private `_abs_asset_path` from outside the class; added a public `resolve_stock_plates()` method matching the `resolve_cast_cards` injection-seam precedent [`src/yt_flow/services/location_service.py:46-51`, `src/yt_flow/api/main.py:42-45`]
+- [x] [Review][Patch] `LocationService.approve_plate` committed the DB status to `approved` before calling `asset_service.approve_asset()` — a manifest-side failure left DB and manifest disagreeing; reordered to call the manifest first [`src/yt_flow/services/location_service.py:53-63`]
+- [x] [Review][Patch] `location_ipadapter_weight` had no bounds validation, unlike the `qwen_tts_speed` precedent in the same Settings class; added `Field(0.4, ge=0.0, le=1.0)` [`src/yt_flow/config.py:135`]
+- [x] [Review][Patch] `parse_location_key` did exact-string matching only while its sibling `_normalize_card_key` in the same file strips/lowercases — an LLM emitting `"Corridor"` would silently degrade to generation; added the same normalization [`src/yt_flow/pipeline/nodes/scenario_chain.py:48,133`]
+- [x] [Review][Patch] `scripts/seed_location_plates.py`'s `_load_workflow` had no file-read/JSON-parse guard, unlike its `image.py` sibling; added the same try/except with a clear operator-facing message [`scripts/seed_location_plates.py:68-72`]
+- [x] [Review][Defer] `LocationService.reject_plate` resets the DB row to `draft` but never reverts the `AssetService` manifest entry, leaving `manifest.json` reporting `approved` after a reject [`src/yt_flow/services/location_service.py:66-72`] — deferred: `reject_plate` is unused/unwired in this story (no CLI calls it — AC9's re-seed flow covers rejection instead), and a correct fix means adding a status-reversal method to 8.6's already-closed `AssetService`, which is out of scope here per this story's own Completion Notes precedent.
+
+Dismissed as noise/non-issues (matches existing codebase conventions or is out of this story's scope): `ShotData.location_key` not `NotRequired` (matches the file's existing nullable-but-required field pattern, e.g. `camera_angle`); STOCK copy path has no size/format validation (the normal generation path has no such check at this layer either — no precedent to match); `LOCATION_PLATE_WIDTH`/`HEIGHT` not cross-checked against the workflow JSON (AC13 explicitly permits module constants); sidecar records the shot's own prompt fields even for STOCK shots (the sidecar is an internal resume-cache sentinel, not gate-facing metadata — AC8's gate visibility is handled separately in `run_service.py`); `get_approved_plate` (singular) unused by current wiring (it's a documented AC4 public method, not dead code); `approve_location_plate.py` filtering by variant in Python after a DB query (a ≤3-row one-time curation CLI, not worth a query change); `--force` help text (accurately describes the flag's actual effect).
 
 ## Saved Questions / Clarifications
 
