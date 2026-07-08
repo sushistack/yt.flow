@@ -17,7 +17,7 @@ related:
 
 # Story 8.2: Character Card Sprite Pipeline + Stock Cast Seeding
 
-Status: review
+Status: done
 
 ## Story
 
@@ -112,6 +112,21 @@ Key insight from the epic: cutting a character out of a **plain studio backgroun
     - **Horizontal cutout noise**: root-caused to InSPyReNet's pyramid decoder leaving ordered-dither alpha bands on flat, low-contrast garment regions (confirmed via raw-alpha-channel visualization and a direct `transparent_background.Remover` test — reproduces identically under both `resize='static'` and `'dynamic'`, so it's a model-architecture artifact, not a ComfyUI node config issue). Fixed with a new post-process, `_clean_alpha_noise` in `character_image_provider.py`: threshold → morphological close(25)/open(7) → keep-largest-connected-component → snap to fully opaque/transparent. Applied at all 3 return points of `ComfyUICharacterProvider.generate()`. Unit-tested (`test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob`).
   - [x] SCP-049 (standing ×4 + sitting ×4) and all 3 stock cast (standing ×4 each) regenerated end-to-end with the tuned pipeline; verified via checkerboard-composited contact sheets — clean silhouettes, consistent identity across all angles per character, flat even lighting, zero residual noise.
 
+### Review Findings
+
+- [x] [Review][Patch] Alpha cleanup could convert opaque RGB output into RGBA and bypass AC4 validation [src/yt_flow/services/character_image_provider.py:47]
+- [x] [Review][Patch] Empty alpha masks could be accepted as complete cards [src/yt_flow/services/character_image_provider.py:50]
+- [x] [Review][Patch] Alpha cleanup kept only the single largest component and could drop meaningful detached sprite parts [src/yt_flow/services/character_image_provider.py:56]
+- [x] [Review][Patch] `delete_character()` left stale `character_cards` rows adoptable by recreated characters [src/yt_flow/services/character_service.py:268]
+- [x] [Review][Patch] Anchored descriptor generation reused the curated anchor for side/back instead of the generated front card [src/yt_flow/services/character_service.py:706]
+- [x] [Review][Patch] Non-front requested angles could be skipped when `front` appeared later in the list [src/yt_flow/services/character_service.py:708]
+- [x] [Review][Patch] `CharacterCard` pose validation blocked normative future `hint:<sha>` keys for Story 8.4 [src/yt_flow/services/character_service.py:142]
+- [x] [Review][Patch] `save_card()` accepted noncanonical angles [src/yt_flow/services/character_service.py:235]
+- [x] [Review][Patch] Seed script could exit successfully after generating an incomplete 4-angle card set [scripts/seed_stock_cast.py:92]
+- [x] [Review][Patch] Anchor search aborted on malformed search results and `--key STOCK-* --anchor-search` required a redundant descriptor [scripts/seed_stock_cast.py:63]
+- [x] [Review][Patch] `has_alpha()` accepted alpha-color PNGs without validating image chunks beyond IHDR [src/yt_flow/domain/png.py:14]
+- [x] [Review][Patch] Sitting prompt asked for a chair while the fallback prompt forbade all furniture/props [src/yt_flow/services/character_service.py:804]
+
 ## Dev Notes
 
 ### D13/D5 mechanics — why studio-background + cutout, and why weights
@@ -196,6 +211,8 @@ GPT-5 Codex
 - 2026-07-08: `uv run pytest -q` → 821 passed, 1 skipped, 1 warning (full suite, post Task 8 tuning).
 - 2026-07-08: standalone root-cause test — `transparent_background.Remover(resize='static')` vs `Remover(resize='dynamic')` run directly (ComfyUI's own venv) against a pre-cutout raw render produced byte-for-byte identical dither artifacts, confirming the noise is an InSPyReNet decoder artifact, not a ComfyUI node resize-mode config issue. No change made to the third-party ComfyUI custom node; the fix lives entirely in `_clean_alpha_noise` inside this repo.
 - 2026-07-08: live evidence — `_bmad-output/implementation-artifacts/8-2-live-validation/stock-cast-contact-sheet-2026-07-08.png` (3 stock keys × 4 angles, post-tuning) and `scp049-contact-sheet-2026-07-08.png` (standing + sitting × 4 angles), both checkerboard-composited to make alpha cleanliness inspectable.
+- 2026-07-08: Code review fixes — `uv run pytest tests/domain/test_png.py tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/test_seed_stock_cast.py -q` → 107 passed, 1 warning.
+- 2026-07-08: Code review fixes — `uv run ruff check src tests scripts/seed_stock_cast.py` → All checks passed.
 
 ### Completion Notes List
 
@@ -207,7 +224,7 @@ GPT-5 Codex
 - Added descriptor-driven `generate_cards_from_descriptor`, deliberate ComfyUI t2i generation, stock/derived seed script, and optional `--anchor-search` human-curation stop.
 - Added additive `CharacterCard` table plus `save_card`/`get_card` helpers and pose-aware generation; standing remains in `Character.angle_*_path`, non-standing persists in `character_cards`.
 - Live generated SCP-049 standing x4 and sitting x4, plus stock cast standing x12. All inspected generated PNGs are `832x1216`, color type 6, alpha true. Contact sheet shows side/back angles are materially distinct from front for the regenerated library.
-- Code-review hardening applied during the 8.1 review pass: t2i fallback now removes disconnected IPAdapter/LoadImage placeholder nodes; Qwen image generation is fail-fast unsupported for RGBA card sprites until a real background-removal path exists; descriptor generation skips non-front angles when no front/anchor image exists; stock seeding completion validates existing files as alpha PNGs; `--anchor` requires `--key`; pose values are restricted to the closed `standing`/`sitting` enum; PNG alpha detection validates IHDR structure/CRC instead of trusting a header byte.
+- Code-review hardening applied during the 8.1/8.2 review passes: t2i fallback now removes disconnected IPAdapter/LoadImage placeholder nodes; Qwen image generation is fail-fast unsupported for RGBA card sprites until a real background-removal path exists; descriptor generation skips non-front angles when no front/anchor image exists; stock seeding completion validates existing files as alpha PNGs and fails incomplete generation; `--anchor` requires `--key`; pose values allow the base `standing`/`sitting` set plus the reserved `hint:<sha256[:10]>` extension; PNG alpha detection validates full chunk structure instead of trusting a header byte.
 - Task 8 resolved 2026-07-08: Jay reviewed the local contact sheet and decided local wins outright — no frontier counterparts needed, AC14's adoption rule is moot. Instead fixed 3 concrete defects Jay flagged on the local output: cross-angle identity drift (fixed via Qwen-VL descriptor re-anchoring after front generation, `enrich_descriptor_from_references`, plus a secondary IPAdapter weight bump), photographic drop-shadow (`darkness_xl_v2` LoRA 0.5→0.3 in the character workflow, tested 0.15 first — destabilized the checkpoint into grid/duplicate artifacts, reverted), and horizontal cutout noise (InSPyReNet ordered-dither artifact on flat garment regions, root-caused via raw-alpha visualization + a standalone `transparent_background.Remover` test that reproduced identically under both `resize` modes; fixed with a new `_clean_alpha_noise` post-process — threshold, morphological close/open, keep-largest-component). All 3 stock cast + SCP-049 (standing+sitting) regenerated end-to-end and verified clean via checkerboard contact sheets.
 
 ### File List
@@ -231,6 +248,7 @@ GPT-5 Codex
 - `tests/domain/test_character_types.py`
 - `tests/domain/test_png.py`
 - `tests/services/test_character_service_generation.py`
+- `tests/services/test_character_service.py`
 - `tests/services/test_run_service_character_provisioning.py`
 - `tests/stubs/fakes.py`
 - `tests/test_seed_stock_cast.py`
@@ -238,6 +256,7 @@ GPT-5 Codex
 ## Change Log
 
 - 2026-07-08: Task 8 completed — Jay reviewed the local contact sheet and chose local-only (no frontier comparison), then flagged 3 concrete defects which were fixed: cross-angle identity drift (Qwen-VL descriptor re-anchoring + IPAdapter weight bump), photographic drop-shadow (`darkness_xl_v2` LoRA 0.5→0.3), horizontal cutout noise (new `_clean_alpha_noise` post-process for InSPyReNet's ordered-dither artifact). SCP-049 + all 3 stock cast regenerated and verified. Full suite green (821 passed). Status → `review`.
+- 2026-07-08: Code review completed — 12 patch findings fixed: alpha-cleaning/PNG validation hardening, stale pose-card cleanup, anchor self-reference/front-first ordering, `hint:*` pose extension point, angle validation, seed incomplete-set failure, anchor-search robustness, and sitting prompt-chair consistency. Related suite green (107 passed), ruff clean. Status → `done`.
 - 2026-07-07: Implemented Tasks 1-7. Added RGBA sprite workflow, png domain helper, prompt updates, per-angle IPAdapter weights, RGBA save validation, descriptor/stock seeding, pose-aware `CharacterCard` storage, SCP-049 and stock live generated evidence, and regression tests. Story remains `in-progress` because Task 8 requires Jay's manual look-dev comparison/adoption decision.
 - 2026-07-06: Story created from Epic 8 architecture decision (E2E baseline run 272b05a4). Owns the Epic 8 card artifact contract (RGBA sprite) and stock-cast seeding.
 - 2026-07-07: optional anchor sourcing added per Jay — `--anchor-search` (image search per stock key, human curation stop) + `--anchor <path>` → front-angle IPAdapter reference (`anchor_path` param). Opt-in; default path byte-identical. Search leg depends on Story 5.19.

@@ -19,10 +19,10 @@ from yt_flow.domain.state import SearchResult
 
 CASSETTE_DIR = Path(__file__).parent.parent / "fixtures" / "cassettes"
 
-# Smallest valid 1x1 transparent PNG (67 bytes) — enough for any "image bytes" seam.
+# Tiny valid 1x1 RGBA PNG — enough for any "image bytes" seam.
 TINY_PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-    "0000000a49444154789c6360000002000100" "05fe02fe" "dccc59e70000000049454e44ae426082"
+    "0000000d4944415478da63fcff9fa11e000782027f3dc848ef0000000049454e44ae426082"
 )
 
 

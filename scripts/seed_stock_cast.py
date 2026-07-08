@@ -66,11 +66,15 @@ async def _anchor_search(service: CharacterService, key: str, descriptor: str, s
     review_dir = Path(settings.workspace_path) / "anchor-search" / _sanitize_scp_id(key)
     review_dir.mkdir(parents=True, exist_ok=True)
     for idx, result in enumerate(results, start=1):
+        url = result.get("url")
+        if not url:
+            print(f"skipped: malformed search result #{idx}")
+            continue
         try:
-            ext = await service._download_reference_image(result["url"], review_dir, idx)
+            ext = await service._download_reference_image(url, review_dir, idx)
             print(f"downloaded: {review_dir / f'ref_{idx}.{ext}'}")
         except Exception as exc:  # noqa: BLE001 - best-effort curation aid
-            print(f"skipped: {result['url']} ({exc})")
+            print(f"skipped: {url} ({exc})")
     print(f"Review {review_dir}, then rerun with --anchor <path>.")
     return 0
 
@@ -95,6 +99,8 @@ async def seed_key(
         pose=pose,
         anchor_path=anchor,
     )
+    if len(paths) < 4:
+        raise RuntimeError(f"generated incomplete card set for {key} ({pose}): {len(paths)}/4 cards")
     print(f"generated: {key} ({pose}) {len(paths)} cards")
     return paths
 
@@ -105,10 +111,14 @@ async def run(args) -> int:
     with Session(db._engine) as session:
         service = CharacterService(session, settings=settings)
         if args.key:
-            if not args.descriptor:
+            descriptor = args.descriptor or STOCK_DESCRIPTORS.get(args.key)
+            if not descriptor:
                 raise SystemExit("--descriptor is required with --key")
-            targets = {args.key: args.descriptor}
+            targets = {args.key: descriptor}
         else:
+            missing = [key for key in STOCK_CAST_KEYS if key not in STOCK_DESCRIPTORS]
+            if missing:
+                raise SystemExit(f"missing stock descriptors for: {', '.join(missing)}")
             targets = {key: STOCK_DESCRIPTORS[key] for key in STOCK_CAST_KEYS}
             if args.anchor:
                 raise SystemExit("--anchor requires --key so one curated image is not reused for every stock cast member")

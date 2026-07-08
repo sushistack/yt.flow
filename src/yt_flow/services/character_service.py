@@ -74,6 +74,7 @@ _POSE_DESCRIPTIONS: dict[str, str] = {
     "sitting": "sitting on a plain simple chair, seated pose",
 }
 _VALID_CARD_POSES = frozenset(_POSE_DESCRIPTIONS)
+_SPECIAL_POSE_RE = re.compile(r"^hint:[0-9a-f]{10}$")
 
 # Fields that can be updated via update_character — guards against injection
 _UPDATE_ALLOWLIST = frozenset({
@@ -140,8 +141,13 @@ def _sanitize_scp_id(scp_id: str) -> str:
 
 
 def _validate_card_pose(pose: str) -> None:
-    if pose not in _VALID_CARD_POSES:
-        raise ValidationError("pose", f"must be one of {sorted(_VALID_CARD_POSES)}")
+    if pose not in _VALID_CARD_POSES and not _SPECIAL_POSE_RE.fullmatch(pose):
+        raise ValidationError("pose", f"must be one of {sorted(_VALID_CARD_POSES)} or hint:<sha256[:10]>")
+
+
+def _validate_card_angle(angle: str) -> None:
+    if angle not in _ANGLE_DESCRIPTIONS:
+        raise ValidationError("angle", f"must be one of {list(_ANGLE_DESCRIPTIONS)}")
 
 
 # ── Service ───────────────────────────────────────────────────────────────────
@@ -235,6 +241,7 @@ class CharacterService:
     def save_card(self, scp_id: str, pose: str, angle: str, image_path: str) -> CharacterCardModel:
         """Upsert a pose-aware character card row."""
         _validate_card_pose(pose)
+        _validate_card_angle(angle)
         existing = self.get_card(scp_id, pose, angle)
         if existing is None:
             model = CharacterCardModel(scp_id=scp_id, pose=pose, angle=angle, image_path=image_path)
@@ -266,7 +273,7 @@ class CharacterService:
         ).first()
 
     def delete_character(self, id: str) -> None:
-        """Delete a character and all associated records (references, candidates)."""
+        """Delete a character and all associated records (references, candidates, cards)."""
         model = self._session.get(CharacterModel, id)
         if model is None:
             raise LookupError(f"Character not found: {id}")
@@ -288,9 +295,17 @@ class CharacterService:
         ).all()
         for candidate in candidates:
             self._session.delete(candidate)
+        cards = self._session.exec(
+            select(CharacterCardModel).where(CharacterCardModel.scp_id == model.scp_id)
+        ).all()
+        for card in cards:
+            self._session.delete(card)
         self._session.delete(model)
         self._session.commit()
-        logger.info("Character deleted: id=%s (cleaned %d refs, %d candidates)", id, len(refs), len(candidates))
+        logger.info(
+            "Character deleted: id=%s (cleaned %d refs, %d candidates, %d cards)",
+            id, len(refs), len(candidates), len(cards),
+        )
 
     # ── Reference Image Search ────────────────────────────────────────────
 
@@ -619,6 +634,8 @@ class CharacterService:
         _validate_card_pose(pose)
         if angles is None:
             angles = list(_CANONICAL_ANGLES)
+        for angle in angles:
+            _validate_card_angle(angle)
 
         s = self._settings
         workspace = Path(s.workspace_path)
@@ -697,6 +714,10 @@ class CharacterService:
         _validate_card_pose(pose)
         if angles is None:
             angles = list(_CANONICAL_ANGLES)
+        for angle in angles:
+            _validate_card_angle(angle)
+        if "front" in angles:
+            angles = ["front", *(angle for angle in angles if angle != "front")]
 
         character = self._ensure_character(card_key)
         if descriptor and character.visual_descriptor != descriptor:
@@ -723,8 +744,9 @@ class CharacterService:
                 continue
             path = generated[0]
             saved.append(path)
-            if angle == "front" and anchor_path is None:
+            if angle == "front":
                 front_path = path
+            if angle == "front" and anchor_path is None:
                 # Describe the just-generated face/mask/insignia in text so the
                 # self-referencing angles below stay the same person, not just
                 # the same outfit — IPAdapter alone doesn't lock facial identity.
@@ -806,8 +828,10 @@ class CharacterService:
             f"SCP ID: {scp_id}\n\n"
             "Create a transparent-sprite source image: one single subject, full body, feet visible, "
             "centered on canvas, clean silhouette, no crop, no bust portrait. Place the subject on a "
-            "plain flat light-gray studio background only, with no scenery, room, furniture, props, "
-            "environment detail, text, watermark, border, or extra characters. Lighting is soft and even "
+            "plain flat light-gray studio background only, with no scenery, room, unrelated furniture, "
+            "unrelated props, environment detail, text, watermark, border, or extra characters; a plain "
+            "minimal chair or stool is allowed only when the requested pose explicitly requires sitting. "
+            "Lighting is soft and even "
             "studio lighting with no cast shadow, no drop shadow, and no dramatic or high-contrast lighting "
             "on the subject or floor. Suitable for later background removal and video compositing. "
             "Maintain consistent character design, proportions, and color palette across all angles — the "

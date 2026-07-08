@@ -22,4 +22,24 @@ def has_alpha(png_bytes: bytes) -> bool:
     actual_crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
     if expected_crc != actual_crc:
         return False
-    return chunk_data[9] in (4, 6)
+    if chunk_data[9] not in (4, 6):
+        return False
+
+    offset = 33
+    saw_idat = False
+    while offset + 12 <= len(png_bytes):
+        chunk_len = struct.unpack(">I", png_bytes[offset:offset + 4])[0]
+        chunk_end = offset + 12 + chunk_len
+        if chunk_end > len(png_bytes):
+            return False
+        current_type = png_bytes[offset + 4:offset + 8]
+        current_data = png_bytes[offset + 8:offset + 8 + chunk_len]
+        current_crc = struct.unpack(">I", png_bytes[offset + 8 + chunk_len:chunk_end])[0]
+        if zlib.crc32(current_type + current_data) & 0xFFFFFFFF != current_crc:
+            return False
+        if current_type == b"IDAT":
+            saw_idat = True
+        if current_type == b"IEND":
+            return saw_idat
+        offset = chunk_end
+    return False

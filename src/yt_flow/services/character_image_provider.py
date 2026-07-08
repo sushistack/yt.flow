@@ -44,18 +44,28 @@ def _clean_alpha_noise(png_bytes: bytes) -> bytes:
     from PIL import Image
     from scipy import ndimage
 
-    im = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+    im = Image.open(io.BytesIO(png_bytes))
+    if im.mode != "RGBA":
+        raise ValueError("generated character sprite is missing an alpha channel")
+    im = im.convert("RGBA")
     arr = np.array(im)
     alpha = arr[:, :, 3]
     binary = alpha > 100
+    if not np.any(binary):
+        raise ValueError("generated character sprite has an empty alpha mask")
     binary = ndimage.binary_closing(binary, structure=np.ones((25, 25)))
     binary = ndimage.binary_opening(binary, structure=np.ones((7, 7)))
     labeled, num_components = ndimage.label(binary)
     if num_components == 0:
         return png_bytes
     sizes = ndimage.sum(binary, labeled, range(1, num_components + 1))
-    largest = int(np.argmax(sizes)) + 1
-    keep_mask = labeled == largest
+    largest_size = float(np.max(sizes))
+    keep_labels = {
+        idx + 1
+        for idx, size in enumerate(sizes)
+        if float(size) >= largest_size * 0.02
+    }
+    keep_mask = np.isin(labeled, list(keep_labels))
     # Snap to fully opaque/transparent — the mask already decided foreground vs
     # not, so keeping the original dithered alpha here would just re-draw the
     # noise band we closed over.

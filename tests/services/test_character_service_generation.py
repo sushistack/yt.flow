@@ -355,6 +355,15 @@ class TestMultiAngleGeneration:
         assert second.id == first.id
         assert service.get_card("SCP-049", "sitting", "front").image_path == "/tmp/b.png"
 
+    def test_save_card_accepts_hint_pose_key(self, service):
+        card = service.save_card("SCP-049", "hint:012345abcd", "front", "/tmp/special.png")
+
+        assert card.pose == "hint:012345abcd"
+
+    def test_save_card_rejects_invalid_angle(self, service):
+        with pytest.raises(ValidationError, match="angle"):
+            service.save_card("SCP-049", "sitting", "top_down", "/tmp/top.png")
+
     def test_generate_cards_from_descriptor_front_t2i_then_self_references(
         self, service, tmp_path
     ):
@@ -384,6 +393,58 @@ class TestMultiAngleGeneration:
         assert character.angle_front_path == paths[0]
         assert character.angle_side_path == paths[1]
         assert character.angle_back_path == paths[2]
+
+    def test_generate_cards_from_descriptor_runs_front_first(self, service, tmp_path):
+        service._settings = Settings(workspace_path=str(tmp_path))
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="gaunt human in orange jumpsuit",
+                    angles=["side", "front", "back"],
+                )
+            )
+
+        assert [Path(path).name for path in paths] == [
+            "front_candidate_1.png",
+            "side_candidate_1.png",
+            "back_candidate_1.png",
+        ]
+        calls = mock_provider.generate.call_args_list
+        assert calls[0].kwargs["ref_image_path"] is None
+        assert calls[1].kwargs["ref_image_path"] == paths[0]
+
+    def test_generate_cards_from_descriptor_anchor_only_conditions_front(
+        self, service, tmp_path
+    ):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        anchor = str(tmp_path / "curated.png")
+        Path(anchor).write_bytes(TINY_PNG)
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="gaunt human in orange jumpsuit",
+                    anchor_path=anchor,
+                    angles=["front", "side", "back"],
+                )
+            )
+
+        calls = mock_provider.generate.call_args_list
+        assert len(paths) == 3
+        assert calls[0].kwargs["ref_image_path"] == anchor
+        assert calls[1].kwargs["ref_image_path"] == paths[0]
+        assert calls[2].kwargs["ref_image_path"] == paths[0]
 
     def test_generate_cards_from_descriptor_skips_later_angles_without_front_anchor(
         self, service, tmp_path
@@ -559,14 +620,16 @@ class TestReferenceImageInjectionAndFallback:
 
     def test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob(self):
         """Story 8.2 follow-up: InSPyReNet leaves dithered alpha noise as small
-        disconnected specks or ragged bands; only the largest silhouette survives,
-        snapped fully opaque so the closed-over dithering doesn't reappear."""
+        disconnected specks or ragged bands; tiny specks are dropped, while
+        meaningful components survive with alpha snapped fully opaque."""
         from yt_flow.services.character_image_provider import _clean_alpha_noise
 
         size = 100
         arr = np.zeros((size, size, 4), dtype=np.uint8)
         arr[20:80, 20:80, :3] = 255
         arr[20:80, 20:80, 3] = 255  # main blob: opaque 60x60 square
+        arr[75:95, 75:95, :3] = 255
+        arr[75:95, 75:95, 3] = 255  # meaningful detached component: 400px
         arr[5:10, 5:10, 3] = 200  # disconnected noise speck, far from the blob
         buf = io.BytesIO()
         Image.fromarray(arr, "RGBA").save(buf, format="PNG")
@@ -574,7 +637,26 @@ class TestReferenceImageInjectionAndFallback:
         cleaned = np.array(Image.open(io.BytesIO(_clean_alpha_noise(buf.getvalue()))).convert("RGBA"))
 
         assert cleaned[50, 50, 3] == 255  # main blob stays fully opaque
+        assert cleaned[85, 85, 3] == 255  # large detached component survives
         assert cleaned[7, 7, 3] == 0  # disconnected speck removed
+
+    def test_clean_alpha_noise_rejects_rgb_input(self):
+        from yt_flow.services.character_image_provider import _clean_alpha_noise
+
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10), "white").save(buf, format="PNG")
+
+        with pytest.raises(ValueError, match="missing an alpha"):
+            _clean_alpha_noise(buf.getvalue())
+
+    def test_clean_alpha_noise_rejects_empty_alpha_mask(self):
+        from yt_flow.services.character_image_provider import _clean_alpha_noise
+
+        buf = io.BytesIO()
+        Image.new("RGBA", (10, 10), (255, 255, 255, 0)).save(buf, format="PNG")
+
+        with pytest.raises(ValueError, match="empty alpha"):
+            _clean_alpha_noise(buf.getvalue())
 
 
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────

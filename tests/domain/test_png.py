@@ -45,3 +45,16 @@ def test_has_alpha_rejects_bad_ihdr_crc():
     png = bytearray(_make_png(6))
     png[32] ^= 0xFF
     assert has_alpha(bytes(png)) is False
+
+
+def test_has_alpha_rejects_png_without_image_data():
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+    iend = _png_chunk(b"IEND", b"")
+    assert has_alpha(sig + ihdr + iend) is False
+
+
+def test_has_alpha_rejects_bad_later_chunk_crc():
+    png = bytearray(_make_png(6))
+    png[-1] ^= 0xFF
+    assert has_alpha(bytes(png)) is False

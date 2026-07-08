@@ -64,12 +64,12 @@ async def test_seed_key_regenerates_when_completed_paths_are_missing(tmp_path, m
         )
 
         async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None):
-            return ["/tmp/front.png"]
+            return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
         paths = await seed.seed_key(service, "STOCK-d-class", "descriptor")
 
-    assert paths == ["/tmp/front.png"]
+    assert len(paths) == 4
 
 
 async def test_seed_key_generates_derived_descriptor(tmp_path, monkeypatch):
@@ -86,12 +86,33 @@ async def test_seed_key_generates_derived_descriptor(tmp_path, monkeypatch):
             assert descriptor == "reanimated human"
             assert pose == "standing"
             assert anchor_path is None
-            return ["/tmp/front.png"]
+            return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
         paths = await seed.seed_key(service, "SCP-049-2", "reanimated human")
 
-    assert paths == ["/tmp/front.png"]
+    assert len(paths) == 4
+
+
+async def test_seed_key_rejects_incomplete_generation(tmp_path, monkeypatch):
+    seed = _load_script()
+    db.init("sqlite://")
+    from sqlmodel import Session
+    from yt_flow.db import _engine
+
+    with Session(_engine) as session:
+        service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
+
+        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None):
+            return ["/tmp/front.png"]
+
+        monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
+        try:
+            await seed.seed_key(service, "SCP-049-2", "reanimated human")
+        except RuntimeError as exc:
+            assert "1/4 cards" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
 
 
 def test_parser_rejects_anchor_without_single_key():
@@ -103,6 +124,35 @@ def test_parser_rejects_anchor_without_single_key():
         assert "--anchor requires --key" in str(exc)
     else:
         raise AssertionError("expected SystemExit")
+
+
+def test_anchor_search_stock_key_uses_builtin_descriptor(monkeypatch):
+    seed = _load_script()
+    args = seed.build_parser().parse_args(["--key", "STOCK-d-class", "--anchor-search"])
+    calls = []
+
+    async def fake_anchor_search(service, key, descriptor, settings):
+        calls.append((key, descriptor))
+        return 0
+
+    monkeypatch.setattr(seed, "_anchor_search", fake_anchor_search)
+
+    assert asyncio.run(seed.run(args)) == 0
+    assert calls == [("STOCK-d-class", seed.STOCK_DESCRIPTORS["STOCK-d-class"])]
+
+
+async def test_anchor_search_skips_malformed_results(tmp_path, monkeypatch):
+    seed = _load_script()
+    service = object()
+    settings = Settings(workspace_path=str(tmp_path))
+
+    class FakeSearch:
+        async def search(self, query, max_results):
+            return [{"title": "missing url"}]
+
+    monkeypatch.setattr(seed, "DuckDuckGoImageSearch", FakeSearch)
+
+    assert await seed._anchor_search(service, "STOCK-d-class", "descriptor", settings) == 0
 
 
 def test_parser_rejects_unknown_pose():

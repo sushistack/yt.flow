@@ -7,6 +7,7 @@ import pytest
 from sqlmodel import Session, select
 
 from yt_flow import db
+from yt_flow.db.models import CharacterCard as CharacterCardModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.services.character_service import (
@@ -180,6 +181,17 @@ class TestCharacterCRUD:
         c2 = svc.create_character("SCP-096", "Shy Guy Returns")
         assert svc.list_candidates(c2.scp_id) == []
         assert len(CANONICAL_ANGLES) == 4  # sanity: the 4 angles this test relies on
+
+    def test_delete_cascades_pose_cards(self, service, session):
+        c = service.create_character("SCP-049", "Plague Doctor")
+        service.save_card("SCP-049", "sitting", "front", "/tmp/sitting-front.png")
+
+        service.delete_character(c.id)
+
+        remaining = session.exec(
+            select(CharacterCardModel).where(CharacterCardModel.scp_id == "SCP-049")
+        ).all()
+        assert remaining == []
 
     def test_delete_cascades_reference_images(self, service, session):
         c = service.create_character("SCP-096", "Shy Guy")
