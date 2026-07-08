@@ -15,7 +15,7 @@ related:
 
 # Story 8.4: On-Demand Special-Pose Cards
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -82,23 +82,31 @@ def pose_hint_key(hint: str) -> str:
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Schema + parser (AC: 1, 2)
-  - [ ] Add `pose_hint: NotRequired[str]` to `CastMember` in `src/yt_flow/domain/state.py`; update the drift guard (`tests/domain/test_state_imports.py`).
-  - [ ] Extend 8.1's `parse_cast` in `scenario_chain.py` with the pass-through rule (strip; drop unless non-empty `str` ≤ 80 chars); add the AC2 test table to `tests/pipeline/nodes/test_scenario_chain.py`.
+- [x] Task 1 — Schema + parser (AC: 1, 2)
+  - [x] Add `pose_hint: NotRequired[str]` to `CastMember` in `src/yt_flow/domain/state.py`; update the drift guard (`tests/domain/test_state_imports.py`).
+  - [x] Extend 8.1's `parse_cast` in `scenario_chain.py` with the pass-through rule (strip; drop unless non-empty `str` ≤ 80 chars); add the AC2 test table to `tests/pipeline/nodes/test_scenario_chain.py`.
 - [ ] Task 2 — Prompt (AC: 3)
   - [ ] Add the `pose_hint` section + self-check line to `prompts/scenario/visual_breakdown.md`; seed `candidate` per PROMPT_POLICY; golden-set gate + hand-inspect one SCP-049 scenario for hint sparsity/quality; record evidence in Dev Agent Record. Do not touch the `production` label.
-- [ ] Task 3 — Cache key + generation (AC: 5, 10)
-  - [ ] `pose_hint_key(hint)` in `character_service.py` next to `_POSE_DESCRIPTIONS` — it is a service-layer storage-key concern, not pipeline state (stdlib `hashlib` only; 8.3's resolver and the hook both live behind the service boundary and import it from there, so `domain/` gains nothing from hosting it).
-  - [ ] `CharacterService.generate_special_pose_card(card_key, pose_hint)` per AC5, reusing 8.2's `generate_cards_from_descriptor` internals (provider call, RGBA save validation, `save_card` upsert) — one render, front-card reference, `None`-on-failure.
-- [ ] Task 4 — Provisioning hook (AC: 4, 6, 8)
-  - [ ] `Settings.special_pose_max_per_run: int = 3` (`config.py`, character settings block) + `.env.example` line.
-  - [ ] `_ensure_special_pose_cards(scp_id, scenes)` in `run_service.py` per AC4 (docstring: cite 5-8's pattern and this story); wire into `resume_run`'s scenario-approve path; `comfyui_mock` no-op guard first.
-  - [ ] Unit tests via the seam pattern (AC10); confirm `tests/pipeline/test_stub_profile_smoke.py` and `tests/api/test_e2e_stub_run.py` pass untouched.
-- [ ] Task 5 — Resolver extension (AC: 7, 8, 9)
-  - [ ] Extend `resolve_cast_cards`: hint lookup before base-pose resolution, per Interfaces; warnings per distinct missed hint.
-  - [ ] Hint hit/miss tests in `tests/services/test_character_angle_selector.py`; 8.3's existing tests must pass unmodified (AC8); serializer pass-through assertion (AC9).
+- [x] Task 3 — Cache key + generation (AC: 5, 10)
+  - [x] `pose_hint_key(hint)` in `character_service.py` next to `_POSE_DESCRIPTIONS` — it is a service-layer storage-key concern, not pipeline state (stdlib `hashlib` only; 8.3's resolver and the hook both live behind the service boundary and import it from there, so `domain/` gains nothing from hosting it).
+  - [x] `CharacterService.generate_special_pose_card(card_key, pose_hint)` per AC5, reusing 8.2's `generate_cards_from_descriptor` internals (provider call, RGBA save validation, `save_card` upsert) — one render, front-card reference, `None`-on-failure.
+- [x] Task 4 — Provisioning hook (AC: 4, 6, 8)
+  - [x] `Settings.special_pose_max_per_run: int = 3` (`config.py`, character settings block) + `.env.example` line.
+  - [x] `_ensure_special_pose_cards(scp_id, scenes)` in `run_service.py` per AC4 (docstring: cite 5-8's pattern and this story); wire into `resume_run`'s scenario-approve path; `comfyui_mock` no-op guard first.
+  - [x] Unit tests via the seam pattern (AC10); confirm `tests/pipeline/test_stub_profile_smoke.py` and `tests/api/test_e2e_stub_run.py` pass untouched.
+- [x] Task 5 — Resolver extension (AC: 7, 8, 9)
+  - [x] Extend `resolve_cast_cards`: hint lookup before base-pose resolution, per Interfaces; warnings per distinct missed hint.
+  - [x] Hint hit/miss tests in `tests/services/test_character_angle_selector.py`; 8.3's existing tests must pass unmodified (AC8); serializer pass-through assertion (AC9).
 - [ ] Task 6 — Live validation (AC: 3, 5)
   - [ ] Against real ComfyUI (memory: `$HOME/workspaces/ComfyUI`, `./run.sh`, :8188): generate one real special-pose card for SCP-049 (e.g. "kneeling over a corpse"), verify RGBA + framing + the pose actually reads, verify the cache hit on a second invocation; record file paths + evidence in Dev Agent Record.
+
+### Review Findings
+
+- [x] [Review][Patch] `pose_hint` is accepted but not provisioned, generated, resolved, capped, or tested [src/yt_flow/services/character_service.py]
+- [x] [Review][Patch] `pose_hint` is documented in visual_breakdown but not in the authoritative cast emitter [prompts/scenario/cast_decision.md]
+- [x] [Review][Patch] `cast_decision_step` silently drops malformed, duplicate, or out-of-range sentence mappings [src/yt_flow/pipeline/nodes/scenario_chain.py]
+- [x] [Review][Patch] Recoverable cast enum casing/whitespace degrades to defaults [src/yt_flow/pipeline/nodes/scenario_chain.py]
+- [x] [Review][Patch] Non-string chapter card title/kicker values are coerced to repr text [src/yt_flow/pipeline/nodes/scenario_chain.py]
 
 ## Dev Notes
 
@@ -167,9 +175,38 @@ One optional TypedDict key, one hash function, one service method that reuses 8.
 
 ### Debug Log References
 
+- Task 1 red test: `uv run pytest tests/domain/test_state_imports.py tests/pipeline/nodes/test_scenario_chain.py -q` failed as expected before implementation (`CastMember` missing `pose_hint`; parser did not preserve valid hints).
+- Task 1 green test: `uv run pytest tests/domain/test_state_imports.py tests/pipeline/nodes/test_scenario_chain.py -q` → `88 passed`.
+- Task 1 regression: `uv run pytest -q` → `841 passed, 1 skipped, 1 warning`.
+- Task 2 candidate seed: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` → `created: scenario/visual_breakdown` and other prompts skipped.
+- Task 2 golden-set gate: `uv run python scripts/eval_prompts.py --label candidate --baseline production` → `FAIL`; all three items failed because Langfuse baseline could not fetch `scenario/cast_decision` with `production` label. Story says not to touch `production`, so Task 2 cannot be completed in this run without external Prompt Hub correction/approval.
+- Code review patch verification: `uv run pytest tests/domain/test_state_imports.py tests/pipeline/nodes/test_scenario_chain.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/services/test_run_service_character_provisioning.py tests/api/test_stage_artifacts.py -q` → `231 passed, 1 warning`.
+- Stub/e2e regression: `uv run pytest tests/pipeline/nodes/test_scenario.py tests/pipeline/test_stub_profile_smoke.py tests/api/test_e2e_stub_run.py -q` → `19 passed, 1 warning`.
+- Full regression: `uv run pytest -q` → `912 passed, 1 skipped, 1 warning`.
+- Lint: `uv run ruff check .` → `All checks passed!`.
+
 ### Completion Notes List
 
+- Task 1: Added the optional `pose_hint` CastMember field and lenient parser pass-through/drop behavior, with table tests for valid, stripped, empty, non-string, overlong, and defaulted-field cases.
+- Code review patches: implemented deterministic `hint:*` keying, special-pose generation, scenario-approval provisioning with cap/mock/no-op behavior, resolver hint hit/miss fallback, cast-decision coverage validation, enum whitespace/case normalization, and scenario artifact `pose_hint` visibility.
+- Remaining: Task 2 prompt rollout still needs a passing Langfuse golden-set gate, and Task 6 live ComfyUI pose-quality validation remains open.
+
 ### File List
+
+- `src/yt_flow/domain/state.py`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py`
+- `tests/domain/test_state_imports.py`
+- `tests/pipeline/nodes/test_scenario_chain.py`
+- `src/yt_flow/config.py`
+- `.env.example`
+- `src/yt_flow/services/character_service.py`
+- `src/yt_flow/services/run_service.py`
+- `prompts/scenario/cast_decision.md`
+- `tests/api/test_stage_artifacts.py`
+- `tests/services/test_character_angle_selector.py`
+- `tests/services/test_character_service_generation.py`
+- `tests/services/test_run_service_character_provisioning.py`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
