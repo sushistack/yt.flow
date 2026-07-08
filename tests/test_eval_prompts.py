@@ -271,6 +271,8 @@ def test_compare_fails_when_candidate_item_failed():
     verdict, rows = ep.compare(candidate, baseline)
     assert verdict == "FAIL"
     assert rows[0]["status"] == "item failure"
+    assert rows[0]["candidate_error"] == "boom"
+    assert rows[0]["baseline_error"] is None
 
 
 def test_compare_fails_when_baseline_item_failed():
@@ -279,6 +281,22 @@ def test_compare_fails_when_baseline_item_failed():
     verdict, rows = ep.compare(candidate, baseline)
     assert verdict == "FAIL"
     assert rows[0]["status"] == "item failure"
+    assert rows[0]["candidate_error"] is None
+    assert rows[0]["baseline_error"] == "boom"
+
+
+def test_print_comparison_includes_item_failure_errors(capsys):
+    rows = [{
+        "scp_id": "SCP-096",
+        "status": "item failure",
+        "candidate_error": "candidate exploded",
+        "baseline_error": "baseline exploded",
+    }]
+    ep.print_comparison("candidate", "production", rows, "FAIL")
+    out = capsys.readouterr().out
+    assert "SCP-096: FAIL (item failure)" in out
+    assert "candidate: candidate exploded" in out
+    assert "production: baseline exploded" in out
 
 
 def test_compare_fails_on_empty_candidate():

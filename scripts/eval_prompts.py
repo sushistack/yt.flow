@@ -165,7 +165,12 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
         base = baseline_by_id.get(cand.scp_id)
         if cand.failed or base is None or base.failed:
             verdict = "FAIL"
-            rows.append({"scp_id": cand.scp_id, "status": "item failure"})
+            rows.append({
+                "scp_id": cand.scp_id,
+                "status": "item failure",
+                "candidate_error": cand.error if cand.failed else None,
+                "baseline_error": base.error if base and base.failed else ("missing baseline result" if base is None else None),
+            })
             continue
 
         deltas = {ax: cand.axes[ax] - base.axes[ax] for ax in AXES}
@@ -192,6 +197,10 @@ def print_comparison(candidate_label: str, baseline_label: str, rows: list[dict]
     for row in rows:
         if row["status"] in ("item failure", "missing from candidate run", "no results — dataset empty or run produced nothing"):
             print(f"  {row['scp_id']}: FAIL ({row['status']})")
+            if row.get("candidate_error"):
+                print(f"    {candidate_label}: {row['candidate_error']}")
+            if row.get("baseline_error"):
+                print(f"    {baseline_label}: {row['baseline_error']}")
             continue
         deltas = ", ".join(f"{ax}={d:+.2f}" for ax, d in row["deltas"].items())
         print(f"  {row['scp_id']}: {row['status']:9s} {deltas}  total={row['total_delta']:+.2f}")
