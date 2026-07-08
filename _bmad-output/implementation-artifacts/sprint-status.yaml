@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-08  # Story 8.8 code review complete → done
+last_updated: 2026-07-08  # Story 8.4 closed; prompt/eval gate split to 8.4a
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -138,7 +138,8 @@ development_status:
   8-1-shot-cast-metadata-bg-prompts: done  # visual_breakdown: cast 목록+배치 메타+배경 전용 프롬프트; cast 빈 목록 = 배경만 (D3/D11 해소). 코드리뷰 완료: prompt few-shot 강화+candidate 재시딩, 8.2 혼입은 커밋 경계로 분리, 리뷰 spillover 8.2 hardening 별도 패치
   8-2-character-card-sprite-pipeline: done  # RGBA 스프라이트 표준화(단색 배경 생성→컷아웃), 앵글/포즈 다양화(D5), STOCK-* 고정 출연진 시드, 파생 개체 카드; Task 8 완료(로컬 채택, 정체성/그림자/노이즈 3건 튜닝). 코드리뷰 완료: alpha/PNG 검증, stale pose-card cleanup, anchor self-reference, hint:* pose, seed incomplete-set failure 등 12건 패치; 107 passed, ruff clean
   8-3-bg-only-generation-multicard-compositing: done  # image_node 세그/인페인트 제거, video_node 다중 카드 합성(스케일/위치/z-order+카드별 모션), 1.13 오버라이드를 cast 게이팅으로 (D10/D13 해소); 코드리뷰 패치 6건 적용(sidecar effective negative prompt, retired README, malformed cast/card 방어, stock partial angle fallback, AC13 증거 정정), deferred 2건; 828 passed/1 skipped, ruff clean; 라이브 검증(실 ComfyUI+3씬 렌더) 완료 — DoD A/B는 8.1 cast 프롬프트 미작동 이슈로 手동 cast 메타데이터 대체 수행(Jay 승인), 프레임 증거로 J2/J3/J4 개선 확인
-  8-4-on-demand-special-pose-cards: in-progress  # pose_hint 자유텍스트 → run 중 키아트 카드 온디맨드 생성(scenario 게이트 승인 훅, non-fatal, hint:sha256 캐싱, run당 3장 캡); depends on 8-1~8-3
+  8-4-on-demand-special-pose-cards: done  # runtime 구현+코드리뷰 완료; prompt golden gate/live validation은 eval-runner 안정화 문제로 8.4a에 이관
+  8-4a-special-pose-prompt-gate-decomposition: ready-for-dev  # 8.4 이관분: golden-set eval을 SCP/stage 단위로 분해(--scp-id/--stage/timeout/artifacts), pose_hint prompt gate + live ComfyUI validation 재검증
   8-5-stock-location-plates: ready-for-dev  # 2026-07-07 created
   8-6-asset-library-management: done  # assets/ 루트 분리 + manifest.json + style_epoch + draft/approved 수명주기(파이프라인 자동생성 카드는 approved 직행, Jay 승인) + 8-2 카드 실이주 완료; /asset-files 서빙 추가 구현(범위 확장, Jay 승인); 사전 존재하던 테스트 격리 버그 발견·수정(실 assets/DB 오염 방지); 그로 인한 SCP-096(165 run, ComfyUI 재생성 완료)/SCP-173(고아 row, 정리)/SCP-3007×4(미사용, 정리) 카드 사전 유실 전부 해결(Jay 승인); 코드리뷰 패치 9건 적용(승인/폐기 KeyError→ValueError, IntegrityError 롤백 누락, DB/manifest 쓰기 순서 원자성, 마이그레이션 hint-pose 콜론 유실, 신규 DB 컬럼 부트스트랩 db.init() 이관, assetFileUrl 트래버설 새니타이저), deferred 2건(epoch 재생성 시 manifest 덮어쓰기, 매니페스트 파일 락 부재); 947 passed/1 skipped, ruff clean
   8-7-composite-harmonization: ready-for-dev  # 콜라주 룩 해소 — Tier1 ffmpeg(mood 틴트+컨택트 섀도+합성 후 그레이드) → Tier2 라이트 랩 → Tier3 IC-Light 리라이팅((card,location) 쌍 사전 계산·8-6 캐싱); 착수 게이트 = iteration 1 실측

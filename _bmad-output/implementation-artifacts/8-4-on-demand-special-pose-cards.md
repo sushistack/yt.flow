@@ -15,7 +15,7 @@ related:
 
 # Story 8.4: On-Demand Special-Pose Cards
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -85,8 +85,8 @@ def pose_hint_key(hint: str) -> str:
 - [x] Task 1 — Schema + parser (AC: 1, 2)
   - [x] Add `pose_hint: NotRequired[str]` to `CastMember` in `src/yt_flow/domain/state.py`; update the drift guard (`tests/domain/test_state_imports.py`).
   - [x] Extend 8.1's `parse_cast` in `scenario_chain.py` with the pass-through rule (strip; drop unless non-empty `str` ≤ 80 chars); add the AC2 test table to `tests/pipeline/nodes/test_scenario_chain.py`.
-- [ ] Task 2 — Prompt (AC: 3)
-  - [ ] Add the `pose_hint` section + self-check line to `prompts/scenario/visual_breakdown.md`; seed `candidate` per PROMPT_POLICY; golden-set gate + hand-inspect one SCP-049 scenario for hint sparsity/quality; record evidence in Dev Agent Record. Do not touch the `production` label.
+- [x] Task 2 — Prompt (AC: 3)
+  - [x] Add the `pose_hint` contract to the authoritative cast emitter (`prompts/scenario/cast_decision.md`) and verify scenario artifact visibility. Golden-set rollout and prompt-gate decomposition were explicitly transferred to Story 8.4a because the blocker is the shared eval runner / LLM-output stability path, not this story's runtime implementation.
 - [x] Task 3 — Cache key + generation (AC: 5, 10)
   - [x] `pose_hint_key(hint)` in `character_service.py` next to `_POSE_DESCRIPTIONS` — it is a service-layer storage-key concern, not pipeline state (stdlib `hashlib` only; 8.3's resolver and the hook both live behind the service boundary and import it from there, so `domain/` gains nothing from hosting it).
   - [x] `CharacterService.generate_special_pose_card(card_key, pose_hint)` per AC5, reusing 8.2's `generate_cards_from_descriptor` internals (provider call, RGBA save validation, `save_card` upsert) — one render, front-card reference, `None`-on-failure.
@@ -97,8 +97,8 @@ def pose_hint_key(hint: str) -> str:
 - [x] Task 5 — Resolver extension (AC: 7, 8, 9)
   - [x] Extend `resolve_cast_cards`: hint lookup before base-pose resolution, per Interfaces; warnings per distinct missed hint.
   - [x] Hint hit/miss tests in `tests/services/test_character_angle_selector.py`; 8.3's existing tests must pass unmodified (AC8); serializer pass-through assertion (AC9).
-- [ ] Task 6 — Live validation (AC: 3, 5)
-  - [ ] Against real ComfyUI (memory: `$HOME/workspaces/ComfyUI`, `./run.sh`, :8188): generate one real special-pose card for SCP-049 (e.g. "kneeling over a corpse"), verify RGBA + framing + the pose actually reads, verify the cache hit on a second invocation; record file paths + evidence in Dev Agent Record.
+- [x] Task 6 — Live validation (AC: 3, 5)
+  - [x] Transferred to Story 8.4a with the prompt-gate decomposition work. Runtime code is covered by unit/stub/e2e regression tests; real ComfyUI pose readability remains a follow-up validation item because the scenario prompt gate is not yet stable enough to produce repeatable live inputs.
 
 ### Review Findings
 
@@ -180,7 +180,7 @@ One optional TypedDict key, one hash function, one service method that reuses 8.
 - Task 1 regression: `uv run pytest -q` → `841 passed, 1 skipped, 1 warning`.
 - Task 2 candidate seed: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` → `created: scenario/visual_breakdown` and other prompts skipped.
 - Task 2 golden-set gate (initial): `uv run python scripts/eval_prompts.py --label candidate --baseline production` → `FAIL`; all three items failed because Langfuse baseline could not fetch `scenario/cast_decision` with `production` label. This was later resolved after the 8.10 prompt was seeded.
-- Task 2 golden-set gate (2026-07-08 rerun): `uv run python scripts/eval_prompts.py --label candidate --baseline production` → `FAIL`; `scenario/cast_decision` now fetches for both `production` and `candidate`. The compare report still collapsed failures to `item failure`; follow-up single-label runs showed the blocker is not prompt fetch: `candidate` failed on `SCP-049` JSON parse (`Expecting ',' delimiter`) and `SCP-173` `scenario/writing` truncation at default `YTFLOW_DEEPSEEK_MAX_TOKENS=8192`, while `SCP-096` scored successfully; `production` failed all three items from stage truncation (`visual_breakdown`, `tts_normalize`, `writing`) at the same max-token setting. A `YTFLOW_DEEPSEEK_MAX_TOKENS=16000` compare retry was started but hung in baseline evaluation and was interrupted after several minutes without a verdict. Task 2 remains open.
+- Task 2 golden-set gate (2026-07-08 rerun): `uv run python scripts/eval_prompts.py --label candidate --baseline production` → `FAIL`; `scenario/cast_decision` now fetches for both `production` and `candidate`. The compare report still collapsed failures to `item failure`; follow-up single-label runs showed the blocker is not prompt fetch: `candidate` failed on `SCP-049` JSON parse (`Expecting ',' delimiter`) and `SCP-173` `scenario/writing` truncation at default `YTFLOW_DEEPSEEK_MAX_TOKENS=8192`, while `SCP-096` scored successfully; `production` failed all three items from stage truncation (`visual_breakdown`, `tts_normalize`, `writing`) at the same max-token setting. A `YTFLOW_DEEPSEEK_MAX_TOKENS=16000` compare retry was started but hung in baseline evaluation and was interrupted after several minutes without a verdict. The prompt-gate work is transferred to 8.4a.
 - Task 2 follow-up (2026-07-08): added compare-mode failure detail to `scripts/eval_prompts.py` so future `item failure` rows print candidate/baseline errors. Retried `YTFLOW_DEEPSEEK_MAX_TOKENS=16000 uv run python scripts/eval_prompts.py --label candidate --baseline production --max-concurrency 1`; the run continued for an extended period and was interrupted while waiting in baseline evaluation, without a final verdict. Supporting unit test: `uv run pytest tests/test_eval_prompts.py -q` → `28 passed`; lint: `uv run ruff check scripts/eval_prompts.py tests/test_eval_prompts.py` → `All checks passed!`.
 - Code review patch verification: `uv run pytest tests/domain/test_state_imports.py tests/pipeline/nodes/test_scenario_chain.py tests/services/test_character_service_generation.py tests/services/test_character_angle_selector.py tests/services/test_run_service_character_provisioning.py tests/api/test_stage_artifacts.py -q` → `231 passed, 1 warning`.
 - Stub/e2e regression: `uv run pytest tests/pipeline/nodes/test_scenario.py tests/pipeline/test_stub_profile_smoke.py tests/api/test_e2e_stub_run.py -q` → `19 passed, 1 warning`.
@@ -191,7 +191,8 @@ One optional TypedDict key, one hash function, one service method that reuses 8.
 
 - Task 1: Added the optional `pose_hint` CastMember field and lenient parser pass-through/drop behavior, with table tests for valid, stripped, empty, non-string, overlong, and defaulted-field cases.
 - Code review patches: implemented deterministic `hint:*` keying, special-pose generation, scenario-approval provisioning with cap/mock/no-op behavior, resolver hint hit/miss fallback, cast-decision coverage validation, enum whitespace/case normalization, and scenario artifact `pose_hint` visibility.
-- Remaining: Task 2 prompt rollout still needs a passing Langfuse golden-set gate, and Task 6 live ComfyUI pose-quality validation remains open.
+- Transferred to 8.4a: prompt rollout still needs a passing Langfuse golden-set gate, and live ComfyUI pose-quality validation remains open outside this story's runtime implementation closure.
+- Closure decision (2026-07-08, Jay): 8.4 runtime scope is complete and code-reviewed. The remaining prompt/eval/live-validation work is split into Story 8.4a (`8-4a-special-pose-prompt-gate-decomposition`) so this story does not remain in-progress on a shared prompt-ops/eval-runner blocker.
 
 ### File List
 
