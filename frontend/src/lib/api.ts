@@ -106,8 +106,10 @@ export function fileUrl(serverPath: string): string {
 // (e.g. "characters/SCP-049/epoch_1/front.png", no root prefix) — the
 // /asset-files static mount serves them (Story 8.6).
 export function assetFileUrl(serverPath: string): string {
-  let rel = serverPath.replace(/^[\\/]+/, "")
-  rel = rel.replace(/\.\.(\/|\\)/g, "").replace(/^\.\.$/, "")
+  const rel = serverPath
+    .split(/[\\/]+/)
+    .filter((segment) => segment !== "" && segment !== "." && segment !== "..")
+    .join("/")
   return "/asset-files/" + rel
 }
 

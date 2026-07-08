@@ -199,8 +199,7 @@ class CharacterService:
         self._wiki_fetch = wiki_fetch or ScpWikiImageFetch()
 
     @property
-    def _asset_service(self) -> "AssetService":
-        from yt_flow.services.asset_service import AssetService
+    def _asset_service(self) -> AssetService:
         return AssetService(self._settings.assets_path, self._session)
 
     def _abs_asset_path(self, path: str) -> str:
@@ -744,14 +743,16 @@ class CharacterService:
                     raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
                 out_path.write_bytes(img_bytes)
                 rel_path = str(out_path.relative_to(assets_root))
-                if pose != "standing":
-                    self.save_card(scp_id, pose, angle, rel_path)
+                # Manifest write before the DB row so a mid-write failure never
+                # leaves an "approved" CharacterCard with no manifest provenance.
                 asset_service.add_asset(
                     f"{safe_scp}/{pose}_{angle}", rel_path,
                     source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS.get(angle)},
                     card_key=safe_scp, pose=pose, angle=angle,
                 )
                 asset_service.approve_asset(f"{safe_scp}/{pose}_{angle}")
+                if pose != "standing":
+                    self.save_card(scp_id, pose, angle, rel_path)
                 saved_paths.append(rel_path)
                 logger.info(
                     "Generated %s candidate for %s → %s (%d bytes, i2i=%s)",
@@ -889,13 +890,14 @@ class CharacterService:
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
             out_path.write_bytes(img_bytes)
             rel_path = str(out_path.relative_to(assets_root))
-            self.save_card(card_key, hint_key, "front", rel_path)
+            # Manifest write before the DB row (see generate_candidates_from_reference).
             asset_service.add_asset(
                 f"{safe_scp}/{hint_key}_front", rel_path,
                 source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS["front"]},
                 card_key=safe_scp, pose=hint_key, angle="front",
             )
             asset_service.approve_asset(f"{safe_scp}/{hint_key}_front")
+            self.save_card(card_key, hint_key, "front", rel_path)
             logger.info("Generated special-pose card for %s pose=%s -> %s", card_key, hint_key, out_path)
             return rel_path
         except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:

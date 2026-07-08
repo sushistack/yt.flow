@@ -13,10 +13,12 @@ from sqlmodel import Session, select  # noqa: E402
 
 from yt_flow import db  # noqa: E402
 from yt_flow.config import Settings  # noqa: E402
+from yt_flow.db import _ensure_card_columns  # noqa: E402, F401 (re-exported for tests; db.init() already runs it)
 from yt_flow.db.models import Character, CharacterCard  # noqa: E402
 from yt_flow.services.asset_service import AssetService  # noqa: E402
 
 _STANDING_RE = re.compile(r"^(front|back|side|three_quarter)_candidate_1\.png$")
+_HINT_RE = re.compile(r"^hint_([0-9a-f]+)_front\.png$")
 _POSE_RE = re.compile(r"^(.+)_(front|back|side|three_quarter)\.png$")
 
 _ANGLE_FIELD = {
@@ -25,21 +27,6 @@ _ANGLE_FIELD = {
     "side": "angle_side_path",
     "three_quarter": "angle_three_quarter_path",
 }
-
-
-def _ensure_card_columns(engine) -> None:
-    """Additive ALTER TABLE for character_cards.status/style_epoch.
-
-    ``SQLModel.metadata.create_all`` only creates missing tables, not missing
-    columns on an existing table — this repo has no other migration mechanism.
-    """
-    with engine.connect() as conn:
-        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(character_cards)")}
-        if "status" not in cols:
-            conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN status TEXT DEFAULT 'draft'")
-        if "style_epoch" not in cols:
-            conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN style_epoch INTEGER DEFAULT 1")
-        conn.commit()
 
 
 def migrate(workspace_path: Path, assets_path: Path, session: Session) -> tuple[int, int, int]:
@@ -57,9 +44,14 @@ def migrate(workspace_path: Path, assets_path: Path, session: Session) -> tuple[
 
         for png in sorted(chars_dir.glob("*.png")):
             m_standing = _STANDING_RE.match(png.name)
+            m_hint = _HINT_RE.match(png.name)
             m_pose = _POSE_RE.match(png.name)
             if m_standing:
                 pose, angle = "standing", m_standing.group(1)
+            elif m_hint:
+                # pose_hint_key() produces "hint:<sha256[:10]>"; the on-disk filename
+                # replaces the colon with "_" (character_service.generate_special_pose_card).
+                pose, angle = f"hint:{m_hint.group(1)}", "front"
             elif m_pose:
                 pose, angle = m_pose.groups()
             else:

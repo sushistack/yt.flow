@@ -25,6 +25,25 @@ def init(db_url: str) -> None:
         with _engine.connect() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
     SQLModel.metadata.create_all(_engine)
+    _ensure_card_columns(_engine)
+
+
+def _ensure_card_columns(engine) -> None:
+    """Additive ALTER TABLE for character_cards.status/style_epoch (Story 8.6).
+
+    ``create_all`` only creates missing tables, not missing columns on an
+    existing table — this repo has no other migration mechanism, so every
+    ``init()`` call (not just the one-shot ``scripts/migrate_assets.py``)
+    must self-heal a pre-8.6 DB or the first ``save_card``/``get_card`` call
+    against it raises "no such column: status".
+    """
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(character_cards)")}
+        if "status" not in cols:
+            conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN status TEXT DEFAULT 'draft'")
+        if "style_epoch" not in cols:
+            conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN style_epoch INTEGER DEFAULT 1")
+        conn.commit()
 
 
 def get_session():

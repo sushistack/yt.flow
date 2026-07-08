@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from yt_flow.db.models import LocationPlate
@@ -43,7 +44,13 @@ class AssetService:
         os.replace(tmp, self._manifest_path)
 
     def add_asset(self, key: str, path: str, source: dict, **meta) -> None:
-        """Insert (or overwrite) a manifest entry and recompute sha256 from the file at ``assets_path / path``."""
+        """Insert (or overwrite) a manifest entry and recompute sha256 from the file at ``assets_path / path``.
+
+        # ponytail: a re-`add_asset` under a bumped style_epoch overwrites the same
+        # key in place rather than archiving the superseded entry (manifest schema
+        # rule 4 wants "new entries, not in-place replacement"). Unaddressed because
+        # nothing calls bump_style_epoch() yet — revisit once a caller does.
+        """
         manifest = self.load_manifest()
         sha256 = hashlib.sha256((self._root / path).read_bytes()).hexdigest()
         manifest["assets"][key] = {
@@ -85,7 +92,9 @@ class AssetService:
 
     def approve_asset(self, key: str) -> None:
         manifest = self.load_manifest()
-        entry = manifest["assets"][key]
+        entry = manifest["assets"].get(key)
+        if entry is None:
+            raise ValueError(f"unknown asset key: {key}")
         if entry["status"] == "retired":
             raise ValueError(f"cannot approve a retired asset: {key}")
         if entry["status"] == "approved":
@@ -96,7 +105,9 @@ class AssetService:
 
     def retire_asset(self, key: str) -> None:
         manifest = self.load_manifest()
-        entry = manifest["assets"][key]
+        entry = manifest["assets"].get(key)
+        if entry is None:
+            raise ValueError(f"unknown asset key: {key}")
         if entry["status"] == "retired":
             return
         entry["status"] = "retired"
@@ -122,7 +133,11 @@ class AssetService:
             location_key=location_key, variant=variant, image_path=image_path, style_epoch=self.style_epoch,
         )
         self._session.add(plate)
-        self._session.commit()
+        try:
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            raise
         self._session.refresh(plate)
         self.add_asset(
             f"{location_key}/{variant}", image_path,

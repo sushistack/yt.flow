@@ -44,11 +44,8 @@ def _is_alpha_png_file(path: str | Path | None) -> bool:
 
 
 def _all_standing_paths_ready(character, assets_path: Path) -> bool:
-    return all(
-        _is_alpha_png_file(assets_path / p)
-        for angle in ("front", "back", "side", "three_quarter")
-        if (p := getattr(character, f"angle_{angle}_path"))
-    ) and all(getattr(character, f"angle_{angle}_path") for angle in ("front", "back", "side", "three_quarter"))
+    paths = [getattr(character, f"angle_{angle}_path") for angle in ("front", "back", "side", "three_quarter")]
+    return all(p and _is_alpha_png_file(assets_path / p) for p in paths)
 
 
 def _pose_complete(service: CharacterService, key: str, pose: str) -> bool:
