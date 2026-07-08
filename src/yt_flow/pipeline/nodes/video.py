@@ -16,6 +16,7 @@ import json
 import logging
 import shutil
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.pipeline.nodes import character_motion
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     AMBIENT_VOLUME,
@@ -96,15 +98,8 @@ WIKI_BASE_URL = "https://scp-wiki.wikidot.com"
 CC_LICENSE_URL = "https://creativecommons.org/licenses/by-sa/3.0/"
 SCP_DATA_PATH = Path("data/scps.json")
 
-# ── Character idle-motion constants (Story 1.9c) ──────────────────────────────
-# Sway = larger/slower horizontal drift; bob = subtle/faster vertical breathing.
-# Tremble (tense scenes) is out of scope until a scene ever requests it.
-# ponytail: fixed tasteful defaults, not per-scene config; add a knob when a shot
-# actually needs different motion.
-SWAY_AMPLITUDE = 12   # px, x-axis idle drift
-SWAY_FREQ = 0.8       # rad/s
-BOB_AMPLITUDE = 8     # px, y-axis breathing/bob
-BOB_FREQ = 1.2        # rad/s
+# Character idle-motion amplitude/frequency constants (Story 1.9c) now live in
+# character_motion.py's motion table (Story 8.8), keyed by style/energy.
 
 # ── Parallax constants (Story 7.3) ────────────────────────────────────────────
 # Character (near plane) zoom/pan is derived from the background (far plane)
@@ -119,17 +114,24 @@ CHAR_PAN_AMPLITUDE_PX = 12     # ponytail: eyeball-tuned; per-direction sign liv
 # frame edges at the in-center peak (Story 7.3 AC:4).
 CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR
 
+# Worst-case excursion across every motion_style/motion_energy combination
+# (Story 8.8 AC:7) — read from character_motion's table so this can never
+# drift out of sync with the constants that actually drive the filtergraph.
+_MAX_MOTION_X_PX, _MAX_MOTION_Y_PX, _MAX_MOTION_SCALE = character_motion.max_excursion()
+
 # Motion-safe character box: shrink an oversized character to leave room for the
-# peak parallax zoom *and* the full sway/bob excursion *and* the macro pan drift,
-# so no combination of depth-zoom + idle motion + parallax pan can push it
-# off-frame and a mis-sized ComfyUI asset (character bytes are written raw, never
-# scaled upstream) can't overflow. Dividing by CHAR_MAX_ZOOM means a character
-# capped here then zoomed to its peak lands back inside the frame; reserving
-# SWAY/BOB *and* CHAR_PAN_AMPLITUDE_PX per side means the worst-case corner
-# (peak zoom + sway peak + full pan ramp, e.g. pan-* directions) still stays on
-# screen by construction — not by eyeball (Story 7.3 AC:4/AC:8 regression invariant).
-CHAR_MAX_W = (COMP_W - 2 * (SWAY_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
-CHAR_MAX_H = (COMP_H - 2 * (BOB_AMPLITUDE + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM
+# peak parallax zoom *and* the full idle-motion excursion (sway/bob/tremble/
+# pulse/glitch, whichever is worst) *and* the macro pan drift, so no combination
+# of depth-zoom + idle motion + parallax pan can push it off-frame and a
+# mis-sized ComfyUI asset (character bytes are written raw, never scaled
+# upstream) can't overflow. Dividing by CHAR_MAX_ZOOM * _MAX_MOTION_SCALE means
+# a character capped here then zoomed to its peak *and* pulsed to its peak
+# scale lands back inside the frame; reserving the max x/y excursion *and*
+# CHAR_PAN_AMPLITUDE_PX per side means the worst-case corner still stays on
+# screen by construction — not by eyeball (Story 7.3 AC:4/AC:8, Story 8.8 AC:7
+# regression invariant).
+CHAR_MAX_W = (COMP_W - 2 * (_MAX_MOTION_X_PX + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
+CHAR_MAX_H = (COMP_H - 2 * (_MAX_MOTION_Y_PX + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
 
 # ── Multi-card cast compositing (Story 8.3) ───────────────────────────────────
 # Stacking order (far painted first, near painted last/on top) — never stored,
@@ -349,27 +351,36 @@ def _overlay_filter(
     position: str = "center", k: int = 0,
     spec: EffectSpec | None = None, duration: float | None = None,
     depth: str = "near",
+    motion_style: str = "sway", motion_energy: str = "medium",
 ) -> str:
     """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
-    [AC:1,2,3] [Story 8.3 AC:6,7]
+    [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8]
 
     ``eval=frame`` is REQUIRED and set explicitly: under the ``eval=init`` default
     for *some* builds the ``t``/``n`` timeline vars collapse to NAN and the
-    card freezes. Two sines (x sway, y bob) at different freq/amplitude give the
-    subtle "alive" drift without rigging; a ``k*PHASE_STEP`` offset keeps N cards
-    from swaying in lockstep.
+    card freezes. x/y sub-expressions come from ``character_motion.axis_terms``
+    (Story 8.8) — the default ``motion_style="sway"``/``motion_energy="medium"``
+    reproduces the pre-8.8 two-sine sway/bob string exactly. A ``k*PHASE_STEP``
+    offset keeps N simultaneous cards from moving in lockstep, deterministic
+    from the shot's own cast ordering (Interfaces: stable across retries/A-B).
 
     ``position`` anchors the card horizontally at a rule-of-thirds fraction of
     ``main_w`` (1/3, 1/2, or 2/3) instead of dead-centering it — multiple cards
     need to occupy distinct screen positions. When ``spec`` is given (parallax
     on, Story 7.3), a direction-derived macro pan term rides *on top of* the
-    sway/bob sines, its amplitude scaled by ``_DEPTH_PARALLAX[depth]``.
-    ``spec=None`` reverts to the fixed-size sway/bob-only string (parallax off).
+    idle-motion terms, its amplitude scaled by ``_DEPTH_PARALLAX[depth]``.
+    ``spec=None`` reverts to the fixed-size idle-motion-only string (parallax off).
     """
     x_frac = _POSITION_X_FRAC.get(position, _POSITION_X_FRAC["center"])
     phase = k * PHASE_STEP
-    x = f"main_w*{x_frac}-overlay_w/2 + sin(t*{SWAY_FREQ}+{phase})*{SWAY_AMPLITUDE}"
-    y = f"(main_h-overlay_h)/2 + sin(t*{BOB_FREQ}+{phase})*{BOB_AMPLITUDE}"
+    x_terms = character_motion.axis_terms(motion_style, motion_energy, "x", phase)
+    y_terms = character_motion.axis_terms(motion_style, motion_energy, "y", phase)
+    x = f"main_w*{x_frac}-overlay_w/2"
+    if x_terms:
+        x += " + " + " + ".join(x_terms)
+    y = "(main_h-overlay_h)/2"
+    if y_terms:
+        y += " + " + " + ".join(y_terms)
     if spec is not None and duration:
         sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
         pan_amp = CHAR_PAN_AMPLITUDE_PX * _DEPTH_PARALLAX.get(depth, _DEPTH_PARALLAX["mid"])
@@ -378,6 +389,23 @@ def _overlay_filter(
         if sy:
             y += f" + ({sy * pan_amp})*t/{duration}"
     return f"overlay=x='{x}':y='{y}':eval=frame"
+
+
+def _motion_scale_filter(motion_style: str = "sway", motion_energy: str = "medium", k: int = 0) -> str:
+    """Time-varying scale pulse for styles that carry one (breath/sway/tremble's
+    tiny breathing pulse, pulse's larger supernatural pulse). [Story 8.8 AC:6]
+
+    Empty string for ``hold``/``glitch`` (no scale term in the table) — the
+    caller skips appending a filter stage entirely, so those styles cost
+    nothing extra in the chain. Same ``k*PHASE_STEP`` phase as the overlay's
+    position sines so a card's breathing and its sway/bob stay in the same
+    rhythm.
+    """
+    terms = character_motion.axis_terms(motion_style, motion_energy, "scale", k * PHASE_STEP)
+    if not terms:
+        return ""
+    expr = " + ".join(terms)
+    return f"scale=w='iw*(1+({expr}))':h='ih*(1+({expr}))':eval=frame"
 
 
 def _character_scale_filter(depth: str = "near") -> str:
@@ -553,6 +581,7 @@ def _record_trace(
     effects: list | None = None,
     upscale_pass: bool = True,
     card_counts: list[int] | None = None,
+    motion_style_counts: dict[str, int] | None = None,
     cast_resolution: dict | None = None,
     chapter_cards_enabled: bool = False,
     chapter_card_duration: float | None = None,
@@ -579,9 +608,12 @@ def _record_trace(
             "upscale_pass": upscale_pass,
             # Per-scene card counts (Story 8.3, replaces 1.9c's single character_scenes).
             "card_counts": card_counts or [],
+            # Story 8.8: aggregate style counts + table version replace 1.9c's
+            # fixed sway/bob numbers, now that a card's motion is one of several
+            # LLM-selected techniques rather than a single hardcoded pair.
             "character_motion": {
-                "sway_px": SWAY_AMPLITUDE, "sway_freq": SWAY_FREQ,
-                "bob_px": BOB_AMPLITUDE, "bob_freq": BOB_FREQ,
+                "table_version": character_motion.MOTION_TABLE_VERSION,
+                "style_counts": motion_style_counts or {},
             },
             "ending_credit": ending_credit,
             "ending_credit_error": ending_credit_error,
@@ -721,18 +753,25 @@ async def _compose_scene(
         for k, card in enumerate(ordered_cards):
             depth = card.get("depth", "mid")
             position = card.get("position", "center")
+            motion_style = card.get("motion_style", "breath")
+            motion_energy = card.get("motion_energy", "medium")
             # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the
-            # background's spec, amplified per depth. Off → fixed-size sway/bob.
+            # background's spec, amplified per depth. Off → fixed-size idle motion.
             if parallax_enabled:
                 char_spec = _character_spec(spec, depth)
                 char_chain = (
                     f"{_character_scale_filter(depth)},"
                     f"{_character_zoom_filter(char_spec, duration)}"
                 )
-                overlay = _overlay_filter(position, k, char_spec, duration, depth)
+                overlay = _overlay_filter(position, k, char_spec, duration, depth, motion_style, motion_energy)
             else:
                 char_chain = _character_scale_filter(depth)
-                overlay = _overlay_filter(position, k, None, None, depth)
+                overlay = _overlay_filter(position, k, None, None, depth, motion_style, motion_energy)
+            # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
+            # stage for breath/sway/tremble/pulse so it composes with either branch above.
+            pulse = _motion_scale_filter(motion_style, motion_energy, k)
+            if pulse:
+                char_chain += f",{pulse}"
             out_label = f"o{k}"
             chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
             chain_parts.append(f"[{prev_label}][c{k}]{overlay}[{out_label}]")
@@ -1137,6 +1176,7 @@ async def video_node(state: PipelineState) -> dict:
 
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         card_counts: list[int] = []
+        rendered_cards: list[dict] = []
         for i, scene in enumerate(scenes):
             shot_for_scene = next((sh for sh in scene.get("shots") or [] if sh.get("image_path")), None)
             shot_key = f"{scene['scene_num']}:{shot_for_scene['shot_id']}" if shot_for_scene else None
@@ -1153,6 +1193,7 @@ async def video_node(state: PipelineState) -> dict:
                 include_stinger=not (chapter_cards_enabled and i > 0),
             )
             card_counts.append(len(scene_cards))
+            rendered_cards.extend(scene_cards)
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             segs_with_specs.append((seg_path, duration, spec, has_char))
 
@@ -1250,11 +1291,19 @@ async def video_node(state: PipelineState) -> dict:
             for i, (_, _, spec, has_char) in enumerate(segs_with_specs)
         ]
 
+        # Scoped to `rendered_cards` (one shot per scene, the same set `_compose_scene`
+        # actually drew), not every shot key in `cast_cards` — matches `card_counts`'s
+        # scoping so the metric never reports a style that never appeared on screen.
+        motion_style_counts = dict(Counter(
+            card.get("motion_style", "breath") for card in rendered_cards
+        ))
+
         _record_trace(
             run_id=run_id, scene_count=len(scenes),
             latency_ms=_ms(t0), output_path=str(output),
             returncode=0, effects=effects_meta, upscale_pass=True,
             card_counts=card_counts,
+            motion_style_counts=motion_style_counts,
             cast_resolution=cast_meta if cast_meta else None,
             chapter_cards_enabled=chapter_cards_enabled,
             chapter_card_duration=card_duration,

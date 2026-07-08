@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import yt_flow.pipeline.nodes.character_motion as cm
 import yt_flow.pipeline.nodes.video as video
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.color_grade import MOOD_GRADE_PARAMS
@@ -94,11 +95,14 @@ def _shot(
 def _card(
     path: str, *, card_key: str = "SCP-096", position: str = "center", depth: str = "near",
     pose: str = "standing", angle: str = "front", fallback: bool = False,
+    motion_style: str = "breath", motion_energy: str = "medium",
 ) -> dict:
-    """A resolved card dict, the shape resolve_cast_cards returns (Story 8.3 Interfaces)."""
+    """A resolved card dict, the shape resolve_cast_cards returns (Story 8.3
+    Interfaces, Story 8.8 adds motion_style/motion_energy)."""
     return {
         "card_key": card_key, "pose": pose, "angle": angle, "path": path,
         "fallback": fallback, "position": position, "depth": depth,
+        "motion_style": motion_style, "motion_energy": motion_energy,
     }
 
 
@@ -814,6 +818,24 @@ def test_record_trace_reports_dip_to_black_grammar(monkeypatch):
     assert captured["black_hold_sec"] == video.BLACK_HOLD_DURATION
 
 
+def test_record_trace_reports_motion_table_version_and_style_counts(monkeypatch):
+    """[Story 8.8 AC:10] character_motion metadata carries the table version
+    (for "why did this render differently" debugging) and per-style counts."""
+    captured: dict = {}
+    fake_client = SimpleNamespace(update_current_span=lambda **kw: captured.update(kw["metadata"]))
+    monkeypatch.setattr(video, "get_client", lambda: fake_client)
+
+    _REAL_RECORD_TRACE(
+        run_id="r", scene_count=1, latency_ms=10,
+        motion_style_counts={"breath": 3, "tremble": 1},
+    )
+
+    assert captured["character_motion"] == {
+        "table_version": cm.MOTION_TABLE_VERSION,
+        "style_counts": {"breath": 3, "tremble": 1},
+    }
+
+
 async def test_trace_captures_error_on_failure(monkeypatch, tmp_path, assets):
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
@@ -998,6 +1020,91 @@ def test_overlay_filter_pan_amplitude_scales_by_depth():
         assert f"({-amp})*t/2.0" in filt
 
 
+# ── Character micro-motion techniques (Story 8.8) ───────────────────────────
+
+
+def test_overlay_filter_default_matches_pre_8_8_sway():
+    """motion_style='sway'/energy='medium' defaults reproduce the exact
+    pre-8.8 two-sine overlay string — no regression for existing callers."""
+    assert _overlay_filter() == _overlay_filter(motion_style="sway", motion_energy="medium")
+    assert _overlay_filter().count("sin(t*") == 2
+
+
+def test_overlay_filter_hold_has_no_idle_motion():
+    """hold: no sine/pulse/glitch term at all — position is static (parallax
+    pan, if any, still applies separately). [AC:6]"""
+    f = _overlay_filter(motion_style="hold", motion_energy="medium")
+    assert "sin(" not in f
+    assert "eval=frame" in f  # still required per the docstring rule
+
+
+def test_overlay_filter_hold_with_parallax_keeps_pan_term():
+    """hold + parallax on: idle motion is suppressed but the macro pan term
+    from `spec` still rides through — `motion_style` disables idle motion
+    only, never parallax. [Story 8.8 AC:6, Interfaces: 'parallax_enabled=False
+    disables parallax only, not micro-motion']"""
+    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX), "near")
+    f = _overlay_filter(spec=ch, duration=2.0, depth="near", motion_style="hold", motion_energy="medium")
+    assert "sin(" not in f  # no idle motion
+    near_amp = video.CHAR_PAN_AMPLITUDE_PX * video._DEPTH_PARALLAX["near"]
+    assert f"({-near_amp})*t/2.0" in f  # pan term unaffected by motion_style
+
+
+def test_overlay_filter_breath_has_single_y_sine():
+    f = _overlay_filter(motion_style="breath", motion_energy="medium")
+    assert f.count("sin(t*") == 1
+    assert f"sin(t*{cm.BOB_FREQ}+0.0)" in f
+
+
+def test_overlay_filter_tremble_adds_shake_on_top_of_breath():
+    """tremble = breath's bob + its own x/y shake — 1 x-term, 2 y-terms. [AC:6]"""
+    f = _overlay_filter(motion_style="tremble", motion_energy="medium")
+    assert f.count("sin(t*") == 3
+    assert f"sin(t*{cm.TREMBLE_FREQ}+0.0)" in f
+
+
+def test_overlay_filter_pulse_has_no_position_motion():
+    """pulse only pulses scale (Story 8.8 AC:6) — position sines are silent."""
+    f = _overlay_filter(motion_style="pulse", motion_energy="medium")
+    assert "sin(" not in f
+
+
+def test_overlay_filter_glitch_uses_quantized_floor_not_smooth_sine():
+    f = _overlay_filter(motion_style="glitch", motion_energy="medium")
+    assert "floor(" in f
+    assert "random(" not in f  # deterministic, no ffmpeg random() filter state
+
+
+def test_overlay_filter_energy_scales_amplitude():
+    low = _overlay_filter(motion_style="sway", motion_energy="low")
+    high = _overlay_filter(motion_style="sway", motion_energy="high")
+    assert low != high
+    assert f"*{cm.SWAY_AMPLITUDE * cm._ENERGY_MULT['high']}" in high
+    assert f"*{cm.SWAY_AMPLITUDE * cm._ENERGY_MULT['low']}" in low
+
+
+def test_motion_scale_filter_empty_for_hold_and_glitch():
+    assert video._motion_scale_filter("hold", "medium") == ""
+    assert video._motion_scale_filter("glitch", "medium") == ""
+
+
+def test_motion_scale_filter_breath_and_pulse_produce_scale_pulse():
+    breath = video._motion_scale_filter("breath", "medium")
+    pulse = video._motion_scale_filter("pulse", "medium")
+    for f in (breath, pulse):
+        assert f.startswith("scale=w='iw*(1+(")
+        assert "eval=frame" in f
+    assert breath != pulse  # different amplitude/frequency
+
+
+def test_motion_scale_filter_phase_decorrelates_by_index():
+    """Same style, different card index k → different scale-pulse phase, so N
+    breathing cards never pulse in lockstep either. [AC:8]"""
+    f0 = video._motion_scale_filter("breath", "medium", k=0)
+    f1 = video._motion_scale_filter("breath", "medium", k=1)
+    assert f0 != f1
+
+
 def test_character_scale_filter_depth_caps():
     """Depth-scaled size cap: far < mid < near, all within the motion-safe box. [AC:6]"""
     near = _character_scale_filter("near")
@@ -1020,15 +1127,34 @@ def test_character_spec_depth_scales_amplification():
 
 def test_char_max_box_reserves_zoom_growth():
     """[AC:8] The shrunk box, zoomed to its peak, must land within the frame with room
-    left for BOTH the sway/bob sines AND the macro pan ramp — the worst-case corner
-    (peak zoom + sway peak + full pan, e.g. pan-* directions) stays on-screen by
-    construction, so off-frame prevention doesn't depend on a visual eyeball. [review:D1]"""
+    left for BOTH the idle-motion excursion AND the macro pan ramp — the worst-case
+    corner (peak zoom + peak idle motion + full pan, e.g. pan-* directions) stays
+    on-screen by construction, so off-frame prevention doesn't depend on a visual
+    eyeball. [review:D1]"""
     assert video.CHAR_MAX_W * video.CHAR_MAX_ZOOM <= (
-        video.COMP_W - 2 * (video.SWAY_AMPLITUDE + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
+        video.COMP_W - 2 * (video._MAX_MOTION_X_PX + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
     )
     assert video.CHAR_MAX_H * video.CHAR_MAX_ZOOM <= (
-        video.COMP_H - 2 * (video.BOB_AMPLITUDE + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
+        video.COMP_H - 2 * (video._MAX_MOTION_Y_PX + video.CHAR_PAN_AMPLITUDE_PX) + 1e-6
     )
+
+
+def test_char_max_box_reserves_scale_pulse_growth():
+    """[Story 8.8 AC:7] max_scaled_width + 2*max_x_excursion <= COMP_W (and the
+    height equivalent) — the box must also leave room for the loudest scale
+    pulse (pulse style, high energy) on top of the peak parallax zoom, for every
+    style/energy/depth combination. The near/full-zoom case is the worst case;
+    smaller depth-scaled boxes are strictly safer (Interfaces: motion amplitude
+    is depth-independent, only the box size shrinks per depth)."""
+    max_scaled_width = video.CHAR_MAX_W * video.CHAR_MAX_ZOOM * video._MAX_MOTION_SCALE
+    max_scaled_height = video.CHAR_MAX_H * video.CHAR_MAX_ZOOM * video._MAX_MOTION_SCALE
+    assert max_scaled_width + 2 * video._MAX_MOTION_X_PX <= video.COMP_W + 1e-6
+    assert max_scaled_height + 2 * video._MAX_MOTION_Y_PX <= video.COMP_H + 1e-6
+    # The AC:7 inequality above has slack from the reserved pan margin, so it
+    # alone can't catch a dropped CHAR_PAN_AMPLITUDE_PX reservation (review finding).
+    # Pin the box formula's actual (near-zero-slack) budget too.
+    assert max_scaled_width + 2 * (video._MAX_MOTION_X_PX + video.CHAR_PAN_AMPLITUDE_PX) <= video.COMP_W + 1e-6
+    assert max_scaled_height + 2 * (video._MAX_MOTION_Y_PX + video.CHAR_PAN_AMPLITUDE_PX) <= video.COMP_H + 1e-6
 
 
 def test_config_parallax_enabled_default_true():
@@ -1038,8 +1164,16 @@ def test_config_parallax_enabled_default_true():
     assert Settings.model_fields["parallax_enabled"].default is True
 
 
-def _cast_member(card_key="SCP-096", *, position="center", depth="near", pose="standing"):
-    return {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
+def _cast_member(
+    card_key="SCP-096", *, position="center", depth="near", pose="standing",
+    motion_style=None, motion_energy=None,
+):
+    member = {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
+    if motion_style is not None:
+        member["motion_style"] = motion_style
+    if motion_energy is not None:
+        member["motion_energy"] = motion_energy
+    return member
 
 
 def _inject_resolver(monkeypatch, mapping: dict[str, list[dict]] | None = None, *, fn=None):
@@ -1065,9 +1199,10 @@ async def test_video_node_parallax_on_adds_char_zoom_and_pan(monkeypatch, tmp_pa
 
     assert out.get("error") is None
     fc = captured[0]
-    # card chain = scale-cap , scale-zoom(eval=frame) → two scale= on the [c0] branch
+    # card chain = scale-cap, scale-zoom(eval=frame), breath's scale-pulse
+    # (default motion_style="breath") → three scale= on the [c0] branch
     char_branch = fc.split("[c0]")[0].split("[bg];")[-1]
-    assert char_branch.count("scale=") == 2
+    assert char_branch.count("scale=") == 3
     assert "eval=frame" in char_branch
     # overlay carries the pan term for pan-right
     near_amp = video.CHAR_PAN_AMPLITUDE_PX * video._DEPTH_PARALLAX["near"]
@@ -1090,7 +1225,8 @@ async def test_video_node_parallax_off_no_char_zoom(monkeypatch, tmp_path, asset
     assert out.get("error") is None
     fc = captured[0]
     char_branch = fc.split("[c0]")[0].split("[bg];")[-1]
-    assert char_branch.count("scale=") == 1   # only the cap, no zoom ramp
+    # cap + breath's scale-pulse (default motion_style), no parallax zoom ramp
+    assert char_branch.count("scale=") == 2
     assert "t/" not in fc.split("[o0]")[0]     # no pan-term ramp in the overlay
 
 
@@ -1183,6 +1319,51 @@ async def test_video_node_two_cards_stacking_and_positions(monkeypatch, tmp_path
     assert left_anchor in fc and right_anchor in fc
     # far/right's overlay stage is painted before near/left's
     assert fc.index(right_anchor) < fc.index(left_anchor)
+
+
+# ── Character micro-motion technique threading (Story 8.8) ─────────────────────
+
+
+async def test_video_node_threads_resolved_card_motion_style(monkeypatch, tmp_path, assets):
+    """A card's motion_style/motion_energy from the resolver reaches the
+    filtergraph — a "hold" card gets no idle sine at all. [AC:6]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, motion_style="hold")]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    overlay_stage = captured[0].split("[o0]")[0].rsplit(";", 1)[-1]
+    assert "sin(" not in overlay_stage
+
+
+async def test_video_node_two_cards_different_styles_decorrelate(monkeypatch, tmp_path, assets):
+    """Two simultaneous cards with distinct motion_style each render their own
+    technique — a tremble card's shake sits alongside a hold card's silence. [AC:8]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, card_key="SCP-096", position="left", depth="near", motion_style="tremble"),
+        _card(assets.character2, card_key="STOCK-d-class", position="right", depth="far", motion_style="hold"),
+    ]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member("SCP-096", position="left", depth="near"),
+              _cast_member("STOCK-d-class", position="right", depth="far")],
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    assert f"sin(t*{cm.TREMBLE_FREQ}+" in fc  # the tremble card's shake is present
+    # far/hold is card index 0 (stable depth sort) → input [1:v], char_chain up to [c0]
+    hold_chain = fc.split("[1:v]", 1)[1].split("[c0]", 1)[0]
+    assert "sin(" not in hold_chain and "floor(" not in hold_chain
 
 
 # ── Post-processing filters integration (Story 7.2) ────────────────────────────
@@ -1500,6 +1681,27 @@ async def test_trace_records_card_counts(monkeypatch, tmp_path, assets):
     assert effects[0]["character_overlay"] is True
 
 
+async def test_trace_records_motion_style_counts(monkeypatch, tmp_path, assets):
+    """[Story 8.8 AC:10] Trace metadata aggregates counts per motion_style plus
+    the active constants table version."""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, card_key="SCP-096", position="left", motion_style="tremble"),
+        _card(assets.character2, card_key="STOCK-d-class", position="right", motion_style="hold"),
+    ]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member("SCP-096", position="left"), _cast_member("STOCK-d-class", position="right")],
+    )
+    await video_node(_state([scene]))
+
+    assert captured.get("motion_style_counts") == {"tremble": 1, "hold": 1}
+
+
 async def test_trace_character_overlay_false_when_absent(monkeypatch, tmp_path, assets):
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
@@ -1615,6 +1817,37 @@ async def test_character_overlay_filtergraph_renders(tmp_path):
         str(out),
     )
     assert rc == 0, f"layered filtergraph rejected by ffmpeg: {stderr[-500:]}"
+    assert out.exists()
+
+
+@pytest.mark.parametrize("style", sorted(cm._STYLE_TERMS))
+async def test_motion_style_filtergraph_renders_real_ffmpeg(tmp_path, style):
+    """Real FFmpeg: every motion_style's overlay + scale-pulse expressions parse
+    and render rc=0 — a syntax regression in axis_terms/_term_expr would be
+    caught here even though the string-level unit tests above never invoke
+    ffmpeg. [Story 8.8 AC:11]"""
+    from yt_flow.pipeline.nodes.video import _run_ffmpeg, _zoompan_filter
+
+    spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    zp = _zoompan_filter(spec, duration=1.0)
+    char_chain = _character_scale_filter()
+    pulse = video._motion_scale_filter(style, "high")
+    if pulse:
+        char_chain += f",{pulse}"
+    overlay = _overlay_filter(motion_style=style, motion_energy="high")
+    fc = f"[0:v]{zp}[bg];[1:v]{char_chain}[char];[bg][char]{overlay}[out]"
+
+    out = tmp_path / f"ov_{style}.mp4"
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=1",
+        "-f", "lavfi", "-i", "color=c=red@0.5:s=64x64:r=25:d=1,format=rgba",
+        "-filter_complex", fc,
+        "-map", "[out]",
+        "-frames:v", "25", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    )
+    assert rc == 0, f"style={style!r} filtergraph rejected by ffmpeg: {stderr[-500:]}"
     assert out.exists()
 
 
