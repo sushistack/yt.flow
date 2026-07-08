@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-08  # Story 8.8 moved to review
+last_updated: 2026-07-08  # Story 8.8 code review complete → done
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -142,7 +142,7 @@ development_status:
   8-5-stock-location-plates: ready-for-dev  # 2026-07-07 created
   8-6-asset-library-management: ready-for-dev  # assets/ 루트 분리(workspace 스크래치와 격리) + manifest.json(출처·sha256 커밋) + style_epoch 버저닝 + draft/approved 수명주기 + 8-2 카드 이주; 8-5보다 선행 필수
   8-7-composite-harmonization: ready-for-dev  # 콜라주 룩 해소 — Tier1 ffmpeg(mood 틴트+컨택트 섀도+합성 후 그레이드) → Tier2 라이트 랩 → Tier3 IC-Light 리라이팅((card,location) 쌍 사전 계산·8-6 캐싱); 착수 게이트 = iteration 1 실측
-  8-8-character-micro-motion-techniques: review  # cast motion_style/motion_energy enum + procedural FFmpeg micro-motion, no new workflow stage; motion_style/motion_energy taught in cast_decision.md (8.10 split) not visual_breakdown.md; golden-set eval FAILed (SCP-096 article_fidelity -1.00), candidate not promoted; found+fixed missing production label for cast_decision (Jay-approved)
+  8-8-character-micro-motion-techniques: done  # cast motion_style/motion_energy enum + procedural FFmpeg micro-motion, no new workflow stage; motion_style/motion_energy taught in cast_decision.md (8.10 split) not visual_breakdown.md; golden-set eval FAILed (SCP-096 article_fidelity -1.00), candidate not promoted; found+fixed missing production label for cast_decision (Jay-approved). 코드리뷰 패치 4건 적용(motion_style_counts 렌더된 카드만 집계, axis_terms KeyError→degrade, off-frame pan 회귀 테스트 보강, hold+parallax 테스트 추가), deferred 7건(8.4/8.10 소유 파일); 914 passed/1 skipped, ruff clean
   8-9-character-locomotion-blocking: ready-for-dev  # cast movement_mode/direction/pace enum + screen-space blocking/locomotion curves; no new workflow stage
   8-10-cast-decision-split-call: done  # 8.1 cast 0/125 미채움 버그 근본원인 규명(deepseek-v4-flash가 복잡한 visual_breakdown 호출에서 entity_visible 구 스키마로 회귀) + 수정: cast 결정을 별도 소형 LLM 호출로 분리(cast_decision_step 신설, visual_breakdown은 이미 결정된 cast만 소비). 실 DeepSeek 재검증 완료(전 샷 cast 채워짐 + 배경전용 확인). 834 passed, ruff clean
 

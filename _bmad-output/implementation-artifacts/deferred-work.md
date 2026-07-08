@@ -223,3 +223,16 @@ All bugs found while wiring the SYS-E2E-003 character management journey were fi
 
 - **Skipped cast members are only visible in logs, not in gate/UI artifacts** [src/yt_flow/services/character_service.py `resolve_cast_cards`] — current story explicitly specifies missing rows/card assets as warn+skip degradation; surfacing skipped members in image/video gate artifacts is a product visibility improvement for a follow-up story, not required to make 8.3's compositor contract safe.
 - **8.1 candidate-prompt A/B leg remains unvalidated** [_bmad-output/implementation-artifacts/8-3-bg-only-generation-multicard-compositing.md AC13] — 8.3 validated compositor/resolver/alpha behavior with hand-authored cast metadata after Jay's implementation-time approval; the real candidate prompt still needs a separate 8.1 prompt-compliance repair/validation pass.
+
+## Deferred from: code review of story-8.8 (2026-07-08)
+
+Diff for 8.8 shares several files with sibling Story 8.10 (already `done`, uncommitted). The items below live in those shared files but belong to 8.10/8.4's scope, not 8.8's motion work.
+
+- **`generate_special_pose_card`'s `_compile_generation_prompt` call sits outside its own `try/except`, contradicting the method's "never raises" docstring** [src/yt_flow/services/character_service.py:511-546] — pre-existing Story 8.4 code, untouched by 8.8.
+- **`typing.cast` shadowed by a local `cast` variable inside `cast_decision_step`** [src/yt_flow/pipeline/nodes/scenario_chain.py] — Story 8.10 code; harmless today since `cast(...)` isn't invoked elsewhere in that function's scope.
+- **`isinstance(x, int)` checks in `cast_decision_step`/`visual_breakdown_step` silently accept `bool`** (e.g. `"sentence": true` passes as sentence 1) [src/yt_flow/pipeline/nodes/scenario_chain.py] — Story 8.10 code.
+- **`_first_line` now silently drops non-string scalar title/kicker values with no warning** [src/yt_flow/pipeline/nodes/scenario_chain.py] — unrelated to 8.8's motion work; makes a future off-spec LLM response harder to diagnose.
+- **`visual_breakdown_step` has no duplicate/range check on `sentence_start`**, unlike `cast_decision_step`'s strict coverage check — a duplicate or out-of-range value silently resolves to an empty cast list instead of raising [src/yt_flow/pipeline/nodes/scenario_chain.py] — Story 8.10 code.
+- **`pose_hint_key`'s 10-hex-char (40-bit) truncated SHA-256 is a collision-risk simplification** for a function whose entire job is uniqueness [src/yt_flow/services/character_service.py] — Story 8.4 code.
+- **`cast_decision.md`'s prose pose_hint limit ("6 words") doesn't correspond to the code's 80-char cap** [prompts/scenario/cast_decision.md] — Story 8.10 prompt content; the two constraints are in incompatible units.
+- **Redundant DB lookups (`get_card` called twice) for the same `(card_key, pose_hint)` pair in `resolve_cast_cards`** [src/yt_flow/services/character_service.py] — Story 8.4 code; doubles DB hits per hinted cast member.
