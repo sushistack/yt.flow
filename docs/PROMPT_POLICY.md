@@ -8,7 +8,7 @@ One page. Read this before touching any runtime prompt (human or AI session).
 2. **Two labels only.** `production` (default, live traffic) and `candidate` (the A/B challenger). `production` changes only by moving the label onto a version that already passed evaluation — never by editing prompt text in place.
 3. **Change protocol**, in order:
    1. Edit the prompt file in `prompts/<stage>/<name>.md`.
-   2. Seed the new version under `candidate`: `uv run python scripts/migrate_prompts.py --label candidate --source prompts/<stage>`.
+   2. Seed the new version under `candidate`: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` (the parent `prompts/` dir — see `--label` usage below for why).
    3. Run an A/B (`POST /runs/{id}/ab`) against the same SCP so `candidate` and `production` render on identical input.
    4. Run the golden-set regression gate: `uv run python scripts/eval_prompts.py --label candidate --baseline production` (see below) — must exit `0`.
    5. Promote the winner by moving the `production` label onto its version in the Langfuse UI. Commit the prompt file change with the evaluation scores as the rationale.
@@ -44,8 +44,14 @@ Any item failure, axis regression, or total regression fails the verdict and blo
 `scripts/migrate_prompts.py` already supports `--label` (default `production`). Seed a candidate with:
 
 ```
-uv run python scripts/migrate_prompts.py --label candidate --source prompts/scenario
+uv run python scripts/migrate_prompts.py --label candidate --source prompts
 ```
+
+Use `--source prompts` (the parent dir), not `--source prompts/<stage>` — the
+script names each prompt from its path *relative to* `--source`, so pointing
+it at a stage subdirectory drops that stage's name prefix (e.g. `scenario/`)
+from every seeded prompt name, silently creating `visual_breakdown` instead
+of `scenario/visual_breakdown`. Found and corrected in Story 8.10.
 
 ## `production` label protection — not available on this instance
 

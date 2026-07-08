@@ -29,7 +29,7 @@ from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
 from yt_flow.services import eval_service
-from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService
+from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -454,6 +454,59 @@ async def _ensure_character_reference(scp_id: str) -> None:
         logger.warning("auto character reference provisioning failed for %s", scp_id, exc_info=True)
 
 
+async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
+    """Best-effort post-scenario provisioning for Story 8.4 pose_hint cards.
+
+    Mirrors ``_ensure_character_reference``'s AD-10 envelope: every miss or
+    generation failure degrades to base-pose resolution later, never run failure.
+    """
+    try:
+        settings = _settings()
+        if settings.comfyui_mock:
+            return
+        pairs: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for scene in scenes or []:
+            for shot in scene.get("shots", []):
+                for member in shot.get("cast", []) or []:
+                    if not isinstance(member, dict):
+                        continue
+                    card_key = member.get("card_key")
+                    pose_hint = member.get("pose_hint")
+                    if not isinstance(card_key, str) or not isinstance(pose_hint, str) or not pose_hint.strip():
+                        continue
+                    pair = (card_key, pose_hint.strip())
+                    if pair not in seen:
+                        seen.add(pair)
+                        pairs.append(pair)
+        if not pairs:
+            return
+
+        with Session(db._engine) as session:
+            svc = CharacterService(session, settings=settings)
+            to_generate: list[tuple[str, str]] = []
+            for card_key, hint in pairs:
+                if svc.get_card(card_key, pose_hint_key(hint), "front") is None:
+                    to_generate.append((card_key, hint))
+            cap = max(0, settings.special_pose_max_per_run)
+            skipped = to_generate[cap:]
+            if skipped:
+                logger.warning(
+                    "special pose provisioning for %s capped at %d; skipped %s",
+                    scp_id, cap, [f"{card_key}:{hint}" for card_key, hint in skipped],
+                )
+            for card_key, hint in to_generate[:cap]:
+                try:
+                    await svc.generate_special_pose_card(card_key, hint)
+                except Exception:  # noqa: BLE001 — one special pose must not block a run
+                    logger.warning(
+                        "special pose provisioning failed for %s pose_hint=%r",
+                        card_key, hint, exc_info=True,
+                    )
+    except Exception:  # noqa: BLE001 — auxiliary provisioning must never fail the run
+        logger.warning("special pose provisioning failed for %s", scp_id, exc_info=True)
+
+
 async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
                     prompt_variant: Any = None) -> None:
     """Kick off the pipeline: stream until the first gate interrupt (or terminal state).
@@ -503,6 +556,10 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     decision = _ACTION_TO_DECISION.get(action, action)
     await asyncio.to_thread(_write_run, run_id, status="running")
+    if stage == "scenario" and decision == "approved":
+        snap = await _graph.aget_state(config)
+        values = snap.values or {}
+        await _ensure_special_pose_cards(values.get("scp_id", ""), values.get("scenes") or [])
     await _run(run_id, _graph.astream(Command(resume=decision), config, stream_mode="updates"), sse_registry)
 
 

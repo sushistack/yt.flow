@@ -22,6 +22,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.scenario_chain import (
     build_scenes,
+    cast_decision_step,
     critic_step,
     research_step,
     review_step,
@@ -119,8 +120,10 @@ async def _write_and_review(
                 len(writing["scenes"]), len(structure), idx + 1,
             )
             scene_role = {}
+        cast_by_sentence = await cast_decision_step(scp_id, scene, sentences, s, _call_deepseek, label=label)
         shots = await visual_breakdown_step(
-            scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, s, _call_deepseek, label=label
+            scp_id, scene, sentences, cast_by_sentence, frozen_descriptor, entity_sheet, story_logline, scene_role,
+            s, _call_deepseek, label=label,
         )
         return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 

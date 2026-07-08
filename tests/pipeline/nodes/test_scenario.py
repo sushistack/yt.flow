@@ -80,6 +80,9 @@ def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_r
         calls["writing"] += 1
         return WRITING
 
+    async def fake_cast_decision(*a, **k):
+        return {}
+
     async def fake_visual(*a, **k):
         return VISUAL
 
@@ -96,6 +99,7 @@ def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_r
     monkeypatch.setattr(sc, "research_step", fake_research)
     monkeypatch.setattr(sc, "structure_step", fake_structure)
     monkeypatch.setattr(sc, "writing_step", fake_writing)
+    monkeypatch.setattr(sc, "cast_decision_step", fake_cast_decision)
     monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
     monkeypatch.setattr(sc, "review_step", fake_review)
     monkeypatch.setattr(sc, "critic_step", fake_critic)
@@ -198,9 +202,13 @@ async def test_duplicate_llm_scene_num_does_not_corrupt_shots(monkeypatch):
     async def fake_tts_normalize(writing, *a, **k):
         return writing
 
+    async def fake_cast_decision(*a, **k):
+        return {}
+
     monkeypatch.setattr(sc, "research_step", fake_research)
     monkeypatch.setattr(sc, "structure_step", fake_structure)
     monkeypatch.setattr(sc, "writing_step", fake_writing)
+    monkeypatch.setattr(sc, "cast_decision_step", fake_cast_decision)
     monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
     monkeypatch.setattr(sc, "review_step", fake_review)
     monkeypatch.setattr(sc, "critic_step", fake_critic)
@@ -231,7 +239,7 @@ async def test_scene_count_exceeding_structure_logs_warning_instead_of_crashing(
     }
     captured_roles = []
 
-    async def fake_visual(scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+    async def fake_visual(scp_id, scene, sentences, cast_by_sentence, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
         captured_roles.append(scene_role)
         return VISUAL
 
@@ -253,7 +261,7 @@ async def test_visual_breakdown_receives_entity_sheet_logline_and_scene_role(mon
     _stub_chain(monkeypatch)
     captured = {}
 
-    async def fake_visual(scp_id, scene, sentences, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
+    async def fake_visual(scp_id, scene, sentences, cast_by_sentence, frozen_descriptor, entity_sheet, story_logline, scene_role, *a, **k):
         captured["entity_sheet"] = entity_sheet
         captured["story_logline"] = story_logline
         captured["scene_role"] = scene_role

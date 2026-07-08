@@ -14,7 +14,17 @@ import logging
 import re
 from typing import cast
 
-from yt_flow.domain.state import CastDepth, CastMember, CastPose, CastPosition, STOCK_CAST_KEYS, SceneState, ShotData
+from yt_flow.domain.state import (
+    CastDepth,
+    CastMember,
+    CastPose,
+    CastPosition,
+    CharacterMotionEnergy,
+    CharacterMotionStyle,
+    STOCK_CAST_KEYS,
+    SceneState,
+    ShotData,
+)
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
 
@@ -30,6 +40,9 @@ _STOCK_CANONICAL = {key.lower(): key for key in STOCK_CAST_KEYS}
 _VALID_POSITIONS = {"left", "center", "right"}
 _VALID_DEPTHS = {"near", "mid", "far"}
 _VALID_POSES = {"standing", "sitting"}
+_POSE_HINT_MAX_CHARS = 80
+_VALID_MOTION_STYLES = {"hold", "breath", "sway", "tremble", "pulse", "glitch"}
+_VALID_MOTION_ENERGIES = {"low", "medium", "high"}
 
 
 def _normalize_card_key(card_key: str) -> str:
@@ -42,6 +55,32 @@ def _normalize_card_key(card_key: str) -> str:
     if _SCP_PREFIX_RE.match(card_key):
         return "SCP-" + card_key[4:]
     return card_key
+
+
+def _parse_pose_hint(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    hint = raw.strip()
+    return hint if 0 < len(hint) <= _POSE_HINT_MAX_CHARS else None
+
+
+def _normalize_enum(raw: object, valid: set[str], fallback: str) -> str:
+    if not isinstance(raw, str):
+        return fallback
+    value = raw.strip().lower()
+    return value if value in valid else fallback
+
+
+def _parse_motion_field(entry: dict, key: str, valid: set[str], default: str) -> str | None:
+    """Story 8.8 leniency rule, distinct from pose_hint's omit-on-invalid: a key
+    ABSENT from the raw payload stays absent (downstream default applies at
+    render time); a key PRESENT but invalid is normalized and included
+    explicitly so behavior is never implicit."""
+    if key not in entry:
+        return None
+    raw = entry.get(key)
+    value = raw.strip().lower() if isinstance(raw, str) else ""
+    return value if value in valid else default
 
 
 def parse_cast(raw: object) -> list[CastMember]:
@@ -61,13 +100,20 @@ def parse_cast(raw: object) -> list[CastMember]:
         if not isinstance(card_key, str) or not card_key.strip():
             logger.warning("parse_cast: dropping cast entry with unusable card_key %r", entry)
             continue
-        raw_position, raw_depth, raw_pose = entry.get("position"), entry.get("depth"), entry.get("pose")
-        position = cast(CastPosition, raw_position) if raw_position in _VALID_POSITIONS else "center"
-        depth = cast(CastDepth, raw_depth) if raw_depth in _VALID_DEPTHS else "mid"
-        pose = cast(CastPose, raw_pose) if raw_pose in _VALID_POSES else "standing"
-        members.append(
-            CastMember(card_key=_normalize_card_key(card_key), position=position, depth=depth, pose=pose)
-        )
+        position = cast(CastPosition, _normalize_enum(entry.get("position"), _VALID_POSITIONS, "center"))
+        depth = cast(CastDepth, _normalize_enum(entry.get("depth"), _VALID_DEPTHS, "mid"))
+        pose = cast(CastPose, _normalize_enum(entry.get("pose"), _VALID_POSES, "standing"))
+        member = CastMember(card_key=_normalize_card_key(card_key), position=position, depth=depth, pose=pose)
+        pose_hint = _parse_pose_hint(entry.get("pose_hint"))
+        if pose_hint is not None:
+            member["pose_hint"] = pose_hint
+        motion_style = _parse_motion_field(entry, "motion_style", _VALID_MOTION_STYLES, "breath")
+        if motion_style is not None:
+            member["motion_style"] = cast(CharacterMotionStyle, motion_style)
+        motion_energy = _parse_motion_field(entry, "motion_energy", _VALID_MOTION_ENERGIES, "medium")
+        if motion_energy is not None:
+            member["motion_energy"] = cast(CharacterMotionEnergy, motion_energy)
+        members.append(member)
     return members
 
 
@@ -221,10 +267,81 @@ def _scene_role_text(scene_role: object) -> str:
     return f"{role}: {synopsis}" if role and synopsis else role or synopsis
 
 
+async def cast_decision_step(
+    scp_id: str,
+    scene: dict,
+    sentences: list[str],
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+) -> dict[int, list]:
+    """Decide per-sentence cast in its own focused call, isolated from the
+    much larger cinematography task (Story 8.10).
+
+    Root cause this exists to fix: asking the LLM to *simultaneously* compose
+    an 8-slot background prompt AND decide+emit a `cast` array in the same
+    call reliably failed — deepseek-v4-flash reverted to the pre-8.1
+    `entity_visible` boolean schema and wrote full character prose into
+    `image_prompt` regardless of prompt strengthening (0/125 shots in 8.1's
+    own hand inspection; reproduced live here against the exact production
+    call shape, with and without `thinking` disabled). The same model
+    reliably emits correct `cast` JSON when the ONLY thing it's asked to do
+    is decide cast. Splitting the call is the fix — not more prompt text on
+    the combined call.
+
+    Returns ``{sentence_number: cast_list}`` (1-based, raw/unvalidated member
+    dicts — ``parse_cast`` in ``build_scenes`` does the actual leniency
+    validation once merged onto a shot).
+    """
+    numbered = "\n".join(f"{i + 1}. {sent}" for i, sent in enumerate(sentences))
+    raw = await _call_stage(
+        "scenario/cast_decision",
+        {
+            "scene_num": scene["scene_num"],
+            "scp_id": scp_id,
+            "stock_cast_keys": ", ".join(STOCK_CAST_KEYS),
+            "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
+            "numbered_sentences": numbered,
+            "sentence_count": len(sentences),
+        },
+        s,
+        call_deepseek,
+        label=label,
+    )
+    data = json.loads(raw)
+    entries = data.get("shots") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or len(entries) != len(sentences):
+        raise ValueError(
+            f"cast_decision: expected 1:1 sentence-to-entry mapping "
+            f"({len(sentences)} sentences), got {len(entries) if isinstance(entries, list) else 'non-list'}"
+        )
+    result: dict[int, list] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError(f"cast_decision: malformed entry {entry!r}")
+        sentence_num = entry.get("sentence")
+        if not isinstance(sentence_num, int):
+            raise ValueError(f"cast_decision: malformed sentence number {sentence_num!r}")
+        if sentence_num in result:
+            raise ValueError(f"cast_decision: duplicate sentence {sentence_num}")
+        cast = entry.get("cast")
+        if not isinstance(cast, list):
+            raise ValueError(f"cast_decision: sentence {sentence_num} cast must be a list")
+        result[sentence_num] = cast
+    expected = set(range(1, len(sentences) + 1))
+    if set(result) != expected:
+        raise ValueError(
+            f"cast_decision: sentence coverage mismatch; expected {sorted(expected)}, got {sorted(result)}"
+        )
+    return result
+
+
 async def visual_breakdown_step(
     scp_id: str,
     scene: dict,
     sentences: list[str],
+    cast_by_sentence: dict[int, list],
     frozen_descriptor: str,
     entity_sheet: str,
     story_logline: str,
@@ -249,10 +366,10 @@ async def visual_breakdown_step(
             "scene_role": _scene_role_text(scene_role),
             "character_visual_context": "",
             "scp_id": scp_id,
-            "stock_cast_keys": ", ".join(STOCK_CAST_KEYS),
             "narration": scene.get("narration", ""),
             "numbered_sentences": numbered,
             "sentence_count": len(sentences),
+            "cast_by_sentence": json.dumps(cast_by_sentence, ensure_ascii=False, indent=2),
         },
         s,
         call_deepseek,
@@ -265,6 +382,14 @@ async def visual_breakdown_step(
             f"visual_breakdown: expected 1:1 sentence-to-shot mapping "
             f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
         )
+    # Cast is decided authoritatively by cast_decision_step (Story 8.10) — attach
+    # it here regardless of anything the model echoed, keyed by sentence_start.
+    for shot in shots:
+        if isinstance(shot, dict):
+            sentence_start = shot.get("sentence_start")
+            if not isinstance(sentence_start, int):
+                raise ValueError(f"visual_breakdown: invalid sentence_start {sentence_start!r}")
+            shot["cast"] = cast_by_sentence.get(sentence_start, [])
     return shots
 
 
@@ -379,7 +504,9 @@ def _fallback_prompt(scene: dict) -> str:
 def _first_line(value: object) -> str:
     """First non-empty line of a stripped string, or "" — the chapter-card
     typography-restraint rule (Story 5.17 AC:4) enforced at data-assembly time."""
-    text = str(value or "").strip()
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
     return text.splitlines()[0].strip() if text else ""
 
 

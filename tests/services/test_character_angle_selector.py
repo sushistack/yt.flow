@@ -18,7 +18,7 @@ import pytest
 from sqlmodel import Session
 
 from yt_flow import db
-from yt_flow.services.character_service import CharacterService
+from yt_flow.services.character_service import CharacterService, pose_hint_key
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -74,8 +74,18 @@ def _scene(num, narration="narration text", shots=None):
     }
 
 
-def _cast_member(card_key="SCP-096", *, position="center", depth="near", pose="standing"):
-    return {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
+def _cast_member(
+    card_key="SCP-096", *, position="center", depth="near", pose="standing",
+    motion_style=None, motion_energy=None, pose_hint=None,
+):
+    member = {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
+    if pose_hint is not None:
+        member["pose_hint"] = pose_hint
+    if motion_style is not None:
+        member["motion_style"] = motion_style
+    if motion_energy is not None:
+        member["motion_energy"] = motion_energy
+    return member
 
 
 def _shot(shot_id, scene_num=1, *, cast=None,
@@ -283,6 +293,36 @@ class TestResolveCastCardsHappyPath:
         assert card["fallback"] is False
         assert card["position"] == "right"
         assert card["depth"] == "mid"
+
+    @pytest.mark.asyncio
+    async def test_card_defaults_motion_fields_when_member_omits_them(self, service):
+        """Story 8.8: same default-on-missing convention as position/depth."""
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("STOCK-d-class")]),
+        ])]
+
+        result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["motion_style"] == "breath"
+        assert card["motion_energy"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_card_carries_explicit_motion_fields(self, service):
+        """Story 8.8: a parser-normalized motion_style/motion_energy passes through."""
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member(
+                "STOCK-d-class", motion_style="tremble", motion_energy="high",
+            )]),
+        ])]
+
+        result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["motion_style"] == "tremble"
+        assert card["motion_energy"] == "high"
 
     @pytest.mark.asyncio
     async def test_stock_member_uses_available_angle_when_front_missing(self, service):
@@ -497,3 +537,41 @@ class TestResolveCastCardsPose:
         card = result["1:S001"][0]
         assert card["pose"] == "standing"
         assert card["path"] == "/tmp/front.png"
+
+
+class TestResolveCastCardsSpecialPose:
+    """Story 8.4: pose_hint cards resolve before base-pose angle selection."""
+
+    @pytest.mark.asyncio
+    async def test_pose_hint_hit_uses_hint_card_and_skips_llm(self, service):
+        _seed_character(service, "SCP-096")
+        hint = "kneeling over a corpse"
+        service.save_card("SCP-096", pose_hint_key(hint), "front", "/tmp/hint_front.png")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("SCP-096", pose_hint=hint)]),
+        ])]
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+
+        assert mock_post.call_count == 0
+        card = result["1:S001"][0]
+        assert card["pose"] == pose_hint_key(hint)
+        assert card["angle"] == "front"
+        assert card["path"] == "/tmp/hint_front.png"
+        assert card["fallback"] is False
+
+    @pytest.mark.asyncio
+    async def test_pose_hint_miss_falls_back_to_base_pose_with_warning(self, service, caplog):
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("STOCK-d-class", pose_hint="reaching toward camera")]),
+        ])]
+
+        with caplog.at_level("WARNING"):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["pose"] == "standing"
+        assert card["path"] == "/tmp/front.png"
+        assert "special-pose card" in caplog.text

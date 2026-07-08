@@ -153,7 +153,13 @@ def test_scenario_artifacts_includes_cast(client, monkeypatch):
     """[Story 8.1 AC:7] cast is exposed at the scenario gate so a human reviewer
     can see per-shot cast placement, not just image_prompt — the D2 mistake
     (mood silently dropped by the serializer) must not repeat here."""
-    cast = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]
+    cast = [{
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "near",
+        "pose": "standing",
+        "pose_hint": "kneeling over a corpse",
+    }]
     _mock_graph(monkeypatch, _state([_scene(1, cast=cast)]))
     body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
     assert body["scenes"][0]["shots"][0]["cast"] == cast

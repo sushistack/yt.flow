@@ -19,7 +19,7 @@ from sqlmodel import Session
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.domain.exceptions import ValidationError
-from yt_flow.services.character_service import _ANGLE_IPADAPTER_WEIGHTS, CharacterService
+from yt_flow.services.character_service import _ANGLE_IPADAPTER_WEIGHTS, CharacterService, pose_hint_key
 from tests.stubs.fakes import TINY_PNG
 from yt_flow.services.character_image_provider import (
     ComfyUICharacterProvider,
@@ -359,6 +359,58 @@ class TestMultiAngleGeneration:
         card = service.save_card("SCP-049", "hint:012345abcd", "front", "/tmp/special.png")
 
         assert card.pose == "hint:012345abcd"
+
+    def test_pose_hint_key_normalizes_case_and_whitespace(self):
+        assert pose_hint_key(" Kneeling Over A Corpse ") == pose_hint_key("kneeling over a corpse")
+        assert pose_hint_key("kneeling over a corpse").startswith("hint:")
+
+    def test_generate_special_pose_card_success_upserts_hint_card(self, service, tmp_path):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        character = service.create_character("SCP-049", "Plague Doctor")
+        service.update_character(
+            character.id,
+            visual_descriptor="black-robed plague doctor",
+            angle_front_path=str(tmp_path / "front.png"),
+        )
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.produces_alpha = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            path = asyncio_run(service.generate_special_pose_card("SCP-049", "kneeling over a corpse"))
+
+        assert path is not None
+        assert Path(path).exists()
+        assert Path(path).name == f"{pose_hint_key('kneeling over a corpse').replace(':', '_')}_front.png"
+        card = service.get_card("SCP-049", pose_hint_key("kneeling over a corpse"), "front")
+        assert card is not None
+        assert card.image_path == path
+        assert mock_provider.generate.call_args.kwargs["ref_image_path"] == str(tmp_path / "front.png")
+
+    def test_generate_special_pose_card_missing_front_returns_none(self, service, tmp_path):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        service.create_character("SCP-049", "Plague Doctor")
+
+        path = asyncio_run(service.generate_special_pose_card("SCP-049", "kneeling over a corpse"))
+
+        assert path is None
+        assert service.get_card("SCP-049", pose_hint_key("kneeling over a corpse"), "front") is None
+
+    def test_generate_special_pose_card_rejects_opaque_without_row(self, service, tmp_path):
+        service._settings = Settings(workspace_path=str(tmp_path))
+        character = service.create_character("SCP-049", "Plague Doctor")
+        service.update_character(character.id, angle_front_path=str(tmp_path / "front.png"))
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.produces_alpha = True
+        mock_provider.generate = AsyncMock(return_value=RGB_PNG_HEADER_ONLY)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            path = asyncio_run(service.generate_special_pose_card("SCP-049", "kneeling over a corpse"))
+
+        assert path is None
+        assert service.get_card("SCP-049", pose_hint_key("kneeling over a corpse"), "front") is None
 
     def test_save_card_rejects_invalid_angle(self, service):
         with pytest.raises(ValidationError, match="angle"):

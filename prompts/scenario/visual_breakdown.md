@@ -10,13 +10,13 @@ Your job is NOT to literally illustrate each sentence. Your job is to find the *
 > entity you're told about in the Entity Sheet / Visual Identity Profile
 > sections further down. Those sections exist so you can describe the
 > *environment* the entity leaves behind (marks, aftermath, signature), not
-> so you can describe the entity's body in `image_prompt`. If a person or the
-> entity is actually in the shot, that fact goes ONLY into the shot's `cast`
-> array (see "Card Vocabulary" and "Cast, Placement & Background-Only
-> `image_prompt` Rules" below) — never into prompt prose. Before writing each
-> `image_prompt`, silently check: "does this sentence contain a body, a name,
-> or an SCP designator?" If yes, that content becomes a `cast` entry and the
-> prompt describes only what surrounds it.
+> so you can describe the entity's body in `image_prompt`. Who is physically
+> in each shot has ALREADY been decided for you (see "Pre-Decided Cast"
+> below) — your only job regarding those people is to never describe their
+> body, face, or clothing in `image_prompt`. Before writing each
+> `image_prompt`, silently check: "does this sentence's Pre-Decided Cast list
+> have any entries?" If yes, that person/entity does NOT appear in the prompt
+> text at all — the prompt describes only what surrounds them.
 
 ## Story Logline (Global Premise)
 
@@ -38,27 +38,44 @@ This is where this scene sits in the overall story arc. Use it to decide pacing,
 - **Color Palette**: {{color_palette}}
 - **Atmosphere**: {{atmosphere}}
 
-## Card Vocabulary (Cast Reference)
+## Pre-Decided Cast (per sentence — do not change)
 
-The SCP entity, D-class, researchers, and guards are never drawn into
-`image_prompt` — they are pre-made character cards referenced by `card_key`
-in each shot's `cast` list (see rules below).
+Who is physically in each shot was already decided in a separate pass. The
+SCP entity, D-class, researchers, and guards are never drawn into
+`image_prompt` — they render as pre-made character cards, composited later
+from this exact data:
 
-- **This run's entity `card_key`**: {{scp_id}}
-- **Fixed stock cast `card_key` values**: {{stock_cast_keys}}
-- A duplicate/offshoot of the entity uses `<scp_id>-<n>`, e.g. `SCP-049-2`.
+```json
+{{cast_by_sentence}}
+```
+
+This is keyed by sentence number. A sentence with an empty `cast` list has no
+one in frame — write a pure environment/atmosphere shot for it. A sentence
+with cast entries has that many people/entities present; use their
+`position`/`depth`/`pose` to inform spatial relationship and staging (slot 4
+below), but never their appearance — you don't know what they look like, and
+you don't need to; the card already renders it. Do not invent, add, remove,
+or renumber cast entries — echoing this data in your own output is not
+required, it's already final.
+
+Cast entries may include an optional `pose_hint`: short free-text English
+(maximum 6 words) such as "kneeling over a corpse", "lying on operating
+table", or "reaching toward the camera". It is reserved for rare key-art beats
+where the base `pose` values (`standing`, `sitting`) cannot express the
+moment. Most shots should omit it entirely, and `pose` must still be set to
+the nearest base pose so the renderer can fall back cleanly.
 
 ## Entity Sheet (Always Include, Even When Off-Screen)
 
 {{entity_sheet}}
 
-This is distinct from the Visual Identity Profile below. Even in shots where the entity is not physically visible, let this sheet's signature trait or environmental signature inform the frame (an aftermath detail, a mark, a sound cue rendered visually, etc.) so every shot still feels anchored to this specific SCP, not a generic horror scene. **This sheet informs your `cast` decisions and the environmental storytelling around the entity — it is never a source of text to put into `image_prompt`.**
+This is distinct from the Visual Identity Profile below. Even in shots where the entity is not physically visible, let this sheet's signature trait or environmental signature inform the frame (an aftermath detail, a mark, a sound cue rendered visually, etc.) so every shot still feels anchored to this specific SCP, not a generic horror scene. **This sheet informs the environmental storytelling around the entity — it is never a source of text to put into `image_prompt`.**
 
 ## SCP Visual Identity Profile
 {{scp_visual_reference}}
 
-**This profile is reference context only — for deciding when to add a `cast`
-entry with `card_key: "{{scp_id}}"`. Do not copy any part of it into
+**This profile is reference context only, for shots where the Pre-Decided
+Cast places the entity in frame. Do not copy any part of it into
 `image_prompt`; the card already renders the entity's appearance.**
 
 ## Character Visual Context
@@ -163,86 +180,43 @@ NEVER use in `image_prompt`: "dark", "scary", "horror", "creepy", "mysterious", 
 
 These are lazy. Replace with the SPECIFIC visual detail that creates that feeling.
 
-### Cast, Placement & Background-Only `image_prompt` Rules
+### Background-Only `image_prompt` Rule (reference — cast is already decided)
 
 **`image_prompt` is background-only.** The SCP entity, D-class, researchers, and
 guards are NEVER described in `image_prompt` prose — no body, face, pose, or
 clothing detail, and no bare SCP designator token (e.g. "SCP-049",
-"SCP-049-2"). They exist in the shot only through the `cast` array below,
-which the video stage composites as pre-made cards on top of the background
-you describe here.
+"SCP-049-2") — regardless of whether that sentence's Pre-Decided Cast is
+empty or populated. They exist in the shot only through the pre-made cards
+the video stage composites on top of the background you describe here.
 
-**Deciding cast for a shot:**
-- **Entity present** → add a `cast` entry with `card_key` = this run's entity
-  (`{{scp_id}}`, or `<scp_id>-<n>` for a duplicate/offshoot).
-- **D-class / researcher / security personnel present** → add a `cast` entry
-  with `card_key` = one of the stock keys ({{stock_cast_keys}}). Never write
-  "a D-class worker" into `image_prompt` — the stock card IS that person.
-- **No one in frame** → `"cast": []`. This is the common case for
-  establishing/aftermath/atmosphere shots.
-
-**Worked example (the transformation you must make for every shot with someone in it):**
-- BAD (old style — never do this): `image_prompt`: "D-9341, a gaunt man with a shaved head in a torn orange jumpsuit, walks forward down a sterile corridor toward a heavy blast door." / `cast`: `[]`
-- GOOD: `image_prompt`: "A sterile concrete corridor stretches toward a heavy blast door, harsh fluorescent light overhead, floor scuffed by years of foot traffic." / `cast`: `[{"card_key": "STOCK-d-class", "position": "center", "depth": "mid", "pose": "standing"}]`
-- The person's name, body, and clothing disappear from the text entirely — they become one `cast` entry. This applies identically when the SCP entity itself is the one in frame.
+**Worked example (the transformation every shot with someone in it needs):**
+- BAD (old style — never do this): `image_prompt`: "D-9341, a gaunt man with a shaved head in a torn orange jumpsuit, walks forward down a sterile corridor toward a heavy blast door."
+- GOOD (Pre-Decided Cast for this sentence: `[{"card_key": "STOCK-d-class", "position": "center", "depth": "mid", "pose": "standing"}]`): `image_prompt`: "A sterile concrete corridor stretches toward a heavy blast door, harsh fluorescent light overhead, floor scuffed by years of foot traffic."
+- The person's name, body, and clothing disappear from the text entirely. This applies identically when the SCP entity itself is the one in frame.
 
 **Few-shot output patterns (copy this behavior, not the exact prose):**
 
-Narration sentence: "SCP-049 stands at the far side of the examination room."
+Narration sentence: "SCP-049 stands at the far side of the examination room." (Pre-Decided Cast: `[{"card_key": "{{scp_id}}", "position": "right", "depth": "far", "pose": "standing"}]`)
 ```json
 {
   "image_prompt": "static wide shot, tiled examination room with a steel autopsy table centered under a cone of cold light, black medical bag open on the floor, instrument tray knocked sideways near the far wall, cracked white tiles and oxidized drain grate, overhead surgical lamp throwing hard shadows across the empty floor, faint condensation in the air, clinical dread, procedural helplessness",
   "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
   "sentence_start": 1,
   "sentence_end": 1,
-  "cast": [{"card_key": "{{scp_id}}", "position": "right", "depth": "far", "pose": "standing"}],
   "camera_type": "wide"
 }
 ```
 
-Narration sentence: "The researcher sits across from the subject and does not blink."
-```json
-{
-  "image_prompt": "over-the-shoulder composition from behind an empty interview table edge, scratched metal tabletop with two bolted chairs facing each other, one paper cup trembling near a recorder, acoustic wall panels stained by old moisture, single ceiling strip light reflected in the tabletop, stale air hanging over the room, restrained tension, institutional fatigue",
-  "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
-  "sentence_start": 2,
-  "sentence_end": 2,
-  "cast": [
-    {"card_key": "STOCK-researcher", "position": "left", "depth": "mid", "pose": "sitting"},
-    {"card_key": "{{scp_id}}", "position": "right", "depth": "mid", "pose": "sitting"}
-  ],
-  "camera_type": "over-the-shoulder"
-}
-```
-
-Narration sentence: "The corridor is empty, but the scrape marks continue to the sealed door."
+Narration sentence: "The corridor is empty, but the scrape marks continue to the sealed door." (Pre-Decided Cast: `[]`)
 ```json
 {
   "image_prompt": "low-angle corridor view, sealed blast door at the vanishing point with fresh parallel scrape marks crossing the concrete floor toward it, hazard stripes chipped along the base rail, wall-mounted camera tilted off axis, twin fluorescent tubes strobing unevenly over dust and condensation, empty negative space down the center line, aftermath dread, watched silence",
   "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
   "sentence_start": 3,
   "sentence_end": 3,
-  "cast": [],
   "camera_type": "low-angle"
 }
 ```
-
-**Placement ties to composition intent** — decide the frame, then fill the
-slots:
-- `position`: `left` | `center` | `right` — horizontal slot in frame.
-- `depth`: `near` | `mid` | `far` — distance plane (also drives scale/z-order).
-- Example intent "entity looming near-left, researcher far-right" becomes two
-  cast entries: `{"card_key": "{{scp_id}}", "position": "left", "depth": "near", "pose": "standing"}`,
-  `{"card_key": "STOCK-researcher", "position": "right", "depth": "far", "pose": "standing"}`.
-- Listing cast entries back-to-front (far to near) is encouraged for
-  readability but not required.
-
-**`pose`** — one of `standing` | `sitting`, required on every cast entry:
-- `standing` is the default for anything upright, moving, or active.
-- `sitting` for interview/interrogation, containment-chair, desk/console
-  work, medical restraint, or a collapsed/slumped beat.
-- These are the only two legal values — no crouching/kneeling/lying; pick
-  whichever of the two reads closer.
 
 **The entity's absence should still be felt**, in every shot's background,
 whether or not the entity has a `cast` entry this shot — anchored by the
@@ -320,16 +294,13 @@ Output a JSON object:
       "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
       "sentence_start": 1,
       "sentence_end": 1,
-      "cast": [
-        {"card_key": "{{scp_id}}", "position": "left", "depth": "near", "pose": "standing"}
-      ],
       "camera_type": "wide"
     }
   ]
 }
 ```
 
-`cast` is `[]` for a background-only shot with no one in frame — see the Cast, Placement & Background-Only rules above.
+No `cast` field — cast is Pre-Decided (see above) and attached automatically; do not include it in your output.
 
 ### Pre-Output Self-Check (MANDATORY)
 
@@ -337,14 +308,13 @@ Before producing JSON, verify EVERY non-empty `image_prompt`:
 
 - [ ] Has 8 structural elements: shot type, environment/subject detail, environmental action/state, spatial relationship, environment texture, lighting specifics, atmospheric effects, emotional keywords
 - [ ] No forbidden generic terms (dark, scary, horror, creepy, mysterious, eerie, ominous, sinister, menacing, foreboding, unsettling)
-- [ ] `image_prompt` describes background/environment/atmosphere only — no entity, no person, no cast member's body/face/pose/clothing, no bare SCP designator token
-- [ ] Every `cast` entry's `card_key`/`position`/`depth`/`pose` are all from the allowed values above (no invented values)
-- [ ] A shot with no one in frame has `"cast": []`
+- [ ] `image_prompt` describes background/environment/atmosphere only — no entity, no person, no cast member's body/face/pose/clothing, no bare SCP designator token, even for a sentence whose Pre-Decided Cast is non-empty
 - [ ] Each image has a clear "visual hook" — one element that draws the eye
 - [ ] Negative space or depth layering (foreground/midground/background) is used
 - [ ] Emotional keywords are specific feelings, not genre labels
 - [ ] Camera type matches the narrative beat type
 - [ ] The shot still reads as consistent with the Story Logline and Scene Narrative Role above
+- [ ] `pose_hint` is used sparingly (≤ ~3 distinct hints per scenario) and never as a substitute for `pose`
 - [ ] Total shot count == {{sentence_count}}
 - [ ] Each shot: `sentence_start == sentence_end`
 - [ ] `camera_type` varies between consecutive shots

@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-cassette-cast-decision",
+  "object": "chat.completion",
+  "model": "deepseek-v4-flash",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"shots\": [{\"sentence\": 1, \"cast\": []}, {\"sentence\": 2, \"cast\": []}, {\"sentence\": 3, \"cast\": []}]}"
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 200, "completion_tokens": 40, "total_tokens": 240}
+}

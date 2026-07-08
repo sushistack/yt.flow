@@ -158,6 +158,7 @@ _STAGE_CASSETTES = {
     "scenario/research": "deepseek_research.json",
     "scenario/structure": "deepseek_structure.json",
     "scenario/writing": "deepseek_writing.json",
+    "scenario/cast_decision": "deepseek_cast_decision.json",
     "scenario/visual_breakdown": "deepseek_visual_breakdown.json",
     "scenario/review": "deepseek_review.json",
     "scenario/critic_agent": "deepseek_critic.json",

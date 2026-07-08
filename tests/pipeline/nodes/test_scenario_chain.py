@@ -152,8 +152,16 @@ def test_scene_role_text_coerces_non_string_fields():
 def test_visual_breakdown_prompt_file_has_required_placeholders():
     prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "visual_breakdown.md"
     content = prompt_path.read_text(encoding="utf-8")
-    for placeholder in ("{{story_logline}}", "{{scene_role}}", "{{entity_sheet}}", "{{scp_visual_reference}}", "{{numbered_sentences}}", "{{sentence_count}}", "{{scp_id}}", "{{stock_cast_keys}}"):
+    for placeholder in ("{{story_logline}}", "{{scene_role}}", "{{entity_sheet}}", "{{scp_visual_reference}}", "{{numbered_sentences}}", "{{sentence_count}}", "{{scp_id}}", "{{cast_by_sentence}}"):
         assert placeholder in content, f"missing {placeholder} in visual_breakdown.md"
+
+
+def test_cast_decision_prompt_file_has_required_placeholders():
+    prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "cast_decision.md"
+    content = prompt_path.read_text(encoding="utf-8")
+    for placeholder in ("{{scene_num}}", "{{scp_id}}", "{{stock_cast_keys}}", "{{characters_present}}", "{{numbered_sentences}}", "{{sentence_count}}"):
+        assert placeholder in content, f"missing {placeholder} in cast_decision.md"
+    assert "pose_hint" in content
 
 
 async def test_structure_step_returns_scene_list(monkeypatch):
@@ -240,11 +248,34 @@ async def test_visual_breakdown_step_maps_one_shot_per_sentence(monkeypatch):
     call = _deepseek_from_cassette("deepseek_visual_breakdown.json")
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     sentences = ["첫 문장.", "(정적)", "셋째 문장."]
-    result = await chain.visual_breakdown_step("SCP-173", scene, sentences, "desc", "entity sheet", "logline", {}, None, call)
+    result = await chain.visual_breakdown_step("SCP-173", scene, sentences, {}, "desc", "entity sheet", "logline", {}, None, call)
     assert len(result) == 3
     assert result[0]["image_prompt"]
     assert result[1]["image_prompt"] == ""  # transition sentence, no image
     assert result[2]["camera_type"] == "wide"
+
+
+async def test_visual_breakdown_step_attaches_precomputed_cast(monkeypatch):
+    """Story 8.10: cast is decided by cast_decision_step, not the LLM in this call —
+    attached onto each shot by sentence_start regardless of what the LLM echoes."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "x", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"},
+            {"image_prompt": "y", "negative_prompt": "y", "sentence_start": 2, "sentence_end": 2, "camera_type": "medium"},
+        ]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    cast_by_sentence = {1: [{"card_key": "SCP-173", "position": "center", "depth": "near", "pose": "standing"}], 2: []}
+    result = await chain.visual_breakdown_step(
+        "SCP-173", scene, ["문장1.", "문장2."], cast_by_sentence, "desc", "entity sheet", "logline", {}, None, call,
+    )
+    assert result[0]["cast"] == cast_by_sentence[1]
+    assert result[1]["cast"] == []
 
 
 async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
@@ -258,7 +289,23 @@ async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
 
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     with pytest.raises(ValueError, match="1:1"):
-        await chain.visual_breakdown_step("SCP-173", scene, ["문장1.", "문장2."], "desc", "entity sheet", "logline", {}, None, call)
+        await chain.visual_breakdown_step("SCP-173", scene, ["문장1.", "문장2."], {}, "desc", "entity sheet", "logline", {}, None, call)
+
+
+async def test_visual_breakdown_step_rejects_non_int_sentence_start(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "x", "sentence_start": "1", "sentence_end": 1, "camera_type": "wide"}
+        ]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    with pytest.raises(ValueError, match="sentence_start"):
+        await chain.visual_breakdown_step("SCP-173", scene, ["문장1."], {1: []}, "desc", "entity sheet", "logline", {}, None, call)
 
 
 async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatch):
@@ -281,7 +328,11 @@ async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatc
 
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     scene_role = {"act": "hook", "emotional_beat": "tension", "synopsis": "the discovery"}
-    await chain.visual_breakdown_step("SCP-173", scene, ["문장1."], "frozen desc", "entity sheet text", "story logline text", scene_role, None, call)
+    cast_by_sentence = {1: [{"card_key": "SCP-173", "position": "center", "depth": "near", "pose": "standing"}]}
+    await chain.visual_breakdown_step(
+        "SCP-173", scene, ["문장1."], cast_by_sentence, "frozen desc", "entity sheet text", "story logline text",
+        scene_role, None, call,
+    )
 
     assert captured.kwargs["scp_visual_reference"] == "frozen desc"
     assert captured.kwargs["entity_sheet"] == "entity sheet text"
@@ -290,7 +341,104 @@ async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatc
     assert "tension" in captured.kwargs["scene_role"]
     assert "the discovery" in captured.kwargs["scene_role"]
     assert captured.kwargs["scp_id"] == "SCP-173"
-    assert captured.kwargs["stock_cast_keys"] == "STOCK-d-class, STOCK-researcher, STOCK-security"
+    assert json.loads(captured.kwargs["cast_by_sentence"]) == {"1": cast_by_sentence[1]}
+
+
+# ── cast_decision_step (Story 8.10) ─────────────────────────────────────────
+
+
+async def test_cast_decision_step_returns_cast_by_sentence(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [
+            {"sentence": 1, "cast": [{"card_key": "SCP-173", "position": "center", "depth": "near", "pose": "standing"}]},
+            {"sentence": 2, "cast": []},
+        ]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": ["SCP-173"]}
+    result = await chain.cast_decision_step("SCP-173", scene, ["문장1.", "문장2."], None, call)
+    assert result == {
+        1: [{"card_key": "SCP-173", "position": "center", "depth": "near", "pose": "standing"}],
+        2: [],
+    }
+
+
+async def test_cast_decision_step_rejects_count_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [{"sentence": 1, "cast": []}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": []}
+    with pytest.raises(ValueError, match="1:1"):
+        await chain.cast_decision_step("SCP-173", scene, ["문장1.", "문장2."], None, call)
+
+
+async def test_cast_decision_step_rejects_malformed_entries(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [
+            "not-a-dict",
+            {"sentence": "two", "cast": []},
+            {"sentence": 1, "cast": [{"card_key": "SCP-173", "position": "center", "depth": "near", "pose": "standing"}]},
+        ]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": []}
+    with pytest.raises(ValueError, match="malformed"):
+        await chain.cast_decision_step("SCP-173", scene, ["문장1.", "문장2.", "문장3."], None, call)
+
+
+async def test_cast_decision_step_rejects_non_list_cast(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [{"sentence": 1, "cast": "not-a-list"}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": []}
+    with pytest.raises(ValueError, match="cast must be a list"):
+        await chain.cast_decision_step("SCP-173", scene, ["문장1."], None, call)
+
+
+async def test_cast_decision_step_rejects_duplicate_sentence(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [{"sentence": 1, "cast": []}, {"sentence": 1, "cast": []}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": []}
+    with pytest.raises(ValueError, match="duplicate"):
+        await chain.cast_decision_step("SCP-173", scene, ["문장1.", "문장2."], None, call)
+
+
+async def test_cast_decision_step_rejects_out_of_range_sentence(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"shots": [{"sentence": 1, "cast": []}, {"sentence": 3, "cast": []}]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "characters_present": []}
+    with pytest.raises(ValueError, match="coverage mismatch"):
+        await chain.cast_decision_step("SCP-173", scene, ["문장1.", "문장2."], None, call)
 
 
 async def test_review_step_returns_report(monkeypatch):
@@ -668,6 +816,15 @@ def test_build_scenes_title_and_kicker_stripped_to_first_line():
     assert scenes[0]["kicker"] == "상황 한 줄"
 
 
+def test_build_scenes_title_and_kicker_drop_non_string_values():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(
+        writing, _ONE_SHOT_VISUAL, [{"title": ["첫 면담"], "kicker": {"text": "상황"}}]
+    )
+    assert scenes[0]["title"] == ""
+    assert scenes[0]["kicker"] == ""
+
+
 # ── parse_cast (Story 8.1: leniency table per Epic 8 Interfaces rules 4-6) ──────
 
 
@@ -696,6 +853,59 @@ def test_parse_cast_invalid_pose_falls_back_to_standing():
 def test_parse_cast_missing_pose_defaults_to_standing():
     raw = [{"card_key": "SCP-049", "position": "left", "depth": "near"}]
     assert chain.parse_cast(raw)[0]["pose"] == "standing"
+
+
+def test_parse_cast_normalizes_enum_case_and_whitespace():
+    raw = [{"card_key": "SCP-049", "position": " Left ", "depth": " NEAR ", "pose": " Sitting "}]
+    assert chain.parse_cast(raw)[0] == {
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "near",
+        "pose": "sitting",
+    }
+
+
+@pytest.mark.parametrize(
+    ("hint", "expected"),
+    [
+        ("kneeling over a corpse", "kneeling over a corpse"),
+        ("  lying on operating table  ", "lying on operating table"),
+        ("", None),
+        ("   ", None),
+        (["kneeling"], None),
+        ("x" * 81, None),
+    ],
+)
+def test_parse_cast_pose_hint_leniency_table(hint, expected):
+    raw = [{
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "near",
+        "pose": "standing",
+        "pose_hint": hint,
+    }]
+    member = chain.parse_cast(raw)[0]
+    if expected is None:
+        assert "pose_hint" not in member
+    else:
+        assert member["pose_hint"] == expected
+
+
+def test_parse_cast_pose_hint_survives_when_other_fields_default():
+    raw = [{
+        "card_key": "SCP-049",
+        "position": "offscreen",
+        "depth": "deep",
+        "pose": "crouching",
+        "pose_hint": "reaching toward camera",
+    }]
+    assert chain.parse_cast(raw)[0] == {
+        "card_key": "SCP-049",
+        "position": "center",
+        "depth": "mid",
+        "pose": "standing",
+        "pose_hint": "reaching toward camera",
+    }
 
 
 def test_parse_cast_drops_non_dict_entry(caplog):
@@ -740,6 +950,46 @@ def test_parse_cast_missing_cast_returns_empty_list():
 
 def test_parse_cast_non_list_returns_empty_list():
     assert chain.parse_cast({"card_key": "SCP-049"}) == []
+
+
+# ── motion_style / motion_energy (Story 8.8) ─────────────────────────────────
+
+
+def test_parse_cast_missing_motion_fields_are_omitted():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]
+    member = chain.parse_cast(raw)[0]
+    assert "motion_style" not in member
+    assert "motion_energy" not in member
+
+
+@pytest.mark.parametrize("style", sorted(chain._VALID_MOTION_STYLES))
+def test_parse_cast_every_legal_motion_style_passes_through(style):
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing", "motion_style": style}]
+    assert chain.parse_cast(raw)[0]["motion_style"] == style
+
+
+@pytest.mark.parametrize("energy", sorted(chain._VALID_MOTION_ENERGIES))
+def test_parse_cast_every_legal_motion_energy_passes_through(energy):
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing", "motion_energy": energy}]
+    assert chain.parse_cast(raw)[0]["motion_energy"] == energy
+
+
+@pytest.mark.parametrize("bad_style", ["floating", "", 5, ["breath"], None])
+def test_parse_cast_invalid_motion_style_normalizes_to_breath(bad_style):
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "motion_style": bad_style,
+    }]
+    assert chain.parse_cast(raw)[0]["motion_style"] == "breath"
+
+
+@pytest.mark.parametrize("bad_energy", ["extreme", "", 3, ["low"], None])
+def test_parse_cast_invalid_motion_energy_normalizes_to_medium(bad_energy):
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "motion_energy": bad_energy,
+    }]
+    assert chain.parse_cast(raw)[0]["motion_energy"] == "medium"
 
 
 # ── cast field (Story 8.1: build_scenes attaches parsed cast per shot) ──────────

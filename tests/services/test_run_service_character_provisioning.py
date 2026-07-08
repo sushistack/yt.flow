@@ -16,7 +16,7 @@ from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.db.models import Character as CharacterModel
 from yt_flow.services import character_service, run_service
-from yt_flow.services.character_service import CANONICAL_ANGLES
+from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
 from tests.stubs.fakes import TINY_PNG
 
 
@@ -302,3 +302,115 @@ async def test_start_run_invokes_character_provisioning(monkeypatch, tmp_path):
     await run_service.start_run("run-1", "SCP-096", "scp text")
 
     assert calls == ["SCP-096"]
+
+
+def _special_pose_scenes(*pairs):
+    return [{
+        "scene_num": 1,
+        "shots": [{
+            "shot_id": f"S001{i}",
+            "cast": [
+                {"card_key": card_key, "position": "center", "depth": "near", "pose": "standing", "pose_hint": hint}
+            ],
+        } for i, (card_key, hint) in enumerate(pairs, start=1)],
+    }]
+
+
+async def test_special_pose_provisioning_skips_mock_mode(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.comfyui_mock = True
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint):
+        calls.append((card_key, pose_hint))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse")))
+
+    assert calls == []
+
+
+async def test_special_pose_provisioning_no_cast_noop(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint):
+        calls.append((card_key, pose_hint))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", [{"scene_num": 1, "shots": [{"cast": []}]}])
+
+    assert calls == []
+
+
+async def test_special_pose_provisioning_cache_hit_skips_generation(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        CharacterService(session, settings=settings).save_card(
+            "SCP-049", pose_hint_key("kneeling over a corpse"), "front", "/tmp/existing.png"
+        )
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint):
+        calls.append((card_key, pose_hint))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse")))
+
+    assert calls == []
+
+
+async def test_special_pose_provisioning_cap_and_warning(monkeypatch, tmp_path, caplog):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.special_pose_max_per_run = 2
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint):
+        calls.append((card_key, pose_hint))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    with caplog.at_level("WARNING"):
+        await run_service._ensure_special_pose_cards(
+            "SCP-049",
+            _special_pose_scenes(
+                ("SCP-049", "kneeling over a corpse"),
+                ("SCP-049", "lying on operating table"),
+                ("SCP-049", "reaching toward camera"),
+            ),
+        )
+
+    assert calls == [
+        ("SCP-049", "kneeling over a corpse"),
+        ("SCP-049", "lying on operating table"),
+    ]
+    assert "capped at 2" in caplog.text
+    assert "reaching toward camera" in caplog.text
+
+
+async def test_special_pose_provisioning_generation_failure_swallowed(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, card_key, pose_hint):
+        raise RuntimeError("renderer down")
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse")))

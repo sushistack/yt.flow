@@ -19,6 +19,12 @@ CastDepth = Literal["near", "mid", "far"]
 CastPose = Literal["standing", "sitting"]  # closed v1 vocabulary — free-text special
                                             # poses arrive via Story 8.4's pose_hint field
 
+# Story 8.8: closed micro-motion vocabulary the LLM selects per cast member,
+# rendered procedurally by video_node. No amplitude/frequency knobs — those
+# stay server-side constants (Interfaces rule: closed enums are the point).
+CharacterMotionStyle = Literal["hold", "breath", "sway", "tremble", "pulse", "glitch"]
+CharacterMotionEnergy = Literal["low", "medium", "high"]
+
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
 
 
@@ -28,6 +34,9 @@ class CastMember(TypedDict):
     position: CastPosition  # horizontal slot in frame
     depth: CastDepth        # distance plane: drives scale, parallax amplitude, and stacking
     pose: CastPose          # body stance: selects which pose entry of the card library
+    pose_hint: NotRequired[str]  # Story 8.4 on-demand key-art pose; advisory, falls back to `pose`
+    motion_style: NotRequired[CharacterMotionStyle]  # Story 8.8; absent == parser/resolver default "breath"
+    motion_energy: NotRequired[CharacterMotionEnergy]  # Story 8.8; absent == parser/resolver default "medium"
 
 
 class WordTiming(TypedDict):

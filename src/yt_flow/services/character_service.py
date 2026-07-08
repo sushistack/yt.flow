@@ -6,6 +6,7 @@ Characters live in SQLite, not PipelineState — long-lived configuration. [AD-2
 
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import json
 import logging
@@ -163,6 +164,11 @@ def _normalize_pose(pose: object) -> str:
     """Defensive pose mapping (Story 8.3 Interfaces): anything but "sitting" is
     "standing" — covers an old checkpoint carrying a pre-8.1 or malformed value."""
     return "sitting" if pose == "sitting" else "standing"
+
+
+def pose_hint_key(hint: str) -> str:
+    """Deterministic storage key for Story 8.4 on-demand special-pose cards."""
+    return "hint:" + hashlib.sha256(hint.strip().lower().encode()).hexdigest()[:10]
 
 
 def _first_available_angle(character: CharacterModel) -> str | None:
@@ -786,6 +792,62 @@ class CharacterService:
             self.update_character(character.id, **updates)
         return saved
 
+    async def generate_special_pose_card(self, card_key: str, pose_hint: str) -> str | None:
+        """Generate one front-angle special-pose card, or ``None`` on any recoverable miss.
+
+        Story 8.4 keeps special poses anchored to an existing standing front card:
+        no front identity anchor means no generation, so we never t2i a stranger.
+        """
+        hint_key = pose_hint_key(pose_hint)
+        character = self.check_existing_character(card_key)
+        front_path = character.angle_front_path if character is not None else None
+        if not front_path:
+            logger.warning("generate_special_pose_card: no standing front card for %s", card_key)
+            return None
+
+        provider = self._get_image_provider()
+        if not getattr(provider, "produces_alpha", True):
+            logger.warning(
+                "generate_special_pose_card: %s does not produce alpha sprites",
+                provider.__class__.__name__,
+            )
+            return None
+
+        visual_desc = character.visual_descriptor or self._get_visual_descriptor(card_key) or ""
+        prompt = self._compile_generation_prompt(
+            visual_descriptor=f"{visual_desc}\nSpecial pose: {pose_hint.strip()}",
+            angle="front",
+            angle_description=(
+                f"{_ANGLE_DESCRIPTIONS['front']}, {pose_hint.strip()}, "
+                "studio background, full body, single subject"
+            ),
+            scp_id=card_key,
+        )
+
+        chars_dir = Path(self._settings.workspace_path) / _sanitize_scp_id(card_key) / "characters"
+        chars_dir.mkdir(parents=True, exist_ok=True)
+        out_path = chars_dir / f"{hint_key.replace(':', '_')}_front.png"
+        try:
+            img_bytes = await provider.generate(
+                prompt=prompt,
+                ref_image_path=front_path,
+                width=self._settings.character_image_width,
+                height=self._settings.character_image_height,
+                ipadapter_weight=_ANGLE_IPADAPTER_WEIGHTS["front"],
+            )
+            if not has_alpha(img_bytes):
+                raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
+            out_path.write_bytes(img_bytes)
+            self.save_card(card_key, hint_key, "front", str(out_path))
+            logger.info("Generated special-pose card for %s pose=%s -> %s", card_key, hint_key, out_path)
+            return str(out_path)
+        except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:
+            logger.warning(
+                "generate_special_pose_card: failed for %s pose_hint=%r: %s",
+                card_key, pose_hint, exc,
+            )
+            return None
+
     def _ensure_character(self, scp_id: str) -> CharacterModel:
         character = self.check_existing_character(scp_id)
         if character is not None:
@@ -1044,15 +1106,25 @@ class CharacterService:
         Character row for scp_id", which no longer applies since stock cards
         exist independently of the entity). Each ``card`` dict carries
         ``card_key``, ``pose``, ``angle``, ``path``, ``fallback`` (Interfaces)
-        plus ``position``/``depth`` copied straight from the cast member —
-        video_node needs them for stacking/scale/anchor and re-deriving them
-        after members are filtered out would just duplicate this method's
+        plus ``position``/``depth``/``motion_style``/``motion_energy`` copied
+        straight from the cast member (Story 8.8 adds the latter two, same
+        default-on-missing convention as position/depth) —
+        video_node needs them for stacking/scale/anchor/motion and re-deriving
+        them after members are filtered out would just duplicate this method's
         skip logic.
         """
         entity_catalogue: list[dict] = []
         for scene in sorted(scenes, key=lambda s: s["scene_num"]):
             for shot in scene.get("shots", []):
-                if any(isinstance(m, dict) and m.get("card_key") == scp_id for m in (shot.get("cast") or [])):
+                if any(
+                    isinstance(m, dict)
+                    and m.get("card_key") == scp_id
+                    and not (
+                        isinstance(m.get("pose_hint"), str)
+                        and self.get_card(scp_id, pose_hint_key(m["pose_hint"]), "front") is not None
+                    )
+                    for m in (shot.get("cast") or [])
+                ):
                     entity_catalogue.append({
                         "scene_num": scene["scene_num"],
                         "shot_id": shot["shot_id"],
@@ -1066,6 +1138,7 @@ class CharacterService:
         )
 
         result: dict[str, list[dict]] = {}
+        missed_hints: set[tuple[str, str]] = set()
         for scene in scenes:
             for shot in scene.get("shots", []):
                 cast = shot.get("cast") or []
@@ -1081,6 +1154,33 @@ class CharacterService:
                         )
                         continue
                     card_key = member["card_key"]
+                    raw_hint = member.get("pose_hint")
+                    if isinstance(raw_hint, str) and raw_hint.strip():
+                        hint_pose = pose_hint_key(raw_hint)
+                        hint_card = self.get_card(card_key, hint_pose, "front")
+                        if hint_card is not None:
+                            cards.append({
+                                "card_key": card_key,
+                                "pose": hint_pose,
+                                "angle": "front",
+                                "path": hint_card.image_path,
+                                "fallback": False,
+                                "angle_fallback": False,
+                                "asset_fallback": False,
+                                "fallback_reason": None,
+                                "position": member.get("position", "center"),
+                                "depth": member.get("depth", "mid"),
+                                "motion_style": member.get("motion_style", "breath"),
+                                "motion_energy": member.get("motion_energy", "medium"),
+                            })
+                            continue
+                        miss = (card_key, hint_pose)
+                        if miss not in missed_hints:
+                            logger.warning(
+                                "resolve_cast_cards: no special-pose card for %s pose=%s; falling back to base pose",
+                                card_key, hint_pose,
+                            )
+                            missed_hints.add(miss)
                     character = self.check_existing_character(card_key)
                     if character is None:
                         logger.warning(
@@ -1121,6 +1221,8 @@ class CharacterService:
                         ),
                         "position": member.get("position", "center"),
                         "depth": member.get("depth", "mid"),
+                        "motion_style": member.get("motion_style", "breath"),
+                        "motion_energy": member.get("motion_energy", "medium"),
                     })
                 if cards:
                     result[shot_key] = cards
