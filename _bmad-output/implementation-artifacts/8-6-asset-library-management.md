@@ -17,7 +17,7 @@ related:
 
 # Story 8.6: Asset Library Management — Registry, Provenance, Versioning
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -166,38 +166,55 @@ style_epoch: int = 1
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Config + .gitignore + directory bootstrap (AC: 1)
-  - [ ] Add `assets_path: str = "./assets"` and `style_epoch: int = 1` to `Settings` (`config.py`, near `workspace_path`). Document in `.env.example`.
-  - [ ] Update `.gitignore`: add `assets/*` + `!assets/manifest.json` (the `!` negation un-ignores the manifest — standard git pattern).
-  - [ ] In `api/main.py` lifespan or a `AssetService` constructor, ensure `assets/characters/`, `assets/locations/`, `assets/anchors/` exist (`Path.mkdir(parents=True, exist_ok=True)`). The `manifest.json` is created lazily by `AssetService` on first save.
+- [x] Task 1 — Config + .gitignore + directory bootstrap (AC: 1)
+  - [x] Add `assets_path: str = "./assets"` and `style_epoch: int = 1` to `Settings` (`config.py`, near `workspace_path`). Document in `.env.example`.
+  - [x] Update `.gitignore`: add `assets/*` + `!assets/manifest.json` (the `!` negation un-ignores the manifest — standard git pattern).
+  - [x] In `api/main.py` lifespan or a `AssetService` constructor, ensure `assets/characters/`, `assets/locations/`, `assets/anchors/` exist (`Path.mkdir(parents=True, exist_ok=True)`). The `manifest.json` is created lazily by `AssetService` on first save.
 
-- [ ] Task 2 — `AssetService` core (AC: 2, 3, 4, 5)
-  - [ ] Create `src/yt_flow/services/asset_service.py`: `AssetService.__init__(assets_path, session)`, `load_manifest`, `save_manifest` (atomic: write `.tmp` + `os.replace`), `add_asset`, `get_asset`.
-  - [ ] `sha256` computation: `hashlib.sha256(path.read_bytes()).hexdigest()` — stdlib only.
-  - [ ] `verify_asset(key)` / `verify_all()` per AC3.
-  - [ ] Lifecycle: `approve_asset(key)` / `retire_asset(key)` per AC4. `get_asset` returns `None` for non-approved assets unless an `include_drafts=False` flag is set (pipeline consumers never pass `True`).
-  - [ ] `style_epoch` property + `bump_style_epoch()` per AC5.
-  - [ ] `add_location_plate(location_key, variant, image_path)` thin wrapper per AC6.
+- [x] Task 2 — `AssetService` core (AC: 2, 3, 4, 5)
+  - [x] Create `src/yt_flow/services/asset_service.py`: `AssetService.__init__(assets_path, session)`, `load_manifest`, `save_manifest` (atomic: write `.tmp` + `os.replace`), `add_asset`, `get_asset`.
+  - [x] `sha256` computation: `hashlib.sha256(path.read_bytes()).hexdigest()` — stdlib only.
+  - [x] `verify_asset(key)` / `verify_all()` per AC3.
+  - [x] Lifecycle: `approve_asset(key)` / `retire_asset(key)` per AC4. `get_asset` returns `None` for non-approved assets unless an `include_drafts=False` flag is set (pipeline consumers never pass `True`).
+  - [x] `style_epoch` property + `bump_style_epoch()` per AC5.
+  - [x] `add_location_plate(location_key, variant, image_path)` thin wrapper per AC6.
 
-- [ ] Task 3 — `LocationPlate` model (AC: 6)
-  - [ ] Add `LocationPlate` to `src/yt_flow/db/models.py` per Interfaces. This is additive — no migration, `create_all` bootstrap handles it.
+- [x] Task 3 — `LocationPlate` model (AC: 6)
+  - [x] Add `LocationPlate` to `src/yt_flow/db/models.py` per Interfaces. This is additive — no migration, `create_all` bootstrap handles it.
 
-- [ ] Task 4 — Wire card saves to `assets/` (AC: 8, 9, 10, 11)
-  - [ ] In `character_service.py`, change save paths in `generate_candidates_from_reference` and `generate_cards_from_descriptor` from `workspace/{card_key}/characters/` to `assets/characters/{card_key}/epoch_{style_epoch}/`. The `Character.angle_*_path` and `CharacterCard.image_path` now store `assets/`-relative paths.
-  - [ ] Call `AssetService.add_asset(...)` after each successful card save so the manifest stays in sync.
-  - [ ] In `character_service.get_card` (8.2), only return cards with `status == "approved"` (filter at the `AssetService` level — `get_asset` returns `None` for drafts by default).
-  - [ ] Verify that `_ensure_character_reference` (`run_service.py:367-443`) is path-format agnostic — it reads `angle_*_path` and checks file existence; confirm it works with the new `assets/`-relative paths (they are relative to `settings.assets_path`, not `settings.workspace_path`). If `_ensure_character_reference` currently uses `workspace_path` to resolve angle paths, it needs a one-line change to use `assets_path` for character card resolution. Track this down in the code.
+- [x] Task 4 — Wire card saves to `assets/` (AC: 8, 9, 10, 11)
+  - [x] In `character_service.py`, change save paths in `generate_candidates_from_reference` and `generate_cards_from_descriptor` from `workspace/{card_key}/characters/` to `assets/characters/{card_key}/epoch_{style_epoch}/`. The `Character.angle_*_path` and `CharacterCard.image_path` now store `assets/`-relative paths.
+  - [x] Call `AssetService.add_asset(...)` after each successful card save so the manifest stays in sync.
+  - [x] In `character_service.get_card` (8.2), only return cards with `status == "approved"` (filter at the `AssetService` level — `get_asset` returns `None` for drafts by default). Design decision (Jay, 2026-07-08): pipeline-auto-generated cards write `status="approved"` directly (not `"draft"`) — a manual curation gate would silently break 8.4's on-demand special-pose cards, which must render in the same run they're generated.
+  - [x] Verify that `_ensure_character_reference` (`run_service.py:367-443`) is path-format agnostic — confirmed: it never resolves `angle_*_path` itself, only calls `CharacterService` methods and stores their returned paths. All path resolution (including the new `assets_path` join) lives in `character_service.py`'s `_abs_asset_path` helper.
 
-- [ ] Task 5 — Migration script (AC: 7)
-  - [ ] Create `scripts/migrate_assets.py`: scan `workspace/*/characters/`, copy to `assets/characters/{card_key}/epoch_1/`, update DB paths, build initial manifest. Idempotent — check if destination already has the file (by sha256 or path existence) and skip.
-  - [ ] Use `AssetService.add_asset` for manifest entries so the format is consistent.
-  - [ ] Run once against the dev DB to migrate existing SCP-049 + any other cards; verify paths resolve in the character management UI (3.7).
+- [x] Task 5 — Migration script (AC: 7)
+  - [x] Create `scripts/migrate_assets.py`: scan `workspace/*/characters/`, copy to `assets/characters/{card_key}/epoch_1/`, update DB paths, build initial manifest. Idempotent — check if destination already has the file (by sha256 or path existence) and skip.
+  - [x] Use `AssetService.add_asset` for manifest entries so the format is consistent.
+  - [x] Run once against the dev DB to migrate existing SCP-049 + any other cards (Jay-approved 2026-07-08; DB backed up to `yt_flow.db.pre-8-6-migration.bak` first); verify paths resolve in the character management UI (3.7) — required extending scope to wire `/asset-files` serving (see Completion Notes).
 
-- [ ] Task 6 — Tests (AC: 12)
-  - [ ] `tests/services/test_asset_service.py`: all AC2-5 coverage.
-  - [ ] `tests/db/test_models.py` or extend existing: `LocationPlate` create + unique constraint enforcement.
-  - [ ] Update any test fixtures that hardcode `workspace/` paths for character cards — they now use `assets/` paths. Grep for `workspace.*characters` in `tests/`.
-  - [ ] Regression: `uv run pytest tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_run_service_character_provisioning.py -q` stays green.
+- [x] Task 6 — Tests (AC: 12)
+  - [x] `tests/services/test_asset_service.py`: all AC2-5 coverage.
+  - [x] `tests/services/test_asset_service.py` (LocationPlate create + unique constraint enforcement — no `tests/db/` directory exists in this repo, co-located with the service that owns `add_location_plate`).
+  - [x] Update any test fixtures that hardcode `workspace/` paths for character cards — they now use `assets/` paths. Grep for `workspace.*characters` in `tests/`.
+  - [x] Regression: `uv run pytest tests/services/test_character_service.py tests/services/test_character_service_generation.py tests/services/test_run_service_character_provisioning.py -q` stays green. Full suite: `uv run pytest -q` → 942 passed, 1 skipped, ruff clean.
+
+### Review Findings
+
+Reviewed 2026-07-08 via bmad-code-review (Blind Hunter + Edge Case Hunter + Acceptance Auditor, scoped to this story's diff). All patch findings applied in the same session; full suite re-verified green after fixes (947 passed, 1 skipped, ruff clean — the +5 over the prior 942 are the new regression tests below).
+
+- [x] [Review][Patch] `AssetService.approve_asset`/`retire_asset` raised a bare `KeyError` for an unknown asset key instead of a documented domain error [src/yt_flow/services/asset_service.py:93-114] — now raises `ValueError("unknown asset key: ...")`.
+- [x] [Review][Patch] `AssetService.add_location_plate` left the SQLAlchemy session in a failed-transaction state after a duplicate-plate `IntegrityError` (no rollback before re-raising) [src/yt_flow/services/asset_service.py:130-146] — now rolls back before re-raising.
+- [x] [Review][Patch] `generate_candidates_from_reference` and `generate_special_pose_card` committed the `CharacterCard` row as `status="approved"` *before* writing the manifest entry — a manifest write failure (e.g. `add_asset`'s file-read step) left an approved DB row with no provenance/sha256 record and no compensating rollback [src/yt_flow/services/character_service.py:745-757, 890-900] — reordered so the manifest write (`add_asset` + `approve_asset`) happens first; `save_card` only runs after the manifest confirms the asset exists.
+- [x] [Review][Patch] `CharacterService._asset_service` property re-imported `AssetService` locally even though the module already imports it at the top — dead duplicate import [src/yt_flow/services/character_service.py:201-203] — removed.
+- [x] [Review][Patch] `scripts/migrate_assets.py`'s pose regex reconstructed Story 8.4 special-pose card filenames (`hint_<hash>_front.png`) as pose `"hint_<hash>"`, but `CharacterCard.pose`/the manifest key use `pose_hint_key()`'s `"hint:<hash>"` (colon) — the DB row update silently no-opped (card stayed on its stale path) while a mismatched, never-looked-up manifest key got created — added a dedicated regex that reconstructs the colon before the generic pose pattern is tried; added `test_migrate_reconstructs_hint_pose_with_colon`.
+- [x] [Review][Patch] `character_cards.status`/`style_epoch` columns were only backfilled onto a pre-8.6 SQLite DB by the standalone `scripts/migrate_assets.py`, not by `db.init()` — any app boot against an un-migrated DB would crash on the first `save_card`/`get_card` with "no such column: status" [src/yt_flow/db/__init__.py] — moved the additive `ALTER TABLE` bootstrap into `db.init()` itself (runs on every boot, not just the migration script); `migrate_assets.py` now imports the shared function instead of duplicating it.
+- [x] [Review][Patch] `assetFileUrl` (frontend) stripped `../` in a single non-overlapping regex pass, so an input like `"....//etc/passwd"` could reform a traversal-looking prefix after the strip [frontend/src/lib/api.ts] — defense-in-depth only (Starlette's `StaticFiles` mount independently rejects real traversal — see `test_dotdot_traversal_outside_assets_is_404`) — rewritten as segment-filtering (drops `""`, `"."`, `".."` segments) so no sequence can reform; added an overlapping-dots regression test.
+- [x] [Review][Patch] `scripts/seed_stock_cast.py`'s `_all_standing_paths_ready` walked the 4 angle fields twice via two separate `all()` calls joined by `and` — simplified to one pass over a single `paths` list (no behavior change).
+- [x] [Review][Defer] `AssetService.add_asset` overwrites the manifest entry for an existing key in place, which is at odds with the manifest schema's Key rule 4 ("regenerated assets under a new epoch are new entries, not in-place replacements; old entries stay retired-not-deleted") — the superseded entry's `sha256`/provenance is lost on re-`add_asset`, even though the old PNG file itself survives on disk under its own `epoch_N/` folder [src/yt_flow/services/asset_service.py:46-65] — deferred, pre-existing design gap: `bump_style_epoch()` has zero callers in this diff (Dev Notes: "nothing calls it automatically — it's a manual curation step"), so no live code path exercises the overwrite today. Documented in place with a `# ponytail:` comment; needs a real design call from Jay (does the key become epoch-scoped, or do superseded entries get archived under a suffixed key?) once something actually calls `bump_style_epoch()`.
+- [x] [Review][Defer] `AssetService.save_manifest`'s read-modify-write has no cross-process file lock — two OS processes writing `manifest.json` concurrently could lose one writer's update — deferred: this app is a single FastAPI process plus serially-run one-shot scripts today, so the race is theoretical, not observed. Revisit if/when a second concurrent writer (e.g. a worker process) is introduced.
+
+Dismissed as noise or already correct (not written back as action items): `get_card`'s approved-only default is already applied consistently at every call site (verified by re-reading the full diff); `style_epoch` living in `Settings` + the manifest + the `epoch_N` directory name is already self-documented as intentional in `config.py`'s comment, not a gap; `LocationPlate` has no draft/approved read-filtering yet — out of scope for this story's AC6 (write-side only), owned by 8-5; `CharacterCard`/`LocationPlate` duplicating `status`/`style_epoch`/`created_at` with no shared mixin — an unrequested abstraction for two models.
 
 ## Dev Notes
 
@@ -267,15 +284,60 @@ One new service module, one new DB model (6 fields), two config keys, one migrat
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Full backend regression: `uv run pytest -q` → 942 passed, 1 skipped, ruff clean (repeated 4x during the session while chasing the test-isolation bug below).
+- Frontend regression: `npx vitest run` → 101 passed (17 files).
+- Real migration run: `uv run python scripts/migrate_assets.py` → 52 migrated, 0 skipped, 0 errors (after cleanup — see below).
 
 ### Completion Notes List
 
+- **AC1-12 implemented** per Interfaces: `AssetService` (manifest I/O, integrity, lifecycle, style_epoch, `add_location_plate`), `LocationPlate` model, `CharacterCard.status`/`style_epoch` columns, card-save path migration to `assets/characters/{card_key}/epoch_{n}/`, `scripts/migrate_assets.py`.
+- **Design decision confirmed with Jay (2026-07-08):** pipeline-auto-generated cards write `status="approved"` directly at save time (`character_service.save_card`), not `"draft"`. A manual curation gate on the literal AC4 text would have silently broken Story 8.4's on-demand special-pose cards, which must be renderable in the same run they're generated — there is no human approval step mid-run. `AssetService.add_asset`/`get_asset` still implement the general draft-by-default contract exactly as specified (AC2); `character_service.py`'s integration point explicitly calls `approve_asset()` right after `add_asset()` for pipeline writes.
+- **Deviation from Saved Question #3:** `AssetService.approve_asset()`/`retire_asset()` only write the manifest (matching AC4's literal text), not any DB row — `CharacterCard`/`LocationPlate` status is set directly by their respective service-layer callers (`save_card`, `add_location_plate`). The manifest and DB stay in sync because both call sites are updated together, not because `AssetService` reaches into unrelated tables.
+- **Scope extended beyond the 6 tasks (Jay-approved mid-session):** the story's Interfaces/Tasks never specified how card images reach the browser once paths become `assets/`-relative (they used to be `workspace/`-relative and the existing `/files` mount + frontend `fileUrl()` only understands that format). Added a new `/asset-files` static mount (`api/main.py: mount_asset_files`) + frontend `assetFileUrl()` (`lib/api.ts`), wired into `AngleGallery.tsx` and `CandidatePanel.tsx`. Without this, running the real migration would have immediately broken the 3.7 Character Management UI's card images.
+- **Critical test-isolation bug found and fixed:** while running the real migration against the dev DB, discovered that roughly half of the real character card library in `workspace/` had *already* been silently overwritten with tiny (70-71 byte) placeholder PNGs by pre-existing test fixtures that construct `Settings()`/set `YTFLOW_WORKSPACE_PATH` without ever scoping `assets_path` — before this story, the same gap only wrote fake bytes into `workspace/`; after this story wired `AssetService.add_asset` into the real generation path, it started doing the same to the real `./assets/manifest.json`. Fixed 6 test fixtures (`tests/conftest.py: stub_profile`, `tests/services/test_run_service_resume.py`, `tests/services/test_run_service_character_provisioning.py`, `tests/services/test_run_service_gate.py` ×2, `tests/api/test_e2e_stub_run.py`, `tests/pipeline/test_stub_profile_smoke.py`) to also scope `assets_path`/`YTFLOW_ASSETS_PATH` to `tmp_path`. Verified clean by wiping `./assets` and re-running the full suite twice.
+- **Pre-existing data loss found AND remediated (Jay-approved, 2026-07-08):** the corruption predated this session (evidence: `workspace/SCP-096/characters/*.png` already had a `Jul 3` mtime at 71 bytes each). Confirmed corrupted: `SCP-096`, `SCP-173`, and all 4 `SCP-3007-<timestamp>` variants. DB cross-check against `Run`/`CharacterCard` rows before acting:
+  - `SCP-096`: 165 runs (many `complete`, several in-flight) — real, actively-used character. Started local ComfyUI (`~/workspaces/ComfyUI/run.sh`), re-ran the real search→enrich→generate pipeline for all 4 angles via a one-off script (not committed — used `CharacterService` directly). All 4 angles regenerated successfully (~700-900KB real renders), `Character` row updated, manifest entries auto-approved.
+  - `SCP-173`: 3 runs, none completed, and the `Character` row didn't even exist anymore — orphaned placeholder files with nothing depending on them. Deleted the fake files from `workspace/` and `assets/` + their manifest entries; no regeneration needed.
+  - `SCP-3007-<timestamp>` ×4: 0 runs each, `Character` rows existed but were never used — leftover dev-testing artifacts (dynamic scp_id suffixes to dodge the DB unique constraint). Deleted the `Character` rows (`CharacterService.delete_character`, cascades cards/refs/candidates) + `workspace/`/`assets/` directories + manifest entries.
+  - Confirmed intact and untouched: `SCP-049`, `SCP-1471`, `SCP-682`, `STOCK-d-class`, `STOCK-researcher`, `STOCK-security`.
+  - Final state: `assets/manifest.json` holds 32 entries across 7 card_keys, all verified >100KB (no more placeholder-sized files). Full regression re-run after cleanup: 943 passed, 1 skipped.
+- **Ran the real migration** (`scripts/migrate_assets.py`) against the dev `yt_flow.db` and real `workspace/` after backing up the DB to `yt_flow.db.pre-8-6-migration.bak` (Jay-approved). Result: 52 assets migrated, `style_epoch=1`, all `status=approved`.
+
 ### File List
+
+**New:**
+- `src/yt_flow/services/asset_service.py`
+- `scripts/migrate_assets.py`
+- `tests/services/test_asset_service.py`
+- `tests/test_migrate_assets.py`
+- `tests/api/test_asset_files.py`
+
+**Modified:**
+- `src/yt_flow/config.py` — `assets_path`, `style_epoch` settings
+- `src/yt_flow/db/models.py` — `LocationPlate`; `CharacterCard.status`/`style_epoch` columns
+- `src/yt_flow/services/character_service.py` — card save paths moved to `assets/`, `AssetService` integration, `get_card`/`save_card` approval semantics, `_abs_asset_path` helper
+- `src/yt_flow/api/main.py` — `/asset-files` static mount, `app.state.assets_path`
+- `.gitignore`, `.env.example` — `assets/` entries
+- `scripts/seed_stock_cast.py` — resolve `image_path`/`angle_*_path` against `assets_path` for the completeness check
+- `frontend/src/lib/api.ts` — `assetFileUrl()`
+- `frontend/src/lib/api.test.ts` — `assetFileUrl` tests
+- `frontend/src/components/characters/AngleGallery.tsx`, `CandidatePanel.tsx` — use `assetFileUrl`
+- `tests/services/test_character_service_generation.py` — `assets_path` fixture scoping + updated path-format assertions
+- `tests/conftest.py`, `tests/services/test_run_service_resume.py`, `tests/services/test_run_service_character_provisioning.py`, `tests/services/test_run_service_gate.py`, `tests/api/test_e2e_stub_run.py`, `tests/pipeline/test_stub_profile_smoke.py` — test-isolation fix (scope `assets_path` to `tmp_path`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status → in-progress → review
+
+**Real state mutated outside the repo (not committed as diffs, noted for the record):**
+- `yt_flow.db` — migrated Character/CharacterCard rows to `assets/`-relative paths (backup: `yt_flow.db.pre-8-6-migration.bak`)
+- `assets/` — populated by the real migration run (gitignored except `manifest.json`)
 
 ## Change Log
 
 - 2026-07-07: Story created from Epic 8 architecture decision (Jay 지시). Owns the asset library infrastructure: `assets/` directory, `manifest.json`, `style_epoch`, lifecycle, `LocationPlate` model, migration.
+- 2026-07-08: Implemented all 6 tasks (review). Extended scope (Jay-approved) to wire `/asset-files` frontend serving and ran the real dev-DB migration. Found and fixed a pre-existing test-isolation bug that was silently corrupting real character card files; found (but did not fix — needs Jay) pre-existing data loss on 6 of 12 real character cards predating this story.
 
 ## Saved Questions / Clarifications
 
