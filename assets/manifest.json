@@ -1,0 +1,453 @@
+{
+  "assets": {
+    "SCP-049/hint:b36d4021a2_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T16:18:44.521393+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T16:18:44.515562+00:00",
+      "path": "characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+      "pose": "hint:b36d4021a2",
+      "sha256": "9dd470fe8cb2fd8ebff4a982030021ef44a41be9fc8340d57289963866a3f382",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/sitting_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.442724+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.442458+00:00",
+      "path": "characters/SCP-049/epoch_1/sitting_back.png",
+      "pose": "sitting",
+      "sha256": "5212028c08921b0c513afa993b04e41035acbcc7a7b1dceaf5841b6b6d202adf",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/sitting_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.446390+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.446141+00:00",
+      "path": "characters/SCP-049/epoch_1/sitting_front.png",
+      "pose": "sitting",
+      "sha256": "71c57de1037b3ab16a1ad1baad00099a18e542101c37fa8c47a1dfb449e65d0e",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/sitting_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.449764+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.449513+00:00",
+      "path": "characters/SCP-049/epoch_1/sitting_side.png",
+      "pose": "sitting",
+      "sha256": "5807f819f62f8b1120d0e0637d813f83247b9d1b31d7ec9a47260c540fb808f4",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/sitting_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.453127+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.452832+00:00",
+      "path": "characters/SCP-049/epoch_1/sitting_three_quarter.png",
+      "pose": "sitting",
+      "sha256": "55532a3601c292334598731dbef9133eae5e71258d9686c826d17b5833c8dc9c",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.426109+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.425886+00:00",
+      "path": "characters/SCP-049/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "c37d9b153caf08286ffda33f48eb9af5eed528259a058ead5def7453bd449a12",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.436395+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.436138+00:00",
+      "path": "characters/SCP-049/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "74b572edfb2eb32557f76023cf000408bcc985f240bf370c5aaa69ae2f35557a",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.439186+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.438964+00:00",
+      "path": "characters/SCP-049/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "d0dbabc031134832a766c694f7c0a89bba4975f77b318c9a58a4d1b47d5008ee",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.456473+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-08T14:04:04.456214+00:00",
+      "path": "characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "e2b87439fa657543202a60095f03910ed50d43a278fc6646ae27cd26331aacfb",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-096/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:15:48.572965+00:00",
+      "card_key": "SCP-096",
+      "created_at": "2026-07-08T14:15:48.572105+00:00",
+      "path": "characters/SCP-096/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "74782df43fcaebc653f64bf35a02c77b61d0d38c4b1f93b1b93bce20cb99047a",
+      "source": {
+        "ipadapter_weight": 0.35,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-096/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:15:22.686164+00:00",
+      "card_key": "SCP-096",
+      "created_at": "2026-07-08T14:15:22.685078+00:00",
+      "path": "characters/SCP-096/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "7bbe4ea91d11742cdace2f866e1835ff4a587a088e791d358e459311039e5343",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-096/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:16:15.297276+00:00",
+      "card_key": "SCP-096",
+      "created_at": "2026-07-08T14:16:15.296511+00:00",
+      "path": "characters/SCP-096/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "5ede918a06638d3aae66a0c3414dbe62f96546e9d97cc7889177cfd462a765ef",
+      "source": {
+        "ipadapter_weight": 0.45,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-096/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:16:42.003704+00:00",
+      "card_key": "SCP-096",
+      "created_at": "2026-07-08T14:16:42.002937+00:00",
+      "path": "characters/SCP-096/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "df6c4efa75bbf6fa06c5b1b78d2d565574aa8bc97003c98824119848b8307161",
+      "source": {
+        "ipadapter_weight": 0.5,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-1471/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.479380+00:00",
+      "card_key": "SCP-1471",
+      "created_at": "2026-07-08T14:04:04.478989+00:00",
+      "path": "characters/SCP-1471/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "006ec3d3a4d586d8ef9170c84b1acc9a7c1b2bd8f612d2fe4d9ef5d21cdff088",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-1471/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.484045+00:00",
+      "card_key": "SCP-1471",
+      "created_at": "2026-07-08T14:04:04.483708+00:00",
+      "path": "characters/SCP-1471/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "16f7d1695e0d55296e2a3d987c5217d76fcc85398b86b0322f90e6a2d39e750f",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-1471/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.488655+00:00",
+      "card_key": "SCP-1471",
+      "created_at": "2026-07-08T14:04:04.488285+00:00",
+      "path": "characters/SCP-1471/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "16f7d1695e0d55296e2a3d987c5217d76fcc85398b86b0322f90e6a2d39e750f",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-1471/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.493921+00:00",
+      "card_key": "SCP-1471",
+      "created_at": "2026-07-08T14:04:04.493517+00:00",
+      "path": "characters/SCP-1471/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "006ec3d3a4d586d8ef9170c84b1acc9a7c1b2bd8f612d2fe4d9ef5d21cdff088",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-682/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.531558+00:00",
+      "card_key": "SCP-682",
+      "created_at": "2026-07-08T14:04:04.530959+00:00",
+      "path": "characters/SCP-682/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "dd4c87541f03eb35ea6498b6ca1df1fcd1e2b50ff959e76442a3321c5acfdb62",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-682/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.537074+00:00",
+      "card_key": "SCP-682",
+      "created_at": "2026-07-08T14:04:04.536442+00:00",
+      "path": "characters/SCP-682/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "3b0bbc81258caa6735b357780b734aaffc0302fba7f8013608bdb0a03f89c8f4",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-682/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.542713+00:00",
+      "card_key": "SCP-682",
+      "created_at": "2026-07-08T14:04:04.542070+00:00",
+      "path": "characters/SCP-682/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "423842d9388a186156527677e1236693e6e539a8346ad0b17c1ab11e273d0ccc",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-682/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.548030+00:00",
+      "card_key": "SCP-682",
+      "created_at": "2026-07-08T14:04:04.547390+00:00",
+      "path": "characters/SCP-682/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "d7631ea184d0f7ef658ab0ec4cf16220f70976149f84cd0e9a548b59e357055c",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/hint:6525d3c087_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T16:18:19.796823+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-08T16:18:19.796178+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/hint_6525d3c087_front.png",
+      "pose": "hint:6525d3c087",
+      "sha256": "c14d69283a7c85043f94e003515eeaa50a4d7aad3ff95870b18c213a93869046",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.551895+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-08T14:04:04.551264+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "bc67ec19613375cfe1f620b268efe7189a02292f455d153989fcbda87e9b38a8",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.555845+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-08T14:04:04.555259+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "b53402c1c945064488dcc4054e55e90fb8891429ddbff1a42ad6ac10910fa0ac",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.559836+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-08T14:04:04.559214+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "caabb52a30d5f068a3c415704c9c52f5497e9bdd53d567320f5b922a35825422",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.564032+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-08T14:04:04.563101+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "e8beb5191505ec45428e44042f6da31a90a925f494ed407c3d3a949d3d1e66ef",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-researcher/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.567569+00:00",
+      "card_key": "STOCK-researcher",
+      "created_at": "2026-07-08T14:04:04.566970+00:00",
+      "path": "characters/STOCK-researcher/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "0a7362c348672fec8769b2b38de58c8b77a97a990d3c07bd2b993e21d0dbef2e",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-researcher/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.571204+00:00",
+      "card_key": "STOCK-researcher",
+      "created_at": "2026-07-08T14:04:04.570560+00:00",
+      "path": "characters/STOCK-researcher/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "344bf6f801ba2519c96441a9be3d1cd233f05578448bc267fbd7e4aa191b7556",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-researcher/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.574893+00:00",
+      "card_key": "STOCK-researcher",
+      "created_at": "2026-07-08T14:04:04.574024+00:00",
+      "path": "characters/STOCK-researcher/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "dd53b2e38b851d65cadc9f310a3785034086044e3afc97925a840167a723af6e",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-researcher/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.578555+00:00",
+      "card_key": "STOCK-researcher",
+      "created_at": "2026-07-08T14:04:04.577921+00:00",
+      "path": "characters/STOCK-researcher/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "8814d2b6d27768fec7d68b86ba234ac7cd6c043acdea3efac2ea18b4750a7bf8",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-security/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-08T14:04:04.582537+00:00",
+      "card_key": "STOCK-security",
+      "created_at": "2026-07-08T14:04:04.581880+00:00",
+      "path": "characters/STOCK-security/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "6aa53e5c69ae35c7bcc48095897ca487dfa1a47d315c23331710f5cd7545ea42",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-security/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-08T14:04:04.586149+00:00",
+      "card_key": "STOCK-security",
+      "created_at": "2026-07-08T14:04:04.585296+00:00",
+      "path": "characters/STOCK-security/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "971ea3142926df3cc0130a7f9e47967434e36ef4c04b3a6a3dceb3d58b773ce3",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-security/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-08T14:04:04.589742+00:00",
+      "card_key": "STOCK-security",
+      "created_at": "2026-07-08T14:04:04.589081+00:00",
+      "path": "characters/STOCK-security/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "7268d7d11e6174cba0ed09a2a04d0a4c2c518937aa0a24186bfe84c838c9c593",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-security/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-08T14:04:04.593546+00:00",
+      "card_key": "STOCK-security",
+      "created_at": "2026-07-08T14:04:04.592858+00:00",
+      "path": "characters/STOCK-security/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "70f32e19f3890e604a8d95d45e5f4b1ca4c616f858d1d9fadbe48caa28b39953",
+      "source": {
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    }
+  },
+  "style_epoch": 1
+}
