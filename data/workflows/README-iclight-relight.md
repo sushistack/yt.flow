@@ -16,10 +16,12 @@ This is by design, not an oversight: Story 8.7's Tier 3 is the last rung of a
 cost-ordered ladder (Tier 1 ffmpeg tint+shadow → Tier 2 ffmpeg light wrap →
 Tier 3 IC-Light), gated on Tiers 1/2 proving insufficient in A/B review.
 `composite_harmonization.relight_sprite()` treats every failure mode —
-missing custom nodes included — as non-fatal (AC:11): a submission against
-this workflow will fail ComfyUI's prompt validation, `relight_sprite` catches
-it, logs a warning, and the pipeline proceeds with the un-relit sprite. No run
-ever fails because of this file.
+missing custom nodes included — as non-fatal (AC:11). Code review added a
+second guard: a workflow must be explicitly marked with
+`"ytflow_verified_iclight": true` before the runtime will submit it. This
+placeholder intentionally lacks that marker, so Tier 3 degrades to cache miss
+without ever caching a bogus text-to-image output. No run ever fails because of
+this file.
 
 ## What's real vs placeholder
 
@@ -46,6 +48,8 @@ ever fails because of this file.
    instance with a real card+plate pair and confirm a plausible relit PNG
    comes back — this is the "live validation" step the story's own Tasks
    list defers pending Tiers 1/2's A/B outcome.
-4. Update this README once verified, mirroring
+4. Add `"ytflow_verified_iclight": true` to the workflow JSON only after that
+   live validation passes.
+5. Update this README once verified, mirroring
    [`README-character-multi-angle.md`](README-character-multi-angle.md)'s
    documented/live-checked node list.

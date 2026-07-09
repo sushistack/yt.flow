@@ -17,7 +17,7 @@ baseline_commit: edad3f7ba0ac8e40ffaed29c3994d198f20817a7
 
 # Story 8.7: Composite Harmonization — Collage Look Resolution Ladder
 
-Status: review
+Status: in-progress
 
 ## Story
 
@@ -59,7 +59,7 @@ so that each tier incrementally resolves the visual disconnect between character
 # config.py — Tiered harmonization flags. Each tier gates the one below:
 # tier_1 alone, tier_1+tier_2, or all three. Default: tier_1 only (lowest cost,
 # largest impact-to-cost ratio). tier_2 / tier_3 default OFF until A/B justifies.
-composite_harmonization_tier: int = 1   # 1 | 2 | 3 — upper bound; 0 = off
+composite_harmonization_tier: int = 0   # 0 | 1 | 2 | 3 — default off until tier-1 A/B approval
 iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
 ```
 
@@ -235,7 +235,7 @@ Add after `parallax_enabled`:
 ```python
 # ── Composite harmonization (Story 8.7) ────────────────────────────────────
 # Tiered ladder: 0=off, 1=tint+shadow+composite-grade, 2=+light-wrap, 3=+IC-Light
-composite_harmonization_tier: int = 1
+composite_harmonization_tier: int = 0
 iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
 ```
 
@@ -260,8 +260,8 @@ iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api
   - [x] When `tier >= 2`: insert `build_light_wrap()` filter chain between the tinted card and the overlay, per-card.
   - [x] Stream labels don't collide across cards (`sh{k}*`, `wbg{k}a/b`, `cw{k}*`, indexed by card `k`) — live-verified with a real 2-card ffmpeg render (AC:14).
 
-- [x] Task 4 — IC-Light ComfyUI workflow (AC: 7)
-  - [x] Created `data/workflows/comfyui_iclight_relight_api.json` — **structural placeholder, not a verified graph** (this environment's local ComfyUI has no IC-Light custom nodes installed; see `README-iclight-relight.md` for what's real vs. placeholder and what to do before enabling tier 3 for real). The two `LoadImage` interchange nodes (`"1"`/`"2"`) that `composite_harmonization.py` actually reads/writes are real and validated.
+- [ ] Task 4 — IC-Light ComfyUI workflow (AC: 7)
+  - [ ] `data/workflows/comfyui_iclight_relight_api.json` remains a **structural placeholder, not a verified graph** (this environment's local ComfyUI has no IC-Light custom nodes installed; see `README-iclight-relight.md` for what's real vs. placeholder and what to do before enabling tier 3 for real). Code review patched the runtime so unverified placeholder workflows are rejected as non-fatal cache misses unless the workflow is explicitly marked `ytflow_verified_iclight: true`.
   - [x] Added `iclight_comfyui_workflow_path` to `Settings` (`config.py`) + `composite_harmonization_tier`.
 
 - [x] Task 5 — RelightCache + pre-computation (AC: 8, 9)
@@ -275,13 +275,25 @@ iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api
   - [x] Langfuse span enrichment: added `composite_harmonization_tier`, `relit_pairs_computed`, `relit_pairs_failed` to `_record_trace` (renamed from the draft's `relit_pairs_total`/`hit`/`miss` — `computed`/`failed` is what `precompute_relights` actually tracks, and `computed` already covers both cache hits and fresh generations).
 
 - [x] Task 7 — Regression safety + toggles (AC: 12, 13)
-  - [x] **Deviation from the draft's "default 0"**: this session's own gate-check (see Change Log) confirmed the collage look via real 8-3 render evidence before implementation began, so `composite_harmonization_tier: int = 1` matches the Interfaces/Config section's already-documented default, not Task 7's pre-confirmation placeholder text. All existing tests pass unmodified at this default because the test-fixture `_settings_ns` helpers default the tier to `0` (ponytail: same pattern already used for `post_fx_enabled`/`parallax_enabled`/etc., so pre-8.7 tests don't need touching).
+  - [x] Code review restored the safe default: `composite_harmonization_tier: int = 0` with `Field(0, ge=0, le=3)`. The collage-look entry gate justifies implementing the ladder, but Tier 1 still needs a real tier-0 vs tier-1 A/B before becoming default-on.
   - [x] Unit tests with `tier=1`: `test_tier1_adds_tint_and_shadow` verifies `colorbalance`/`geq` in the filter_complex.
   - [x] Unit tests with `tier=0`: `test_tier0_no_harmonization_filters_present` verifies their absence.
   - [x] `tests/pipeline/nodes/test_video_harmonization.py` (actual convention, not `tests/pipeline/`): 15 tests covering tiers 0-3, non-fatal Tier 3 failure, chapter-card non-interference, plus 3 **real-ffmpeg** integration tests (tier=1, tier=2, tier=2 two-card) that caught 2 additional real bugs no monkeypatched test could (see Completion Notes).
   - [x] Regression: full `uv run pytest -q` green (1057 passed, 1 skipped) — adapted from the draft's narrower `test_video.py`/`test_color_grade.py` invocation to the actual full suite, since this story touches `api/main.py` and `services/` too.
   - [x] `ruff check .` clean.
   - [x] Frontend unaffected — confirmed via `git status`, no `frontend/` files touched.
+
+### Review Findings
+
+- [x] [Review][Patch] Prevent placeholder IC-Light workflow from caching bogus generated sprites [data/workflows/comfyui_iclight_relight_api.json; src/yt_flow/pipeline/nodes/composite_harmonization.py] — patched by requiring `ytflow_verified_iclight: true`; unverified workflow now becomes a non-fatal miss.
+- [x] [Review][Patch] Sanitize relight cache key/path components [src/yt_flow/pipeline/nodes/composite_harmonization.py] — patched with strict cache-key validation and unsafe-pair skip.
+- [x] [Review][Patch] Validate relit output remains a valid alpha PNG before cache/substitution [src/yt_flow/pipeline/nodes/composite_harmonization.py; src/yt_flow/pipeline/nodes/video.py] — patched with `has_alpha` checks before storing and regression coverage.
+- [x] [Review][Patch] Malformed resolver cards without `card_key` can crash Tier 3 substitution [src/yt_flow/pipeline/nodes/video.py] — patched to use `card.get("card_key")` and fall back to the original sprite.
+- [x] [Review][Patch] Bound `composite_harmonization_tier` to 0..3 and keep default off pending A/B [src/yt_flow/config.py] — patched with `Field(0, ge=0, le=3)` and config tests.
+- [x] [Review][Patch] Mood tint omitted saturation/contrast changes required by AC1 [src/yt_flow/pipeline/nodes/composite_harmonization.py] — patched by adding `eq=saturation=...:contrast=...` after `colorbalance`.
+- [x] [Review][Patch] Contact shadow used out-of-range far scale and hard edge [src/yt_flow/pipeline/nodes/composite_harmonization.py] — patched to keep depth scales in 0.6..1.0 and add depth-scaled blur.
+- [x] [Review][Patch] `run_service` imported composite harmonization at module import time [src/yt_flow/services/run_service.py] — patched by moving `precompute_relights` import into the Tier 3 glue function.
+- [x] [Review][Defer] Real IC-Light workflow graph is still missing [data/workflows/comfyui_iclight_relight_api.json] — deferred, external ComfyUI IC-Light custom nodes are not installed locally; Tier 3 remains disabled/non-fatal until a real graph is installed and live-verified.
 
 ## Dev Notes
 
@@ -388,10 +400,12 @@ Claude Sonnet 5 (claude-sonnet-5)
   4. Reusing a filter-graph label as input to two different filters without an explicit `split` fails with "Invalid file index 0" / "matches no streams" — hit this twice: once for `build_light_wrap`'s own `char_label`, and again at the `_compose_scene` integration level where `base_label` (bg+shadow) feeds both the light-wrap's edge-detection input and the final overlay. Both fixed with explicit `split=2`.
   5. `alphamerge` requires matching frame dimensions — the edge-detected background (full `COMP_W x COMP_H`) is essentially never the same size as a card scaled to its depth-scaled motion-safe box. Fixed with `scale2ref` to resize the edge stream to the character's own dimensions before merging.
   All five were found by writing real (non-monkeypatched) `ffmpeg` invocations against `color=`/lavfi sources in the test suite (`tests/pipeline/nodes/test_composite_harmonization.py`'s live dry-run checks, plus 3 real-ffmpeg integration tests in `test_video_harmonization.py` for tier=1/tier=2/two-card-tier=2) — the regex-only validation the story's test plan called for as a *minimum* would not have caught any of them.
-- **IC-Light (Tier 3) is unverified against a real ComfyUI install** — this environment's local ComfyUI (`$HOME/workspaces/ComfyUI/custom_nodes/`) has IPAdapter/ControlNet-aux/Impact-Pack/InSPyReNet installed but no IC-Light nodes. `data/workflows/comfyui_iclight_relight_api.json` is a structural placeholder (real `LoadImage` interchange nodes, placeholder conditioning graph) — documented in `data/workflows/README-iclight-relight.md` with what's real, what's placeholder, and what to do before flipping `composite_harmonization_tier` to 3 for real. This is safe by construction: `relight_sprite`/`precompute_relights` treat every ComfyUI failure (including "missing custom nodes") as non-fatal (AC:11) — a run at tier=3 today would simply get 0 relit pairs and fall back to un-relit sprites everywhere, never fail.
+- **IC-Light (Tier 3) is unverified against a real ComfyUI install** — this environment's local ComfyUI (`$HOME/workspaces/ComfyUI/custom_nodes/`) has IPAdapter/ControlNet-aux/Impact-Pack/InSPyReNet installed but no IC-Light nodes. `data/workflows/comfyui_iclight_relight_api.json` is a structural placeholder (real `LoadImage` interchange nodes, placeholder conditioning graph) — documented in `data/workflows/README-iclight-relight.md` with what's real, what's placeholder, and what to do before enabling tier 3 for real. Code review patched the runtime so this placeholder is rejected unless explicitly marked `ytflow_verified_iclight: true`; a tier=3 run today gets 0 relit pairs and falls back to un-relit sprites everywhere, never fails.
 - Fixed a latent cache-staleness bug found while implementing `RelightCache`: `get_or_compute` originally didn't check the cached entry's `style_epoch`, so a style_epoch bump would silently keep serving relights computed against the old epoch's assets. Now checks `entry["style_epoch"] == style_epoch` and treats a mismatch as a cache miss.
-- **Config default set to `composite_harmonization_tier=1`, not the Task 7 draft's `0`** — the story's own entry_gate fired earlier in this same session (see above), so the "gate hasn't fired yet" rationale behind Task 7's draft default no longer applies; `1` matches what the Interfaces/Config Technical Requirements sections already specified. Existing tests are unaffected because `_settings_ns()` test fixtures default the tier to `0` (ponytail: same convention already used for `post_fx_enabled`/`parallax_enabled`/`chapter_cards`/`cc_attribution`).
-- **Full regression**: `uv run pytest -q` — 1057 passed, 1 skipped, no failures. `ruff check .` — clean. Frontend untouched (confirmed via `git status`).
+- **Config default restored to `composite_harmonization_tier=0` during code review** — the entry gate justifies implementing the ladder, but AC4/AC12 still require real tier-0 vs tier-1 A/B before making Tier 1 production-default. The field is now bounded to `0..3`.
+- **Initial full regression**: `uv run pytest -q` — 1057 passed, 1 skipped, no failures. `ruff check .` — clean. Frontend untouched (confirmed via `git status`).
+- **Code review patch regression**: targeted Story 8.7/config/architecture tests passed (62 passed, 1 warning).
+- **Post-review full regression**: `uv run pytest -q` — 1066 passed, 1 skipped, 1 warning. `uv run ruff check .` — clean.
 - **Not live-validated**: an actual end-to-end SCP run with `composite_harmonization_tier=1` (or higher) through the real pipeline (ComfyUI + real cast/location assets) — the story's own "Manual validation" section calls for Jay to do this side-by-side against the tier=0 baseline and judge whether Tier 1 alone resolves the collage look. Recommend running that next, on a real SCP (SCP-049 per the story's reference), before deciding whether Tier 2/3 are worth pursuing further (per AC:12's YAGNI stopping rule).
 
 ### File List
@@ -417,9 +431,10 @@ Claude Sonnet 5 (claude-sonnet-5)
 - 2026-07-07: Story created from Epic 8 architecture decision (Jay 지시), status `ready-for-dev`, entry_gate pending iteration 1 confirmation.
 - 2026-07-09: dev-story invoked; entry_gate checked and found unsatisfied (8-3's DoD A/B was substituted for an unrelated bug and never produced a real collage-look verdict). Jay confirmed unmet, reverted status to `backlog`. No implementation performed.
 - 2026-07-09 (same session): Located pre-existing 8-3 live-verification render evidence on disk, reviewed with Jay, confirmed collage look is real and visible. Status reverted `backlog` → `ready-for-dev`; implementation begins.
-- 2026-07-09 (same session): Implemented all 7 tasks/14 ACs. `composite_harmonization.py` (Tiers 1/2 pure ffmpeg filter builders + Tier 3 RelightCache/precompute_relights/relight_sprite), wired into `video.py`'s per-card overlay loop and `video_node`, `inject_relight_resolver` seam + `run_service.precompute_relights_for_run` + `api/main.py` wiring, `config.py` fields, IC-Light workflow placeholder + README. Live ffmpeg validation (not just regex) caught and fixed 5 real filter-graph bugs; two AD-1 architecture tests each caught a wrong first attempt at the services/pipeline injection boundary. Full regression green (1057 passed, 1 skipped), ruff clean. IC-Light itself unverified (no local custom-node install) but non-fatal by construction. Status → review.
+- 2026-07-09 (same session): Implemented Tiers 1/2 and Tier 3 scaffolding. `composite_harmonization.py` (Tiers 1/2 pure ffmpeg filter builders + Tier 3 RelightCache/precompute_relights/relight_sprite), wired into `video.py`'s per-card overlay loop and `video_node`, `inject_relight_resolver` seam + `run_service.precompute_relights_for_run` + `api/main.py` wiring, `config.py` fields, IC-Light workflow placeholder + README. Live ffmpeg validation (not just regex) caught and fixed 5 real filter-graph bugs; two AD-1 architecture tests each caught a wrong first attempt at the services/pipeline injection boundary. Full regression green (1057 passed, 1 skipped), ruff clean. IC-Light itself unverified (no local custom-node install) and left as deferred external-work. Status → review.
+- 2026-07-09 (code review): Applied review patches: safe default restored to tier 0 with range validation, mood tint now includes saturation/contrast, contact shadow scale/blur corrected, relight cache path components sanitized, relit outputs validated as alpha PNG before cache/substitution, malformed cards fall back safely, unverified placeholder workflow cannot cache outputs, and run_service Tier 3 import made lazy. Targeted regression green (62 passed, 1 warning). Status → in-progress pending real IC-Light workflow or explicit scope decision.
 
 ---
 
-**Story Status:** review
-**Story Completion:** Entry gate confirmed 2026-07-09 via real 8-3 render evidence; all 7 tasks/14 ACs implemented same session. Full regression green (1057 passed, 1 skipped), ruff clean. Not yet live-validated against a real ComfyUI/SCP run — see Completion Notes for the recommended next step.
+**Story Status:** in-progress
+**Story Completion:** Entry gate confirmed 2026-07-09 via real 8-3 render evidence; Tiers 1/2 implemented and review-patched. Tier 3 remains deferred because no real IC-Light workflow/custom-node install exists locally; placeholder workflow is now safely non-operational until verified.
