@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-09  # Story 8.7 code review patches applied → in-progress (Tier 3 deferred)
+last_updated: 2026-07-09  # iteration-1 시청 피드백發 신규 스토리 등록: 8-11(최우선)/8-12/5-22 ready-for-dev
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -118,6 +118,7 @@ development_status:
   5-18-subtitle-display-text-dual-track: done  # Jay 시청 피드백 #3 — 자막은 원문(SCP-049), TTS는 정규화문(5-4 결정 번복); 가라오케(7-5) 은퇴 + Pretendard 타이포 업그레이드; 구현 완료(6개 태스크), 실사 오디오+실제 ffmpeg 번인 검증. 병렬 5.17 세션 커밋에 Task 1/3/4 일부 편입됨(데이터 손실 없음, story doc 참고). 코드리뷰(3-레이어) 완료: patch 3건 적용(AC7 위반 — word_timings 개수 불일치 시 display 트랙이 계속 렌더되던 버그를 spoken 폴백으로 수정, fontsdir 디렉토리 부재 시 fail-fast 가드 추가, sound-design filter_complex 분기 fontsdir 테스트 추가), 3건 보류, 10건 기각. 회귀 스위트 731 passed/1 skip, ruff clean
   5-19-ddg-image-search-fallback-repair: done  # 2026-07-07 라이브 실측 — 403 원인은 구식 vqd 획득(홈페이지→쿼리 페이지로 변경)+Referer 누락; 소형 수정, 위키 우선 폴백 지위 불변. 구현+라이브 재검증 완료(SCP-173 폴백 성공, SCP-049 위키 우선 hit 확인). 코드리뷰(3-레이어) 완료: patch 4건 적용(vqd GET params= 통일, i.js 헤더 중복 병합 제거, 재시도소진 테스트 상수화, 지수백오프 시퀀스 검증 추가), 6건 보류, 6건 기각. 회귀 스위트 726 passed/1 skip, ruff clean
   5-20-cc-attribution-credits: done  # CC BY-SA 준수 자동화 — 엔딩 크레딧 카드(5-17 렌더러 재사용) + description.txt 아티팩트(문서·라이선스·이미지 출처), 비치명적. 구현 완료(2026-07-07): video.py에 인라인(services/video_credits.py 신설 안 함, AD-1), ending_credit는 시도가 아닌 성공 여부로 정의(카드 실패 시 false), 위키 저자 추출은 스코프 아웃(가드레일). 회귀 780 passed/1 skip, ruff clean, 실제 ffmpeg 라이브 검증(SCP-999). 코드리뷰 완료(2026-07-07): critical 버그 수정(_initial_state가 ending_credit_error를 무조건 시드해 AC6 게이트 계약 위반 — cc_attribution=False 런도 ending_credit:true로 보임) 포함 5건 패치, 2건 defer, 7건 dismiss. 회귀 그린, ruff clean.
+  5-22-narration-style-designation-rules: ready-for-dev  # iteration-1 시청 피드백 #1/#7: 종결어미 리듬 규칙 + 주연 외 역할명 지칭; writing 프롬프트 repo 파일 확립 포함
   5-21-tts-voice-clone-wiring: done  # 클론 배선(1회성 voice id 등록, clone_enabled 기본 OFF, 무음 폴백 금지) + 배속 YTFLOW_QWEN_TTS_SPEED 기본 1.2(atempo, duration 측정 전 적용); DoD=스톡vs클론 A/B 청취; ⚠️ sutak.mp3 7.68s 스테레오 — 재녹음 필요 가능
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────
@@ -146,6 +147,8 @@ development_status:
   8-8-character-micro-motion-techniques: done  # cast motion_style/motion_energy enum + procedural FFmpeg micro-motion, no new workflow stage; motion_style/motion_energy taught in cast_decision.md (8.10 split) not visual_breakdown.md; golden-set eval FAILed (SCP-096 article_fidelity -1.00), candidate not promoted; found+fixed missing production label for cast_decision (Jay-approved). 코드리뷰 패치 4건 적용(motion_style_counts 렌더된 카드만 집계, axis_terms KeyError→degrade, off-frame pan 회귀 테스트 보강, hold+parallax 테스트 추가), deferred 7건(8.4/8.10 소유 파일); 914 passed/1 skipped, ruff clean
   8-9-character-locomotion-blocking: ready-for-dev  # cast movement_mode/direction/pace enum + screen-space blocking/locomotion curves; no new workflow stage
   8-10-cast-decision-split-call: done  # 8.1 cast 0/125 미채움 버그 근본원인 규명(deepseek-v4-flash가 복잡한 visual_breakdown 호출에서 entity_visible 구 스키마로 회귀) + 수정: cast 결정을 별도 소형 LLM 호출로 분리(cast_decision_step 신설, visual_breakdown은 이미 결정된 cast만 소비). 실 DeepSeek 재검증 완료(전 샷 cast 채워짐 + 배경전용 확인). 834 passed, ruff clean
+  8-11-per-shot-cut-assembly: ready-for-dev  # iteration-1 피드백 #5/#6: video_node 씬당 1배경(video.py:745) → 샷 단위 서브클립, sentence_indices+word_timings 타이밍; 87장 생성 8장 사용 문제 해소; 최우선
+  8-12-cast-placement-scale-calibration: ready-for-dev  # iteration-1 피드백 #2/#3: cast_decision 프롬프트 전용 — rule-of-thirds 배분(실측 center 65/right 10/left 8), camera_angle↔depth 정합(near 37/mid 44/far 2); 8-11 이후 체감
 
   # ── Epic 9: Localization Config — 콘텐츠 언어 스위치 ────────────────────────
   epic-9: in-progress

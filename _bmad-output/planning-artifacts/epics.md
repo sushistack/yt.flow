@@ -1013,6 +1013,10 @@ SCP 콘텐츠 상업화(수익화)의 라이선스 준수 자동화(Jay, 2026-07
 
 Jay 지시(2026-07-07). `.env`의 클론 변수(`CLONE_MODEL`/`CLONE_VOICE_PATH`)가 Settings에 선언조차 없는 죽은 설정임을 베이스라인 후속 확인에서 발견 — 나레이션은 스톡 보이스(Cherry)로 나가고 있었음. ① 클론 배선: DashScope 보이스 등록(1회성·영구 voice id, `scripts/seed_voice_clone.py` idempotent)+ `qwen3-tts-vc` 합성, 명시적 `clone_enabled` 스위치(기본 OFF — 켰는데 voice id 없으면 시끄럽게 실패, 무음 폴백 금지). ② **배속**: API에 숫자 배속 파라미터 부재 확인 → ffmpeg `atempo` 후처리, `YTFLOW_QWEN_TTS_SPEED` 기본 **1.2**(범위 검증 0.5~2.0), duration 측정 전 적용이라 자막·전환·씬 길이 자동 적응. DoD: 동일 나레이션 스톡 vs 클론 A/B 청취를 Jay가 판정(클론 우위를 전제하지 않음 — 운율 저하 리스크 명시). ⚠️ 현재 레퍼런스 `sutak.mp3`가 7.68초/스테레오(권장 10~20초/모노 미달) — 재녹음 필요 가능성. (2026-07-07 create-story 완료 — 상세는 스토리 파일)
 
+### Story 5.22: 나레이션 문체·지칭 규칙 — writing 프롬프트
+
+Jay 시청 피드백(2026-07-09, iteration 1 #1/#7). ① **종결어미 리듬**: "~했습니다/~입니다" 연속 반복이 단조로움 — 동일 종결 연속 금지, 의문·도치·명사 종결 혼용, 클라이맥스 단문 등 리듬 규칙을 writing 프롬프트에 추가. 단 다큐 톤 기조("-습니다" 존댓말)는 유지 — 리듬만 다양화, 반말·구어체 금지(채널 정체성). ② **지칭 규칙**: 주연이 아닌 인물은 고유 번호 대신 역할명("D계급 인원", "연구원", "경비원") — D-9341 같은 번호는 TTS도 "디 구삼사일"로 어색하게 읽음. 전제 작업: `scenario/writing` 프롬프트의 repo 파일이 부재(레거시 yt.pipe `templates/scenario/03_writing.md`가 최초 시딩 소스) — PROMPT_POLICY 규칙 1에 맞게 `prompts/scenario/writing.md`를 현행 production 버전으로 먼저 확립 후 수정. candidate 시딩→golden-set 게이트→승격. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
@@ -1102,7 +1106,16 @@ Jay 지시(2026-07-08): 캐릭터의 역동성을 위한 떨림 등 다양한 �
 
 ### Story 8.9: 캐릭터 이동·블로킹 — screen-space locomotion enum
 
-Jay 지시(2026-07-08): 캐릭터 이동에 대한 업계 표준 기법 추가. 8.8과 분리해 이동/블로킹 전용 안전 문제(클리핑, 자막 침범, depth 변화, z-order 안정성)를 다룬다. cast 멤버에 닫힌 `movement_mode`/`movement_direction`/`movement_pace` enum을 추가한다. 후보 모드: `anchored`, `drift`, `enter`, `exit`, `cross`, `approach`, `retreat`; 방향: `none|left|right|in|out`; 속도: `slow|medium|fast`. 구현은 새 workflow stage가 아니라 기존 `visual_breakdown` cast schema 확장 + `video_node` screen-space transform curve 소비. `position`/`depth`는 안정된 composition contract로 유지하고, movement enum은 카드가 그 위치에 도착/이탈/접근/후퇴하는 방식을 기술한다. 진짜 walk-cycle/rigging/generated video는 명시적 non-goal — 필요 시 별도 아키텍처 결정.
+Jay 지시(2026-07-08): 캐릭터 이동에 대한 업계 표준 기법 추가. 8.8과 분리해 이동/블로킹 전용 안전 문제(클리핑, 자막 침범, depth 변화, z-order 안정성)를 다룬다. cast 멤버에 닫힌 `movement_mode`/`movement_direction`/`movement_pace` enum을 추가한다. 후보 모드: `anchored`, `drift`, `enter`, `exit`, `cross`, `approach`, `retreat`; 방향: `none|left|right|in|out`; 속도: `slow|medium|fast`. 구현은 새 workflow stage가 아니라 기존 `visual_breakdown` cast schema 확장 + `video_node` screen-space transform curve 소비. `position`/`depth`는 안정된 composition contract로 유지하고, movement enum은 카드가 그 위치에 도착/이탈/접근/후퇴하는 방식을 기술한다. 진짜 walk-cycle/rigging/generated video는 명시적 non-goal — 필요 시 별도 아키텍처 결정. **(2026-07-09 iteration 1 시청 피드백 #4로 우선순위 상향 — 8.11 이후 착수, 8.11 없이는 씬당 1컷이라 이동이 체감되지 않음.)**
+
+### Story 8.11: per-shot 컷 어셈블리 — video_node 샷 단위 서브클립
+
+Jay 시청 피드백(2026-07-09, iteration 1 run `d55a265b` #5/#6). 근본 원인 코드로 확정: `video.py _compose_scene`이 씬당 "image_path 있는 첫 샷" 1장만 배경으로 사용(`video.py:745`) — visual_breakdown이 샷별 정합 이미지 87장을 만들어도 8장(씬당 1장)만 화면에 나가고, 씬의 모든 나레이션 문장이 첫 문장용 그림 위에 흐름 → "나레이션과 뜬금없는 영상" 체감. 해소: 씬 세그먼트를 **샷 단위 서브클립**으로 분해. 타이밍 재료는 전부 기존 state에 있음 — `ShotData.sentence_indices` + `SceneState.word_timings`(whisperx) + `subtitle.py sentence_cues`의 문장 윈도우 로직 재사용. 샷 경계 = 해당 샷 문장들의 첫 시작~마지막 끝. 구조 권장: ① 샷별 무음 비주얼 클립(zoompan+카드 합성+하모나이즈, `select_effect(shot, …)`는 이미 per-shot 시그니처) → ② concat → ③ 씬 레벨에서 나레이션 오디오+자막 burn+사운드 디자인+그레이드(오디오·자막은 씬 단위 유지, 컷만 증가). 지나치게 짧은 샷(예: "겨우 0.1초." 1.2s)은 최소 컷 길이 미달 시 이전 샷에 병합(config 노브). 8.9(이동)·8.12(배치 캘리브레이션)의 체감 전제 조건 — 이 스토리가 최우선. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.12: cast_decision 배치·스케일 캘리브레이션 — 프롬프트 전용
+
+Jay 시청 피드백(2026-07-09 #2/#3). iteration 1 실측: position 분포 center 65/right 10/left 8 — 코드는 3분할 배치를 지원하는데 LLM이 center로 도피; depth 분포 near 37/mid 44/far 2 — 사실상 전부 크게 뽑혀 "크기가 우연히 맞은 느낌". 코드 변경 없음, `prompts/scenario/cast_decision.md` 규칙 추가: ① rule-of-thirds 배분 원칙 + 연속 샷 center 반복 금지(관찰/대화/이동 구도는 좌우 슬롯), ② camera_angle↔depth 정합 규칙(wide↔far/mid, close-up↔near 등 표), ③ few-shot 예시를 분포 교정용으로 교체. 파생 개체(`<scp_id>-<n>`) 어휘는 이 스토리에서 건드리지 않음(049-2 카드 갭은 별도 결정 대기). 배경 구도 다양화(오프센터 앵글)는 visual_breakdown 프롬프트에 1줄 — center 편향의 절반은 중앙 소실점 배경이 원인. PROMPT_POLICY 준수: candidate 시딩→golden-set 게이트→승격. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 9: Localization Config — 콘텐츠 언어 스위치
 
 Jay 결정(2026-07-07): SCP 채널은 한국어로 확정 진행하되, 향후 언어 피벗 가능성에 대비해 "한국어 하드코딩"을 명시적 config 스위치 뒤로 옮긴다. Scope는 스위치 자체뿐 — 실제 다국어 생성(프롬프트 번역, TTS 자연화 규칙, 자막 타이포그래피 재조정)은 이 Epic의 범위가 아니다(YAGNI). 지금 하드코딩된 지점(scenario LLM 프롬프트 5개, TTS 자연화 단계, subtitle.py 타이포 상수)을 건드리지 않고, 새 config 값이 "ko" 외의 값으로 바뀌면 파이프라인이 조용히 깨진 결과물을 만들지 않고 즉시 명확하게 실패하도록 만든다.
