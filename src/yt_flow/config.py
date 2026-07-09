@@ -135,3 +135,10 @@ class Settings(BaseSettings):
     location_ipadapter_weight: float = Field(0.4, ge=0.0, le=1.0)
     location_plate_workflow_path: str = "data/workflows/comfyui_location_plate_api.json"
     location_anchor_dir: str = "data/anchors/locations"
+
+    # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
+    # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow (default,
+    # lowest cost/highest impact-to-cost ratio), 2=+light wrap, 3=+IC-Light
+    # re-lighting. tier_2/tier_3 stay off until their own A/B justifies the cost.
+    composite_harmonization_tier: int = 1
+    iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"

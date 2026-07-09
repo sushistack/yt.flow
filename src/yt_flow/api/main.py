@@ -13,7 +13,7 @@ from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.image import inject_location_service
-from yt_flow.pipeline.nodes.video import inject_cast_resolver
+from yt_flow.pipeline.nodes.video import inject_cast_resolver, inject_relight_resolver
 from yt_flow.services import run_service
 from yt_flow.services.character_service import CharacterService
 from yt_flow.services.location_service import LocationService
@@ -45,6 +45,13 @@ async def lifespan(app: FastAPI):
             return svc.resolve_stock_plates(location_key)
 
     inject_location_service(_resolve_location)
+
+    # Story 8.7 Tier 3: inject IC-Light relight precomputation into video_node
+    async def _precompute_relights(scenes: list, cast_cards: dict) -> tuple[dict, dict]:
+        with Session(db._engine) as session:
+            return await run_service.precompute_relights_for_run(scenes, cast_cards, session, settings)
+
+    inject_relight_resolver(_precompute_relights)
 
     scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]

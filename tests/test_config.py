@@ -81,6 +81,16 @@ def test_location_plate_defaults(monkeypatch):
     assert s.location_anchor_dir == "data/anchors/locations"
 
 
+def test_composite_harmonization_defaults(monkeypatch):
+    _base_env(monkeypatch)
+    for key in ("YTFLOW_COMPOSITE_HARMONIZATION_TIER", "YTFLOW_ICLIGHT_COMFYUI_WORKFLOW_PATH"):
+        monkeypatch.delenv(key, raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.composite_harmonization_tier == 1
+    assert s.iclight_comfyui_workflow_path == "data/workflows/comfyui_iclight_relight_api.json"
+
+
 def test_content_language_defaults_ko(monkeypatch):
     _base_env(monkeypatch)
     monkeypatch.delenv("YTFLOW_CONTENT_LANGUAGE", raising=False)

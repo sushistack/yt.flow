@@ -28,7 +28,9 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
-from yt_flow.services import eval_service
+from yt_flow.pipeline.nodes.composite_harmonization import precompute_relights
+from yt_flow.services import comfyui_client, eval_service
+from yt_flow.services.asset_service import AssetService
 from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
 
 if TYPE_CHECKING:
@@ -727,3 +729,21 @@ async def edit_artifact(run_id: str, stage: str, body: str, scene_num: int = 1) 
         "run_id": run_id, "stage": stage, "updated": True,
         "message": "Artifact updated in checkpoint and on disk",
     }
+
+
+async def precompute_relights_for_run(
+    scenes: list, cast_cards: dict, session: Session, settings: Settings,
+) -> tuple[dict, dict]:
+    """Story 8.7 Tier 3: glue AssetService/comfyui_client to
+    composite_harmonization.precompute_relights for video_node's injection seam.
+
+    Lives here (not a dedicated services/ module) because run_service.py is the
+    one services file allowed to import pipeline/ (AD-1/AD-3/AD-4 — see
+    tests/services/test_character_service.py::test_services_does_not_import_api_or_pipeline).
+    """
+    asset_service = AssetService(settings.assets_path, session)
+    return await precompute_relights(
+        scenes, cast_cards, asset_service, comfyui_client,
+        settings.iclight_comfyui_workflow_path,
+        Path(settings.assets_path), settings.comfyui_url,
+    )

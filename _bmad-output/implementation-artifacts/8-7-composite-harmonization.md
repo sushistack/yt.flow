@@ -12,11 +12,12 @@ related:
   - 7-2-post-fx-color-grade        # Tier 1 reorders: grade must run AFTER composite, not before — current code already does this for character shots, verify + enforce
   - 5-6-character-cutout-quality   # InSPyReNet cutouts are the RGBA input; edge quality determines how much harmonization is needed
 entry_gate: "iteration 1 (8-3 DoD A/B) 실측에서 콜라주 룩 확인 시 착수 — 확인 전에는 backlog 상태 유지"
+baseline_commit: edad3f7ba0ac8e40ffaed29c3994d198f20817a7
 ---
 
 # Story 8.7: Composite Harmonization — Collage Look Resolution Ladder
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -240,47 +241,47 @@ iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `composite_harmonization.py` pure functions (AC: 1, 2, 5)
-  - [ ] Create `src/yt_flow/pipeline/nodes/composite_harmonization.py`: `build_sprite_tint`, `build_contact_shadow`, `build_light_wrap` as pure filter-string builders. No imports beyond `domain.state` and `sound_design.MOOD_VALUES`.
-  - [ ] `build_sprite_tint(mood)` returns valid ffmpeg `colorbalance=` filter string per AC1.
-  - [ ] `build_contact_shadow(cast_member)` returns valid ffmpeg geq filter string per AC2.
-  - [ ] `build_light_wrap(blur_radius=8, intensity=0.15)` returns filter chain per AC5.
-  - [ ] Unit tests in `tests/pipeline/test_composite_harmonization.py`: syntax validation (all returned strings are accepted by a dry-run ffmpeg filter parse or at minimum regex-validated), mood-to-tint mapping covers all four moods, depth→shadow-scale monotonic (near > mid > far).
+- [x] Task 1 — `composite_harmonization.py` pure functions (AC: 1, 2, 5)
+  - [x] Create `src/yt_flow/pipeline/nodes/composite_harmonization.py`: `build_sprite_tint`, `build_contact_shadow`, `build_light_wrap` as pure filter-string builders. No imports beyond `domain.state` and `sound_design.MOOD_VALUES`.
+  - [x] `build_sprite_tint(mood)` returns valid ffmpeg `colorbalance=` filter string per AC1.
+  - [x] `build_contact_shadow(cast_member)` returns valid ffmpeg geq filter string per AC2.
+  - [x] `build_light_wrap(bg_label, char_label, out_label, blur_radius=8, intensity=0.15)` returns filter chain per AC5. Deviation: signature takes explicit stream labels instead of `mood`/hardcoded `[0:v]`/`[1:v]` — required for the real N-card filter graph (see Task 3 note).
+  - [x] Unit tests in `tests/pipeline/nodes/test_composite_harmonization.py` (actual repo convention is `tests/pipeline/nodes/`, not `tests/pipeline/` as drafted): regex-validated syntax + **live ffmpeg dry-run validation** for every mood/depth/position combination (caught 3 real ffmpeg syntax bugs the string-level tests alone would have missed — see Completion Notes), mood-to-tint mapping covers all four moods, depth→shadow-scale monotonic (near > mid > far).
 
-- [ ] Task 2 — Wire Tier 1 into `_compose_scene` (AC: 1, 2, 3, 4)
-  - [ ] Add `composite_harmonization_tier: int = 0` parameter to `_compose_scene`.
-  - [ ] When `tier >= 1`: apply `build_sprite_tint(mood)` to the character chain before overlay.
-  - [ ] When `tier >= 1`: render contact shadow layer between bg and char. Restructure the character overlay section to: bg → shadow layer (geq over bg) → char (overlay on shadow+bg) → post_fx.
-  - [ ] Validate composite-then-grade ordering: add an assertion or regression test that `post_frag` appears after the `overlay` label in the filter_complex string when character_path is set.
-  - [ ] When `tier == 0`: no import of `composite_harmonization`, no filter injection, byte-for-byte identical to today.
-  - [ ] Update `video_node` to pass `s.composite_harmonization_tier` to `_compose_scene`.
+- [x] Task 2 — Wire Tier 1 into `_compose_scene` (AC: 1, 2, 3, 4)
+  - [x] Add `composite_harmonization_tier: int = 0` parameter to `_compose_scene`.
+  - [x] When `tier >= 1`: apply `build_sprite_tint(mood)` to the character chain before overlay.
+  - [x] When `tier >= 1`: render contact shadow layer between bg and char, per-card in the real N-card overlay loop (bg/prior-card output → shadow overlay → card overlay → next card...).
+  - [x] Validate composite-then-grade ordering: `test_tier1_composite_before_grade` asserts `overlay=` precedes `eq=saturation=` (post_fx) in the filter_complex string.
+  - [x] When `tier == 0`: no import of `composite_harmonization` (verified via `sys.modules` check), no filter injection, byte-for-byte identical to today (full regression suite green at tier=0 default fixture).
+  - [x] Update `video_node` to pass `s.composite_harmonization_tier` to `_compose_scene`.
 
-- [ ] Task 3 — Wire Tier 2 light wrap (AC: 5, 6)
-  - [ ] When `tier >= 2`: insert `build_light_wrap()` filter chain between tinted character and overlay. The chain operates on `[bg]` (input 0, already zoompanned) and `[tinted_char]` (after tint) → outputs `[char]` with edge blending.
-  - [ ] Ensure the filter chain's stream labels don't collide with existing labels (`[bg]`, `[char]`, `[ov]`). Use intermediate labels: `[tinted]`, `[wrapped]`.
+- [x] Task 3 — Wire Tier 2 light wrap (AC: 5, 6)
+  - [x] When `tier >= 2`: insert `build_light_wrap()` filter chain between the tinted card and the overlay, per-card.
+  - [x] Stream labels don't collide across cards (`sh{k}*`, `wbg{k}a/b`, `cw{k}*`, indexed by card `k`) — live-verified with a real 2-card ffmpeg render (AC:14).
 
-- [ ] Task 4 — IC-Light ComfyUI workflow (AC: 7)
-  - [ ] Create `data/workflows/comfyui_iclight_relight_api.json`: ComfyUI workflow JSON with IC-Light node(s). Two image inputs: `card_image` (character sprite) + `background_image` (plate/reference). Output: single re-lit sprite PNG. The workflow uses the IC-Light conditioning pipeline — prompt is minimal (lighting direction hint only).
-  - [ ] Add `iclight_comfyui_workflow_path` to `Settings` (`config.py`).
+- [x] Task 4 — IC-Light ComfyUI workflow (AC: 7)
+  - [x] Created `data/workflows/comfyui_iclight_relight_api.json` — **structural placeholder, not a verified graph** (this environment's local ComfyUI has no IC-Light custom nodes installed; see `README-iclight-relight.md` for what's real vs. placeholder and what to do before enabling tier 3 for real). The two `LoadImage` interchange nodes (`"1"`/`"2"`) that `composite_harmonization.py` actually reads/writes are real and validated.
+  - [x] Added `iclight_comfyui_workflow_path` to `Settings` (`config.py`) + `composite_harmonization_tier`.
 
-- [ ] Task 5 — RelightCache + pre-computation (AC: 8, 9)
-  - [ ] In `composite_harmonization.py`, add `RelightCache` class: `get_or_compute(card_key, location_key, style_epoch) -> Path | None`, `store(card_key, location_key, image_bytes)`. Uses `AssetService` for `assets/relit/` path management + manifest entries.
-  - [ ] `precompute_relights(scenes, asset_service, comfyui_client, workflow_path)` identifies all `(card_key, location_key)` pairs where both are STOCK assets in `AssetService`, checks cache, submits cold misses to ComfyUI in parallel (asyncio.gather, capped at 3 concurrent), returns `dict[(card_key, location_key), Path]`. Non-fatal on ComfyUI failure — logs warning + skips the pair.
-  - [ ] Wire `precompute_relights` into `video_node` before the scene composition loop, pass result as `relit_map` to `_compose_scene`.
+- [x] Task 5 — RelightCache + pre-computation (AC: 8, 9)
+  - [x] `RelightCache`: `get_or_compute(card_key, location_key, style_epoch) -> Path | None`, `store(...)`. `asset_service` is accepted as a duck-typed `Any` param (not imported) to keep `composite_harmonization.py` AD-1-compliant (domain/config only). Fixed a latent bug during implementation: `get_or_compute` now checks the cached entry's own `style_epoch` metadata, not just key presence — otherwise a style_epoch bump would silently keep serving a stale relight.
+  - [x] `precompute_relights(scenes, cast_cards, asset_service, comfyui_client, workflow_path, assets_path, comfyui_url)` — **deviation**: takes `cast_cards` (video_node's already-resolved card paths) instead of re-deriving sprite paths from `AssetService` from scratch, avoiding duplicate pose/angle resolution logic. STOCK detection is a pure domain check (`card_key in STOCK_CAST_KEYS`, `shot.location_key is not None`), not an AssetService query. Concurrency capped at 3 via `asyncio.Semaphore`. Returns `(relit_map, stats)` instead of just the map, so Task 6's Langfuse counts don't need a second pass.
+  - [x] Wired into `video_node` before the composition loop via a new `inject_relight_resolver` seam (mirrors Story 8.3/8.5's `inject_cast_resolver`/`inject_location_service`), injected in `api/main.py`. The AssetService/comfyui_client glue (`precompute_relights_for_run`) lives in `services/run_service.py`, not a new services module — two independent architecture tests each caught a wrong first attempt: `tests/domain/test_state_imports.py::test_api_imports_no_pipeline` rejected `api/main.py` importing `composite_harmonization` directly (only the two allow-listed `inject_*` seams from `pipeline.nodes.video`/`.image` may cross that boundary), and `tests/services/test_character_service.py::test_services_does_not_import_api_or_pipeline` rejected a standalone `services/relight_service.py` (only `run_service.py` — the sole `graph.astream()` caller per AD-3/AD-4 — is exempted from services' no-pipeline-imports rule).
 
-- [ ] Task 6 — Tier 3 runtime path in `_compose_scene` (AC: 10, 11)
-  - [ ] When `tier >= 3` and `relit_map` is provided: for each `CastMember` in the shot, if `(card_key, location_key)` is in the map, substitute `relit_map[(card_key, location_key)]` as the character input instead of the original `character_path`.
-  - [ ] When a pair is missing from the map (cold miss or non-STOCK), use the original character_path — no runtime ComfyUI call inside the composition loop.
-  - [ ] Langfuse span enrichment: add `relit_pairs_total`, `relit_pairs_hit`, `relit_pairs_miss` to `_record_trace`.
+- [x] Task 6 — Tier 3 runtime path in `_compose_scene` (AC: 10, 11)
+  - [x] **Deviation**: substitution happens in `video_node`'s per-scene loop (mutating `scene_cards`' `path` before calling `_compose_scene`), not inside `_compose_scene` via a `relit_map` parameter — simpler, and keeps `_compose_scene` itself free of any Tier-3/ComfyUI awareness. `_compose_scene`'s signature was not extended with `relit_map`.
+  - [x] Missing pair (cold miss or non-STOCK) falls back to the original card path — no runtime ComfyUI call in the composition loop.
+  - [x] Langfuse span enrichment: added `composite_harmonization_tier`, `relit_pairs_computed`, `relit_pairs_failed` to `_record_trace` (renamed from the draft's `relit_pairs_total`/`hit`/`miss` — `computed`/`failed` is what `precompute_relights` actually tracks, and `computed` already covers both cache hits and fresh generations).
 
-- [ ] Task 7 — Regression safety + toggles (AC: 12, 13)
-  - [ ] Default `composite_harmonization_tier = 0` in config — the iteration 1 gate has not yet fired. All existing tests MUST pass with tier=0.
-  - [ ] Unit tests with `tier=1`: verify filter chain contains `colorbalance` + `geq` shadow when character_path is set.
-  - [ ] Unit tests with `tier=0`: verify filter chain is identical to pre-8.7 baseline (no `colorbalance`, no `geq`).
-  - [ ] `tests/pipeline/test_video_harmonization.py`: dedicated test file covering all three tiers with mock ffmpeg (no real ffmpeg calls — use `_run_ffmpeg` monkeypatch).
-  - [ ] Regression: `uv run pytest tests/pipeline/test_video.py tests/pipeline/test_color_grade.py -q` stays green.
-  - [ ] `ruff check` clean on all new + modified files.
-  - [ ] Frontend unaffected — no UI changes in this story.
+- [x] Task 7 — Regression safety + toggles (AC: 12, 13)
+  - [x] **Deviation from the draft's "default 0"**: this session's own gate-check (see Change Log) confirmed the collage look via real 8-3 render evidence before implementation began, so `composite_harmonization_tier: int = 1` matches the Interfaces/Config section's already-documented default, not Task 7's pre-confirmation placeholder text. All existing tests pass unmodified at this default because the test-fixture `_settings_ns` helpers default the tier to `0` (ponytail: same pattern already used for `post_fx_enabled`/`parallax_enabled`/etc., so pre-8.7 tests don't need touching).
+  - [x] Unit tests with `tier=1`: `test_tier1_adds_tint_and_shadow` verifies `colorbalance`/`geq` in the filter_complex.
+  - [x] Unit tests with `tier=0`: `test_tier0_no_harmonization_filters_present` verifies their absence.
+  - [x] `tests/pipeline/nodes/test_video_harmonization.py` (actual convention, not `tests/pipeline/`): 15 tests covering tiers 0-3, non-fatal Tier 3 failure, chapter-card non-interference, plus 3 **real-ffmpeg** integration tests (tier=1, tier=2, tier=2 two-card) that caught 2 additional real bugs no monkeypatched test could (see Completion Notes).
+  - [x] Regression: full `uv run pytest -q` green (1057 passed, 1 skipped) — adapted from the draft's narrower `test_video.py`/`test_color_grade.py` invocation to the actual full suite, since this story touches `api/main.py` and `services/` too.
+  - [x] `ruff check .` clean.
+  - [x] Frontend unaffected — confirmed via `git status`, no `frontend/` files touched.
 
 ## Dev Notes
 
@@ -364,7 +365,61 @@ The `asset_key` in `manifest.json` follows the 8-6 convention: `"relit/{card_key
 
 After implementation, run with `composite_harmonization_tier=1` on a real SCP run (SCP-049 is the reference). Compare side-by-side screenshots of character scenes vs tier=0 baseline. Jay reviews the A/B difference. If Tier 1 is visibly better, keep it on by default. If no perceptible difference, keep tier=0 default and document.
 
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Sonnet 5 (claude-sonnet-5)
+
+### Completion Notes List
+
+- **dev-story halted before any implementation — entry gate not satisfied.** This story's own `entry_gate` requires iteration 1's 8-3 DoD A/B to *empirically confirm* the collage-look defect before work starts; unconfirmed, the story stays in `backlog`. Checked for that confirmation and found none:
+  - 8-3's Dev Agent Record never mentions collage look in either direction. Its DoD A/B was explicitly *substituted* — an unrelated Story 8.1 cast-prompt bug forced hand-crafted cast metadata in place of the real candidate-prompt A/B, and the Dev Agent Record itself flags the result as "code-author self-assessment... not an independent judge run; Jay should treat these scores as directional pending his own look."
+  - `deferred-work.md`'s collage-look entry (written 2026-07-07, before 8-3 shipped) is framed as a prediction with its own recheck condition ("8-3 DoD 결과에서 실제 결함으로 확인되면 그때 스토리화") — still unconfirmed.
+  - 8-5's context (written 2026-07-09, after 8-3 closed) still frames Jay's confirmation as pending/future tense, not done.
+  - `sprint-status.yaml` and this story's frontmatter had both drifted to `ready-for-dev` despite the gate — a bookkeeping error, not a signal the gate fired. Corrected back to `backlog` here and in sprint-status.yaml.
+- Confirmed with Jay directly (2026-07-09 session) that the gate is unmet; he chose to revert to `backlog` rather than override YAGNI. No code, tests, or config were touched.
+- **Gate re-confirmed and satisfied (2026-07-09, same session).** Found the 8-3 live-verification artifacts already on disk (`workspace/story-8-3-live-ab/seg_002.mp4`, 2026-07-08) — a real two-card composite (SCP-049 + STOCK-d-class) rendered through actual ComfyUI, not a mockup. Extracted frames and reviewed with Jay: Scene 2 shows a clear collage look — the character renders in a dark, desaturated illustration/comic style while the background+other card render in a more photoreal style, lighting direction/color temperature mismatched (cool/dark left vs bright/warm right), and the background itself splices two visually disjoint environments (dark interior vs bright canyon) in one frame. Caveat noted: this render predates Story 8.5's STOCK location-plate library (merged one day later, 2026-07-09) — backgrounds today come from a curated plate set rather than free generation — but the underlying architecture (character card and background plate generated independently, composited via ffmpeg overlay with no shared lighting pass) is unchanged by 8.5, so the defect mechanism is not expected to have gone away. Jay confirmed the gate is satisfied and directed implementation to proceed. Status reverted `backlog` → `ready-for-dev`.
+- **Implemented Tiers 1-3 per spec, with three documented deviations** (Tasks 3/5/6 above have the details): `build_light_wrap` takes explicit stream labels instead of a `mood` param; `precompute_relights` takes `cast_cards` instead of re-resolving sprite paths from `AssetService`; Tier 3 substitution happens in `video_node` (mutating `scene_cards` before `_compose_scene`) instead of threading a `relit_map` parameter through `_compose_scene` itself. All three simplify the real integration without changing any AC's observable behavior.
+- **Live ffmpeg validation caught 5 real bugs the string-level unit tests alone would have missed** — worth recording since the story's own `build_contact_shadow`/`build_light_wrap` sketch code (Technical Requirements section) contained several of them verbatim:
+  1. `geq=...:eval=frame` — `geq` has no `eval` option (that's for time-varying filters like `overlay`/`scale`); a static per-pixel ellipse never needed it. Removed.
+  2. The shadow's horizontal offset produced a bare double-minus (`X/W-0.5--0.1667`) for a negative position offset — ffmpeg's expression parser rejects it. Fixed by parenthesizing the offset term.
+  3. Infix `<` inside `if(...)` is rejected by this ffmpeg build's eval parser ("Missing ')' or too many args") — needed the `lt(a,b)` function form instead.
+  4. Reusing a filter-graph label as input to two different filters without an explicit `split` fails with "Invalid file index 0" / "matches no streams" — hit this twice: once for `build_light_wrap`'s own `char_label`, and again at the `_compose_scene` integration level where `base_label` (bg+shadow) feeds both the light-wrap's edge-detection input and the final overlay. Both fixed with explicit `split=2`.
+  5. `alphamerge` requires matching frame dimensions — the edge-detected background (full `COMP_W x COMP_H`) is essentially never the same size as a card scaled to its depth-scaled motion-safe box. Fixed with `scale2ref` to resize the edge stream to the character's own dimensions before merging.
+  All five were found by writing real (non-monkeypatched) `ffmpeg` invocations against `color=`/lavfi sources in the test suite (`tests/pipeline/nodes/test_composite_harmonization.py`'s live dry-run checks, plus 3 real-ffmpeg integration tests in `test_video_harmonization.py` for tier=1/tier=2/two-card-tier=2) — the regex-only validation the story's test plan called for as a *minimum* would not have caught any of them.
+- **IC-Light (Tier 3) is unverified against a real ComfyUI install** — this environment's local ComfyUI (`$HOME/workspaces/ComfyUI/custom_nodes/`) has IPAdapter/ControlNet-aux/Impact-Pack/InSPyReNet installed but no IC-Light nodes. `data/workflows/comfyui_iclight_relight_api.json` is a structural placeholder (real `LoadImage` interchange nodes, placeholder conditioning graph) — documented in `data/workflows/README-iclight-relight.md` with what's real, what's placeholder, and what to do before flipping `composite_harmonization_tier` to 3 for real. This is safe by construction: `relight_sprite`/`precompute_relights` treat every ComfyUI failure (including "missing custom nodes") as non-fatal (AC:11) — a run at tier=3 today would simply get 0 relit pairs and fall back to un-relit sprites everywhere, never fail.
+- Fixed a latent cache-staleness bug found while implementing `RelightCache`: `get_or_compute` originally didn't check the cached entry's `style_epoch`, so a style_epoch bump would silently keep serving relights computed against the old epoch's assets. Now checks `entry["style_epoch"] == style_epoch` and treats a mismatch as a cache miss.
+- **Config default set to `composite_harmonization_tier=1`, not the Task 7 draft's `0`** — the story's own entry_gate fired earlier in this same session (see above), so the "gate hasn't fired yet" rationale behind Task 7's draft default no longer applies; `1` matches what the Interfaces/Config Technical Requirements sections already specified. Existing tests are unaffected because `_settings_ns()` test fixtures default the tier to `0` (ponytail: same convention already used for `post_fx_enabled`/`parallax_enabled`/`chapter_cards`/`cc_attribution`).
+- **Full regression**: `uv run pytest -q` — 1057 passed, 1 skipped, no failures. `ruff check .` — clean. Frontend untouched (confirmed via `git status`).
+- **Not live-validated**: an actual end-to-end SCP run with `composite_harmonization_tier=1` (or higher) through the real pipeline (ComfyUI + real cast/location assets) — the story's own "Manual validation" section calls for Jay to do this side-by-side against the tier=0 baseline and judge whether Tier 1 alone resolves the collage look. Recommend running that next, on a real SCP (SCP-049 per the story's reference), before deciding whether Tier 2/3 are worth pursuing further (per AC:12's YAGNI stopping rule).
+
+### File List
+
+**New:**
+- `src/yt_flow/pipeline/nodes/composite_harmonization.py`
+- `tests/pipeline/nodes/test_composite_harmonization.py`
+- `tests/pipeline/nodes/test_video_harmonization.py`
+- `data/workflows/comfyui_iclight_relight_api.json`
+- `data/workflows/README-iclight-relight.md`
+
+**Modified:**
+- `src/yt_flow/pipeline/nodes/video.py` — `_compose_scene` gains `composite_harmonization_tier`; per-card overlay loop wires Tier 1 tint+shadow / Tier 2 light wrap; `inject_relight_resolver` seam; `video_node` precomputes Tier 3 relights + substitutes STOCK sprite paths before composition; `_record_trace` gains `composite_harmonization_tier`/`relit_pairs_computed`/`relit_pairs_failed`
+- `src/yt_flow/config.py` — `composite_harmonization_tier`, `iclight_comfyui_workflow_path`
+- `src/yt_flow/services/run_service.py` — `precompute_relights_for_run()` (the AssetService/comfyui_client ↔ `composite_harmonization.precompute_relights` glue; lives here, not a new module, because this is the one services file AD-1 allows to import pipeline/)
+- `src/yt_flow/api/main.py` — `inject_relight_resolver` wiring via `run_service.precompute_relights_for_run`
+- `tests/pipeline/nodes/test_video.py` — `_settings_ns` fixture gains `composite_harmonization_tier` (defaults 0, ponytail convention)
+- `tests/test_config.py` — `test_composite_harmonization_defaults`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status backlog → ready-for-dev → in-progress → review
+
+## Change Log
+
+- 2026-07-07: Story created from Epic 8 architecture decision (Jay 지시), status `ready-for-dev`, entry_gate pending iteration 1 confirmation.
+- 2026-07-09: dev-story invoked; entry_gate checked and found unsatisfied (8-3's DoD A/B was substituted for an unrelated bug and never produced a real collage-look verdict). Jay confirmed unmet, reverted status to `backlog`. No implementation performed.
+- 2026-07-09 (same session): Located pre-existing 8-3 live-verification render evidence on disk, reviewed with Jay, confirmed collage look is real and visible. Status reverted `backlog` → `ready-for-dev`; implementation begins.
+- 2026-07-09 (same session): Implemented all 7 tasks/14 ACs. `composite_harmonization.py` (Tiers 1/2 pure ffmpeg filter builders + Tier 3 RelightCache/precompute_relights/relight_sprite), wired into `video.py`'s per-card overlay loop and `video_node`, `inject_relight_resolver` seam + `run_service.precompute_relights_for_run` + `api/main.py` wiring, `config.py` fields, IC-Light workflow placeholder + README. Live ffmpeg validation (not just regex) caught and fixed 5 real filter-graph bugs; two AD-1 architecture tests each caught a wrong first attempt at the services/pipeline injection boundary. Full regression green (1057 passed, 1 skipped), ruff clean. IC-Light itself unverified (no local custom-node install) but non-fatal by construction. Status → review.
+
 ---
 
-**Story Status:** ready-for-dev
-**Story Completion:** Ultimate context engine analysis completed — comprehensive developer guide created with full architecture analysis, code context, prior-story learnings, and tiered implementation ladder.
+**Story Status:** review
+**Story Completion:** Entry gate confirmed 2026-07-09 via real 8-3 render evidence; all 7 tasks/14 ACs implemented same session. Full regression green (1057 passed, 1 skipped), ruff clean. Not yet live-validated against a real ComfyUI/SCP run — see Completion Notes for the recommended next step.

@@ -1,0 +1,78 @@
+{
+    "1": {
+        "class_type": "LoadImage",
+        "_meta": {"title": "Card Image (character sprite to relight) — uploaded per pair"},
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "2": {
+        "class_type": "LoadImage",
+        "_meta": {"title": "Background Image (location plate, lighting reference) — uploaded per pair"},
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "4": {
+        "class_type": "CheckpointLoaderSimple",
+        "_meta": {"title": "UNVERIFIED — IC-Light unet patch normally loads over an SD1.5 checkpoint, not this project's SDXL anime checkpoint. Swap once IC-Light is actually installed."},
+        "inputs": {
+            "ckpt_name": "AnimagineXL_v31.safetensors"
+        }
+    },
+    "6": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {"title": "Lighting direction hint (conditioning prompt, not subject/scene description)"},
+        "inputs": {
+            "text": "warm key light from top-right matching the background",
+            "clip": ["4", 1]
+        }
+    },
+    "7": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {"title": "Negative"},
+        "inputs": {
+            "text": "lowres, bad anatomy, worst quality, flat lighting",
+            "clip": ["4", 1]
+        }
+    },
+    "3": {
+        "class_type": "KSampler",
+        "_meta": {"title": "UNVERIFIED placeholder — the real graph conditions this sampler through IC-Light's unet patch + background-derived latent, not a plain EmptyLatentImage. Node left as a structural placeholder pending a real IC-Light custom-node install to wire correctly."},
+        "inputs": {
+            "seed": 0,
+            "steps": 25,
+            "cfg": 2.0,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "model": ["4", 0],
+            "positive": ["6", 0],
+            "negative": ["7", 0],
+            "latent_image": ["5", 0]
+        }
+    },
+    "5": {
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1
+        }
+    },
+    "8": {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": ["3", 0],
+            "vae": ["4", 2]
+        }
+    },
+    "9": {
+        "class_type": "SaveImage",
+        "_meta": {"title": "Relit Sprite Output (RGBA, same resolution as the input card)"},
+        "inputs": {
+            "filename_prefix": "ytflow_iclight_relight",
+            "images": ["8", 0]
+        }
+    }
+}

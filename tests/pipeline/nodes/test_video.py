@@ -44,13 +44,16 @@ def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
     parallax_enabled: bool = False, cc_attribution: bool = False,
+    composite_harmonization_tier: int = 0,
 ):
     # ponytail: fake settings default cards/sound-design/post-fx/parallax/
-    # cc_attribution OFF so pre-existing tests (written before Story 5.1/7.1/
-    # 7.2/7.3/5.20) don't need touching; the real Settings() default is True
-    # for all five — see test_config_chapter_cards_default_true /
+    # cc_attribution/composite_harmonization_tier OFF so pre-existing tests
+    # (written before Story 5.1/7.1/7.2/7.3/5.20/8.7) don't need touching; the
+    # real Settings() default is True (1 for the tier) — see
+    # test_config_chapter_cards_default_true /
     # test_config_post_fx_enabled_default_true /
-    # test_config_parallax_enabled_default_true / test_config_cc_attribution_default_true.
+    # test_config_parallax_enabled_default_true / test_config_cc_attribution_default_true /
+    # test_composite_harmonization_defaults.
     return SimpleNamespace(
         workspace_path=str(tmp_path),
         chapter_cards=chapter_cards,
@@ -59,6 +62,7 @@ def _settings_ns(
         post_fx_enabled=post_fx_enabled,
         parallax_enabled=parallax_enabled,
         cc_attribution=cc_attribution,
+        composite_harmonization_tier=composite_harmonization_tier,
     )
 
 

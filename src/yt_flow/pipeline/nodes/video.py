@@ -56,6 +56,25 @@ def inject_cast_resolver(fn: Any) -> None:
     global _cast_resolver
     _cast_resolver = fn
 
+
+# ── Tier 3 relight precomputation injection (Story 8.7) ───────────────────────
+# Same AD-1-avoidance pattern as inject_cast_resolver — the real implementation
+# needs AssetService + comfyui_client (services/), so it's built and injected
+# by the api layer, never imported here.
+_relight_resolver: Any = None
+
+
+def inject_relight_resolver(fn: Any) -> None:
+    """Inject the Tier-3 IC-Light relight precomputation callable.
+
+    ``fn`` signature:
+    ``async fn(scenes: list, cast_cards: dict) -> tuple[dict[tuple[str,str], Path], dict]``
+    Returns ``(relit_map, stats)`` — ``stats`` carries ``computed``/``failed``
+    counts for tracing (Story 8.7 AC:11).
+    """
+    global _relight_resolver
+    _relight_resolver = fn
+
 # ── Ken Burns constants ───────────────────────────────────────────────────────
 
 FPS = 25
@@ -588,6 +607,9 @@ def _record_trace(
     chapter_card_count: int = 0,
     ending_credit: bool = False,
     ending_credit_error: str | None = None,
+    composite_harmonization_tier: int = 0,
+    relit_pairs_computed: int = 0,
+    relit_pairs_failed: int = 0,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -606,6 +628,11 @@ def _record_trace(
             "chapter_card_count": chapter_card_count,
             **({"chapter_card_duration": chapter_card_duration} if chapter_card_duration is not None else {}),
             "upscale_pass": upscale_pass,
+            # Story 8.7: composite harmonization tier + Tier 3 relight precompute
+            # outcome (0/0 when tier<3 or the resolver isn't injected).
+            "composite_harmonization_tier": composite_harmonization_tier,
+            "relit_pairs_computed": relit_pairs_computed,
+            "relit_pairs_failed": relit_pairs_failed,
             # Per-scene card counts (Story 8.3, replaces 1.9c's single character_scenes).
             "card_counts": card_counts or [],
             # Story 8.8: aggregate style counts + table version replace 1.9c's
@@ -694,6 +721,7 @@ async def _compose_scene(
     post_fx_enabled: bool = False,
     parallax_enabled: bool = False,
     include_stinger: bool = True,
+    composite_harmonization_tier: int = 0,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with
     N transparent cast cards composited on top with per-card idle motion,
@@ -748,6 +776,22 @@ async def _compose_scene(
             inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
         inputs += ["-i", audio_path]
 
+        # Composite harmonization (Story 8.7): lazy import behind the tier check
+        # so tier=0 never touches this module (AC:13 — ponytail, don't import
+        # what you don't use).
+        harmonize = composite_harmonization_tier >= 1
+        light_wrap = composite_harmonization_tier >= 2
+        tint = ""
+        build_contact_shadow = build_light_wrap = None
+        if harmonize:
+            from yt_flow.pipeline.nodes.composite_harmonization import (
+                build_contact_shadow,
+                build_sprite_tint,
+            )
+            tint = build_sprite_tint(mood)
+        if light_wrap:
+            from yt_flow.pipeline.nodes.composite_harmonization import build_light_wrap
+
         chain_parts = [f"[0:v]{zp_chain}[bg]"]
         prev_label = "bg"
         for k, card in enumerate(ordered_cards):
@@ -772,9 +816,36 @@ async def _compose_scene(
             pulse = _motion_scale_filter(motion_style, motion_energy, k)
             if pulse:
                 char_chain += f",{pulse}"
+            # Tier 1 (Story 8.7 AC:1): mood tint on the sprite, before overlay.
+            if harmonize:
+                char_chain += f",{tint}"
             out_label = f"o{k}"
             chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
-            chain_parts.append(f"[{prev_label}][c{k}]{overlay}[{out_label}]")
+
+            # Tier 1 (AC:2): contact shadow, composited between bg and the card.
+            base_label = prev_label
+            if harmonize:
+                shadow = build_contact_shadow(card)
+                chain_parts.append(f"color=c=black:s={COMP_W}x{COMP_H},format=rgba[sh{k}src]")
+                chain_parts.append(f"[sh{k}src]{shadow}[sh{k}]")
+                chain_parts.append(f"[{base_label}][sh{k}]overlay=x=0:y=0[shg{k}]")
+                base_label = f"shg{k}"
+
+            # Tier 2 (AC:5,6): light wrap between the tinted card and the overlay.
+            # base_label feeds both light_wrap's edge-detection AND the final
+            # overlay below — split it first, same "Invalid file index"/"matches
+            # no streams" hazard build_light_wrap's own char_label split guards
+            # against (live-verified: ffmpeg rejects a label consumed twice).
+            card_label = f"c{k}"
+            if light_wrap:
+                bg_a, bg_b = f"wbg{k}a", f"wbg{k}b"
+                chain_parts.append(f"[{base_label}]split=2[{bg_a}][{bg_b}]")
+                wrapped_label = f"cw{k}"
+                chain_parts.append(build_light_wrap(bg_a, card_label, wrapped_label))
+                card_label = wrapped_label
+                base_label = bg_b
+
+            chain_parts.append(f"[{base_label}][{card_label}]{overlay}[{out_label}]")
             prev_label = out_label
         chain_parts.append(f"[{prev_label}]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
         video_chain = ";".join(chain_parts)
@@ -1164,6 +1235,16 @@ async def video_node(state: PipelineState) -> dict:
                     "(not an RGBA sprite) — regenerate via Story 8.2's sprite pipeline"
                 )
 
+        # ── Story 8.7 Tier 3: IC-Light relight precomputation ─────────────
+        relit_map: dict[tuple[str, str], Path] = {}
+        relight_stats = {"computed": 0, "failed": 0}
+        if s.composite_harmonization_tier >= 3 and _relight_resolver is not None:
+            try:
+                relit_map, relight_stats = await _relight_resolver(scenes, cast_cards)
+            except Exception as exc:  # noqa: BLE001 — AD-10/AC:11: IC-Light never fails the run
+                logger.warning("Tier 3 relight precompute failed, continuing without: %s", exc)
+                relit_map, relight_stats = {}, {"computed": 0, "failed": 0}
+
         # ── Story 1.9/1.9b: FFmpeg composition ────────────────────────────
 
         run_dir = Path(s.workspace_path) / run_id
@@ -1184,12 +1265,23 @@ async def video_node(state: PipelineState) -> dict:
                 card for card in (cast_cards.get(shot_key, []) if shot_key else [])
                 if isinstance(card, dict) and card.get("path")
             ]
+            # Tier 3 (Story 8.7 AC:10): substitute the re-lit sprite for a STOCK
+            # (card, location) pair before composition — never inside
+            # _compose_scene, so the composition loop makes no ComfyUI calls.
+            location_key = shot_for_scene.get("location_key") if shot_for_scene else None
+            if relit_map and location_key:
+                scene_cards = [
+                    {**card, "path": str(relit_map[(card["card_key"], location_key)])}
+                    if (card["card_key"], location_key) in relit_map else card
+                    for card in scene_cards
+                ]
             seg_path, spec, has_char = await _compose_scene(
                 scene, i, run_dir,
                 cards=scene_cards,
                 sound_design_enabled=s.sound_design_enabled,
                 post_fx_enabled=s.post_fx_enabled,
                 parallax_enabled=s.parallax_enabled,
+                composite_harmonization_tier=s.composite_harmonization_tier,
                 include_stinger=not (chapter_cards_enabled and i > 0),
             )
             card_counts.append(len(scene_cards))
@@ -1310,6 +1402,9 @@ async def video_node(state: PipelineState) -> dict:
             chapter_card_count=card_count,
             ending_credit=ending_credit_path is not None,
             ending_credit_error=ending_credit_error,
+            composite_harmonization_tier=s.composite_harmonization_tier,
+            relit_pairs_computed=relight_stats["computed"],
+            relit_pairs_failed=relight_stats["failed"],
         )
         result = {"current_stage": "video", "video_path": str(output), "error": None}
         if cc_attribution:
