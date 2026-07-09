@@ -225,6 +225,31 @@ def _safe_cache_part(value: str) -> str:
     return value
 
 
+def _verified_asset(asset_service: Any, key: str) -> bool:
+    return asset_service.get_asset(key) is not None and asset_service.verify_asset(key)
+
+
+def _verified_card_asset(asset_service: Any, card: dict) -> bool:
+    card_key = card.get("card_key")
+    pose = card.get("pose") or "standing"
+    angle = card.get("angle") or "front"
+    if not all(isinstance(v, str) for v in (card_key, pose, angle)):
+        return False
+    return _verified_asset(asset_service, f"{card_key}/{pose}_{angle}")
+
+
+def _verified_location_asset(asset_service: Any, location_key: str) -> bool:
+    manifest = asset_service.load_manifest()
+    for key, entry in manifest.get("assets", {}).items():
+        if entry.get("status") != "approved":
+            continue
+        if entry.get("location_key") != location_key and not key.startswith(f"{location_key}/"):
+            continue
+        if asset_service.verify_asset(key):
+            return True
+    return False
+
+
 def _load_iclight_workflow(path: str) -> dict:
     """Load and validate the IC-Light API-format workflow's two image inputs.
 
@@ -322,6 +347,13 @@ async def precompute_relights(
             bg_path = shot.get("image_path")
             if not location_key or not bg_path:
                 continue
+            try:
+                _safe_cache_part(location_key)
+            except ValueError:
+                logger.warning("Skipping unsafe relight location key: %r", location_key)
+                continue
+            if not _verified_location_asset(asset_service, location_key):
+                continue
             shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
             for card in cast_cards.get(shot_key, []):
                 card_key = card.get("card_key")
@@ -333,6 +365,8 @@ async def precompute_relights(
                     _safe_cache_part(location_key)
                 except ValueError:
                     logger.warning("Skipping unsafe relight cache pair: %r/%r", card_key, location_key)
+                    continue
+                if not _verified_card_asset(asset_service, card):
                     continue
                 pairs.setdefault((card_key, location_key), (Path(card_path), Path(bg_path)))
 

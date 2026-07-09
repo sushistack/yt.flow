@@ -133,12 +133,30 @@ class _FakeAssetService:
     def add_asset(self, key, path, source, **meta):
         self.assets[key] = {"path": path, "source": source, "status": "draft", **meta}
 
+    def add_approved_asset(self, key, path, source=None, **meta):
+        self.add_asset(key, path, source or {}, **meta)
+        self.approve_asset(key)
+
     def approve_asset(self, key):
         self.assets[key]["status"] = "approved"
 
     def verify_asset(self, key):
         entry = self.assets.get(key)
         return entry is not None and (self._root / entry["path"]).exists()
+
+    def load_manifest(self):
+        return {"style_epoch": self.style_epoch, "assets": self.assets}
+
+
+def _seed_stock_assets(svc: _FakeAssetService, card_path="card.png", location_path="bg.png"):
+    svc.add_approved_asset(
+        "STOCK-d-class/standing_front", card_path,
+        source={"type": "comfyui_generation"}, card_key="STOCK-d-class", pose="standing", angle="front",
+    )
+    svc.add_approved_asset(
+        "corridor/wide", location_path,
+        source={"type": "comfyui_generation"}, location_key="corridor", variant="wide",
+    )
 
 
 def test_relight_cache_miss_when_absent(tmp_path):
@@ -252,6 +270,7 @@ async def test_precompute_relights_only_stock_pairs(tmp_path, workflow_path):
     }
     (tmp_path / "card.png").write_bytes(b"card")
     svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
     client = _FakeComfyUIClient()
     relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
@@ -281,6 +300,7 @@ async def test_precompute_relights_non_fatal_on_comfyui_failure(tmp_path, workfl
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     (tmp_path / "card.png").write_bytes(b"card")
     svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
     client = _FakeComfyUIClient(fail=True)
     relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
@@ -295,8 +315,10 @@ async def test_precompute_relights_unverified_workflow_is_non_fatal(tmp_path, un
     (tmp_path / "card.png").write_bytes(b"card")
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
     relit_map, stats = await precompute_relights(
-        scenes, cast_cards, _FakeAssetService(tmp_path), _FakeComfyUIClient(),
+        scenes, cast_cards, svc, _FakeComfyUIClient(),
         unverified_workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
@@ -309,8 +331,10 @@ async def test_precompute_relights_skips_unsafe_cache_keys(tmp_path, workflow_pa
     (tmp_path / "card.png").write_bytes(b"card")
     scenes = [_scene(1, [_shot("S001", location_key="../outside", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
     relit_map, stats = await precompute_relights(
-        scenes, cast_cards, _FakeAssetService(tmp_path), _FakeComfyUIClient(),
+        scenes, cast_cards, svc, _FakeComfyUIClient(),
         workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
@@ -324,6 +348,7 @@ async def test_precompute_relights_cache_hit_skips_comfyui(tmp_path, workflow_pa
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     (tmp_path / "card.png").write_bytes(b"card")
     svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
     RelightCache(tmp_path, svc).store("STOCK-d-class", "corridor", 1, _make_png(6))
     client = _FakeComfyUIClient()
     _relit_map, stats = await precompute_relights(
