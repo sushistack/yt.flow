@@ -158,6 +158,23 @@ def test_evaluate_label_filters_to_scp_id(monkeypatch):
     assert {r.scp_id for r in results} == {"SCP-049"}
 
 
+def test_evaluate_label_scp_filter_does_not_mutate_dataset(monkeypatch):
+    captured = []
+    _wire_scenario_capturing_state(monkeypatch, captured)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+    dataset = _client_with_seeded_dataset().get_dataset(ep.DATASET_NAME)
+
+    class ReusedDatasetClient:
+        def get_dataset(self, name):
+            return dataset
+
+    ep.evaluate_label(ReusedDatasetClient(), ep.DATASET_NAME, "production", scp_id="SCP-049")
+    ep.evaluate_label(ReusedDatasetClient(), ep.DATASET_NAME, "production")
+
+    assert [s["scp_id"] for s in captured].count("SCP-049") == 2
+    assert {s["scp_id"] for s in captured[-len(ep.GOLDEN_IDS):]} == set(ep.GOLDEN_IDS)
+
+
 def test_evaluate_label_production_builds_no_variant_state(monkeypatch):
     captured = []
     _wire_scenario_capturing_state(monkeypatch, captured)
@@ -275,6 +292,23 @@ def test_write_artifact_creates_json_file(tmp_path):
     }
 
 
+def test_evaluate_label_full_failure_artifact_includes_parsed_state(monkeypatch, tmp_path):
+    parsed_state = {"current_stage": "scenario", "error": "boom", "scenes": [{"scene_num": 1}]}
+
+    async def fake_scenario_node(state):
+        return parsed_state
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    results = ep.evaluate_label(
+        _client_with_seeded_dataset(), ep.DATASET_NAME, "production", scp_id="SCP-049", run_dir=tmp_path
+    )
+
+    data = json.loads(Path(results[0].artifact_path).read_text(encoding="utf-8"))
+    assert data["parsed_state"] == parsed_state
+
+
 def test_evaluate_label_writes_artifact_on_failure(monkeypatch, tmp_path):
     _wire_scenario_capturing_state(monkeypatch, [], error="boom")
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
@@ -382,10 +416,11 @@ def test_run_stage_chain_writing_succeeds(monkeypatch):
     import asyncio
 
     _stub_stage_functions(monkeypatch)
-    failed, error, finish_reason, raw = asyncio.run(
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
     )
     assert failed is False
+    assert actual_stage == "writing"
     assert error is None
 
 
@@ -393,10 +428,11 @@ def test_run_stage_chain_writing_failure_stops_before_later_stages(monkeypatch):
     import asyncio
 
     calls = _stub_stage_functions(monkeypatch, fail_at="writing")
-    failed, error, finish_reason, raw = asyncio.run(
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
     )
     assert failed is True
+    assert actual_stage == "writing"
     assert "writing exploded" in error
     assert calls["cast_decision"] == 0
     assert calls["visual_breakdown"] == 0
@@ -406,10 +442,11 @@ def test_run_stage_chain_cast_decision_failure(monkeypatch):
     import asyncio
 
     calls = _stub_stage_functions(monkeypatch, fail_at="cast_decision")
-    failed, error, finish_reason, raw = asyncio.run(
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "cast_decision", FakeSettings(), 5.0)
     )
     assert failed is True
+    assert actual_stage == "cast_decision"
     assert "cast_decision exploded" in error
     assert calls["writing"] == 1
     assert calls["visual_breakdown"] == 0
@@ -419,10 +456,11 @@ def test_run_stage_chain_visual_breakdown_failure(monkeypatch):
     import asyncio
 
     calls = _stub_stage_functions(monkeypatch, fail_at="visual_breakdown")
-    failed, error, finish_reason, raw = asyncio.run(
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "visual_breakdown", FakeSettings(), 5.0)
     )
     assert failed is True
+    assert actual_stage == "visual_breakdown"
     assert "visual_breakdown exploded" in error
     assert calls["cast_decision"] == 1
 
@@ -447,11 +485,12 @@ def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatc
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
     monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
 
-    failed, error, finish_reason, raw = asyncio.run(
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
     )
 
     assert failed is True
+    assert actual_stage == "writing"
     assert "truncated" in error
     assert finish_reason == "length"
     assert raw == "{truncated partial json"
@@ -475,11 +514,29 @@ def test_run_stage_writes_artifact_on_failure(monkeypatch, tmp_path):
     assert data["scp_id"] == "SCP-049"
 
 
+def test_run_stage_reports_actual_prerequisite_stage_on_failure(monkeypatch, tmp_path):
+    _stub_stage_functions(monkeypatch, fail_at="writing")
+
+    results = ep.run_stage(
+        _client_with_seeded_dataset(),
+        ep.DATASET_NAME,
+        "production",
+        "visual_breakdown",
+        scp_id="SCP-049",
+        run_dir=tmp_path,
+    )
+
+    assert results[0].stage == "writing"
+    data = json.loads(Path(results[0].artifact_path).read_text(encoding="utf-8"))
+    assert data["stage"] == "writing"
+
+
 def test_print_stage_report_includes_failures_and_artifacts(capsys):
     results = [ep.StageResult("SCP-049", "writing", failed=True, error="boom", artifact_path="/tmp/x.json")]
     ep.print_stage_report("production", "writing", results)
     out = capsys.readouterr().out
     assert "SCP-049" in out
+    assert "stage=writing" in out
     assert "boom" in out
     assert "/tmp/x.json" in out
 
@@ -503,6 +560,11 @@ def test_main_stage_mode_exits_zero_on_success(monkeypatch):
 def test_main_rejects_baseline_with_non_full_stage():
     with pytest.raises(SystemExit):
         ep.main(["--label", "candidate", "--baseline", "production", "--stage", "writing"])
+
+
+def test_main_rejects_non_positive_timeout():
+    with pytest.raises(SystemExit):
+        ep.main(["--label", "production", "--timeout", "0"])
 
 
 # ── item failure handling (AC7) ──────────────────────────────────────────────
@@ -708,6 +770,14 @@ def test_main_rejects_invalid_scp_id(capsys):
     err = capsys.readouterr().err
     for scp_id in ep.GOLDEN_IDS:
         assert scp_id in err
+
+
+def test_new_run_dir_is_unique_within_same_second(monkeypatch):
+    monkeypatch.setattr(ep.time, "strftime", lambda *_: "20260709-010203")
+    values = iter([100, 101])
+    monkeypatch.setattr(ep.time, "time_ns", lambda: next(values))
+
+    assert ep._new_run_dir("candidate") != ep._new_run_dir("candidate")
 
 
 def test_main_rejects_baseline_without_label():

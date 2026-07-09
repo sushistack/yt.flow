@@ -15,7 +15,7 @@ related:
 
 # Story 8.4a: Special-Pose Prompt Gate Decomposition
 
-Status: review
+Status: done
 
 ## Story
 
@@ -75,6 +75,14 @@ This story owns the prompt/eval decomposition and the live validation that 8.4 d
   - [x] Generate one real special-pose card using ComfyUI.
   - [x] Verify alpha/framing/readability.
   - [x] Verify deterministic cache hit on second invocation.
+
+### Review Findings
+
+- [x] [Review][Patch] Stage isolation can misreport prerequisite failures as the requested stage [scripts/eval_prompts.py:271]
+- [x] [Review][Patch] Full-run failure artifacts drop available parsed scenario output [scripts/eval_prompts.py:187]
+- [x] [Review][Patch] `--scp-id` filtering mutates the dataset object in place [scripts/eval_prompts.py:210]
+- [x] [Review][Patch] `--timeout` accepts zero or negative values [scripts/eval_prompts.py:425]
+- [x] [Review][Patch] Same-second eval runs share artifact directories [scripts/eval_prompts.py:60]
 
 ## Dev Notes
 
@@ -139,3 +147,4 @@ Ran a one-off ad hoc script (not part of the committed diff — a `/tmp` scratch
 - 2026-07-08: Story created as the follow-up home for 8.4 Task 2 prompt rollout and Task 6 live validation.
 - 2026-07-09: Tasks 1-4 implemented (--scp-id, --stage, failure artifacts, per-item timeout) with full TDD coverage; full regression suite green (1006 passed, 1 skipped).
 - 2026-07-09: Task 5 live decomposed gate rerun at YTFLOW_DEEPSEEK_MAX_TOKENS=16000 — Verdict FAIL (narrative_coherence regression on SCP-049/SCP-096, SCP-173 production-side non-determinism); candidate not promoted. Task 6 live ComfyUI special-pose validation for SCP-049 passed (RGBA cutout confirmed, cache hit confirmed on rerun). Story moved to review.
+- 2026-07-09: Code review complete — patched 5 findings (actual failing stage attribution, full-run parsed-state artifacts, non-mutating `--scp-id` filtering, positive timeout validation, unique artifact run dirs). Targeted eval tests: 57 passed; ruff clean. Story moved to done.

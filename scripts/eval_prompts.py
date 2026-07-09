@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import asyncio
+import copy
 import json
 import statistics
 import sys
@@ -58,7 +59,14 @@ _RISKY_DEFAULT_MAX_TOKENS = 8192
 
 
 def _new_run_dir(*parts: str) -> Path:
-    return ARTIFACT_ROOT / "-".join((time.strftime("%Y%m%d-%H%M%S"), *parts))
+    return ARTIFACT_ROOT / "-".join((time.strftime("%Y%m%d-%H%M%S"), str(time.time_ns()), *parts))
+
+
+def positive_timeout(value: str) -> float:
+    timeout = float(value)
+    if timeout <= 0:
+        raise argparse.ArgumentTypeError("timeout must be greater than 0")
+    return timeout
 
 
 def prompt_variant_for_label(label: str) -> str | None:
@@ -148,6 +156,7 @@ class ItemResult:
     total: float | None = None
     rule_metrics: dict[str, float] = field(default_factory=dict)
     artifact_path: str | None = None
+    parsed_state: object = None
 
 
 def write_artifact(
@@ -187,11 +196,12 @@ def write_artifact(
 def _to_item_result(item_result) -> ItemResult:
     scp_id = item_result.item.input["scp_id"]
     by_name = {ev.name: ev for ev in item_result.evaluations}
+    output = getattr(item_result, "output", None)
     if "failed" in by_name:
-        return ItemResult(scp_id, failed=True, error=by_name["failed"].comment)
+        return ItemResult(scp_id, failed=True, error=by_name["failed"].comment, parsed_state=output)
     if "total" not in by_name or any(ax not in by_name for ax in AXES):
         # real Langfuse SDK swallows an evaluator exception into evaluations=[] for the item
-        return ItemResult(scp_id, failed=True, error="evaluator produced no scores")
+        return ItemResult(scp_id, failed=True, error="evaluator produced no scores", parsed_state=output)
     axes = {ax: by_name[ax].value for ax in AXES}
     rule_metrics = {name: ev.value for name, ev in by_name.items() if name not in AXES and name != "total"}
     return ItemResult(scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics)
@@ -209,6 +219,7 @@ def evaluate_label(
 ) -> list[ItemResult]:
     dataset = client.get_dataset(dataset_name)
     if scp_id:
+        dataset = copy.copy(dataset)
         dataset.items = [item for item in dataset.items if item.input["scp_id"] == scp_id]
 
     async def _task(*, item):
@@ -224,7 +235,9 @@ def evaluate_label(
     if run_dir:
         for r in items:
             if r.failed:
-                r.artifact_path = str(write_artifact(run_dir, label=label, scp_id=r.scp_id, stage="full", error=r.error))
+                r.artifact_path = str(write_artifact(
+                    run_dir, label=label, scp_id=r.scp_id, stage="full", error=r.error, parsed_state=r.parsed_state,
+                ))
     return items
 
 
@@ -249,12 +262,13 @@ class StageResult:
 
 async def _run_stage_chain(
     scp_id: str, scp_text: str, label: str, stage: str, s: Settings, timeout: float
-) -> tuple[bool, str | None, str | None, str | None]:
-    """Returns (failed, error, finish_reason, raw_output) — finish_reason/raw_output
+) -> tuple[bool, str, str | None, str | None, str | None]:
+    """Returns (failed, actual_stage, error, finish_reason, raw_output) — finish_reason/raw_output
     come from the last DeepSeek call made before failure (AC3)."""
     chain_label = "candidate" if label == "candidate" else None
     last_raw: str | None = None
     last_finish_reason: str | None = None
+    current_stage = "format_guide"
 
     async def _recording_call(rendered, settings):
         nonlocal last_raw, last_finish_reason
@@ -263,13 +277,17 @@ async def _run_stage_chain(
         return raw, usage, finish_reason
 
     async def _inner() -> None:
+        nonlocal current_stage
         format_guide = (
             get_prompt_with_fallback("scenario/format_guide", label=chain_label)
             if chain_label
             else get_prompt("scenario/format_guide")
         ).compile()
+        current_stage = "research"
         research = await research_step(scp_id, scp_text, format_guide, s, _recording_call, label=chain_label)
+        current_stage = "structure"
         structure = await structure_step(scp_id, research, format_guide, s, _recording_call, label=chain_label)
+        current_stage = "writing"
         writing = await writing_step(
             scp_id, structure, research["frozen_descriptor"], format_guide, "", s, _recording_call, label=chain_label
         )
@@ -277,9 +295,11 @@ async def _run_stage_chain(
             return
         scene = writing["scenes"][0]
         sentences = split_sentences(scene["narration"])
+        current_stage = "cast_decision"
         cast_by_sentence = await cast_decision_step(scp_id, scene, sentences, s, _recording_call, label=chain_label)
         if stage == "cast_decision":
             return
+        current_stage = "visual_breakdown"
         await visual_breakdown_step(
             scp_id, scene, sentences, cast_by_sentence, research["frozen_descriptor"],
             research.get("entity_sheet", ""), research.get("story_logline", ""), structure[0],
@@ -288,11 +308,11 @@ async def _run_stage_chain(
 
     try:
         await asyncio.wait_for(_inner(), timeout=timeout)
-        return False, None, None, None
+        return False, stage, None, None, None
     except TimeoutError:
-        return True, f"timeout after {timeout:.0f}s", last_finish_reason, last_raw
+        return True, current_stage, f"{current_stage}: timeout after {timeout:.0f}s", last_finish_reason, last_raw
     except Exception as exc:  # any stage-function ValueError/JSONDecodeError — isolate, don't crash the script
-        return True, str(exc), last_finish_reason, last_raw
+        return True, current_stage, str(exc), last_finish_reason, last_raw
 
 
 def run_stage(
@@ -311,23 +331,23 @@ def run_stage(
     results = []
     for item in items:
         item_scp_id = item.input["scp_id"]
-        failed, error, finish_reason, raw = asyncio.run(
+        failed, actual_stage, error, finish_reason, raw = asyncio.run(
             _run_stage_chain(item_scp_id, item.input["scp_text"], label, stage, s, timeout)
         )
         artifact_path = None
         if failed and run_dir:
             artifact_path = str(write_artifact(
-                run_dir, label=label, scp_id=item_scp_id, stage=stage,
+                run_dir, label=label, scp_id=item_scp_id, stage=actual_stage,
                 error=error, finish_reason=finish_reason, raw_output=raw,
             ))
-        results.append(StageResult(item_scp_id, stage, failed, error, artifact_path))
+        results.append(StageResult(item_scp_id, actual_stage, failed, error, artifact_path))
     return results
 
 
 def print_stage_report(label: str, stage: str, results: list[StageResult]) -> None:
     print(f"\n=== {label} stage={stage} (golden-set) ===")
     for r in results:
-        status = f"FAILED — {r.error}" if r.failed else "OK"
+        status = f"FAILED stage={r.stage} — {r.error}" if r.failed else "OK"
         print(f"  {r.scp_id}: {status}")
         if r.artifact_path:
             print(f"    artifact: {r.artifact_path}")
@@ -423,7 +443,7 @@ def main(argv=None) -> int:
     ap.add_argument("--max-concurrency", type=int, default=3)
     ap.add_argument("--scp-id", choices=GOLDEN_IDS, help="run only this golden SCP item")
     ap.add_argument(
-        "--timeout", type=float, default=DEFAULT_ITEM_TIMEOUT_SECONDS,
+        "--timeout", type=positive_timeout, default=DEFAULT_ITEM_TIMEOUT_SECONDS,
         help=f"per-item timeout in seconds (default: {DEFAULT_ITEM_TIMEOUT_SECONDS:.0f})",
     )
     ap.add_argument(
