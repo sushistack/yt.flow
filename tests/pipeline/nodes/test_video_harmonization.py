@@ -205,7 +205,7 @@ async def test_tier1_composite_before_grade(monkeypatch, tmp_path, assets):
     assert out.get("error") is None
     fc = captured[0]
     assert "overlay=" in fc and "eq=saturation=" in fc
-    assert fc.rindex("overlay=") < fc.index("eq=saturation=")
+    assert fc.rindex("overlay=") < fc.rindex("eq=saturation=")
 
 
 async def test_tier0_vs_tier1_background_only_unaffected(monkeypatch, tmp_path, assets):
@@ -331,6 +331,33 @@ async def test_tier3_missing_pair_uses_original(monkeypatch, tmp_path, assets):
 
     assert out.get("error") is None
     assert assets.character in captured_paths
+
+
+async def test_tier3_malformed_card_without_key_uses_original(monkeypatch, tmp_path, assets):
+    """A resolver card with path but no card_key must not crash relit substitution."""
+    relit_path = tmp_path / "relit.png"
+    relit_path.write_bytes(Path(assets.character).read_bytes())
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
+
+    async def _resolver(scenes, cast_cards):
+        return {("STOCK-d-class", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+
+    monkeypatch.setattr(video, "_relight_resolver", _resolver)
+    captured_paths = []
+
+    async def _fake(*args):
+        captured_paths.extend(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [{"path": assets.character, "position": "center", "depth": "mid"}]})
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle, location_key="corridor")
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    assert assets.character in captured_paths
+    assert str(relit_path) not in captured_paths
 
 
 async def test_tier3_relight_resolver_failure_is_non_fatal(monkeypatch, tmp_path, assets):

@@ -87,8 +87,16 @@ def test_composite_harmonization_defaults(monkeypatch):
         monkeypatch.delenv(key, raising=False)
     from yt_flow.config import Settings
     s = Settings(_env_file=None)
-    assert s.composite_harmonization_tier == 1
+    assert s.composite_harmonization_tier == 0
     assert s.iclight_comfyui_workflow_path == "data/workflows/comfyui_iclight_relight_api.json"
+
+
+def test_composite_harmonization_tier_is_bounded(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YTFLOW_COMPOSITE_HARMONIZATION_TIER", "4")
+    from yt_flow.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_content_language_defaults_ko(monkeypatch):

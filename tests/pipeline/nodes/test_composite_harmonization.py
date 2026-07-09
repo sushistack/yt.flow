@@ -1,6 +1,8 @@
 """Tests for src/yt_flow/pipeline/nodes/composite_harmonization.py (Story 8.7)."""
 
 import re
+import struct
+import zlib
 from pathlib import Path
 from typing import cast
 
@@ -27,7 +29,8 @@ def test_build_sprite_tint_all_moods(mood):
     p = MOOD_TINT_PARAMS[mood]
     assert f == (
         f"colorbalance=rs={p['rs']}:gs={p['gs']}:bs={p['bs']}:"
-        f"rh={p['rh']}:gh={p['gh']}:bh={p['bh']}"
+        f"rh={p['rh']}:gh={p['gh']}:bh={p['bh']},"
+        f"eq=saturation={p['saturation']}:contrast={p['contrast']}"
     )
 
 
@@ -54,7 +57,8 @@ def _card(depth: str = "mid", position: str = "center") -> CastMember:
 def test_build_contact_shadow_all_positions_produce_valid_geq(position):
     f = build_contact_shadow(_card(position=position))
     assert f.startswith("geq=r=0:g=0:b=0:a=")
-    assert f.endswith(",0)'")
+    assert ",0)'" in f
+    assert "boxblur=" in f
 
 
 def _shadow_radii(filter_str: str) -> tuple[float, float]:
@@ -146,9 +150,9 @@ def test_relight_cache_miss_when_absent(tmp_path):
 def test_relight_cache_store_then_hit(tmp_path):
     svc = _FakeAssetService(tmp_path)
     cache = RelightCache(tmp_path, svc)
-    path = cache.store("STOCK-d-class", "corridor", 1, b"fake-png-bytes")
+    path = cache.store("STOCK-d-class", "corridor", 1, _make_png(6))
     assert path.exists()
-    assert path.read_bytes() == b"fake-png-bytes"
+    assert path.read_bytes() == _make_png(6)
     hit = cache.get_or_compute("STOCK-d-class", "corridor", 1)
     assert hit == path
 
@@ -156,14 +160,14 @@ def test_relight_cache_store_then_hit(tmp_path):
 def test_relight_cache_stale_epoch_is_a_miss(tmp_path):
     svc = _FakeAssetService(tmp_path)
     cache = RelightCache(tmp_path, svc)
-    cache.store("STOCK-d-class", "corridor", 1, b"epoch-1-bytes")
+    cache.store("STOCK-d-class", "corridor", 1, _make_png(6))
     assert cache.get_or_compute("STOCK-d-class", "corridor", 2) is None
 
 
 def test_relight_cache_miss_when_integrity_fails(tmp_path):
     svc = _FakeAssetService(tmp_path)
     cache = RelightCache(tmp_path, svc)
-    path = cache.store("STOCK-d-class", "corridor", 1, b"bytes")
+    path = cache.store("STOCK-d-class", "corridor", 1, _make_png(6))
     path.unlink()  # corrupt: manifest entry now points at a missing file
     assert cache.get_or_compute("STOCK-d-class", "corridor", 1) is None
 
@@ -195,7 +199,19 @@ class _FakeComfyUIClient:
         self.calls += 1
         if self.fail:
             raise RuntimeError("comfyui unreachable")
-        return b"relit-png-bytes"
+        return _make_png(6)
+
+
+def _png_chunk(name: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+
+
+def _make_png(color_type: int) -> bytes:
+    raw = b"\x00" + (b"\x00\x00\x00\x00" if color_type == 6 else b"\x00\x00\x00")
+    ihdr = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, color_type, 0, 0, 0))
+    idat = _png_chunk(b"IDAT", zlib.compress(raw))
+    iend = _png_chunk(b"IEND", b"")
+    return b"\x89PNG\r\n\x1a\n" + ihdr + idat + iend
 
 
 @pytest.fixture()
@@ -203,6 +219,19 @@ def workflow_path(tmp_path):
     import json
 
     path = tmp_path / "iclight.json"
+    path.write_text(json.dumps({
+        "ytflow_verified_iclight": True,
+        "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+        "2": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+    }))
+    return str(path)
+
+
+@pytest.fixture()
+def unverified_workflow_path(tmp_path):
+    import json
+
+    path = tmp_path / "placeholder-iclight.json"
     path.write_text(json.dumps({
         "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
         "2": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
@@ -261,13 +290,41 @@ async def test_precompute_relights_non_fatal_on_comfyui_failure(tmp_path, workfl
 
 
 @pytest.mark.asyncio
+async def test_precompute_relights_unverified_workflow_is_non_fatal(tmp_path, unverified_workflow_path):
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
+    cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, _FakeAssetService(tmp_path), _FakeComfyUIClient(),
+        unverified_workflow_path, tmp_path, "http://fake",
+    )
+    assert relit_map == {}
+    assert stats == {"computed": 0, "failed": 1}
+
+
+@pytest.mark.asyncio
+async def test_precompute_relights_skips_unsafe_cache_keys(tmp_path, workflow_path):
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    scenes = [_scene(1, [_shot("S001", location_key="../outside", image_path=str(tmp_path / "bg.png"))])]
+    cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, _FakeAssetService(tmp_path), _FakeComfyUIClient(),
+        workflow_path, tmp_path, "http://fake",
+    )
+    assert relit_map == {}
+    assert stats == {"computed": 0, "failed": 0}
+
+
+@pytest.mark.asyncio
 async def test_precompute_relights_cache_hit_skips_comfyui(tmp_path, workflow_path):
     (tmp_path / "bg.png").write_bytes(b"bg")
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     (tmp_path / "card.png").write_bytes(b"card")
     svc = _FakeAssetService(tmp_path)
-    RelightCache(tmp_path, svc).store("STOCK-d-class", "corridor", 1, b"cached-bytes")
+    RelightCache(tmp_path, svc).store("STOCK-d-class", "corridor", 1, _make_png(6))
     client = _FakeComfyUIClient()
     _relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",

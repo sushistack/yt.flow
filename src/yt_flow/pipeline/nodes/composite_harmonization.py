@@ -19,9 +19,11 @@ import asyncio
 import copy
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
+from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import CastDepth, CastMember, STOCK_CAST_KEYS, SceneState
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 
@@ -31,17 +33,30 @@ logger = logging.getLogger(__name__)
 # colorbalance: rs/gs/bs = red/green/blue shadow, rh/gh/bh = highlight.
 # Negative = cool shift, positive = warm shift.
 MOOD_TINT_PARAMS: dict[str, dict[str, float]] = {
-    "dread":      {"rs": -0.12, "gs": -0.06, "bs": 0.12, "rh": -0.08, "gh": -0.04, "bh": 0.10},
-    "clinical":   {"rs": -0.05, "gs": 0.00, "bs": 0.05, "rh": -0.03, "gh": -0.01, "bh": 0.04},
-    "escalation": {"rs": 0.10,  "gs": 0.04, "bs": -0.06, "rh": 0.08,  "gh": 0.03,  "bh": -0.04},
-    "revelation": {"rs": 0.15,  "gs": 0.05, "bs": -0.02, "rh": 0.12,  "gh": 0.04,  "bh": 0.00},
+    "dread": {
+        "rs": -0.12, "gs": -0.06, "bs": 0.12, "rh": -0.08, "gh": -0.04, "bh": 0.10,
+        "saturation": 0.82, "contrast": 1.02,
+    },
+    "clinical": {
+        "rs": -0.05, "gs": 0.00, "bs": 0.05, "rh": -0.03, "gh": -0.01, "bh": 0.04,
+        "saturation": 0.90, "contrast": 1.00,
+    },
+    "escalation": {
+        "rs": 0.10, "gs": 0.04, "bs": -0.06, "rh": 0.08, "gh": 0.03, "bh": -0.04,
+        "saturation": 1.12, "contrast": 1.04,
+    },
+    "revelation": {
+        "rs": 0.04, "gs": 0.02, "bs": 0.00, "rh": 0.03, "gh": 0.02, "bh": 0.00,
+        "saturation": 1.00, "contrast": 1.18,
+    },
 }
 # Enforce lockstep with MOOD_VALUES so a taxonomy change doesn't silently
 # produce the wrong tint.
 assert set(MOOD_TINT_PARAMS) == set(MOOD_VALUES)
 
 # Depth -> contact-shadow scale: near=large/soft, far=small/crisp. [AC:2]
-_SHADOW_DEPTH_SCALES: dict[CastDepth, float] = {"near": 0.9, "mid": 0.7, "far": 0.5}
+_SHADOW_DEPTH_SCALES: dict[CastDepth, float] = {"near": 0.95, "mid": 0.75, "far": 0.6}
+_SHADOW_BLUR_RADII: dict[CastDepth, int] = {"near": 12, "mid": 9, "far": 6}
 # Horizontal offset (fraction of frame width) matching video.py's
 # _POSITION_X_FRAC rule-of-thirds anchors, re-expressed as an offset from center.
 _SHADOW_POSITION_OFFSETS: dict[str, float] = {"left": -1 / 6, "center": 0.0, "right": 1 / 6}
@@ -52,7 +67,8 @@ def build_sprite_tint(mood: str | None) -> str:
     p = MOOD_TINT_PARAMS[resolve_mood(mood)]
     return (
         f"colorbalance=rs={p['rs']}:gs={p['gs']}:bs={p['bs']}:"
-        f"rh={p['rh']}:gh={p['gh']}:bh={p['bh']}"
+        f"rh={p['rh']}:gh={p['gh']}:bh={p['bh']},"
+        f"eq=saturation={p['saturation']}:contrast={p['contrast']}"
     )
 
 
@@ -66,7 +82,9 @@ def build_contact_shadow(cast_member: CastMember) -> str:
     (video.py) overlays the result onto the background before compositing
     the card itself, so the shadow sits underneath.
     """
-    scale = _SHADOW_DEPTH_SCALES.get(cast_member.get("depth", "mid"), _SHADOW_DEPTH_SCALES["mid"])
+    depth = cast_member.get("depth", "mid")
+    scale = _SHADOW_DEPTH_SCALES.get(depth, _SHADOW_DEPTH_SCALES["mid"])
+    blur = _SHADOW_BLUR_RADII.get(depth, _SHADOW_BLUR_RADII["mid"])
     h_offset = _SHADOW_POSITION_OFFSETS.get(cast_member.get("position", "center"), 0.0)
     rx = 0.08 * scale
     ry = 0.03 * scale
@@ -81,6 +99,7 @@ def build_contact_shadow(cast_member: CastMember) -> str:
         f"geq=r=0:g=0:b=0:a='if(lt("
         f"(X/W-0.5-({h_offset}))*(X/W-0.5-({h_offset}))/({rx:.4f}*{rx:.4f})"
         f"+(Y/H-0.85)*(Y/H-0.85)/({ry:.4f}*{ry:.4f}),1),64,0)'"
+        f",boxblur={blur}:1"
     )
 
 
@@ -147,11 +166,11 @@ class RelightCache:
 
     @staticmethod
     def _key(card_key: str, location_key: str) -> str:
-        return f"relit/{card_key}/{location_key}"
+        return f"relit/{_safe_cache_part(card_key)}/{_safe_cache_part(location_key)}"
 
     @staticmethod
     def _relative_path(card_key: str, location_key: str, style_epoch: int) -> str:
-        return f"relit/{card_key}/{location_key}/epoch_{style_epoch}.png"
+        return f"relit/{_safe_cache_part(card_key)}/{_safe_cache_part(location_key)}/epoch_{style_epoch}.png"
 
     def get_or_compute(self, card_key: str, location_key: str, style_epoch: int) -> Path | None:
         """Cache lookup only, despite the name (Interfaces AC:8) — a hit
@@ -173,18 +192,37 @@ class RelightCache:
     def store(self, card_key: str, location_key: str, style_epoch: int, image_bytes: bytes) -> Path:
         rel_path = self._relative_path(card_key, location_key, style_epoch)
         abs_path = self._assets_path / rel_path
+        if not has_alpha(image_bytes):
+            raise ValueError("IC-Light relight output is not a valid alpha PNG")
         abs_path.parent.mkdir(parents=True, exist_ok=True)
-        abs_path.write_bytes(image_bytes)
+        tmp_path = abs_path.with_suffix(abs_path.suffix + ".tmp")
+        tmp_path.write_bytes(image_bytes)
         key = self._key(card_key, location_key)
-        self._asset_service.add_asset(
-            key, rel_path,
-            source={"type": "iclight_relight", "card_key": card_key, "location_key": location_key},
-            style_epoch=style_epoch,
-        )
-        # Auto-approve: a pipeline-derived asset, same precedent as Story 8.6's
-        # auto-generated character cards (no human curation step mid-run).
-        self._asset_service.approve_asset(key)
+        try:
+            tmp_path.replace(abs_path)
+            self._asset_service.add_asset(
+                key, rel_path,
+                source={"type": "iclight_relight", "card_key": card_key, "location_key": location_key},
+                style_epoch=style_epoch,
+            )
+            # Auto-approve: a pipeline-derived asset, same precedent as Story 8.6's
+            # auto-generated character cards (no human curation step mid-run).
+            self._asset_service.approve_asset(key)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            if not self._asset_service.get_asset(key, include_drafts=True):
+                abs_path.unlink(missing_ok=True)
+            raise
         return abs_path
+
+
+_SAFE_CACHE_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _safe_cache_part(value: str) -> str:
+    if not isinstance(value, str) or not _SAFE_CACHE_PART_RE.fullmatch(value):
+        raise ValueError(f"unsafe relight cache key component: {value!r}")
+    return value
 
 
 def _load_iclight_workflow(path: str) -> dict:
@@ -205,6 +243,11 @@ def _load_iclight_workflow(path: str) -> dict:
         node = workflow.get(node_id)
         if not isinstance(node, dict) or node.get("class_type") != "LoadImage":
             raise ValueError(f"IC-Light workflow node {node_id!r} must be a LoadImage node")
+    if workflow.get("ytflow_verified_iclight") is not True:
+        raise ValueError(
+            "IC-Light workflow is not marked ytflow_verified_iclight=true; "
+            "placeholder workflows are treated as non-fatal cache misses"
+        )
     return workflow
 
 
@@ -285,6 +328,12 @@ async def precompute_relights(
                 card_path = card.get("path")
                 if card_key not in STOCK_CAST_KEYS or not card_path:
                     continue
+                try:
+                    _safe_cache_part(card_key)
+                    _safe_cache_part(location_key)
+                except ValueError:
+                    logger.warning("Skipping unsafe relight cache pair: %r/%r", card_key, location_key)
+                    continue
                 pairs.setdefault((card_key, location_key), (Path(card_path), Path(bg_path)))
 
     relit_map: dict[tuple[str, str], Path] = {}
@@ -300,11 +349,15 @@ async def precompute_relights(
             return
         async with sem:
             image_bytes = await relight_sprite(paths[0], paths[1], comfyui_client, workflow_path, comfyui_url)
-        if image_bytes is None:
+        if image_bytes is None or not has_alpha(image_bytes):
             stats["failed"] += 1
             return
-        relit_map[pair] = cache.store(card_key, location_key, style_epoch, image_bytes)
-        stats["computed"] += 1
+        try:
+            relit_map[pair] = cache.store(card_key, location_key, style_epoch, image_bytes)
+            stats["computed"] += 1
+        except Exception as exc:  # noqa: BLE001 — AC:11: per-pair relight persistence is non-fatal
+            logger.warning("IC-Light relight cache store failed for %s/%s: %s", card_key, location_key, exc)
+            stats["failed"] += 1
 
     if pairs:
         await asyncio.gather(*(_resolve_pair(pair, paths) for pair, paths in pairs.items()))

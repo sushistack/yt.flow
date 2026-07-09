@@ -1271,8 +1271,8 @@ async def video_node(state: PipelineState) -> dict:
             location_key = shot_for_scene.get("location_key") if shot_for_scene else None
             if relit_map and location_key:
                 scene_cards = [
-                    {**card, "path": str(relit_map[(card["card_key"], location_key)])}
-                    if (card["card_key"], location_key) in relit_map else card
+                    {**card, "path": str(relit_map[(card.get("card_key"), location_key)])}
+                    if (card.get("card_key"), location_key) in relit_map else card
                     for card in scene_cards
                 ]
             seg_path, spec, has_char = await _compose_scene(

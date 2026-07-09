@@ -28,7 +28,6 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
-from yt_flow.pipeline.nodes.composite_harmonization import precompute_relights
 from yt_flow.services import comfyui_client, eval_service
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
@@ -741,6 +740,8 @@ async def precompute_relights_for_run(
     one services file allowed to import pipeline/ (AD-1/AD-3/AD-4 — see
     tests/services/test_character_service.py::test_services_does_not_import_api_or_pipeline).
     """
+    from yt_flow.pipeline.nodes.composite_harmonization import precompute_relights
+
     asset_service = AssetService(settings.assets_path, session)
     return await precompute_relights(
         scenes, cast_cards, asset_service, comfyui_client,

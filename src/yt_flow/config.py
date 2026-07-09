@@ -137,8 +137,8 @@ class Settings(BaseSettings):
     location_anchor_dir: str = "data/anchors/locations"
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
-    # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow (default,
-    # lowest cost/highest impact-to-cost ratio), 2=+light wrap, 3=+IC-Light
-    # re-lighting. tier_2/tier_3 stay off until their own A/B justifies the cost.
-    composite_harmonization_tier: int = 1
+    # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,
+    # 2=+light wrap, 3=+IC-Light re-lighting. Default stays off until a real
+    # tier-0 vs tier-1 A/B run confirms the visual win.
+    composite_harmonization_tier: int = Field(0, ge=0, le=3)
     iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
