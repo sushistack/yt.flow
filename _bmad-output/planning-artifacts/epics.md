@@ -619,6 +619,12 @@ So that the UI can populate the SCP picker and display per-stage output.
 
 ---
 
+### Story 2.6: 게이트 reject가 image_node의 재개 캐시를 무력화하는 문제 수리
+
+Jay 시청 피드백(2026-07-09) 조사 중 코드로 확정: `POST /stages/{stage}/gate {"action":"reject"}`가 `resume_run`을 거쳐 그래프 조건부 라우팅(`graph.py` `_REJECT_TARGET`)으로 **같은 스테이지 노드를 즉시 재진입**시키는데(`gate 승인/거부` 자체가 재실행을 트리거하는 설계), 이 경로는 `retry_stage`(2.4, `POST /stages/{stage}/retry`)가 하는 `_nullify` 호출을 거치지 않음. 그 결과 image_node의 5.14 재개 캐시(`_existing_complete_shot` — 디스크의 사이드카+PNG가 있고 프롬프트가 그대로면 스킵)가 모든 샷을 "이미 완료됨"으로 보고 **재생성 없이 그대로 통과**시킴 — "이미지가 마음에 안 들어 reject" 해도 바이트 단위로 동일한 결과가 나옴(수동으로 workspace 파일을 지워야만 실제 재생성됨, iteration-1에서 이 방식으로 우회). 두 액션(거부 클릭 vs 재시도 버튼 클릭)이 사용자에겐 동일한 의도("다시 만들어")인데 한쪽만 동작하는 비일관성. 수정: `resume_run`이 `decision == "rejected"`일 때 `retry_stage`와 동일한 `_nullify(stage, ...)` 호출을 거치도록 — 그래프 라우팅이 재진입하는 stage 노드가 실제로 빈 상태에서 시작하게 함. 범위는 image_node뿐 아니라 같은 디스크-캐시 재개 패턴을 쓰는 모든 스테이지(현재는 image만 해당 — video.py는 다른 존재-체크 패턴). (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+---
+
 ## Epic 3: React SPA — Pipeline Control UI
 
 Jay가 브라우저에서 파이프라인 전체를 조작할 수 있다 — 실행 시작, 아티팩트 리뷰, 스테이지 승인, 재시도, 인라인 편집.
@@ -1017,6 +1023,14 @@ Jay 지시(2026-07-07). `.env`의 클론 변수(`CLONE_MODEL`/`CLONE_VOICE_PATH`
 
 Jay 시청 피드백(2026-07-09, iteration 1 #1/#7). ① **종결어미 리듬**: "~했습니다/~입니다" 연속 반복이 단조로움 — 동일 종결 연속 금지, 의문·도치·명사 종결 혼용, 클라이맥스 단문 등 리듬 규칙을 writing 프롬프트에 추가. 단 다큐 톤 기조("-습니다" 존댓말)는 유지 — 리듬만 다양화, 반말·구어체 금지(채널 정체성). ② **지칭 규칙**: 주연이 아닌 인물은 고유 번호 대신 역할명("D계급 인원", "연구원", "경비원") — D-9341 같은 번호는 TTS도 "디 구삼사일"로 어색하게 읽음. 전제 작업: `scenario/writing` 프롬프트의 repo 파일이 부재(레거시 yt.pipe `templates/scenario/03_writing.md`가 최초 시딩 소스) — PROMPT_POLICY 규칙 1에 맞게 `prompts/scenario/writing.md`를 현행 production 버전으로 먼저 확립 후 수정. candidate 시딩→golden-set 게이트→승격. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 5.23: ComfyUI 지속부하 크래시 완화 — 배치 중간 헬스 폴/프리엠티브 재기동
+
+베이스라인(39샷)·iteration 1(42샷)에서 재현 확인: ROCm(RX 9060 XT) ComfyUI가 이미지 스테이지 도중 hipErrorIllegalAddress로 core dump — 두 런 모두 ~40샷 근방에서 발생, 지속 부하 누적 패턴으로 보임. 5.14의 크래시 **복구** 경로(샷 재개+`retry` 엔드포인트)는 라이브 검증 완료(정상 동작)이지만, 매 장편 런마다 사람이 크래시를 감지하고 재시작·retry를 눌러야 함 — 완전 자동 완주가 안 됨. 드라이버 버그 자체는 근치 불가(ROCm 소관, 이 프로젝트 범위 밖)이므로 완화만: ① N샷(config, 기본값은 관측된 크래시 임계 이하로 — 예 `YTFLOW_COMFYUI_HEALTH_POLL_EVERY_N_SHOTS`)마다 `check_health` 호출, 응답 없으면 image_node가 **자체적으로** 짧은 대기 후 1회 자동 retry(사람 개입 없이) — 5.14 헬스체크 인프라 재사용, 새 호출 지점만 추가. ② 대안/추가책: N샷마다 ComfyUI 프로세스 자체를 프리엠티브 재기동(subprocess 관리 범위 확장 필요, 비용/복잡도 더 큼 — Jay 판단 필요). 우선 ①만 구현, ②는 ①로 부족할 때 후속. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 5.24: TTS 클론 보이스 재등록 지원 — 샘플 교체 시 강제 재생성
+
+Jay가 `data/voices/sutak.mp3`를 7.68초(스테레오, 권장 미달)에서 12.93초로 재녹음(5.21 DoD 대기 항목 해소)했으나, `scripts/seed_voice_clone.py`의 `_find_existing`이 **이름("sutak")만으로 매칭**해 재실행 시 옛 샘플로 만든 voice id를 그대로 반환하고 끝남(재등록 없음) — API에 `action=delete`가 존재하는데(5.21 Dev Notes 기록) 스크립트에 구현이 없어서 재녹음이 실제로 반영될 길이 없음. 수정: `--force` 플래그 추가 — 기존 voice를 `action=delete`로 지운 뒤 `action=create`로 새 샘플 재등록(재등록도 유료 $0.01이므로 플래그 뒤에 명시적으로 숨김, 기본 동작은 현행 유지). 완료 후 실행해 새 `YTFLOW_QWEN_TTS_CLONE_VOICE_ID`를 `.env`에 반영하고, 5.21 DoD(스톡 vs 클론 A/B 청취)를 마침내 실제 12.9초 샘플로 수행 가능하게 함. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책
 
 **Goal:** 앞으로의 품질 개선이 전부 프롬프트 반복(iteration)으로 수렴하므로, 프롬프트 변경을 "버전 + 라벨 + 평가 게이트 승격" 프로토콜로 운영한다 (업계 표준 prompt-management 패턴; Langfuse 네이티브 기능 — labels, protected labels, Datasets, trace↔version 연동 — 을 그대로 사용, 자체 인프라 구축 없음). 상세 AC는 스토리 파일 참조.
@@ -1103,6 +1117,10 @@ deferred-work(2026-07-07 #1)의 콜라주 룩 리스크를 업계 표준 기법 
 ### Story 8.8: 캐릭터 마이크로 모션 기법 선택 — 닫힌 enum + procedural overlay
 
 Jay 지시(2026-07-08): 캐릭터의 역동성을 위한 떨림 등 다양한 업계 표준 기법을 추가. 1.9c/7.3의 고정 sway/bob/parallax를 확장하되, LLM이 자유 숫자나 자유 텍스트를 만들지 않도록 cast 멤버에 닫힌 `motion_style`/`motion_energy` enum을 추가한다. 후보 스타일: `hold`, `breath`, `sway`, `tremble`, `pulse`, `glitch`; 강도: `low|medium|high`. 구현은 새 workflow stage가 아니라 기존 `visual_breakdown` cast schema 확장 + `scenario_chain.parse_cast` lenient normalization + `video_node`의 FFmpeg per-frame overlay/scale expression 소비. 업계 표준 근거: game animation의 state/blend-tree식 제어 파라미터, motion graphics의 procedural wiggle, 2D animation의 secondary motion/follow-through를 이 프로젝트 비용 구조에 맞게 정적 RGBA 카드 변환으로 근사. 8.9와 분리 — 이 스토리는 제자리 생동감/secondary motion만 담당.
+
+### Story 8.13: 파생 개체 카드 온디맨드 생성 — `<scp_id>-<n>`
+
+Jay 결정(2026-07-09, iteration 1 시청 피드백 후속): SCP-049 런에서 `cast_decision`이 자신이 가르친 어휘(`<scp_id>-<n>`, 예 `SCP-049-2`)대로 파생 개체를 10샷에 배정했는데, 그 카드가 자산 라이브러리에 없어 video_node가 전부 스킵(`no character row for cast member SCP-049-2, skipping` ×10) — "이 개체들은 SCP-049-2로 분류됩니다" 나레이션에 빈 방이 나옴. Jay가 어휘 제한 대신 **온디맨드 생성**을 선택 — 049류처럼 파생 개체가 서사 핵심인 SCP에서 화면 표현력을 지키기 위함. 런타임 트리거는 8.4의 선례(post-scenario, `run_service._ensure_special_pose_cards` 패턴 — cast를 스캔해 없는 카드를 발견하면 캡 걸고 생성)를 따르되, 실제 생성 호출은 8.4의 `generate_special_pose_card`가 아니라 8.2의 **`CharacterService.generate_cards_from_descriptor(card_key, descriptor, anchor_path=...)`**를 재사용 — 이 함수가 이미 `card_key`에 대해 `Character` 행이 없으면 `_ensure_character`로 새로 만들고, `anchor_path`로 기존 개체의 승인 카드를 IPAdapter 레퍼런스 삼아 4앵글을 생성함(family 유사성은 이 파라미터로 이미 지원됨 — 8.4의 `generate_special_pose_card`는 반대로 "기존 identity 필수"라 파생체엔 못 씀). 신규 워크플로 스테이지 없음. 트리거 조건: cast_decision이 참조한 `card_key`가 `check_existing_character`로 안 잡히면 base 개체(`<scp_id>` 부분)의 승인된 front 카드 경로를 `anchor_path`로, visual_breakdown 사이드카의 파생체 묘사를 `descriptor`로 넘겨 생성. 8.6 자산 레지스트리에 `draft` 상태로 등록, run 승인 없이 approved 직행(8.6의 파이프라인 자동생성 카드 선례와 동일 취급). 비용: 파생 개체 1종당 4앵글 ComfyUI 생성 — 런당 캡으로 무한 생성 방지. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
 ### Story 8.9: 캐릭터 이동·블로킹 — screen-space locomotion enum
 
