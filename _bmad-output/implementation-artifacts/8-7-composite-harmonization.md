@@ -17,7 +17,7 @@ baseline_commit: edad3f7ba0ac8e40ffaed29c3994d198f20817a7
 
 # Story 8.7: Composite Harmonization — Collage Look Resolution Ladder
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -434,8 +434,9 @@ Claude Sonnet 5 (claude-sonnet-5)
 - 2026-07-09 (same session): Located pre-existing 8-3 live-verification render evidence on disk, reviewed with Jay, confirmed collage look is real and visible. Status reverted `backlog` → `ready-for-dev`; implementation begins.
 - 2026-07-09 (same session): Implemented Tiers 1/2 and Tier 3 scaffolding. `composite_harmonization.py` (Tiers 1/2 pure ffmpeg filter builders + Tier 3 RelightCache/precompute_relights/relight_sprite), wired into `video.py`'s per-card overlay loop and `video_node`, `inject_relight_resolver` seam + `run_service.precompute_relights_for_run` + `api/main.py` wiring, `config.py` fields, IC-Light workflow placeholder + README. Live ffmpeg validation (not just regex) caught and fixed 5 real filter-graph bugs; two AD-1 architecture tests each caught a wrong first attempt at the services/pipeline injection boundary. Full regression green (1057 passed, 1 skipped), ruff clean. IC-Light itself unverified (no local custom-node install) and left as deferred external-work. Status → review.
 - 2026-07-09 (code review): Applied review patches: safe default restored to tier 0 with range validation, mood tint now includes saturation/contrast, contact shadow scale/blur corrected, relight cache path components sanitized, relit outputs validated as alpha PNG before cache/substitution, approved AssetService entries required for STOCK relight precompute, malformed cards fall back safely, unverified placeholder workflow cannot cache outputs, and run_service Tier 3 import made lazy. Targeted regression green (62 passed, 1 warning). Status → in-progress pending real IC-Light workflow or explicit scope decision.
+- 2026-07-09 (scope decision, Jay via dev-story): explicit scope decision made — real IC-Light (Tier 3) live validation against an actual installed custom-node graph is deferred as external infra work, same precedent as Story 8.4's live-validation split into 8.4a. Non-blocking because Tier 3 is non-fatal by construction (gated behind `ytflow_verified_iclight`, falls back to un-relit sprites). Re-verified before closing: `ruff check .` clean, targeted regression (composite_harmonization/video_harmonization/config/AD-1 architecture tests) 67 passed. Status → review.
 
 ---
 
-**Story Status:** in-progress
+**Story Status:** review
 **Story Completion:** Entry gate confirmed 2026-07-09 via real 8-3 render evidence; Tiers 1/2 implemented and review-patched. Tier 3 remains deferred because no real IC-Light workflow/custom-node install exists locally; placeholder workflow is now safely non-operational until verified.
