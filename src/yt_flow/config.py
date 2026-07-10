@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     comfyui_workflow_path: str = "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json"
     comfyui_mock: bool = False
 
+    # Sustained-load crash mitigation (Story 5.23): two independent runs crashed
+    # ComfyUI (hipErrorIllegalAddress, ROCm RX 9060 XT) near shot ~40 under load.
+    # A periodic re-check catches a crash before submit_and_fetch itself would;
+    # the bounded wait-and-recheck window covers a manual restart-and-retry.
+    comfyui_health_poll_every_n_shots: int = Field(20, ge=1)
+    comfyui_crash_recovery_poll_sec: float = Field(15.0, gt=0)
+    comfyui_crash_recovery_timeout_sec: float = Field(300.0, gt=0)
+
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"
 

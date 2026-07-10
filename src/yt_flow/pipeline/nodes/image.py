@@ -24,6 +24,7 @@ workspace so downstream code sees an identical artifact layout in mock and real
 runs.
 """
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -38,6 +39,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
 from yt_flow.services import comfyui_client
+from yt_flow.services.comfyui_client import ComfyUIError
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +206,34 @@ def _record_trace(
         pass
 
 
+async def _wait_for_comfyui_recovery(
+    base_url: str, *, poll_sec: float, timeout_sec: float, shots_done: int, total_shots: int,
+) -> None:
+    """Bounded wait-and-recheck loop for a mid-batch ComfyUI crash. [AC2-5]
+
+    Called after a health-check or ``submit_and_fetch`` failure past shot 0's
+    initial fail-fast check — a crash is a crash regardless of which call
+    first notices it. Polls ``check_health`` every ``poll_sec`` until it
+    succeeds or ``timeout_sec`` elapses; re-raises the last failure on timeout
+    so the stage fails with the existing AD-10 error format. [AC3]
+    """
+    logger.warning(
+        "ComfyUI health check failed after %d/%d shots, waiting for recovery", shots_done, total_shots,
+    )
+    start = time.monotonic()
+    while True:
+        try:
+            await comfyui_client.check_health(base_url)
+        except ComfyUIError:  # still down, keep polling within budget
+            if time.monotonic() - start >= timeout_sec:
+                logger.warning("ComfyUI did not recover within %ds, failing stage", int(timeout_sec))
+                raise
+            await asyncio.sleep(poll_sec)
+            continue
+        logger.info("ComfyUI recovered after %ds, resuming", int(time.monotonic() - start))
+        return
+
+
 def _plate_variant_index(run_id: str, scene_num: int, location_key: str, count: int) -> int:
     """Deterministic per-run variant pick: same run always picks the same variant
     for the same scene (spatial continuity); different runs vary naturally.
@@ -226,12 +256,25 @@ async def image_node(state: PipelineState) -> dict:
     image_count = 0
     skipped_count = 0
     stock_plate_count = 0
+    generated_count = 0  # Story 5.23: drives the periodic mid-batch health re-check
     health_checked = False  # Story 5.14: lazy — never touched at all if every shot resumes
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
         out_dir.mkdir(parents=True, exist_ok=True)
         template = None if s.comfyui_mock else _load_workflow(s.comfyui_workflow_path)
+        total_shots = sum(len(scene["shots"]) for scene in state.get("scenes", []))
+
+        async def _recover() -> None:
+            # shots_done spans every path (resumed/plate/generated) so the AC5 log
+            # reflects true run progress, not just the newly-generated subset.
+            await _wait_for_comfyui_recovery(
+                s.comfyui_url,
+                poll_sec=s.comfyui_crash_recovery_poll_sec,
+                timeout_sec=s.comfyui_crash_recovery_timeout_sec,
+                shots_done=generated_count + skipped_count + stock_plate_count,
+                total_shots=total_shots,
+            )
 
         plate_cache: dict[str, list[dict]] = {}  # one lookup per location_key per run, not per shot
         new_scenes: list[SceneState] = []
@@ -272,9 +315,15 @@ async def image_node(state: PipelineState) -> dict:
                             "stock plate resolution failed for %r, falling back to generation: %s", location_key, exc,
                         )
 
-                if not s.comfyui_mock and not health_checked:
-                    await comfyui_client.check_health(s.comfyui_url)
-                    health_checked = True
+                if not s.comfyui_mock:
+                    if not health_checked:
+                        await comfyui_client.check_health(s.comfyui_url)
+                        health_checked = True
+                    elif generated_count and generated_count % s.comfyui_health_poll_every_n_shots == 0:
+                        try:
+                            await comfyui_client.check_health(s.comfyui_url)
+                        except ComfyUIError:  # a NEW mid-batch failure, not the fail-fast first check
+                            await _recover()
 
                 dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                 if s.comfyui_mock:
@@ -283,9 +332,14 @@ async def image_node(state: PipelineState) -> dict:
                     if template is None:
                         raise ValueError("workflow must be loaded in real mode")
                     workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"])
-                    image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
+                    try:
+                        image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
+                    except ComfyUIError:  # AC4: a submit-time crash reuses the same recovery loop
+                        await _recover()
+                        image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
                     dest.write_bytes(image_bytes)
                     request_count += 1
+                generated_count += 1
                 image_count += 1
                 _write_sidecar(out_dir, scene["scene_num"], shot)
                 # Copy the shot; set only image_path — never mutate the input state. [AD-4]

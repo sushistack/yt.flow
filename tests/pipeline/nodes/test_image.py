@@ -28,11 +28,17 @@ RGB_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
 
 class FakeSettings:
-    def __init__(self, *, mock, workflow_path):
+    def __init__(
+        self, *, mock, workflow_path,
+        health_poll_every_n_shots=20, crash_recovery_poll_sec=15.0, crash_recovery_timeout_sec=300.0,
+    ):
         self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
         self.comfyui_url = "http://comfy.test:8188"
         self.comfyui_workflow_path = workflow_path
         self.comfyui_mock = mock
+        self.comfyui_health_poll_every_n_shots = health_poll_every_n_shots
+        self.comfyui_crash_recovery_poll_sec = crash_recovery_poll_sec
+        self.comfyui_crash_recovery_timeout_sec = crash_recovery_timeout_sec
 
 
 def _state(**over):
@@ -468,6 +474,142 @@ async def test_resume_skipped_count_in_trace(monkeypatch, tmp_path):
     assert out.get("error") is None
     assert captured["skipped_count"] == 1
     assert captured["request_count"] == 2  # S001 skip=0, S002/S003 normal=1 each
+
+
+# ── Sustained-load crash mitigation (Story 5.23) ────────────────────────────
+
+def _many_shots_state(n):
+    shots = [
+        {"shot_id": f"S{i:03d}", "sentence_indices": [i], "image_prompt": f"prompt {i}",
+         "negative_prompt": "neg", "camera_angle": None, "camera_movement": None,
+         "image_path": None, "cast": []}
+        for i in range(n)
+    ]
+    return {
+        "run_id": "run-img-1", "scp_text": "SCP-173",
+        "scenes": [{
+            "scene_num": 1, "narration": "n1", "audio_path": None, "audio_duration": None,
+            "word_timings": [], "subtitle_path": None, "shots": shots,
+        }],
+        "video_path": None, "current_stage": "", "gate_states": {},
+        "prompt_variant": None, "error": None,
+    }
+
+
+async def test_periodic_health_check_triggers_mid_batch(monkeypatch, tmp_path):
+    """AC1/AC7: check_health re-runs every N generated shots, not only at shot 0."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path), health_poll_every_n_shots=2),
+    )
+    calls = 0
+
+    async def count_health(url):
+        nonlocal calls
+        calls += 1
+    monkeypatch.setattr(img.comfyui_client, "check_health", count_health)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_many_shots_state(4))
+    assert out.get("error") is None
+    assert calls == 2  # shot 0's initial check + one periodic re-check before shot index 2
+
+
+async def test_recovery_loop_continues_after_transient_failure(monkeypatch, tmp_path):
+    """AC2: a mid-batch health-check failure waits and rechecks instead of failing the stage."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(
+            mock=False, workflow_path=_wf_file(tmp_path),
+            health_poll_every_n_shots=2, crash_recovery_poll_sec=0.01, crash_recovery_timeout_sec=5.0,
+        ),
+    )
+    calls = 0
+
+    async def flaky_health(url):
+        nonlocal calls
+        calls += 1
+        if calls in (2, 3):  # the periodic check + first recovery poll both fail
+            raise ComfyUIError("down")
+    monkeypatch.setattr(img.comfyui_client, "check_health", flaky_health)
+
+    fetch_calls = 0
+
+    async def fake_fetch(url, workflow):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_many_shots_state(3))
+    assert out.get("error") is None
+    assert fetch_calls == 3  # every shot still generated after recovery
+    assert calls == 4  # initial + failed periodic + failed poll + recovered poll
+
+
+async def test_recovery_loop_times_out_and_fails_stage(monkeypatch, tmp_path):
+    """AC3: recovery window expiring fails the stage with the existing error format."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(
+            mock=False, workflow_path=_wf_file(tmp_path),
+            health_poll_every_n_shots=2, crash_recovery_poll_sec=0.01, crash_recovery_timeout_sec=0.05,
+        ),
+    )
+    first_call = True
+
+    async def always_down(url):
+        nonlocal first_call
+        if first_call:  # shot 0's fail-fast check must still pass
+            first_call = False
+            return None
+        raise ComfyUIError("ComfyUI unreachable: refused")
+    monkeypatch.setattr(img.comfyui_client, "check_health", always_down)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_many_shots_state(3))
+    assert "scenes" not in out
+    assert out["error"] and "stage=image" in out["error"] and "run-img-1" in out["error"]
+
+
+async def test_submit_and_fetch_failure_recovers_via_same_helper(monkeypatch, tmp_path):
+    """AC4: a submit_and_fetch failure (not a health-check failure) reuses the same
+    recovery loop before failing, and the shot succeeds once ComfyUI is healthy again."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        img, "_settings",
+        lambda: FakeSettings(
+            mock=False, workflow_path=_wf_file(tmp_path),
+            crash_recovery_poll_sec=0.01, crash_recovery_timeout_sec=5.0,
+        ),
+    )
+
+    async def healthy(url):
+        return None  # ComfyUI itself is fine — only submit_and_fetch hiccups once
+    monkeypatch.setattr(img.comfyui_client, "check_health", healthy)
+
+    fetch_calls = 0
+
+    async def flaky_fetch(url, workflow):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        if fetch_calls == 1:
+            raise ComfyUIError("connection refused")
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", flaky_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert fetch_calls == 4  # shot 1: fail + retry, shots 2/3: succeed first try
 
 
 # ── STOCK location plate fast path (Story 8.5) ──────────────────────────────
