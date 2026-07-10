@@ -15,7 +15,7 @@ evidence: "Baseline run 272b05a4 crashed near shot 39; iteration-1 run d55a265b 
 
 # Story 5.23: ComfyUI Sustained-Load Crash Mitigation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -51,6 +51,14 @@ This story removes exactly one step from that manual loop: **noticing + waiting 
 - [x] Task 5: Logging (AC:5)
 - [x] Task 6: Mocked recovery/timeout/periodic-trigger tests (AC:7)
 - [x] Task 7: Manual kill-and-restart live verification, record in Dev Agent Record (AC:8) — mocked half done; live GPU drill deferred to Jay, see Dev Agent Record
+
+### Review Findings
+
+- [x] [Review][Patch] `comfyui_crash_recovery_poll_sec`/`comfyui_crash_recovery_timeout_sec` had no lower-bound validation [src/yt_flow/config.py]
+- [x] [Review][Patch] Broad `except Exception` at 3 new call sites swallowed non-ComfyUI bugs into the recovery wait [src/yt_flow/pipeline/nodes/image.py]
+- [x] [Review][Patch] AC5 shot-progress log denominator/numerator used inconsistent bases (generated-only vs. all-shots) [src/yt_flow/pipeline/nodes/image.py]
+- [x] [Review][Defer] Single post-recovery retry with no cumulative per-run recovery budget — deferred, see deferred-work.md
+- [x] [Review][Defer] Recovery wait can overshoot `timeout_sec` by up to one `poll_sec` — deferred, see deferred-work.md
 
 ## Dev Notes
 
