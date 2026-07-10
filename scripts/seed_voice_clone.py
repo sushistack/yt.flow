@@ -3,6 +3,7 @@
 Usage:
     uv run python scripts/seed_voice_clone.py            # list first, create if missing
     uv run python scripts/seed_voice_clone.py --dry-run  # print create payload, no writes
+    uv run python scripts/seed_voice_clone.py --force    # delete existing 'sutak' voice (if any), re-create from current sample
 """
 
 import argparse
@@ -104,6 +105,14 @@ def _list_voices(client: httpx.Client, s: Settings) -> list[dict[str, Any]]:
     return voices
 
 
+def _delete_voice(client: httpx.Client, s: Settings, voice_id: str) -> None:
+    # ponytail: confirmed via DashScope docs (2026-07-10) — delete keys the target by
+    # "voice", not "voice_id"; response carries no useful body, so nothing to parse.
+    payload = {"model": _ENROLLMENT_MODEL, "input": {"action": "delete", "voice": voice_id}}
+    resp = client.post(_endpoint(s), headers=_auth_headers(s), json=payload)
+    resp.raise_for_status()
+
+
 def _audio_data_uri(path: Path) -> str:
     if not path.exists():
         raise FileNotFoundError(f"voice sample not found: {path}")
@@ -141,23 +150,44 @@ def _print_voice_id(voice_id: str) -> None:
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Enroll the sutak Qwen TTS clone voice.")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete any existing 'sutak' voice for this target_model, then re-create from the current sample",
+    )
     args = ap.parse_args(argv)
 
     s = Settings()
     if args.dry_run:
+        if args.force:
+            print(f"would delete: existing '{_PREFERRED_NAME}' voice for target_model={s.qwen_tts_clone_model} (if found)")
         print(_create_payload(s, include_audio=False))
         return
 
     with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
         voices = _list_voices(client, s)
         existing = _find_existing(voices, s.qwen_tts_clone_model)
-        if existing:
+
+        if existing and not args.force:
             print("found existing voice; no create call made")
             _print_voice_id(existing)
             return
 
-        resp = client.post(_endpoint(s), headers=_auth_headers(s), json=_create_payload(s))
-        resp.raise_for_status()
+        if existing and args.force:
+            _delete_voice(client, s, existing)
+            print(f"deleted voice_id={existing}")
+
+        try:
+            resp = client.post(_endpoint(s), headers=_auth_headers(s), json=_create_payload(s))
+            resp.raise_for_status()
+        except httpx.HTTPStatusError:
+            if existing and args.force:
+                print(
+                    f"WARNING: deleted voice_id={existing} but re-create failed — "
+                    "no voice is currently enrolled; re-run --force to retry",
+                    file=sys.stderr,
+                )
+            raise
         data = resp.json()
         voice_id = data.get("output", {}).get("voice")
         if not voice_id:
