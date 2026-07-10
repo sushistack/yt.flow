@@ -32,6 +32,21 @@ def _make_rgba_png() -> bytes:
     return sig + ihdr + idat + iend
 
 
+def _make_rgb_png() -> bytes:
+    import struct
+    import zlib
+
+    def chunk(name: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(name + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + name + data + struct.pack(">I", crc)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+    idat = chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00"))
+    iend = chunk(b"IEND", b"")
+    return sig + ihdr + idat + iend
+
+
 def _write_silent_wav(path) -> None:
     """A real, ffmpeg-decodable 1-second silent WAV (real-ffmpeg test needs a
     valid audio stream, unlike the monkeypatched _run_ffmpeg tests above)."""
@@ -331,6 +346,39 @@ async def test_tier3_missing_pair_uses_original(monkeypatch, tmp_path, assets):
 
     assert out.get("error") is None
     assert assets.character in captured_paths
+
+
+async def test_tier3_opaque_relit_sprite_uses_original(monkeypatch, tmp_path, assets):
+    """A relit_map hit with an opaque PNG must not bypass sprite alpha validation."""
+    relit_path = tmp_path / "relit-opaque.png"
+    relit_path.write_bytes(_make_rgb_png())
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
+
+    async def _resolver(scenes, cast_cards):
+        return {("STOCK-d-class", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+
+    monkeypatch.setattr(video, "_relight_resolver", _resolver)
+    captured_paths = []
+
+    async def _fake(*args):
+        captured_paths.extend(args)
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {
+        "1:S001": [_card(assets.character, card_key="STOCK-d-class")],
+    })
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member(card_key="STOCK-d-class")], location_key="corridor",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    assert assets.character in captured_paths
+    assert str(relit_path) not in captured_paths
 
 
 async def test_tier3_malformed_card_without_key_uses_original(monkeypatch, tmp_path, assets):

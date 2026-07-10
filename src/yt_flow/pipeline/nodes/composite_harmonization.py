@@ -20,6 +20,7 @@ import copy
 import json
 import logging
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,7 @@ def build_light_wrap(
     char_label: str,
     out_label: str,
     *,
+    position: str = "center",
     blur_radius: int = 8,
     intensity: float = 0.15,
 ) -> str:
@@ -132,16 +134,27 @@ def build_light_wrap(
     raised "Invalid file index 0", the same class of two-consumer hazard
     ``_join_with_fades`` already works around via distinct per-segment labels).
 
+    The background sample is cropped to the same broad left/center/right band
+    as the card's placement before it is resized. That keeps the wrap tied to
+    the local plate region instead of squeezing the whole scene into every
+    sprite edge.
+
     ``scale2ref`` resizes the edge-detected background to the character's own
     frame size before ``alphamerge`` — live-verified: ``alphamerge`` rejects
     mismatched input dimensions ("Input frame sizes do not match"), and the
     background (full COMP_W x COMP_H) is essentially never the same size as a
     card scaled to its depth-scaled motion-safe box.
     """
+    crop_x = {
+        "left": "0",
+        "center": "iw/3",
+        "right": "2*iw/3",
+    }.get(position, "iw/3")
     return (
         f"[{char_label}]split=2[{out_label}_c1][{out_label}_c2];"
         f"[{out_label}_c1]alphaextract[{out_label}_mask];"
-        f"[{bg_label}]edgedetect=low=0.1:high=0.3,boxblur={blur_radius}:1[{out_label}_edge_raw];"
+        f"[{bg_label}]crop=w=iw/3:h=ih:x={crop_x}:y=0,"
+        f"edgedetect=low=0.1:high=0.3,boxblur={blur_radius}:1[{out_label}_edge_raw];"
         f"[{out_label}_edge_raw][{out_label}_c2]scale2ref[{out_label}_edge][{out_label}_c2ref];"
         f"[{out_label}_edge][{out_label}_mask]alphamerge,"
         f"colorchannelmixer=aa={intensity}[{out_label}_bleed];"
@@ -187,7 +200,19 @@ class RelightCache:
             return None
         if not self._asset_service.verify_asset(key):
             return None
-        return self._assets_path / entry["path"]
+        try:
+            path = _asset_path_under_root(self._assets_path, entry.get("path"))
+        except ValueError as exc:
+            logger.warning("Ignoring cached relight with unsafe path: %s", exc)
+            return None
+        try:
+            if not has_alpha(path.read_bytes()):
+                logger.warning("Ignoring cached relight without alpha: %s", path)
+                return None
+        except OSError as exc:
+            logger.warning("Ignoring unreadable cached relight %s: %s", path, exc)
+            return None
+        return path
 
     def store(self, card_key: str, location_key: str, style_epoch: int, image_bytes: bytes) -> Path:
         rel_path = self._relative_path(card_key, location_key, style_epoch)
@@ -195,7 +220,8 @@ class RelightCache:
         if not has_alpha(image_bytes):
             raise ValueError("IC-Light relight output is not a valid alpha PNG")
         abs_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = abs_path.with_suffix(abs_path.suffix + ".tmp")
+        tmp_path = abs_path.with_name(f"{abs_path.name}.{uuid.uuid4().hex}.tmp")
+        previous_bytes = abs_path.read_bytes() if abs_path.exists() else None
         tmp_path.write_bytes(image_bytes)
         key = self._key(card_key, location_key)
         try:
@@ -210,8 +236,10 @@ class RelightCache:
             self._asset_service.approve_asset(key)
         except Exception:
             tmp_path.unlink(missing_ok=True)
-            if not self._asset_service.get_asset(key, include_drafts=True):
+            if previous_bytes is None:
                 abs_path.unlink(missing_ok=True)
+            else:
+                abs_path.write_bytes(previous_bytes)
             raise
         return abs_path
 
@@ -223,6 +251,19 @@ def _safe_cache_part(value: str) -> str:
     if not isinstance(value, str) or not _SAFE_CACHE_PART_RE.fullmatch(value):
         raise ValueError(f"unsafe relight cache key component: {value!r}")
     return value
+
+
+def _asset_path_under_root(root: Path, relative_path: Any) -> Path:
+    if not isinstance(relative_path, str) or not relative_path:
+        raise ValueError(f"invalid relight asset path: {relative_path!r}")
+    rel = Path(relative_path)
+    if rel.is_absolute():
+        raise ValueError(f"relight asset path must be relative: {relative_path!r}")
+    base = root.resolve()
+    path = (base / rel).resolve()
+    if not path.is_relative_to(base):
+        raise ValueError(f"relight asset path escapes assets root: {relative_path!r}")
+    return path
 
 
 def _verified_asset(asset_service: Any, key: str) -> bool:
@@ -343,30 +384,39 @@ async def precompute_relights(
     pairs: dict[tuple[str, str], tuple[Path, Path]] = {}
     for scene in scenes:
         for shot in scene.get("shots") or []:
-            location_key = shot.get("location_key")
-            bg_path = shot.get("image_path")
-            if not location_key or not bg_path:
-                continue
             try:
+                location_key = shot.get("location_key")
+                bg_path = shot.get("image_path")
+                if not location_key or not bg_path:
+                    continue
                 _safe_cache_part(location_key)
+                if not _verified_location_asset(asset_service, location_key):
+                    continue
+                shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
             except ValueError:
                 logger.warning("Skipping unsafe relight location key: %r", location_key)
                 continue
-            if not _verified_location_asset(asset_service, location_key):
+            except Exception as exc:  # noqa: BLE001 — one malformed shot must not disable Tier 3
+                logger.warning("Skipping relight shot %r after metadata error: %s", shot, exc)
                 continue
-            shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
             for card in cast_cards.get(shot_key, []):
-                card_key = card.get("card_key")
-                card_path = card.get("path")
-                if card_key not in STOCK_CAST_KEYS or not card_path:
-                    continue
+                card_key = None
                 try:
+                    if not isinstance(card, dict):
+                        continue
+                    card_key = card.get("card_key")
+                    card_path = card.get("path")
+                    if card_key not in STOCK_CAST_KEYS or not card_path:
+                        continue
                     _safe_cache_part(card_key)
                     _safe_cache_part(location_key)
+                    if not _verified_card_asset(asset_service, card):
+                        continue
                 except ValueError:
                     logger.warning("Skipping unsafe relight cache pair: %r/%r", card_key, location_key)
                     continue
-                if not _verified_card_asset(asset_service, card):
+                except Exception as exc:  # noqa: BLE001 — one bad card must not disable all relights
+                    logger.warning("Skipping relight card %r after metadata error: %s", card, exc)
                     continue
                 pairs.setdefault((card_key, location_key), (Path(card_path), Path(bg_path)))
 
@@ -376,21 +426,21 @@ async def precompute_relights(
 
     async def _resolve_pair(pair: tuple[str, str], paths: tuple[Path, Path]) -> None:
         card_key, location_key = pair
-        cached = cache.get_or_compute(card_key, location_key, style_epoch)
-        if cached is not None:
-            relit_map[pair] = cached
-            stats["computed"] += 1
-            return
-        async with sem:
-            image_bytes = await relight_sprite(paths[0], paths[1], comfyui_client, workflow_path, comfyui_url)
-        if image_bytes is None or not has_alpha(image_bytes):
-            stats["failed"] += 1
-            return
         try:
+            cached = cache.get_or_compute(card_key, location_key, style_epoch)
+            if cached is not None:
+                relit_map[pair] = cached
+                stats["computed"] += 1
+                return
+            async with sem:
+                image_bytes = await relight_sprite(paths[0], paths[1], comfyui_client, workflow_path, comfyui_url)
+            if image_bytes is None or not has_alpha(image_bytes):
+                stats["failed"] += 1
+                return
             relit_map[pair] = cache.store(card_key, location_key, style_epoch, image_bytes)
             stats["computed"] += 1
-        except Exception as exc:  # noqa: BLE001 — AC:11: per-pair relight persistence is non-fatal
-            logger.warning("IC-Light relight cache store failed for %s/%s: %s", card_key, location_key, exc)
+        except Exception as exc:  # noqa: BLE001 — AC:11: per-pair relight is non-fatal
+            logger.warning("IC-Light relight failed for %s/%s: %s", card_key, location_key, exc)
             stats["failed"] += 1
 
     if pairs:

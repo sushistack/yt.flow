@@ -103,6 +103,16 @@ def test_build_light_wrap_custom_blur_and_intensity():
     assert "aa=0.5" in f
 
 
+@pytest.mark.parametrize(("position", "crop_x"), [
+    ("left", "0"),
+    ("center", "iw/3"),
+    ("right", "2*iw/3"),
+])
+def test_build_light_wrap_samples_position_band(position, crop_x):
+    f = build_light_wrap("bg", "c0", "wrapped", position=position)
+    assert f"[bg]crop=w=iw/3:h=ih:x={crop_x}:y=0" in f
+
+
 def test_build_light_wrap_labels_dont_collide_across_cards():
     f0 = build_light_wrap("bg", "c0", "cw0")
     f1 = build_light_wrap("shg1", "c1", "cw1")
@@ -190,6 +200,47 @@ def test_relight_cache_miss_when_integrity_fails(tmp_path):
     assert cache.get_or_compute("STOCK-d-class", "corridor", 1) is None
 
 
+def test_relight_cache_miss_when_cached_png_lacks_alpha(tmp_path):
+    svc = _FakeAssetService(tmp_path)
+    cache = RelightCache(tmp_path, svc)
+    path = cache.store("STOCK-d-class", "corridor", 1, _make_png(6))
+    path.write_bytes(_make_png(2))
+    assert cache.get_or_compute("STOCK-d-class", "corridor", 1) is None
+
+
+def test_relight_cache_rejects_manifest_path_escape(tmp_path):
+    svc = _FakeAssetService(tmp_path)
+    (tmp_path.parent / "outside.png").write_bytes(_make_png(6))
+    key = "relit/STOCK-d-class/corridor"
+    svc.assets[key] = {
+        "path": "../outside.png",
+        "source": {},
+        "status": "approved",
+        "style_epoch": 1,
+    }
+    assert RelightCache(tmp_path, svc).get_or_compute("STOCK-d-class", "corridor", 1) is None
+
+
+def test_relight_cache_restores_existing_file_when_manifest_write_fails(tmp_path):
+    class _FailingAssetService(_FakeAssetService):
+        def add_asset(self, key, path, source, **meta):
+            raise RuntimeError("manifest unavailable")
+
+    svc = _FakeAssetService(tmp_path)
+    cache = RelightCache(tmp_path, svc)
+    path = cache.store("STOCK-d-class", "corridor", 1, _make_png(6))
+    before = path.read_bytes()
+
+    failing = _FailingAssetService(tmp_path)
+    failing.assets = svc.assets
+    with pytest.raises(RuntimeError):
+        RelightCache(tmp_path, failing).store(
+            "STOCK-d-class", "corridor", 1, _make_png(6, b"\xff\x00\x00\xff")
+        )
+
+    assert path.read_bytes() == before
+
+
 # ── precompute_relights [AC:9,11] ────────────────────────────────────────────
 
 
@@ -224,8 +275,10 @@ def _png_chunk(name: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
 
 
-def _make_png(color_type: int) -> bytes:
-    raw = b"\x00" + (b"\x00\x00\x00\x00" if color_type == 6 else b"\x00\x00\x00")
+def _make_png(color_type: int, sample: bytes | None = None) -> bytes:
+    if sample is None:
+        sample = b"\x00\x00\x00\x00" if color_type == 6 else b"\x00\x00\x00"
+    raw = b"\x00" + sample
     ihdr = _png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, color_type, 0, 0, 0))
     idat = _png_chunk(b"IDAT", zlib.compress(raw))
     iend = _png_chunk(b"IEND", b"")

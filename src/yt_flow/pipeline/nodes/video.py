@@ -841,7 +841,7 @@ async def _compose_scene(
                 bg_a, bg_b = f"wbg{k}a", f"wbg{k}b"
                 chain_parts.append(f"[{base_label}]split=2[{bg_a}][{bg_b}]")
                 wrapped_label = f"cw{k}"
-                chain_parts.append(build_light_wrap(bg_a, card_label, wrapped_label))
+                chain_parts.append(build_light_wrap(bg_a, card_label, wrapped_label, position=position))
                 card_label = wrapped_label
                 base_label = bg_b
 
@@ -1270,11 +1270,22 @@ async def video_node(state: PipelineState) -> dict:
             # _compose_scene, so the composition loop makes no ComfyUI calls.
             location_key = shot_for_scene.get("location_key") if shot_for_scene else None
             if relit_map and location_key:
-                scene_cards = [
-                    {**card, "path": str(relit_map[(card.get("card_key"), location_key)])}
-                    if (card.get("card_key"), location_key) in relit_map else card
-                    for card in scene_cards
-                ]
+                relit_scene_cards = []
+                for card in scene_cards:
+                    relit_path = relit_map.get((card.get("card_key"), location_key))
+                    if relit_path is None:
+                        relit_scene_cards.append(card)
+                        continue
+                    try:
+                        if has_alpha(Path(relit_path).read_bytes()):
+                            relit_scene_cards.append({**card, "path": str(relit_path)})
+                        else:
+                            logger.warning("Relit sprite has no alpha; using original card: %s", relit_path)
+                            relit_scene_cards.append(card)
+                    except OSError as exc:
+                        logger.warning("Relit sprite unreadable; using original card %s: %s", relit_path, exc)
+                        relit_scene_cards.append(card)
+                scene_cards = relit_scene_cards
             seg_path, spec, has_char = await _compose_scene(
                 scene, i, run_dir,
                 cards=scene_cards,
