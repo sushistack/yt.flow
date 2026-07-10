@@ -17,7 +17,7 @@ baseline_commit: edad3f7ba0ac8e40ffaed29c3994d198f20817a7
 
 # Story 8.7: Composite Harmonization — Collage Look Resolution Ladder
 
-Status: review
+Status: done
 
 ## Story
 
@@ -445,5 +445,5 @@ Claude Sonnet 5 (claude-sonnet-5)
 
 ---
 
-**Story Status:** review
+**Story Status:** done
 **Story Completion:** Entry gate confirmed 2026-07-09 via real 8-3 render evidence; Tiers 1/2 implemented and review-patched. Tier 3 remains deferred because no real IC-Light workflow/custom-node install exists locally; placeholder workflow is now safely non-operational until verified.
