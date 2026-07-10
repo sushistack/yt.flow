@@ -7,13 +7,14 @@ previous_story: 5-23-comfyui-crash-mitigation
 depends_on:
   - 5-21-tts-voice-clone-wiring   # the script and voice id this story adds a force path to
 related: []
+baseline_commit: 85e07cd528361caf902cfd9153e1b8f5ce8ec08c
 workflow_decision: "Extend scripts/seed_voice_clone.py with a --force flag. No pipeline/runtime code touched — enrollment is a one-off operator script."
 evidence: "Jay re-recorded data/voices/sutak.mp3 from 7.68s (stereo, below the 10-20s recommendation) to 12.93s (commit e52aed4). Re-running seed_voice_clone.py today would print the OLD voice id (matched by name, not content) without re-enrolling."
 ---
 
 # Story 5.24: Force Re-Enrollment Support in seed_voice_clone.py
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -40,11 +41,18 @@ The DashScope `qwen-voice-enrollment` API supports `action: "delete"` (documente
 
 ## Tasks / Subtasks
 
-- [ ] Task 0: Confirm DashScope delete payload shape (dry-run against docs or a disposable test enrollment) before wiring against the real `sutak` voice (AC:2)
-- [ ] Task 1: `--force` flag + `_delete_voice` (AC:1,2)
-- [ ] Task 2: Force-flow branching in `main()` (AC:3,4,5,6)
-- [ ] Task 3: Mocked tests (AC:7)
-- [ ] Task 4: Live re-enrollment run + `.env` update + Dev Agent Record (AC:8)
+- [x] Task 0: Confirm DashScope delete payload shape (dry-run against docs or a disposable test enrollment) before wiring against the real `sutak` voice (AC:2)
+- [x] Task 1: `--force` flag + `_delete_voice` (AC:1,2)
+- [x] Task 2: Force-flow branching in `main()` (AC:3,4,5,6)
+- [x] Task 3: Mocked tests (AC:7)
+- [x] Task 4: Live re-enrollment run + `.env` update + Dev Agent Record (AC:8)
+
+### Review Findings
+
+- [x] [Review][Patch] No operator-facing warning when create fails after a successful `--force` delete — leaves the voice deleted with nothing re-created and only a bare traceback [scripts/seed_voice_clone.py:176-186]
+- [x] [Review][Patch] No test asserts the actual `_delete_voice` request payload (the `voice` key + exact target id) — the force-flow test only checked call order, not contents, so a wrong id/key would still pass [tests/test_seed_voice_clone.py]
+- [x] [Review][Defer] `_find_existing` returns only the first match; duplicate "sutak" enrollments for the same target_model would leave orphans after `--force` [scripts/seed_voice_clone.py:67-74] — deferred, pre-existing limitation of `_find_existing`, not introduced by this diff
+- [x] [Review][Defer] No idempotent handling for a delete-then-404 race (voice removed externally between list and delete) [scripts/seed_voice_clone.py:108-113] — deferred, YAGNI for a single-operator on-demand CLI script
 
 ## Dev Notes
 
@@ -62,8 +70,32 @@ The DashScope `qwen-voice-enrollment` API supports `action: "delete"` (documente
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Task 0 payload confirmation (2026-07-10): DashScope docs (`help.aliyun.com/en/model-studio/qwen-omni-voice-cloning`) give the delete request as `{"model": "qwen-voice-enrollment", "input": {"action": "delete", "voice": "<id>"}}` — note the key is **`voice`**, not `voice_id` as AC2's placeholder text guessed. This matches the existing code's own convention: `_voice_id()` already reads the `"voice"` key first, and the create response is read via `output.voice`. Implemented `_delete_voice` with the confirmed `voice` key. Delete response carries no useful body (`{"output": {}, "usage": {"count": 0}}`), so nothing is parsed from it — only `raise_for_status()`.
+- Live re-enrollment (2026-07-10, AC8): ran `uv run python scripts/seed_voice_clone.py --force` for real.
+  - Deleted voice_id: `qwen-tts-vc-sutak-voice-20260707211054527-0f76` (old, from the 7.68s sample)
+  - Created voice_id: `qwen-tts-vc-sutak-voice-20260710174246336-dce4` (new, from the 12.93s re-recorded `data/voices/sutak.mp3`)
+  - `.env`'s `YTFLOW_QWEN_TTS_CLONE_VOICE_ID` updated to the new id.
+  - Note: 5.21's stock-vs-clone A/B listening comparison remains Jay's judgment call, not automated by this story — the clone voice now targets the correct (longer) reference sample so that comparison is unblocked.
 
 ### Completion Notes List
 
+- Added `--force` CLI flag (default off — behavior byte-for-byte unchanged without it) and `_delete_voice()` to `scripts/seed_voice_clone.py`, reusing existing auth/list/create plumbing (ponytail: one flag, one small function).
+- `main()` branching: `existing and not force` → unchanged short-circuit; `existing and force` → delete then always create; no `existing` → plain create regardless of `--force` (nothing to delete). `--dry-run --force` prints a static "would delete" line plus the existing create-payload dry-run output — no network calls, since existence isn't looked up in dry-run mode.
+- Added 4 mocked tests in `tests/test_seed_voice_clone.py` covering: force+existing (delete→create order), force+no-existing (create only, no delete), plain run unchanged, and dry-run+force (no network client constructed). All 5 pre-existing 5.21 tests remain green.
+- Full regression suite: 1074 passed, 1 skipped (pre-existing), 0 failures. `ruff check` clean on both changed files.
+- Live-executed AC8's `--force` run against production DashScope (see Debug Log above) and updated `.env`. This was a real, irreversible destructive+billed call — confirmed with Jay before running.
+
 ### File List
+
+- `scripts/seed_voice_clone.py` (modified — `--force` flag, `_delete_voice`, `main()` branching, docstring)
+- `tests/test_seed_voice_clone.py` (modified — 4 new mocked tests for force flow)
+- `.env` (modified — `YTFLOW_QWEN_TTS_CLONE_VOICE_ID` updated to new live-enrolled voice id)
+
+## Change Log
+
+- 2026-07-10: Implemented `--force` re-enrollment flow (Tasks 0-3), confirmed DashScope delete payload shape via docs research (key is `voice`, not `voice_id`), added mocked tests. Live-executed the real `--force` re-enrollment (Task 4/AC8): old voice id deleted, new id created from the 12.93s sample, `.env` updated. Full regression suite green (1074 passed).
+- 2026-07-10: Code review (3-layer: Blind Hunter, Edge Case Hunter, Acceptance Auditor) — 2 patches applied, 2 items deferred (pre-existing/YAGNI), rest dismissed (false positives or already-justified design decisions). Patches: (1) `main()` now warns on stderr with the deleted voice id before re-raising if re-create fails after a successful `--force` delete, so the operator isn't left with just a bare traceback; (2) added a test asserting `_delete_voice`'s actual request payload (`voice` key + exact target id), closing the gap AC2 explicitly warned about (no test previously proved the delete targets the right id). 13 tests total, full regression suite still green.
