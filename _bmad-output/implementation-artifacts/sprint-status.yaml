@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-10  # iteration-1 후속 조사 4건 추가 등록: 8-13(파생카드, Jay 선택)/2-6(reject 무력화 버그)/5-23(크래시 완화)/5-24(보이스 강제 재등록)
+last_updated: 2026-07-10  # 5-23 구현 완료 → review (회귀 스위트 1070 passed)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -121,7 +121,7 @@ development_status:
   5-20-cc-attribution-credits: done  # CC BY-SA 준수 자동화 — 엔딩 크레딧 카드(5-17 렌더러 재사용) + description.txt 아티팩트(문서·라이선스·이미지 출처), 비치명적. 구현 완료(2026-07-07): video.py에 인라인(services/video_credits.py 신설 안 함, AD-1), ending_credit는 시도가 아닌 성공 여부로 정의(카드 실패 시 false), 위키 저자 추출은 스코프 아웃(가드레일). 회귀 780 passed/1 skip, ruff clean, 실제 ffmpeg 라이브 검증(SCP-999). 코드리뷰 완료(2026-07-07): critical 버그 수정(_initial_state가 ending_credit_error를 무조건 시드해 AC6 게이트 계약 위반 — cc_attribution=False 런도 ending_credit:true로 보임) 포함 5건 패치, 2건 defer, 7건 dismiss. 회귀 그린, ruff clean.
   5-21-tts-voice-clone-wiring: done  # 클론 배선(1회성 voice id 등록, clone_enabled 기본 OFF, 무음 폴백 금지) + 배속 YTFLOW_QWEN_TTS_SPEED 기본 1.2(atempo, duration 측정 전 적용); DoD=스톡vs클론 A/B 청취; ⚠️ sutak.mp3 7.68s 스테레오 — 재녹음 필요 가능
   5-22-narration-style-designation-rules: ready-for-dev  # iteration-1 시청 피드백 #1/#7: 종결어미 리듬 규칙 + 주연 외 역할명 지칭; writing 프롬프트 repo 파일 확립 포함
-  5-23-comfyui-crash-mitigation: ready-for-dev  # ~40샷 지속부하 hipErrorIllegalAddress 재현 패턴(베이스라인 39/it.1 42) 완화 — N샷마다 헬스폴+자동 1회 retry, 5-14 인프라 재사용
+  5-23-comfyui-crash-mitigation: review  # ~40샷 지속부하 hipErrorIllegalAddress 재현 패턴(베이스라인 39/it.1 42) 완화 — N샷마다 헬스폴+자동 1회 retry, 5-14 인프라 재사용. 라이브 킬/재시작 드릴은 5-14와 동일하게 Jay GPU 환경에 위임
   5-24-voice-clone-force-reseed: ready-for-dev  # seed_voice_clone.py --find_existing이 이름만 매칭해 재녹음(12.9s) 반영 불가 — --force(delete+recreate) 추가, 5-21 DoD 완주 전제
 
   # ── Epic 6: Prompt Ops — 프롬프트 버저닝·평가 정책 ─────────────────────────

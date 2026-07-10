@@ -8,13 +8,14 @@ depends_on:
   - 5-14-pipeline-resilience-shot-resume-comfyui-healthcheck  # check_health + shot-resume this story extends
 related:
   - 2-6-gate-reject-nullify-fix   # a different resume-cache concern — do not conflate
+baseline_commit: 92cdb8ff585b20488e2f980122a5bedceed43e07
 workflow_decision: "Extend image_node's existing health-check call site; reuse comfyui_client.check_health. No new stage, no ComfyUI process supervision (out of scope — see Dev Notes)."
 evidence: "Baseline run 272b05a4 crashed near shot 39; iteration-1 run d55a265b crashed at shot 42. Both hipErrorIllegalAddress core dumps mid-image-stage on ROCm (RX 9060 XT)."
 ---
 
 # Story 5.23: ComfyUI Sustained-Load Crash Mitigation
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,13 +44,13 @@ This story removes exactly one step from that manual loop: **noticing + waiting 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: `Settings` fields for poll interval, recovery poll/timeout (AC:1,2)
-- [ ] Task 2: Extract a `_wait_for_comfyui_recovery(base_url) -> bool` helper wrapping the bounded poll loop (AC:2,3)
-- [ ] Task 3: Wire periodic health check into the shot loop (every N generated shots) (AC:1)
-- [ ] Task 4: Wire `submit_and_fetch` failure through the same recovery helper before propagating (AC:4)
-- [ ] Task 5: Logging (AC:5)
-- [ ] Task 6: Mocked recovery/timeout/periodic-trigger tests (AC:7)
-- [ ] Task 7: Manual kill-and-restart live verification, record in Dev Agent Record (AC:8)
+- [x] Task 1: `Settings` fields for poll interval, recovery poll/timeout (AC:1,2)
+- [x] Task 2: Extract a `_wait_for_comfyui_recovery(base_url) -> bool` helper wrapping the bounded poll loop (AC:2,3)
+- [x] Task 3: Wire periodic health check into the shot loop (every N generated shots) (AC:1)
+- [x] Task 4: Wire `submit_and_fetch` failure through the same recovery helper before propagating (AC:4)
+- [x] Task 5: Logging (AC:5)
+- [x] Task 6: Mocked recovery/timeout/periodic-trigger tests (AC:7)
+- [x] Task 7: Manual kill-and-restart live verification, record in Dev Agent Record (AC:8) — mocked half done; live GPU drill deferred to Jay, see Dev Agent Record
 
 ## Dev Notes
 
@@ -74,8 +75,34 @@ This story removes exactly one step from that manual loop: **noticing + waiting 
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+- `PYTHONPATH=$PWD/src .venv/bin/python -m pytest tests/pipeline/nodes/test_image.py -q` → 32 passed
+- Full regression suite run before/after — see Completion Notes for result
 
 ### Completion Notes List
 
+- One helper, `_wait_for_comfyui_recovery`, used from both the periodic mid-batch health-check failure and the `submit_and_fetch` failure call site (AC4). It owns the poll loop, the recovery/timeout logging (AC5), and re-raises the last failure on timeout so the stage fails through the existing outer `except Exception` in `image_node` with the unchanged `stage=image run_id=...` error format (AC3) — no separate error-formatting code needed.
+- Signature differs slightly from the Dev Notes sketch (`_wait_for_comfyui_recovery(base_url) -> bool`): implemented as `(base_url, *, poll_sec, timeout_sec, shots_done, total_shots) -> None` (raises on timeout instead of returning `False`) so both call sites can share the exact AC5 log lines including shot progress, and so the caller doesn't need a second branch to translate a `False` return into a raise.
+- Shot 0's original fail-fast health check (Story 5.14, `health_checked` flag) is untouched — AC2 explicitly scopes this story to a *new* mid-batch failure, not the pre-existing first check.
+- `generated_count` (non-resumed, non-plate shots only) drives the periodic re-check cadence (AC1's "every N generated shots"); the AC5 log's shot-progress figure separately sums `generated_count + skipped_count + stock_plate_count` against `total_shots` so it reports true run progress, not just the newly-generated subset (fixed in code review — see below).
+- **Code review (bmad-code-review, 3-layer adversarial + edge-case + acceptance-audit) applied 3 fixes:** (1) `comfyui_crash_recovery_poll_sec`/`comfyui_crash_recovery_timeout_sec` gained `gt=0` validation, matching the sibling `ge=1` field — a `0`/negative value would otherwise busy-loop or silently disable recovery. (2) The three new `except Exception` clauses narrowed to `except ComfyUIError` — `check_health`/`submit_and_fetch`'s documented contract is to only ever raise `ComfyUIError`, so a genuine bug (e.g. an unexpected exception type) now fails fast per AD-10 instead of being swallowed into a 5-minute wait. (3) The AC5 log's shot-progress figure fixed as described above. Two other reviewer-flagged items were deliberately left as-is: a single post-recovery retry (not an unbounded retry loop) preserves AD-10's fail-loud guarantee over chasing every possible flapping-crash scenario, and the deliberate non-goal of ComfyUI process supervision (see below) already covers the "no automated restart" observation.
+- AC8 live verification: local ComfyUI (`$HOME/workspaces/ComfyUI/`) was not running in this session and a real kill-and-restart-within-300s drill needs the actual ROCm rig under sustained load to be meaningful — same constraint noted in Story 5.14's Dev Agent Record. Deferred to Jay to run manually:
+  1. Start ComfyUI (`./run.sh`), start a real (non-mock) image-stage run with several shots queued.
+  2. Mid-batch, `kill` the ComfyUI process.
+  3. Restart it within `comfyui_crash_recovery_timeout_sec` (default 300s).
+  4. Confirm the stage log shows `"ComfyUI recovered after Xs, resuming"` and the run completes without a manual `POST /stages/image/retry` call.
+- Recommendation (non-goal, not built): a `systemd`/Docker `restart: on-failure` policy on the ComfyUI service would make recovery unattended end-to-end; this story only removes the need to notice + wait, not to restart the process itself.
+
 ### File List
+
+- `src/yt_flow/config.py` — added `comfyui_health_poll_every_n_shots`, `comfyui_crash_recovery_poll_sec` (`gt=0`), `comfyui_crash_recovery_timeout_sec` (`gt=0`)
+- `src/yt_flow/pipeline/nodes/image.py` — added `_wait_for_comfyui_recovery` + a local `_recover()` closure; wired periodic mid-batch health-check + `submit_and_fetch`-failure recovery into `image_node`'s shot loop; narrowed exception handling to `ComfyUIError`
+- `tests/pipeline/nodes/test_image.py` — extended `FakeSettings` with the new fields; added periodic-trigger, recovery-continues, recovery-timeout, and submit-failure-recovery tests
+
+## Change Log
+
+- 2026-07-10: Implemented all tasks. Added 3 `Settings` fields; extracted `_wait_for_comfyui_recovery` (bounded poll loop + AC5 logging) and wired it into both the periodic mid-batch health-check and the `submit_and_fetch`-failure call sites in `image_node`. 4 new mocked tests added (32/32 passing in `test_image.py`); full regression suite run clean (1070 passed, 1 pre-existing unrelated skip). AC8 live kill-and-restart drill deferred to Jay (GPU rig not running this session, same constraint as Story 5.14).
+- 2026-07-10: Code review (bmad-code-review, Blind Hunter + Edge Case Hunter + Acceptance Auditor in parallel). Applied 3 fixes: `gt=0` config validation, narrowed `except Exception` → `except ComfyUIError` at 3 sites (AD-10 fail-fast for genuine bugs), and corrected the AC5 shot-progress log to count resumed/plate/generated shots together against `total_shots`. Reworded the Task 7 checkbox to stop overclaiming the undone live-verification half. Full regression suite re-run clean after fixes (32/32 in `test_image.py`).
