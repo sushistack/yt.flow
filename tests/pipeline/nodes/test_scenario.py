@@ -262,7 +262,7 @@ async def test_scene_repair_truncation_falls_back_to_full_rewrite(monkeypatch):
         calls["repair"] += 1
         raise sc.TruncationError(
             "scenario/writing_scene_repair response truncated (finish_reason=length); raise max_tokens",
-            completion_tokens=16000, raw="가" * 5000,
+            prompt_name="scenario/writing_scene_repair", completion_tokens=16000, raw="가" * 5000,
         )
 
     monkeypatch.setattr(sc, "writing_scene_repair_step", truncating_repair)
@@ -277,6 +277,36 @@ async def test_scene_repair_truncation_falls_back_to_full_rewrite(monkeypatch):
     assert retry_stages
     assert all(s["retry_scope"] == "scene-repair-truncated-fallback" for s in retry_stages)
     assert retry_stages[0]["rejected_scene_identifiers"][0]["reason"] == "scene-repair-truncated"
+    # the fallback rewrote every scene, so the tts_normalize trace must not advertise
+    # the pre-fallback flagged subset (mirrors the full-fallback branch's empty scope)
+    tts_stage = next(s for s in trace_sink if s["name"] == "tts_normalize")
+    assert tts_stage["target_scene_count"] == 0
+
+
+async def test_downstream_stage_truncation_in_repair_pass_fails_run(monkeypatch):
+    # Story 6.9 review: recovery is narrow — only writing_scene_repair truncation
+    # falls back. A truncation in the repair pass's review/critic/visual/cast
+    # stages (all raise TruncationError too) must fail the run, never silently
+    # trigger a full rewrite.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+    review_calls = {"n": 0}
+
+    async def truncating_review(*a, **k):
+        review_calls["n"] += 1
+        if review_calls["n"] == 1:
+            return REVIEW_FAIL  # pass-1 review fails → enter scoped repair
+        raise sc.TruncationError(
+            "scenario/review response truncated (finish_reason=length); raise max_tokens",
+            prompt_name="scenario/review", completion_tokens=16000, raw="가" * 100,
+        )
+
+    monkeypatch.setattr(sc, "review_step", truncating_review)
+    out = await sc.scenario_node(_state())
+
+    assert out["error"] and "stage=scenario" in out["error"]
+    assert "scenes" not in out
+    assert calls["repair"] == 1   # scoped repair itself ran
+    assert calls["writing"] == 1  # but NO full-rewrite fallback fired
 
 
 async def test_non_truncation_repair_error_still_surfaces_as_error(monkeypatch):

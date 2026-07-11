@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-11  # Stories 6.7/6.8 통합 코드리뷰 완료 → done; promotion gate FAIL 기록, production 미승격
+# last_updated: 2026-07-11  # Story 6.9 코드리뷰 완료: High(narrow-recovery)+2 patch 수정, in-progress 유지(AC3/AC4 라이브 게이트 Jay 대기)
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system

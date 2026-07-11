@@ -373,6 +373,14 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
                     )
                     final_retry_scope = "scene"
                 except TruncationError as exc:
+                    if exc.prompt_name != "scenario/writing_scene_repair":
+                        # Only the scoped-repair write is recoverable via a full
+                        # rewrite. A truncation in the repair pass's downstream
+                        # review/critic/visual/cast stages (all raise TruncationError
+                        # too, since it subclasses ValueError) is a real failure —
+                        # re-raise so the run fails, keeping recovery narrow
+                        # (Story 6.9 review).
+                        raise
                     # Scene-scoped repair ran away past max_tokens even though a full
                     # rewrite of every scene fits comfortably (Story 6.9: 8-scene
                     # writing ~2.8k tokens vs repair truncating at 16k). It's a
@@ -385,6 +393,10 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
                         exc.completion_tokens, len(indexes), (exc.raw or "")[:300],
                     )
                     final_retry_scope = "scene-repair-truncated-fallback"
+                    # The fallback rewrote every scene, so the flagged subset no
+                    # longer describes the change scope — clear it to keep the
+                    # tts_normalize trace consistent with the full-fallback branch.
+                    final_indexes = []
                     writing, visual_by_scene, review, critic = await _full_rewrite(
                         final_retry_scope,
                         [{"reason": "scene-repair-truncated",

@@ -912,6 +912,9 @@ async def test_call_stage_raises_truncation_error_with_evidence(monkeypatch):
     assert "truncated" in str(excinfo.value)
     assert excinfo.value.completion_tokens == 16000
     assert excinfo.value.raw == "가" * 100
+    # scenario_node's narrow recovery keys on prompt_name — it must be the real
+    # stage name so only writing_scene_repair truncation falls back (Story 6.9 review).
+    assert excinfo.value.prompt_name == "scenario/writing_scene_repair"
 
 
 async def test_call_stage_with_retry_collects_one_usage_entry_on_first_success(monkeypatch):

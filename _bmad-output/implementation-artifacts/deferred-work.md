@@ -283,3 +283,8 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - **`--profile promotion` doesn't reject an explicit `--timeout` override** [scripts/eval_prompts.py] — AC3 only enumerates `--scp-id` and `--stage` as promotion's explicit rejections. A user could pass a short `--timeout` and defeat the 1200s safety default. Left open as a policy decision — tightening this is a product call, not an unambiguous bug fix.
 
 **재고 조건**: revisit the scenario.py items if a live run ever hits the scoped-repair bounded-retry-exhaustion path or the writing/structure scene-count mismatch; revisit the eval_prompts.py items once real promotion-gate runs surface an actual symmetric-infra-failure-with-empty-message case, or once Jay decides the timeout/override policy needs hardening.
+
+
+## Deferred from: code review of 6-9-scene-repair-truncation-axis-regression (2026-07-11)
+
+- New truncation-fallback `rejected` dict shape `{"reason","completion_tokens","flagged_scene_count"}` (scenario.py:390-392) diverges from every other producer's shape (`_retry_scope`'s `{"source","scene_num","reason"}` and the `no-valid-scene` `{"reason","rejected"}`). It lands verbatim in trace `rejected_scene_identifiers`. No `src/` consumer indexes `scene_num`/`source` on these records today (grep-verified), so impact is latent — normalize the shape when a consumer actually needs it.

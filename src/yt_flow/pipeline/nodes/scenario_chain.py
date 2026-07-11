@@ -211,8 +211,12 @@ class TruncationError(ValueError):
     rewrite instead of failing the whole run.
     """
 
-    def __init__(self, message: str, *, completion_tokens: int | None = None, raw: str | None = None):
+    def __init__(
+        self, message: str, *, prompt_name: str | None = None,
+        completion_tokens: int | None = None, raw: str | None = None,
+    ):
         super().__init__(message)
+        self.prompt_name = prompt_name
         self.completion_tokens = completion_tokens
         self.raw = raw
 
@@ -243,6 +247,7 @@ async def _call_stage(
         completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
         raise TruncationError(
             f"{prompt_name} response truncated (finish_reason=length); raise max_tokens",
+            prompt_name=prompt_name,
             completion_tokens=completion_tokens,
             raw=raw,
         )
