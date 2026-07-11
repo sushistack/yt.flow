@@ -30,6 +30,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     structure_step,
     tts_normalize_step,
     visual_breakdown_step,
+    writing_scene_repair_step,
     writing_step,
 )
 from yt_flow.domain.state import PipelineState
@@ -106,6 +107,75 @@ def _format_feedback(review: dict, critic: dict) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def _retry_scope(review: dict, critic: dict, scenes: list[dict]) -> tuple[list[int], list[dict]]:
+    """Return ordered positional indexes and evidence for rejected identifiers."""
+    indexes: list[int] = []
+    rejected: list[dict] = []
+    scene_count = len(scenes)
+    sources = (
+        ("review", review.get("issues", [])),
+        ("critic", critic.get("scene_notes", [])),
+    )
+    for source, entries in sources:
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            raw = entry.get("scene_num") if isinstance(entry, dict) else None
+            if type(raw) is not int:
+                reason = "boolean" if type(raw) is bool else "not-integer"
+                rejected.append({"source": source, "scene_num": raw, "reason": reason})
+                continue
+            if raw < 1:
+                rejected.append({"source": source, "scene_num": raw, "reason": "non-positive"})
+                continue
+            if raw > scene_count:
+                rejected.append({"source": source, "scene_num": raw, "reason": "out-of-range"})
+                continue
+            idx = raw - 1
+            # Never trust the LLM-reported scene_num as a position without confirming it
+            # matches the scene actually at that index — same rule _breakdown_for applies
+            # to visual_by_scene keys; duplicate/out-of-order model scene_num is a tested
+            # failure mode elsewhere in this chain.
+            if scenes[idx].get("scene_num") != raw:
+                rejected.append({"source": source, "scene_num": raw, "reason": "scene_num-mismatch"})
+                continue
+            if idx in indexes:
+                rejected.append({"source": source, "scene_num": raw, "reason": "duplicate"})
+                continue
+            indexes.append(idx)
+    return indexes, rejected
+
+
+def _format_scene_feedback(review: dict, critic: dict, indexes: list[int]) -> str:
+    target_nums = {idx + 1 for idx in indexes}
+    lines: list[str] = []
+    for issue in review.get("issues", []):
+        if isinstance(issue, dict) and issue.get("scene_num") in target_nums:
+            lines.append(
+                f"Review scene {issue['scene_num']}: {issue.get('description', '')} -> {issue.get('correction', '')}"
+            )
+    for note in critic.get("scene_notes", []):
+        if isinstance(note, dict) and note.get("scene_num") in target_nums:
+            # `critic_step` doesn't schema-validate `scene_notes` entries, so a key can be
+            # present but explicitly None — `or` falls through that, plain dict.get default
+            # would not (its default only applies when the key is absent).
+            detail = note.get("feedback") or note.get("note") or note.get("description") or ""
+            lines.append(f"Critic scene {note['scene_num']}: {detail}")
+    return "\n".join(lines)
+
+
+def _trace_fields(pass_index: int, retry_scope: str, indexes: list[int], rejected: list[dict] | None = None) -> dict:
+    fields = {
+        "pass_index": pass_index,
+        "retry_scope": retry_scope,
+        "target_scene_count": len(indexes),
+        "target_scene_indexes": indexes,
+    }
+    if rejected:
+        fields["rejected_scene_identifiers"] = rejected
+    return fields
+
+
 async def _write_and_review(
     scp_id: str,
     scp_text: str,
@@ -119,14 +189,19 @@ async def _write_and_review(
     stages: list[dict],
     *,
     label: str | None = None,
+    pass_index: int = 1,
+    retry_scope: str = "none",
+    rejected: list[dict] | None = None,
 ) -> tuple[dict, dict, dict, dict]:
+    target_indexes = list(range(len(structure)))
+    trace = _trace_fields(pass_index, retry_scope, target_indexes, rejected)
     t0 = time.perf_counter()
     usage: list[dict] = []
     writing = await writing_step(
         scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek,
         label=label, usage_sink=usage,
     )
-    stages.append({"name": "writing", "latency_ms": _ms(t0), **_usage_totals(usage)})
+    stages.append({"name": "writing", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
 
     t0 = time.perf_counter()
     breakdown_usage: list[dict] = []
@@ -155,7 +230,7 @@ async def _write_and_review(
     visual_by_scene = dict(results)
     stages.append({
         "name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene),
-        **_usage_totals(breakdown_usage),
+        **trace, **_usage_totals(breakdown_usage),
     })
 
     t0 = time.perf_counter()
@@ -164,14 +239,70 @@ async def _write_and_review(
         scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek,
         label=label, usage_sink=usage,
     )
-    stages.append({"name": "review", "latency_ms": _ms(t0), **_usage_totals(usage)})
+    stages.append({"name": "review", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
 
     t0 = time.perf_counter()
     usage = []
     critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
-    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **_usage_totals(usage)})
+    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
 
     return writing, visual_by_scene, review, critic
+
+
+async def _repair_and_review(
+    scp_id: str, scp_text: str, structure: list[dict], frozen_descriptor: str,
+    entity_sheet: str, story_logline: str, format_guide: str, writing: dict,
+    visual_by_scene: dict, review: dict, critic: dict, indexes: list[int],
+    rejected: list[dict], s: Settings, stages: list[dict], *, label: str | None = None,
+) -> tuple[dict, dict, dict, dict]:
+    trace = _trace_fields(2, "scene", indexes, rejected)
+    originals = [writing["scenes"][idx] for idx in indexes]
+    t0 = time.perf_counter()
+    usage: list[dict] = []
+    repaired = await writing_scene_repair_step(
+        scp_id, originals, _format_scene_feedback(review, critic, indexes), frozen_descriptor,
+        format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+    )
+    stages.append({"name": "writing_scene_repair", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+
+    merged_scenes = list(writing["scenes"])
+    for idx, scene in zip(indexes, repaired, strict=True):
+        merged_scenes[idx] = scene
+    merged_writing = {**writing, "scenes": merged_scenes}
+
+    t0 = time.perf_counter()
+    breakdown_usage: list[dict] = []
+    async def _breakdown_for(idx: int) -> tuple[int, list[dict]]:
+        scene = merged_scenes[idx]
+        sentences = split_sentences(scene["narration"])
+        role = structure[idx] if idx < len(structure) else {}
+        cast = await cast_decision_step(
+            scp_id, scene, sentences, s, _call_deepseek, label=label, usage_sink=breakdown_usage,
+        )
+        shots = await visual_breakdown_step(
+            scp_id, scene, sentences, cast, frozen_descriptor, entity_sheet, story_logline, role,
+            s, _call_deepseek, label=label, usage_sink=breakdown_usage,
+        )
+        return idx, shots
+    repaired_visuals = await asyncio.gather(*(_breakdown_for(idx) for idx in indexes))
+    merged_visuals = dict(visual_by_scene)
+    merged_visuals.update(repaired_visuals)
+    stages.append({"name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(indexes), **trace, **_usage_totals(breakdown_usage)})
+
+    t0 = time.perf_counter()
+    usage = []
+    next_review = await review_step(
+        scp_text, merged_writing, merged_visuals, frozen_descriptor, format_guide, s, _call_deepseek,
+        label=label, usage_sink=usage,
+    )
+    stages.append({"name": "review", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    t0 = time.perf_counter()
+    usage = []
+    next_critic = await critic_step(
+        merged_writing, merged_visuals, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+    )
+    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    return merged_writing, merged_visuals, next_review, next_critic
 
 
 @observe(name="scenario")
@@ -199,14 +330,14 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         research = await research_step(
             state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
-        stages.append({"name": "research", "latency_ms": _ms(t0), **_usage_totals(usage)})
+        stages.append({"name": "research", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
 
         t0 = time.perf_counter()
         usage = []
         structure = await structure_step(
             state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
-        stages.append({"name": "structure", "latency_ms": _ms(t0), **_usage_totals(usage)})
+        stages.append({"name": "structure", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
 
         writing, visual_by_scene, review, critic = await _write_and_review(
             state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
@@ -214,18 +345,38 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
             format_guide, "", s, stages, label=label,
         )
 
+        final_pass_index = 1
+        final_retry_scope = "none"
+        final_indexes: list[int] = []
         if critic["verdict"] == "retry" or not review["overall_pass"]:
-            feedback = _format_feedback(review, critic)
-            writing, visual_by_scene, review, critic = await _write_and_review(
-                state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
-                research.get("entity_sheet", ""), research.get("story_logline", ""),
-                format_guide, feedback, s, stages, label=label,
-            )
+            indexes, rejected = _retry_scope(review, critic, writing["scenes"])
+            final_pass_index = 2
+            final_indexes = indexes
+            if indexes:
+                final_retry_scope = "scene"
+                writing, visual_by_scene, review, critic = await _repair_and_review(
+                    state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+                    research.get("entity_sheet", ""), research.get("story_logline", ""), format_guide,
+                    writing, visual_by_scene, review, critic, indexes, rejected, s, stages, label=label,
+                )
+            else:
+                final_retry_scope = "full-fallback"
+                feedback = _format_feedback(review, critic)
+                fallback_reason = [{"reason": "no-valid-scene", "rejected": rejected}]
+                writing, visual_by_scene, review, critic = await _write_and_review(
+                    state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+                    research.get("entity_sheet", ""), research.get("story_logline", ""),
+                    format_guide, feedback, s, stages, label=label, pass_index=2,
+                    retry_scope="full-fallback", rejected=fallback_reason,
+                )
 
         t0 = time.perf_counter()
         usage = []
         writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
-        stages.append({"name": "tts_normalize", "latency_ms": _ms(t0), **_usage_totals(usage)})
+        stages.append({
+            "name": "tts_normalize", "latency_ms": _ms(t0),
+            **_trace_fields(final_pass_index, final_retry_scope, final_indexes), **_usage_totals(usage),
+        })
 
         scenes = build_scenes(writing, visual_by_scene, structure)
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total))

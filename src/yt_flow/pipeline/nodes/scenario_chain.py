@@ -435,6 +435,61 @@ async def writing_step(
     )
 
 
+async def writing_scene_repair_step(
+    scp_id: str,
+    original_scenes: list[dict],
+    scene_feedback: str,
+    frozen_descriptor: str,
+    format_guide: str,
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+) -> list[dict]:
+    """Repair an exact positional subset without trusting model scene numbers."""
+    expected_ids = [scene.get("scene_num") for scene in original_scenes]
+
+    def parse(raw: str) -> list[dict]:
+        data = _parse_yaml(raw)
+        scenes = data.get("scenes") if isinstance(data, dict) else None
+        if not isinstance(scenes, list) or len(scenes) != len(original_scenes):
+            raise ValueError(
+                f"writing_scene_repair: expected {len(original_scenes)} scenes, "
+                f"got {len(scenes) if isinstance(scenes, list) else 'non-list'}"
+            )
+        actual_ids: list[object] = []
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                raise ValueError(f"writing_scene_repair: malformed scene {scene!r}")
+            if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
+                raise ValueError(f"writing_scene_repair: scene[{scene.get('scene_num')}] has empty narration")
+            scene["narration"] = _normalize_freetext(scene["narration"])
+            actual_ids.append(scene.get("scene_num"))
+        if actual_ids != expected_ids:
+            raise ValueError(
+                f"writing_scene_repair: scene coverage mismatch; expected {expected_ids!r}, got {actual_ids!r}"
+            )
+        return scenes
+
+    return await _call_stage_with_retry(
+        "scenario/writing_scene_repair",
+        {
+            "scp_id": scp_id,
+            "original_scenes": json.dumps(original_scenes, ensure_ascii=False),
+            "scene_feedback": scene_feedback,
+            "scp_visual_reference": frozen_descriptor,
+            "format_guide": format_guide,
+            "glossary_section": "",
+        },
+        s,
+        call_deepseek,
+        parse,
+        label=label,
+        usage_sink=usage_sink,
+    )
+
+
 def _scene_role_text(scene_role: object) -> str:
     """Compact 'act / emotional_beat: synopsis' string from a structure_step scene entry.
 

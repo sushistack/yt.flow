@@ -71,7 +71,7 @@ async def _async_return(value):
 
 
 def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None):
-    calls = {"research": 0, "structure": 0, "writing": 0, "tts_normalize": 0}
+    calls = {"research": 0, "structure": 0, "writing": 0, "repair": 0, "cast": 0, "visual": 0, "review": 0, "critic": 0, "tts_normalize": 0}
 
     async def fake_research(*a, **k):
         calls["research"] += 1
@@ -85,16 +85,24 @@ def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_r
         calls["writing"] += 1
         return WRITING
 
+    async def fake_repair(*a, **k):
+        calls["repair"] += 1
+        return a[1]
+
     async def fake_cast_decision(*a, **k):
+        calls["cast"] += 1
         return {}
 
     async def fake_visual(*a, **k):
+        calls["visual"] += 1
         return VISUAL
 
     async def fake_review(*a, **k):
+        calls["review"] += 1
         return review_retry if (calls["writing"] > 1 and review_retry) else review
 
     async def fake_critic(*a, **k):
+        calls["critic"] += 1
         return critic_retry if (calls["writing"] > 1 and critic_retry) else critic
 
     async def fake_tts_normalize(writing, *a, **k):
@@ -104,6 +112,7 @@ def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_r
     monkeypatch.setattr(sc, "research_step", fake_research)
     monkeypatch.setattr(sc, "structure_step", fake_structure)
     monkeypatch.setattr(sc, "writing_step", fake_writing)
+    monkeypatch.setattr(sc, "writing_scene_repair_step", fake_repair)
     monkeypatch.setattr(sc, "cast_decision_step", fake_cast_decision)
     monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
     monkeypatch.setattr(sc, "review_step", fake_review)
@@ -139,7 +148,8 @@ async def test_retries_once_when_critic_says_retry(monkeypatch):
 async def test_retries_once_when_review_fails(monkeypatch):
     calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
     out = await sc.scenario_node(_state())
-    assert calls["writing"] == 2
+    assert calls["writing"] == 1
+    assert calls["repair"] == 1
     assert calls["tts_normalize"] == 1  # normalizes once, after the retry settles
     assert out.get("error") is None
 
@@ -152,6 +162,145 @@ async def test_accepts_second_pass_result_even_if_still_failing(monkeypatch):
     assert calls["writing"] == 2
     assert out.get("error") is None
     assert out["scenes"]
+
+
+def test_retry_scope_unions_valid_flags_and_records_rejections():
+    scenes = [{"scene_num": 1}, {"scene_num": 2}, {"scene_num": 3}]
+    review = {"issues": [{"scene_num": 2}, {"scene_num": 2}, {"scene_num": True}, {"scene_num": 0}]}
+    critic = {"scene_notes": [{"scene_num": 3}, {"scene_num": -1}, {"scene_num": 9}, {"scene_num": "1"}]}
+    indexes, rejected = sc._retry_scope(review, critic, scenes)
+    assert indexes == [1, 2]
+    assert [item["reason"] for item in rejected] == [
+        "duplicate", "boolean", "non-positive", "non-positive", "out-of-range", "not-integer",
+    ]
+
+
+def test_retry_scope_rejects_scene_num_position_mismatch():
+    # writing_step's own model-reported scene_num can drift from position (a tested
+    # failure mode elsewhere in this chain, e.g. duplicate scene_num=1 twice) — a
+    # review/critic reference to "scene_num 2" must not be trusted as position 1
+    # unless the scene actually at position 1 agrees it is scene_num 2.
+    scenes = [{"scene_num": 1}, {"scene_num": 1}]
+    review = {"issues": [{"scene_num": 2}]}
+    critic = {"scene_notes": []}
+    indexes, rejected = sc._retry_scope(review, critic, scenes)
+    assert indexes == []
+    assert rejected == [{"source": "review", "scene_num": 2, "reason": "scene_num-mismatch"}]
+
+
+async def test_scene_retry_repairs_only_flagged_position_and_reuses_other_objects(monkeypatch):
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+    original_scene = WRITING["scenes"][0]
+    repaired = {**original_scene, "narration": "수정된 문장."}
+
+    async def fake_repair(*a, **k):
+        calls["repair"] += 1
+        return [repaired]
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", fake_repair)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert out["scenes"][0]["narration"] == "수정된 문장."
+    assert calls["writing"] == 1
+    assert calls["repair"] == 1
+    assert calls["cast"] == 2 and calls["visual"] == 2
+
+
+async def test_critic_only_flag_triggers_scene_scoped_repair(monkeypatch):
+    # review passes outright; only critic flags a scene — must still scope, not full-fallback.
+    critic_flagged = {"verdict": "retry", "feedback": "다시", "scene_notes": [{"scene_num": 1, "feedback": "고쳐주세요"}]}
+    calls = _stub_chain(monkeypatch, review=REVIEW_PASS, critic=critic_flagged)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert calls["writing"] == 1
+    assert calls["repair"] == 1
+
+
+async def test_second_review_failure_after_scene_repair_remains_bounded(monkeypatch):
+    # review fails identically on both the initial pass and the scoped-repair pass —
+    # the scoped-repair branch must accept the second result rather than retry a third time.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert calls["writing"] == 1
+    assert calls["repair"] == 1
+    assert calls["review"] == 2
+
+
+async def test_scene_repair_trace_fields_and_usage_recorded(monkeypatch):
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+    trace_sink: list[dict] = []
+    out = await sc.scenario_node(_state(), trace_sink=trace_sink)
+    assert out["error"] is None
+    scene_stages = [s for s in trace_sink if s.get("retry_scope") == "scene"]
+    repair_stage_names = {"writing_scene_repair", "visual_breakdown", "review", "critic_agent"}
+    assert repair_stage_names <= {s["name"] for s in scene_stages}
+    assert all(s["pass_index"] == 2 for s in scene_stages)
+    assert all(s["target_scene_indexes"] == [0] for s in scene_stages)
+    for field in ("prompt_tokens", "completion_tokens", "prompt_cache_hit_tokens", "prompt_cache_miss_tokens"):
+        assert all(field in s for s in scene_stages)
+
+
+async def test_no_valid_scene_uses_explicit_full_fallback_trace(monkeypatch):
+    calls = _stub_chain(monkeypatch, critic=CRITIC_RETRY, critic_retry=CRITIC_PASS)
+    trace_sink: list[dict] = []
+    out = await sc.scenario_node(_state(), trace_sink=trace_sink)
+    assert out["error"] is None and calls["writing"] == 2 and calls["repair"] == 0
+    retry_stages = [stage for stage in trace_sink if stage.get("pass_index") == 2]
+    assert retry_stages
+    assert all(stage["retry_scope"] == "full-fallback" for stage in retry_stages)
+    assert retry_stages[0]["rejected_scene_identifiers"][0]["reason"] == "no-valid-scene"
+
+
+async def test_eight_scenes_one_flag_adds_exactly_five_calls_and_preserves_unflagged(monkeypatch):
+    structure = [{**STRUCTURE[0], "scene_num": i + 1} for i in range(8)]
+    writing = {
+        **WRITING,
+        "scenes": [{**WRITING["scenes"][0], "scene_num": i + 1, "narration": f"문장 {i + 1}."} for i in range(8)],
+    }
+    visuals = [[{**VISUAL[0], "image_prompt": f"shot-{i + 1}"}] for i in range(8)]
+    counts = {"repair": 0, "cast": 0, "visual": 0, "review": 0, "critic": 0}
+    reviewed_visuals: list[dict] = []
+    monkeypatch.setattr(sc, "structure_step", lambda *a, **k: _async_return(structure))
+    monkeypatch.setattr(sc, "writing_step", lambda *a, **k: _async_return(writing))
+
+    async def fake_visual(*a, **k):
+        counts["visual"] += 1
+        return visuals[a[1]["scene_num"] - 1]
+
+    async def fake_cast(*a, **k):
+        counts["cast"] += 1
+        return {}
+
+    async def fake_repair(*a, **k):
+        counts["repair"] += 1
+        return [{**a[1][0], "narration": "수정됨."}]
+
+    async def fake_review(*a, **k):
+        counts["review"] += 1
+        reviewed_visuals.append(a[2])
+        return REVIEW_FAIL if counts["review"] == 1 else REVIEW_PASS
+
+    async def fake_critic(*a, **k):
+        counts["critic"] += 1
+        return CRITIC_PASS
+
+    monkeypatch.setattr(sc, "research_step", lambda *a, **k: _async_return(RESEARCH))
+    monkeypatch.setattr(sc, "cast_decision_step", fake_cast)
+    monkeypatch.setattr(sc, "visual_breakdown_step", fake_visual)
+    monkeypatch.setattr(sc, "writing_scene_repair_step", fake_repair)
+    monkeypatch.setattr(sc, "review_step", fake_review)
+    monkeypatch.setattr(sc, "critic_step", fake_critic)
+    monkeypatch.setattr(sc, "tts_normalize_step", lambda value, *a, **k: _async_return(value))
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert counts == {"repair": 1, "cast": 9, "visual": 9, "review": 2, "critic": 2}
+    retry_calls = counts["repair"] + counts["cast"] - 8 + counts["visual"] - 8 + counts["review"] - 1 + counts["critic"] - 1
+    assert retry_calls == 5
+    assert out["scenes"][0]["narration"] == "수정됨."
+    assert [scene["narration"] for scene in out["scenes"][1:]] == [scene["narration"] for scene in writing["scenes"][1:]]
+    assert all(reviewed_visuals[1][idx] is reviewed_visuals[0][idx] for idx in range(1, 8))
 
 
 async def test_stage_failure_surfaces_as_error(monkeypatch):

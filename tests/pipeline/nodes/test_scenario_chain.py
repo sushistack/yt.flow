@@ -257,6 +257,49 @@ async def test_writing_step_collapses_embedded_newlines_in_narration(monkeypatch
     assert result["scenes"][0]["narration"] == "첫 문장. 둘째 문장."
 
 
+async def test_writing_scene_repair_requires_exact_ordered_coverage(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    originals = [
+        {"scene_num": 2, "narration": "old 2"},
+        {"scene_num": 4, "narration": "old 4"},
+    ]
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 2\n    narration: fixed\n", {}, "stop"
+
+    with pytest.raises(ValueError, match="expected 2 scenes"):
+        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+
+
+async def test_writing_scene_repair_rejects_extra_or_reordered_identifiers(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    originals = [{"scene_num": 2, "narration": "old 2"}, {"scene_num": 4, "narration": "old 4"}]
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 4\n    narration: fixed 4\n  - scene_num: 2\n    narration: fixed 2\n", {}, "stop"
+
+    with pytest.raises(ValueError, match="coverage mismatch"):
+        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+
+
+async def test_writing_scene_repair_rejects_extra_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    originals = [{"scene_num": 2, "narration": "old 2"}, {"scene_num": 4, "narration": "old 4"}]
+
+    async def call(rendered, s):
+        return (
+            "scenes:\n"
+            "  - scene_num: 2\n    narration: fixed 2\n"
+            "  - scene_num: 4\n    narration: fixed 4\n"
+            "  - scene_num: 5\n    narration: extra\n",
+            {},
+            "stop",
+        )
+
+    with pytest.raises(ValueError, match="expected 2 scenes"):
+        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+
+
 async def test_research_step_collapses_embedded_newlines_in_freetext_fields(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
