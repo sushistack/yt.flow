@@ -607,6 +607,49 @@ async def test_critic_step_collapses_embedded_newlines_in_feedback(monkeypatch):
     assert result["feedback"] == "첫 줄. 둘째 줄."
 
 
+async def test_review_step_normalizes_nested_freetext_fields(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return (
+            "overall_pass: false\n"
+            "issues:\n  - description: |\n      첫 줄.\n      둘째 줄.\n"
+            "    correction: 42\n"
+            "corrections:\n  - original: |\n      원문 한 줄.\n      원문 두 줄.\n"
+            "    corrected: |\n      수정 한 줄.\n      수정 두 줄.\n"
+            "storytelling_issues:\n  - description: |\n      문제 한 줄.\n      문제 두 줄.\n"
+            "    correction: |\n      제안 한 줄.\n      제안 두 줄.\n"
+        ), {}, "stop"
+
+    result = await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+
+    assert result["issues"][0]["description"] == "첫 줄. 둘째 줄."
+    assert result["issues"][0]["correction"] == 42
+    assert result["corrections"][0]["original"] == "원문 한 줄. 원문 두 줄."
+    assert result["corrections"][0]["corrected"] == "수정 한 줄. 수정 두 줄."
+    assert result["storytelling_issues"][0]["description"] == "문제 한 줄. 문제 두 줄."
+    assert result["storytelling_issues"][0]["correction"] == "제안 한 줄. 제안 두 줄."
+
+
+async def test_critic_step_normalizes_scene_note_freetext_fields(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return (
+            "verdict: retry\nfeedback: ok\nscene_notes:\n"
+            "  - scene_num: 1\n    issue: |\n      문제 한 줄.\n      문제 두 줄.\n"
+            "    suggestion: |\n      제안 한 줄.\n      제안 두 줄.\n"
+            "  - scene_num: 2\n    issue: 7\n"
+        ), {}, "stop"
+
+    result = await chain.critic_step({"scenes": []}, {}, "guide", None, call)
+
+    assert result["scene_notes"][0]["issue"] == "문제 한 줄. 문제 두 줄."
+    assert result["scene_notes"][0]["suggestion"] == "제안 한 줄. 제안 두 줄."
+    assert result["scene_notes"][1]["issue"] == 7
+    assert "suggestion" not in result["scene_notes"][1]
+
+
 async def test_critic_step_rejects_unknown_verdict(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
@@ -691,9 +734,13 @@ class _CapturingPrompt:
         return "rendered"
 
 
-async def test_call_stage_with_retry_succeeds_on_second_attempt(monkeypatch):
-    prompt = _CapturingPrompt()
-    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+async def test_call_stage_with_retry_routes_yaml_error_to_syntax_repair(monkeypatch):
+    stage_prompt = _CapturingPrompt()
+    repair_prompt = _CapturingPrompt()
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda name: repair_prompt if name == "scenario/yaml_syntax_repair" else stage_prompt,
+    )
 
     responses = iter(["key: [unterminated", "key: value"])
 
@@ -709,10 +756,75 @@ async def test_call_stage_with_retry_succeeds_on_second_attempt(monkeypatch):
     result = await chain._call_stage_with_retry("scenario/research", {"a": "b"}, None, call, parse)
 
     assert result == {"key": "value"}
-    assert len(prompt.calls) == 2
-    assert prompt.calls[0] == {"a": "b", "parse_error": ""}
-    assert prompt.calls[1]["a"] == "b"
-    assert "Output ONLY valid YAML" in prompt.calls[1]["parse_error"]
+    assert stage_prompt.calls == [{"a": "b", "parse_error": ""}]
+    assert repair_prompt.calls[0]["broken_yaml"] == "key: [unterminated"
+    assert "while parsing" in repair_prompt.calls[0]["yaml_error"]
+    assert set(repair_prompt.calls[0]) == {"broken_yaml", "yaml_error"}
+
+
+async def test_call_stage_with_retry_preserves_production_behavior_before_repair_promotion(
+    monkeypatch, caplog
+):
+    stage_prompt = _CapturingPrompt()
+
+    def get_prompt(name, **kwargs):
+        if name == "scenario/yaml_syntax_repair":
+            raise chain.prompt_service.PromptFetchError("missing production repair prompt")
+        return stage_prompt
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", get_prompt)
+    responses = iter(["key: [unterminated", "key: value"])
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    with caplog.at_level("WARNING"):
+        result = await chain._call_stage_with_retry(
+            "scenario/research", {"a": "b"}, None, call, chain._parse_yaml
+        )
+
+    assert result == {"key": "value"}
+    assert len(stage_prompt.calls) == 2
+    assert "full-stage retry" in caplog.text
+
+
+async def test_call_stage_with_retry_does_not_hide_missing_candidate_repair_prompt(monkeypatch):
+    def get_with_fallback(name, **kwargs):
+        if name == "scenario/yaml_syntax_repair":
+            raise chain.prompt_service.PromptFetchError("missing candidate repair prompt")
+        return FakePrompt()
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt_with_fallback", get_with_fallback)
+
+    async def call(rendered, s):
+        return "key: [unterminated", {}, "stop"
+
+    with pytest.raises(chain.prompt_service.PromptFetchError, match="missing candidate"):
+        await chain._call_stage_with_retry(
+            "scenario/research", {}, None, call, chain._parse_yaml, label="candidate"
+        )
+
+
+async def test_call_stage_with_retry_routes_value_error_to_full_regeneration(monkeypatch):
+    stage_prompt = _CapturingPrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: stage_prompt)
+    responses = iter(["other: value", "key: value"])
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    def parse(raw):
+        data = chain._parse_yaml(raw)
+        if "key" not in data:
+            raise ValueError("missing key")
+        return data
+
+    result = await chain._call_stage_with_retry("scenario/research", {"a": "b"}, None, call, parse)
+
+    assert result == {"key": "value"}
+    assert len(stage_prompt.calls) == 2
+    assert stage_prompt.calls[1]["a"] == "b"
+    assert "Previous output failed validation" in stage_prompt.calls[1]["parse_error"]
 
 
 async def test_call_stage_with_retry_exhausts_after_two_attempts(monkeypatch):

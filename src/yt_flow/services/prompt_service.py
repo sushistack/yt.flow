@@ -18,6 +18,10 @@ from yt_flow.config import Settings
 logger = logging.getLogger(__name__)
 
 
+class PromptFetchError(RuntimeError):
+    """A required Langfuse prompt or label could not be fetched."""
+
+
 def build_client() -> Langfuse:
     """Map YTFLOW_ settings onto the Langfuse SDK constructor.
 
@@ -42,7 +46,7 @@ def get_prompt(name: str, *, label: str | None = None):
     try:
         return client.get_prompt(name, label=label) if label else client.get_prompt(name)
     except Exception as exc:  # noqa: BLE001 - re-raised with context below
-        raise RuntimeError(
+        raise PromptFetchError(
             f"Langfuse prompt fetch failed: name={name!r} label={label or 'production'}"
         ) from exc
 
@@ -68,7 +72,7 @@ def get_prompt_with_fallback(name: str, *, label: str, fallback_label: str = "pr
         )
         return get_prompt(name, label=fallback_label)
     except Exception as exc:  # noqa: BLE001 - re-raised with context below
-        raise RuntimeError(f"Langfuse prompt fetch failed: name={name!r} label={label!r}") from exc
+        raise PromptFetchError(f"Langfuse prompt fetch failed: name={name!r} label={label!r}") from exc
 
 
 def compile_prompt(name: str, **variables: object) -> str:

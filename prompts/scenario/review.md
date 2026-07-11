@@ -78,23 +78,29 @@ issues:
   - scene_num: 3
     type: "fact_error|missing_fact|descriptor_violation|invented_content|ending_monotony|designation_violation"
     severity: "critical|warning|info"
-    description: "What is wrong"
-    correction: "Specific text to replace or add"
+    description: |
+      What is wrong
+    correction: |
+      Specific text to replace or add
 corrections:
   - scene_num: 3
     field: "narration|visual_description"
-    original: "original text snippet"
-    corrected: "corrected text"
+    original: |
+      original text snippet
+    corrected: |
+      corrected text
 storytelling_score: 75
 storytelling_issues:
   - scene_num: 1
     type: "weak_hook|flat_info_curve|monotone_mood|low_immersion"
     severity: "warning"
-    description: "What is wrong with storytelling"
-    correction: "Suggested improvement"
+    description: |
+      What is wrong with storytelling
+    correction: |
+      Suggested improvement
 ```
 
-Only report actual issues found. If the script is accurate, return an empty issues array. Storytelling issues are advisory — they do NOT affect `overall_pass`.
+Use YAML block literals (`|`) for every `description`, `correction`, `original`, and `corrected` free-text value exactly as shown. Only report actual issues found. If the script is accurate, return an empty issues array. Storytelling issues are advisory — they do NOT affect `overall_pass`.
 
 ## Generated Narration Script (from Stage 3)
 {{narration_script}}

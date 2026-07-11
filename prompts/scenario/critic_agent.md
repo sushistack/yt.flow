@@ -28,8 +28,10 @@ feedback: |
   which scenes need what changes.
 scene_notes:
   - scene_num: 1
-    issue: "description of problem"
-    suggestion: "specific fix"
+    issue: |
+      Description of problem
+    suggestion: |
+      Specific fix
 ```
 
 Rules:
@@ -37,6 +39,7 @@ Rules:
 - "retry": Significant issues that require rewriting. Be specific in feedback.
 - "accept_with_notes": Passable but not great. Note improvements for future reference.
 - feedback MUST be in Korean and MUST be specific ("Scene 1을 Shock Hook으로 교체: 'SCP-173은 14명의 재단 인원을 살해했습니다'")
+- Every `scene_notes[].issue` and `scene_notes[].suggestion` free-text value MUST use a YAML block literal (`|`) exactly as shown.
 - Do NOT be generous. If it's mediocre, say "retry".
 - If the narration sounds like a Wikipedia article or government report, ALWAYS say "retry". YouTube viewers leave in 5 seconds if the tone is boring.
 

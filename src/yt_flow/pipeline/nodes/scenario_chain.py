@@ -275,9 +275,9 @@ async def _call_stage_with_retry(
     usage_sink: list[dict] | None = None,
 ):
     """Bounded (exactly one) self-correcting retry for a stage's parse+validate
-    step. Feeds the failure's error message back into the same prompt via
-    ``{{parse_error}}`` so the model can self-correct; a second failure
-    propagates unchanged — never an unbounded retry loop.
+    step. YAML syntax failures use a small syntax-only repair prompt; semantic
+    validation failures feed the error back into the original stage prompt.
+    A second failure propagates unchanged — never an unbounded retry loop.
 
     ``usage_sink``, when given, collects each underlying DeepSeek call's raw
     ``usage`` dict (one entry normally, two if the retry fires) — Story 6.3's
@@ -288,7 +288,39 @@ async def _call_stage_with_retry(
         usage_sink.append(usage)
     try:
         return parse(raw)
-    except (yaml.YAMLError, ValueError) as exc:
+    except yaml.YAMLError as exc:
+        try:
+            raw, usage = await _call_stage(
+                "scenario/yaml_syntax_repair",
+                {"broken_yaml": raw, "yaml_error": str(exc)},
+                s,
+                call_deepseek,
+                label=label,
+            )
+        except prompt_service.PromptFetchError:
+            if label == "candidate":
+                raise
+            # ponytail: before the new repair prompt is promoted, production
+            # baselines retain the previous full-regeneration behavior. This
+            # avoids making the promotion gate depend on a not-yet-promoted
+            # prompt while still surfacing a missing candidate seed.
+            logger.warning(
+                "scenario/yaml_syntax_repair is unavailable for %s; using full-stage retry",
+                label or "production",
+            )
+            error_text = " ".join(str(exc).split())[:500]
+            retry_variables = {
+                **variables,
+                "parse_error": f"Previous output failed validation: {error_text}. "
+                "Output ONLY valid YAML, no prose, no markdown code fences.",
+            }
+            raw, usage = await _call_stage(
+                prompt_name, retry_variables, s, call_deepseek, label=label
+            )
+        if usage_sink is not None:
+            usage_sink.append(usage)
+        return parse(raw)
+    except ValueError as exc:
         error_text = " ".join(str(exc).split())[:500]
         retry_variables = {
             **variables,
@@ -670,6 +702,21 @@ async def review_step(
 ) -> dict:
     def parse(raw: str) -> dict:
         data = _parse_yaml(raw)
+        if isinstance(data, dict):
+            for collection, fields in (
+                ("issues", ("description", "correction")),
+                ("corrections", ("original", "corrected")),
+                ("storytelling_issues", ("description", "correction")),
+            ):
+                items = data.get(collection)
+                if not isinstance(items, list):
+                    continue
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    for field in fields:
+                        if isinstance(item.get(field), str):
+                            item[field] = _normalize_freetext(item[field])
         if not isinstance(data, dict) or type(data.get("overall_pass")) is not bool:
             raise ValueError("review: payload missing boolean 'overall_pass'")
         return data
@@ -707,8 +754,17 @@ async def critic_step(
 
     def parse(raw: str) -> dict:
         data = _parse_yaml(raw)
-        if isinstance(data, dict) and isinstance(data.get("feedback"), str):
-            data["feedback"] = _normalize_freetext(data["feedback"])
+        if isinstance(data, dict):
+            if isinstance(data.get("feedback"), str):
+                data["feedback"] = _normalize_freetext(data["feedback"])
+            notes = data.get("scene_notes")
+            if isinstance(notes, list):
+                for note in notes:
+                    if not isinstance(note, dict):
+                        continue
+                    for field in ("issue", "suggestion"):
+                        if isinstance(note.get(field), str):
+                            note[field] = _normalize_freetext(note[field])
         if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
             raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
         return data
