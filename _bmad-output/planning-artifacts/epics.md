@@ -1088,6 +1088,29 @@ DeepSeek의 `response_format: {"type": "json_object"}` 모드가 이 세 실패 
 
 개발 내부 루프와 production 승격 게이트를 분리한다. `smoke`는 고정 canary SCP-049 1개로 빠른 건강성 피드백을 제공하지만 승격 권한이 없고, `promotion`만 기존 3개 candidate-vs-production zero-regression 기준을 유지한다. 즉 3개 검증을 매 편집마다 돌리지 않고 production 직전 1회로 빈도를 줄이며, 단일 smoke PASS가 production 승격으로 오용되지 않게 CLI/아티팩트/정책에 명시한다.
 
+### Story 6.7: YAML 문법 전용 경량 repair 경로 분리
+
+**발의 배경 (2026-07-11):** 6.6의 타임아웃 픽스(600s→1200s) 적용 후 6-3/6-4 promotion 게이트를 재실행했으나 여전히 FAIL. SCP-173에서 `yaml.YAMLError`(`mapping values are not allowed here`)가 `_call_stage_with_retry`의 bounded 1회 재시도까지 소진하고 실패로 전파됨 — 상세는 `6-3-6-4-review-metrics-report.md`의 "2026-07-11 full 3-item promotion re-attempt" 절 참조.
+
+근본 원인 둘: (1) `review.md`/`critic_agent.md`의 자유 텍스트 하위 필드(`issues[].description`/`correction`, `corrections[].original`/`corrected`, `storytelling_issues[].description`/`correction`, `scene_notes[].issue`/`suggestion`)가 6.4의 AC2 block-literal(`|`) 목록에서 누락되어 plain scalar로 남아 있음 — 콜론이 든 문장이 그대로 YAML 파싱을 깬다. (2) `_call_stage_with_retry`가 `yaml.YAMLError`(순수 문법 오류)와 `ValueError`(스키마/내용 검증 실패)를 구분 없이 동일하게 처리 — 어느 쪽이든 전체 스테이지 프롬프트를 처음부터 재생성(`visual_breakdown`은 4-9만 토큰)하는 값비싸고 부정확한 재시도 1회로 취급한다. 순수 문법 오류라면 내용을 다시 쓸 필요 없이 "문법만 고쳐라"는 훨씬 좁고 싼 요청으로 해결될 가능성이 높다.
+
+**AC1**: `review.md`/`critic_agent.md`의 위 자유 텍스트 필드를 block-literal(`|`) 예시로 전환(6.4 AC2가 놓친 필드 마무리) + `scenario_chain.py`의 `_normalize_freetext` 적용 대상 키 목록 확장.
+**AC2**: `_call_stage_with_retry`가 `parse()`에서 발생한 예외 타입으로 분기 — `yaml.YAMLError`는 신규 경량 syntax-repair 경로(작은 전용 프롬프트: 깨진 raw 텍스트 + 에러 위치 + "내용/스키마는 그대로, YAML 문법만 고쳐라")로, `ValueError`(스키마 위반)는 기존 전체 재생성 경로로 라우팅. 양쪽 다 bounded 1회 — 무한 재시도 아님.
+**AC3**: 신규 syntax-repair 프롬프트는 `docs/PROMPT_POLICY.md` 절차(candidate 시딩 → 게이트 통과) 준수.
+**AC4**: SCP-173류 실패를 로컬에서 재현하는 회귀 테스트 추가(고의로 콜론 포함 plain scalar를 반환하는 페이크 호출 → syntax-repair 경로 진입 확인, `ValueError` 케이스는 기존 경로 유지 확인).
+
+### Story 6.8: judge 채점 bounded retry — 단일 malformed 응답이 항목 전체를 죽이는 문제 해소
+
+**발의 배경 (2026-07-11):** 6-3/6-4 promotion 게이트 재시도 1차 런에서 SCP-049 `candidate`가 "unparseable judge response"로 전체 실패. 원인 확인: `eval_service.py`의 judge 채점은 이미 축(axis)당 `REPS_PER_AXIS=3`회 동시 호출 후 평균을 내고 있음(Story 4.2, OQ-1) — "judge를 여러 번 샘플링해 노이즈를 줄이자"는 애초 구상은 이미 구현되어 있어 불필요. 진짜 갭은 `_judge_axis`가 3개 호출을 `asyncio.gather`로 묶는데, `_post_chat`/`_parse_score`가 파싱 실패(예: judge가 낸 JSON 문자열 값에 이스케이프 안 된 리터럴 개행이 섞여 `json.loads` 실패)를 재시도 없이 즉시 `EvalJudgeError`로 던진다는 것 — `gather`가 3개 중 1개 실패만으로 즉시 전체를 실패시켜, 축 하나·항목 하나의 평가 전체가 죽는다. scenario 체인에는 이미 있는 bounded-retry 철학(5-23, 6.4)이 judge 채점 경로에는 없다.
+
+2차 런의 SCP-049 `narrative_coherence` -0.33 단일 축 회귀는 이미 3회 평균낸 값끼리의 차이라, judge 노이즈보다는 매 실행마다 실제로 조금씩 달라지는 시나리오 생성 자체의 편차일 가능성이 높다 — 이건 judge 쪽을 고쳐도 없어지지 않고, 없애려면 전체 시나리오 생성 자체를 항목당 여러 번 반복해야 하는데 이는 6.6이 비용을 줄이려 만든 tiered gate 취지에 반하므로 이번 스토리 범위 밖으로 명시적으로 제외한다.
+
+**AC1**: judge 호출(`_post_chat`을 통한 개별 axis 판정 1회)이 파싱 실패(`EvalJudgeError`)를 내면, 그 1개 호출만 정확히 1회 재호출(bounded) — 나머지 성공한 호출/축에는 영향 없음.
+**AC2**: 재시도까지 실패하면 해당 axis의 해당 1개 sample만 결측 처리하고 나머지 성공한 sample들의 평균으로 axis 점수를 낸다(예: 3개 중 2개 성공 시 2개 평균). 3개 중 2개 이상 실패하면 기존처럼 항목 실패로 전파(무한정 관대하게 만들지 않음).
+**AC3**: `--profile smoke`/`--profile promotion` 둘 다 이 bounded retry 혜택을 받는다(judge 로직은 프로파일 무관 공통 경로).
+**AC4**: 회귀 테스트 — 3개 중 1개 파싱 실패→재시도 성공, 3개 중 1개 파싱 실패→재시도도 실패(2개 평균으로 폴백), 3개 중 2개 이상 실패(기존처럼 항목 실패) 케이스 커버.
+**AC5 (범위 제외, 문서화만)**: 생성 자체의 실행 간 편차(narrative_coherence류)는 이 스토리로 해소되지 않음 — 해소하려면 항목당 전체 시나리오 생성을 반복해야 하며 비용이 6.6의 취지와 상충함을 근거와 함께 명시.
+
 ## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
 
 **Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.
