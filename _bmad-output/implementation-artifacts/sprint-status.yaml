@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-10  # 8-7 코드리뷰 완료 → done
+last_updated: 2026-07-11  # Stories 6.3–6.4 review fixes complete; live gate/promotion remains pending
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -128,6 +128,8 @@ development_status:
   epic-6: in-progress
   6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: done  # depends on 6-1
+  6-3-prompt-cache-hit-optimization: in-progress  # Review fixes complete; full 3-item gate and production promotion remain pending
+  6-4-scenario-yaml-output-bounded-retry: in-progress  # Review fixes complete; exact live retry rate and full gate/promotion remain pending
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress
@@ -148,7 +150,7 @@ development_status:
   8-6-asset-library-management: done  # assets/ 루트 분리 + manifest.json + style_epoch + draft/approved 수명주기(파이프라인 자동생성 카드는 approved 직행, Jay 승인) + 8-2 카드 실이주 완료; /asset-files 서빙 추가 구현(범위 확장, Jay 승인); 사전 존재하던 테스트 격리 버그 발견·수정(실 assets/DB 오염 방지); 그로 인한 SCP-096(165 run, ComfyUI 재생성 완료)/SCP-173(고아 row, 정리)/SCP-3007×4(미사용, 정리) 카드 사전 유실 전부 해결(Jay 승인); 코드리뷰 패치 9건 적용(승인/폐기 KeyError→ValueError, IntegrityError 롤백 누락, DB/manifest 쓰기 순서 원자성, 마이그레이션 hint-pose 콜론 유실, 신규 DB 컬럼 부트스트랩 db.init() 이관, assetFileUrl 트래버설 새니타이저), deferred 2건(epoch 재생성 시 manifest 덮어쓰기, 매니페스트 파일 락 부재); 947 passed/1 skipped, ruff clean
   8-7-composite-harmonization: done  # 코드리뷰 패치 적용: tier 기본값 0+범위검증, tint saturation/contrast, shadow scale/blur, relight cache safe path/alpha/UUID tmp/rollback, per-shot/card/pair Tier3 예외 격리, relit substitution alpha fallback, local-band light-wrap sampling, placeholder IC-Light workflow 성공 차단, run_service lazy import, AC10 pre-call substitution 계약 정리. Tier1/2 구현은 유지; Tier3 실제 IC-Light graph는 로컬 custom node 부재로 명시적 스코프 결정에 따라 deferred(8-4/8-4a 분리와 동일 선례, non-fatal 설계로 비차단). 회귀 재확인 그린(ruff clean, 대상 테스트 67 passed); 실 tier0↔tier1 A/B는 Jay 라이브 시청 판단으로 남음
   8-8-character-micro-motion-techniques: done  # cast motion_style/motion_energy enum + procedural FFmpeg micro-motion, no new workflow stage; motion_style/motion_energy taught in cast_decision.md (8.10 split) not visual_breakdown.md; golden-set eval FAILed (SCP-096 article_fidelity -1.00), candidate not promoted; found+fixed missing production label for cast_decision (Jay-approved). 코드리뷰 패치 4건 적용(motion_style_counts 렌더된 카드만 집계, axis_terms KeyError→degrade, off-frame pan 회귀 테스트 보강, hold+parallax 테스트 추가), deferred 7건(8.4/8.10 소유 파일); 914 passed/1 skipped, ruff clean
-  8-9-character-locomotion-blocking: ready-for-dev  # cast movement_mode/direction/pace enum + screen-space blocking/locomotion curves; no new workflow stage
+  8-9-character-locomotion-blocking: in-progress  # cast movement_mode/direction/pace enum + screen-space blocking/locomotion curves; no new workflow stage
   8-10-cast-decision-split-call: done  # 8.1 cast 0/125 미채움 버그 근본원인 규명(deepseek-v4-flash가 복잡한 visual_breakdown 호출에서 entity_visible 구 스키마로 회귀) + 수정: cast 결정을 별도 소형 LLM 호출로 분리(cast_decision_step 신설, visual_breakdown은 이미 결정된 cast만 소비). 실 DeepSeek 재검증 완료(전 샷 cast 채워짐 + 배경전용 확인). 834 passed, ruff clean
   8-11-per-shot-cut-assembly: ready-for-dev  # iteration-1 피드백 #5/#6: video_node 씬당 1배경(video.py:745) → 샷 단위 서브클립, sentence_indices+word_timings 타이밍; 87장 생성 8장 사용 문제 해소; 최우선
   8-12-cast-placement-scale-calibration: ready-for-dev  # iteration-1 피드백 #2/#3: cast_decision 프롬프트 전용 — rule-of-thirds 배분(실측 center 65/right 10/left 8), camera_angle↔depth 정합(near 37/mid 44/far 2); 8-11 이후 체감
