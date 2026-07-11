@@ -32,7 +32,7 @@ Write the narration script for an SCP video about {{scp_id}}.
 
 ### 필수 몰입 기법 (전부 사용)
 1. **2인칭 (당신)**: 시나리오 전체에서 최소 3회. 시청자를 이야기 안에 집어넣으세요.
-   - ❌ "D-9341은 격리실에 입장했습니다."
+   - ❌ "D계급 인원은 격리실에 입장했습니다."
    - ✅ "당신이 그 문을 열었다고 생각해보세요. 안에서 뭔가 기다리고 있습니다."
 2. **감각 묘사**: 2~3씬마다 시각 외 감각을 하나 이상 사용 (소리, 냄새, 촉감, 온도).
    - "축축한 콘크리트 냄새가 코를 찌릅니다. 어둠 속에서 무언가 긁히는 소리가 들립니다."
@@ -48,7 +48,21 @@ Write the narration script for an SCP video about {{scp_id}}.
 - 자연스러운 연결어 사용: 그때, 이후, 하지만, 게다가, 근데, 그런데 말이죠
 - 호러 비트에서는 문장을 끊어서 드라마틱 포즈를 만드세요:
   - "격리실이 조용해졌습니다." (정적) "아닙니다. 당신이 소리를 듣지 못하는 겁니다."
-- 문장 리듬 변화: 긴 묘사 문장과 짧은 임팩트 문장을 번갈아 사용
+
+### 종결어미 리듬 규칙 (체크 가능한 제약)
+- **동일 종결형 3연속 금지**: 같은 문장 끝 형태가 3문장 연속 반복되면 안 됩니다 (2개까지만 허용). `-했습니다`, `-입니다`, `-습니다`는 서로 다른 형태로 계산합니다.
+- 씬 전체에서 최소 다음 형태를 섞어 쓰세요:
+  1. 평서형 (-했습니다/-입니다/-습니다)
+  2. 의문형 (-까요?/-을까요? — 위 "극적 질문" 기법과 동일)
+  3. 명사형/단문 종결 (예: "겨우 0.1초.", "정적.") — 임팩트 비트에 사용
+  4. 도치·여운형 (예: "아무도 몰랐습니다, 그날 밤까지는.") — 드물게만, 남용 금지
+- **비트별 리듬**: 클라이맥스 비트는 짧은 단문·명사형 종결 위주로. 여파(aftermath) 비트는 긴 문장도 허용.
+- **존댓말 기조 유지 (Register Guard)**: 종결어미는 다양화하되 항상 합니다/입니다체(존댓말) 기반을 유지하세요. 반말이나 전면적 구어체(예: "~거든", "~잖아")로의 전환은 금지 — 바꾸는 건 리듬이지 격식이 아닙니다.
+
+### 인물 지칭 규칙 (Designation Rules)
+- **주연이 아닌 인물은 역할로 지칭하세요**: "D계급 인원", "연구원", "경비원", "요원" 등. D-9341, Dr. ███ 같은 개별 일련번호로 반복 지칭하지 마세요 — TTS가 "디 구삼사일"처럼 어색하게 읽습니다.
+- **예외**: 그 인물의 정체성 자체가 서사의 핵심 반전인 경우에만 특정 designation을 허용합니다 (예: 특정 연구원의 운명이 이야기의 핵심인 SCP 문서). 기본값은 역할 지칭입니다.
+- **SCP 개체 자체의 designation(SCP-173, SCP-096 등)은 그대로 유지**하세요 — 개체는 이야기의 주체이므로 예외입니다.
 
 ### Hook Scene (Scene 1) — 가장 중요
 - 첫 문장이 곧 Hook. 5초 안에 시청자를 잡아야 합니다.
@@ -78,20 +92,28 @@ Write the narration script for an SCP video about {{scp_id}}.
 
 ## Task
 
+{{parse_error}}
+
 For each scene, produce:
 
-```json
-{
-  "scene_num": 1,
-  "narration": "Korean narration text here (split into short sentences)",
-  "fact_tags": [{"key": "fact_key", "content": "relevant fact text"}],
-  "mood": "tense",
-  "entity_visible": true,
-  "location": "underground containment chamber",
-  "characters_present": ["SCP-173", "D-9341"],
-  "color_palette": "desaturated blues and grays, cold fluorescent white",
-  "atmosphere": "claustrophobic, sterile, oppressive silence"
-}
+```yaml
+scene_num: 1
+narration: |
+  Korean narration text here, composed of short sentences (split by
+  punctuation, not by physical line breaks) — write it as ONE continuous
+  line/paragraph inside this block, e.g. "첫 문장. 둘째 문장. 셋째 문장." never
+  one sentence per line.
+fact_tags:
+  - key: "fact_key"
+    content: "relevant fact text"
+mood: "tense"
+entity_visible: true
+location: "underground containment chamber"
+characters_present:
+  - "SCP-173"
+  - "D-9341"
+color_palette: "desaturated blues and grays, cold fluorescent white"
+atmosphere: "claustrophobic, sterile, oppressive silence"
 ```
 
 **NOTE:** Do NOT include `visual_descriptions` in the output. Image prompts are generated in a separate stage.
@@ -106,9 +128,9 @@ For each scene, produce:
 - `true`: SCP 개체가 이 씬에서 언급되거나 등장하는 경우
 - `false`: 배경, 환경, 인물만 나오는 씬 (격리실 전경, 재단 로고, 문서 클로즈업 등)
 
-Output as a JSON object with fields: scp_id, title, scenes (array of scene objects), metadata.
+Output as a YAML object with fields: scp_id, title, scenes (a list of scene objects), metadata.
 
-### Pre-Output Self-Check (MANDATORY before outputting JSON)
+### Pre-Output Self-Check (MANDATORY before outputting YAML)
 
 - [ ] `characters_present` array lists ALL characters/entities visible or referenced in this scene (NOT empty)
 - [ ] `location` is filled with a specific English description (NOT empty string)

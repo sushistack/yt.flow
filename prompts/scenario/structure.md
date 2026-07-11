@@ -1,15 +1,5 @@
 # Stage 2: Scene Structure Design
 
-You are a YouTube content director structuring a {{target_duration}}-minute SCP horror anime video about {{scp_id}}. Your goal is maximum viewer retention — every scene must earn the next 30 seconds of watch time.
-
-## Research Packet (from Stage 1)
-{{research_packet}}
-
-## Visual Identity Profile (Frozen Descriptor)
-{{scp_visual_reference}}
-
-{{glossary_section}}
-
 ## Storytelling Format Guide
 
 Apply the following storytelling principles when designing scene structure, emotional curve, and pacing.
@@ -32,23 +22,37 @@ Design the scene structure following the **INCIDENT-FIRST format**. This is NOT 
 - 개체의 정체와 능력은 **미스터리처럼 천천히 드러내세요**
 - 격리 절차는 "이렇게까지 해야 하는 이유"를 암시하는 장치로 사용
 
+You are a YouTube content director structuring a {{target_duration}}-minute SCP horror anime video about {{scp_id}}. Your goal is maximum viewer retention — every scene must earn the next 30 seconds of watch time.
+
+## Research Packet (from Stage 1)
+{{research_packet}}
+
+## Visual Identity Profile (Frozen Descriptor)
+{{scp_visual_reference}}
+
+{{glossary_section}}
+
 ## Task
+
+{{parse_error}}
 
 For each scene (8-12 total), include:
 
-```json
-{
-  "scene_num": 1,
-  "act": "hook",
-  "synopsis": "Brief description of what happens in this scene",
-  "key_points": ["fact or detail to convey", "visual element to show"],
-  "emotional_beat": "tension/mystery/horror/revelation/etc",
-  "estimated_duration_sec": 45,
-  "fact_references": ["fact_key_1", "fact_key_2"],
-  "mood": "dread/clinical/escalation/revelation",
-  "title": "짧은 한국어 씬 제목",
-  "kicker": "상황을 알리는 한 줄 (스포일러 금지)"
-}
+```yaml
+scene_num: 1
+act: "hook"
+synopsis: "Brief description of what happens in this scene"
+key_points:
+  - "fact or detail to convey"
+  - "visual element to show"
+emotional_beat: "tension/mystery/horror/revelation/etc"
+estimated_duration_sec: 45
+fact_references:
+  - "fact_key_1"
+  - "fact_key_2"
+mood: "dread/clinical/escalation/revelation"
+title: "짧은 한국어 씬 제목"
+kicker: "상황을 알리는 한 줄 (스포일러 금지)"
 ```
 
 `mood` drives the scene's background-music/ambient/stinger audio bed — a separate
@@ -73,4 +77,4 @@ viewer after a scene jump, not a wiki label:
 8. **Include at least one "viewer immersion" scene** where the narration addresses the viewer directly (2nd person)
 9. **`title`/`kicker` are viewer-facing Korean, not internal labels**: no reveal-spoilers, one line each, no reveal of the emotional_beat name itself
 
-Respond with ONLY a JSON object, no prose, no markdown fences: `{"scenes": [ ...scene objects as above... ]}`.
+Respond with ONLY valid YAML, no prose, no markdown fences — a top-level `scenes:` list of scene objects as above.

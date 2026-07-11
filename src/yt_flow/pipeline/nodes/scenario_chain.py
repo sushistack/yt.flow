@@ -12,7 +12,9 @@ converts it into ``PipelineState.error`` exactly as before.
 import json
 import logging
 import re
-from typing import cast
+from typing import Any, cast
+
+import yaml
 
 from yt_flow.domain.state import (
     CastDepth,
@@ -150,8 +152,10 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in _SENTENCE_BOUNDARY.split(text) if p.strip()]
 
 
-async def _call_stage(prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None) -> str:
-    """Fetch + compile a Langfuse prompt, call DeepSeek, return raw JSON text.
+async def _call_stage(
+    prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None
+) -> tuple[str, dict]:
+    """Fetch + compile a Langfuse prompt, call DeepSeek, return (raw text, usage dict).
 
     Raises on truncation (finish_reason == "length") so a caller never has to
     special-case a partial payload — json.loads on it would fail anyway, but
@@ -168,14 +172,119 @@ async def _call_stage(prompt_name: str, variables: dict, s, call_deepseek, *, la
         else prompt_service.get_prompt(prompt_name)
     )
     rendered = prompt.compile(**variables)
-    raw, _usage, finish_reason = await call_deepseek(rendered, s)
+    raw, usage, finish_reason = await call_deepseek(rendered, s)
     if finish_reason == "length":
         raise ValueError(f"{prompt_name} response truncated (finish_reason=length); raise max_tokens")
-    return raw
+    return raw, usage
 
 
-async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
-    raw = await _call_stage(
+_YAML_FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*?)\n?```$", re.DOTALL)
+
+
+def _parse_yaml(raw: str) -> Any:
+    """Parse a stage's raw model output as YAML (Story 6.4 — replaces json.loads).
+
+    Prompts instruct the model not to fence its output, but models sometimes
+    do anyway — with any language tag (```yaml, ```json, or bare```), since a
+    prompt still running under the pre-YAML production label emits JSON and
+    may fence it as ```json without json_object mode forcing bare output any
+    more. Strip that fence defensively before handing off to
+    ``yaml.safe_load``; JSON parses fine as YAML once unfenced. Raises
+    ``yaml.YAMLError`` unchanged on malformed input, same as
+    ``json.JSONDecodeError`` did before.
+    """
+    text = raw.strip()
+    match = _YAML_FENCE_RE.match(text)
+    if match:
+        text = match.group(1)
+    return yaml.safe_load(text)
+
+
+def _normalize_freetext(text: str) -> str:
+    """Collapse whitespace runs — including literal newlines a YAML ``|``
+    block literal preserves verbatim — to single spaces.
+
+    Live golden-set eval (Story 6.4) caught DeepSeek writing one sentence per
+    physical line inside a ``|`` block, something a JSON string value never
+    allowed; the embedded ``\\n`` characters read as choppy to the
+    review/critic judge and measurably hurt scoring axes (narrative_coherence,
+    atmosphere, article_fidelity), even though the underlying content was
+    unchanged. Applied to every block-literal free-text field (AC2), not just
+    narration — the same model habit reproduces on any of them. Restores the
+    flowing single-line text every downstream consumer already expects.
+    """
+    return " ".join(text.split())
+
+
+async def _call_stage_with_retry(
+    prompt_name: str,
+    variables: dict,
+    s,
+    call_deepseek,
+    parse,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+):
+    """Bounded (exactly one) self-correcting retry for a stage's parse+validate
+    step. Feeds the failure's error message back into the same prompt via
+    ``{{parse_error}}`` so the model can self-correct; a second failure
+    propagates unchanged — never an unbounded retry loop.
+
+    ``usage_sink``, when given, collects each underlying DeepSeek call's raw
+    ``usage`` dict (one entry normally, two if the retry fires) — Story 6.3's
+    token/cache observability seam, additive to every existing caller.
+    """
+    raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_deepseek, label=label)
+    if usage_sink is not None:
+        usage_sink.append(usage)
+    try:
+        return parse(raw)
+    except (yaml.YAMLError, ValueError) as exc:
+        error_text = " ".join(str(exc).split())[:500]
+        retry_variables = {
+            **variables,
+            "parse_error": f"Previous output failed validation: {error_text}. "
+            "Output ONLY valid YAML, no prose, no markdown code fences.",
+        }
+        raw, usage = await _call_stage(prompt_name, retry_variables, s, call_deepseek, label=label)
+        if usage_sink is not None:
+            usage_sink.append(usage)
+        return parse(raw)
+
+
+async def research_step(
+    scp_id: str,
+    scp_text: str,
+    format_guide: str,
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+) -> dict:
+    def parse(raw: str) -> dict:
+        data = _parse_yaml(raw)
+        if isinstance(data, dict):
+            for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline", "hooks"):
+                if isinstance(data.get(key), str):
+                    data[key] = _normalize_freetext(data[key])
+        if not isinstance(data, dict) or not str(data.get("frozen_descriptor") or "").strip():
+            raise ValueError("research: payload missing non-empty 'frozen_descriptor'")
+        # entity_sheet/story_logline are new fields (this story). A prompt version still
+        # running under the pre-existing production label (label=None) simply omits the
+        # key, and that must not break variant A/None (AC5) — absence is only checked
+        # when we're intentionally using the candidate prompt that promises these fields.
+        for key in ("entity_sheet", "story_logline"):
+            if key not in data:
+                if label:
+                    raise ValueError(f"research: payload missing non-empty '{key}'")
+                continue
+            if not isinstance(data[key], str) or not data[key].strip():
+                raise ValueError(f"research: payload missing non-empty '{key}'")
+        return data
+
+    return await _call_stage_with_retry(
         "scenario/research",
         {
             "scp_id": scp_id,
@@ -186,27 +295,38 @@ async def research_step(scp_id: str, scp_text: str, format_guide: str, s, call_d
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    if not isinstance(data, dict) or not str(data.get("frozen_descriptor") or "").strip():
-        raise ValueError("research: payload missing non-empty 'frozen_descriptor'")
-    # entity_sheet/story_logline are new fields (this story). A prompt version still
-    # running under the pre-existing production label (label=None) simply omits the
-    # key, and that must not break variant A/None (AC5) — absence is only checked
-    # when we're intentionally using the candidate prompt that promises these fields.
-    for key in ("entity_sheet", "story_logline"):
-        if key not in data:
-            if label:
-                raise ValueError(f"research: payload missing non-empty '{key}'")
-            continue
-        if not isinstance(data[key], str) or not data[key].strip():
-            raise ValueError(f"research: payload missing non-empty '{key}'")
-    return data
 
 
-async def structure_step(scp_id: str, research: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> list[dict]:
-    raw = await _call_stage(
+async def structure_step(
+    scp_id: str,
+    research: dict,
+    format_guide: str,
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+) -> list[dict]:
+    def parse(raw: str) -> list[dict]:
+        data = _parse_yaml(raw)
+        scenes = data.get("scenes") if isinstance(data, dict) else None
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("structure: payload must contain a non-empty 'scenes' list")
+        # title (Story 5.17 chapter-card text) is promised by the candidate prompt only;
+        # variant A/None keeps running the pre-promotion prompt, which doesn't emit it yet
+        # — absence there is backward-compat noise, not a regression (mirrors research_step).
+        if label:
+            for scene in scenes:
+                if not isinstance(scene, dict) or not str(scene.get("title") or "").strip():
+                    num = scene.get("scene_num") if isinstance(scene, dict) else "?"
+                    raise ValueError(f"structure: scene[{num}] missing non-empty 'title'")
+        return scenes
+
+    return await _call_stage_with_retry(
         "scenario/structure",
         {
             "scp_id": scp_id,
@@ -218,21 +338,10 @@ async def structure_step(scp_id: str, research: dict, format_guide: str, s, call
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    scenes = data.get("scenes") if isinstance(data, dict) else None
-    if not isinstance(scenes, list) or not scenes:
-        raise ValueError("structure: payload must contain a non-empty 'scenes' list")
-    # title (Story 5.17 chapter-card text) is promised by the candidate prompt only;
-    # variant A/None keeps running the pre-promotion prompt, which doesn't emit it yet
-    # — absence there is backward-compat noise, not a regression (mirrors research_step).
-    if label:
-        for scene in scenes:
-            if not isinstance(scene, dict) or not str(scene.get("title") or "").strip():
-                num = scene.get("scene_num") if isinstance(scene, dict) else "?"
-                raise ValueError(f"structure: scene[{num}] missing non-empty 'title'")
-    return scenes
 
 
 async def writing_step(
@@ -245,8 +354,22 @@ async def writing_step(
     call_deepseek,
     *,
     label: str | None = None,
+    usage_sink: list[dict] | None = None,
 ) -> dict:
-    raw = await _call_stage(
+    def parse(raw: str) -> dict:
+        data = _parse_yaml(raw)
+        scenes = data.get("scenes") if isinstance(data, dict) else None
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("writing: payload must contain a non-empty 'scenes' list")
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                raise ValueError(f"writing: malformed scene {scene!r}")
+            if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
+                raise ValueError(f"writing: scene[{scene.get('scene_num')}] has empty narration")
+            scene["narration"] = _normalize_freetext(scene["narration"])
+        return data
+
+    return await _call_stage_with_retry(
         "scenario/writing",
         {
             "scp_id": scp_id,
@@ -258,16 +381,10 @@ async def writing_step(
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    scenes = data.get("scenes") if isinstance(data, dict) else None
-    if not isinstance(scenes, list) or not scenes:
-        raise ValueError("writing: payload must contain a non-empty 'scenes' list")
-    for scene in scenes:
-        if not str(scene.get("narration") or "").strip():
-            raise ValueError(f"writing: scene[{scene.get('scene_num')}] has empty narration")
-    return data
 
 
 def _scene_role_text(scene_role: object) -> str:
@@ -295,6 +412,7 @@ async def cast_decision_step(
     call_deepseek,
     *,
     label: str | None = None,
+    usage_sink: list[dict] | None = None,
 ) -> dict[int, list]:
     """Decide per-sentence cast in its own focused call, isolated from the
     much larger cinematography task (Story 8.10).
@@ -315,10 +433,38 @@ async def cast_decision_step(
     validation once merged onto a shot).
     """
     numbered = "\n".join(f"{i + 1}. {sent}" for i, sent in enumerate(sentences))
-    raw = await _call_stage(
+
+    def parse(raw: str) -> dict[int, list]:
+        data = _parse_yaml(raw)
+        entries = data.get("shots") if isinstance(data, dict) else None
+        if not isinstance(entries, list) or len(entries) != len(sentences):
+            raise ValueError(
+                f"cast_decision: expected 1:1 sentence-to-entry mapping "
+                f"({len(sentences)} sentences), got {len(entries) if isinstance(entries, list) else 'non-list'}"
+            )
+        result: dict[int, list] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError(f"cast_decision: malformed entry {entry!r}")
+            sentence_num = entry.get("sentence")
+            if not isinstance(sentence_num, int):
+                raise ValueError(f"cast_decision: malformed sentence number {sentence_num!r}")
+            if sentence_num in result:
+                raise ValueError(f"cast_decision: duplicate sentence {sentence_num}")
+            cast = entry.get("cast")
+            if not isinstance(cast, list):
+                raise ValueError(f"cast_decision: sentence {sentence_num} cast must be a list")
+            result[sentence_num] = cast
+        expected = set(range(1, len(sentences) + 1))
+        if set(result) != expected:
+            raise ValueError(
+                f"cast_decision: sentence coverage mismatch; expected {sorted(expected)}, got {sorted(result)}"
+            )
+        return result
+
+    return await _call_stage_with_retry(
         "scenario/cast_decision",
         {
-            "scene_num": scene["scene_num"],
             "scp_id": scp_id,
             "stock_cast_keys": ", ".join(STOCK_CAST_KEYS),
             "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
@@ -327,34 +473,10 @@ async def cast_decision_step(
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    entries = data.get("shots") if isinstance(data, dict) else None
-    if not isinstance(entries, list) or len(entries) != len(sentences):
-        raise ValueError(
-            f"cast_decision: expected 1:1 sentence-to-entry mapping "
-            f"({len(sentences)} sentences), got {len(entries) if isinstance(entries, list) else 'non-list'}"
-        )
-    result: dict[int, list] = {}
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise ValueError(f"cast_decision: malformed entry {entry!r}")
-        sentence_num = entry.get("sentence")
-        if not isinstance(sentence_num, int):
-            raise ValueError(f"cast_decision: malformed sentence number {sentence_num!r}")
-        if sentence_num in result:
-            raise ValueError(f"cast_decision: duplicate sentence {sentence_num}")
-        cast = entry.get("cast")
-        if not isinstance(cast, list):
-            raise ValueError(f"cast_decision: sentence {sentence_num} cast must be a list")
-        result[sentence_num] = cast
-    expected = set(range(1, len(sentences) + 1))
-    if set(result) != expected:
-        raise ValueError(
-            f"cast_decision: sentence coverage mismatch; expected {sorted(expected)}, got {sorted(result)}"
-        )
-    return result
 
 
 async def visual_breakdown_step(
@@ -370,9 +492,37 @@ async def visual_breakdown_step(
     call_deepseek,
     *,
     label: str | None = None,
+    usage_sink: list[dict] | None = None,
 ) -> list[dict]:
     numbered = "\n".join(f"{i + 1}. {sent}" for i, sent in enumerate(sentences))
-    raw = await _call_stage(
+
+    def parse(raw: str) -> list[dict]:
+        data = _parse_yaml(raw)
+        shots = data.get("visual_descriptions") if isinstance(data, dict) else None
+        if not isinstance(shots, list) or len(shots) != len(sentences):
+            raise ValueError(
+                f"visual_breakdown: expected 1:1 sentence-to-shot mapping "
+                f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
+            )
+        # Cast is decided authoritatively by cast_decision_step (Story 8.10) — attach
+        # it here regardless of anything the model echoed, keyed by sentence_start.
+        for shot in shots:
+            if not isinstance(shot, dict):
+                raise ValueError(f"visual_breakdown: malformed shot {shot!r}")
+            for key in ("image_prompt", "negative_prompt"):
+                if isinstance(shot.get(key), str):
+                    shot[key] = _normalize_freetext(shot[key])
+            sentence_start = shot.get("sentence_start")
+            if type(sentence_start) is not int:
+                raise ValueError(f"visual_breakdown: invalid sentence_start {sentence_start!r}")
+            shot["cast"] = cast_by_sentence.get(sentence_start, [])
+        starts = [shot["sentence_start"] for shot in shots]
+        expected = list(range(1, len(sentences) + 1))
+        if sorted(starts) != expected:
+            raise ValueError(f"visual_breakdown: sentence coverage mismatch; expected {expected}, got {sorted(starts)}")
+        return shots
+
+    return await _call_stage_with_retry(
         "scenario/visual_breakdown",
         {
             "scene_num": scene["scene_num"],
@@ -394,24 +544,10 @@ async def visual_breakdown_step(
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    shots = data.get("visual_descriptions") if isinstance(data, dict) else None
-    if not isinstance(shots, list) or len(shots) != len(sentences):
-        raise ValueError(
-            f"visual_breakdown: expected 1:1 sentence-to-shot mapping "
-            f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
-        )
-    # Cast is decided authoritatively by cast_decision_step (Story 8.10) — attach
-    # it here regardless of anything the model echoed, keyed by sentence_start.
-    for shot in shots:
-        if isinstance(shot, dict):
-            sentence_start = shot.get("sentence_start")
-            if not isinstance(sentence_start, int):
-                raise ValueError(f"visual_breakdown: invalid sentence_start {sentence_start!r}")
-            shot["cast"] = cast_by_sentence.get(sentence_start, [])
-    return shots
 
 
 _VALID_VERDICTS = {"pass", "retry", "accept_with_notes"}
@@ -427,8 +563,15 @@ async def review_step(
     call_deepseek,
     *,
     label: str | None = None,
+    usage_sink: list[dict] | None = None,
 ) -> dict:
-    raw = await _call_stage(
+    def parse(raw: str) -> dict:
+        data = _parse_yaml(raw)
+        if not isinstance(data, dict) or type(data.get("overall_pass")) is not bool:
+            raise ValueError("review: payload missing boolean 'overall_pass'")
+        return data
+
+    return await _call_stage_with_retry(
         "scenario/review",
         {
             "scp_id": writing.get("scp_id", ""),
@@ -441,17 +584,33 @@ async def review_step(
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    if not isinstance(data, dict) or "overall_pass" not in data:
-        raise ValueError("review: payload missing 'overall_pass'")
-    return data
 
 
-async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
+async def critic_step(
+    writing: dict,
+    visual_by_scene: dict,
+    format_guide: str,
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+) -> dict:
     scenario_json = {"writing": writing, "visual_descriptions": visual_by_scene}
-    raw = await _call_stage(
+
+    def parse(raw: str) -> dict:
+        data = _parse_yaml(raw)
+        if isinstance(data, dict) and isinstance(data.get("feedback"), str):
+            data["feedback"] = _normalize_freetext(data["feedback"])
+        if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
+            raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
+        return data
+
+    return await _call_stage_with_retry(
         "scenario/critic_agent",
         {
             "format_guide": format_guide,
@@ -459,15 +618,21 @@ async def critic_step(writing: dict, visual_by_scene: dict, format_guide: str, s
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
-        raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
-    return data
 
 
-async def tts_normalize_step(writing: dict, format_guide: str, s, call_deepseek, *, label: str | None = None) -> dict:
+async def tts_normalize_step(
+    writing: dict,
+    format_guide: str,
+    s,
+    call_deepseek,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
+) -> dict:
     """Rewrite each scene's narration for natural Korean TTS, matching scenes positionally.
 
     A scene whose normalized sentence count doesn't match the original (per
@@ -478,7 +643,21 @@ async def tts_normalize_step(writing: dict, format_guide: str, s, call_deepseek,
     scenes_input = [
         {"scene_num": scene.get("scene_num"), "narration": scene.get("narration", "")} for scene in original_scenes
     ]
-    raw = await _call_stage(
+    def parse(raw: str) -> list[dict]:
+        data = _parse_yaml(raw)
+        normalized_scenes = data.get("scenes") if isinstance(data, dict) else None
+        if not isinstance(normalized_scenes, list) or len(normalized_scenes) != len(original_scenes):
+            got = len(normalized_scenes) if isinstance(normalized_scenes, list) else "non-list"
+            raise ValueError(f"tts_normalize: expected {len(original_scenes)} scenes, got {got}")
+        for scene in normalized_scenes:
+            if not isinstance(scene, dict):
+                raise ValueError(f"tts_normalize: malformed scene {scene!r}")
+            if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
+                raise ValueError(f"tts_normalize: scene[{scene.get('scene_num')}] has empty narration")
+            scene["narration"] = _normalize_freetext(scene["narration"])
+        return normalized_scenes
+
+    normalized_scenes = await _call_stage_with_retry(
         "scenario/tts_normalize",
         {
             "scenes_json": json.dumps(scenes_input, ensure_ascii=False),
@@ -486,13 +665,10 @@ async def tts_normalize_step(writing: dict, format_guide: str, s, call_deepseek,
         },
         s,
         call_deepseek,
+        parse,
         label=label,
+        usage_sink=usage_sink,
     )
-    data = json.loads(raw)
-    normalized_scenes = data.get("scenes") if isinstance(data, dict) else None
-    if not isinstance(normalized_scenes, list) or len(normalized_scenes) != len(original_scenes):
-        got = len(normalized_scenes) if isinstance(normalized_scenes, list) else "non-list"
-        raise ValueError(f"tts_normalize: expected {len(original_scenes)} scenes, got {got}")
 
     updated_scenes = []
     for idx, (original_scene, normalized_scene) in enumerate(zip(original_scenes, normalized_scenes)):

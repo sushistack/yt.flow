@@ -21,17 +21,16 @@ You are a Korean TTS preprocessing specialist. Rewrite each scene's narration so
 
 ## Output Format
 
-Respond with ONLY a JSON object, no prose, no markdown fences:
+{{parse_error}}
 
-```json
-{
-  "scenes": [
-    {
-      "scene_num": 1,
-      "narration": "normalized Korean narration"
-    }
-  ]
-}
+Respond with ONLY valid YAML, no prose, no markdown fences:
+
+```yaml
+scenes:
+  - scene_num: 1
+    narration: |
+      normalized Korean narration — ONE continuous line/paragraph inside
+      this block, never one sentence per physical line
 ```
 
 Return exactly one output scene per input scene, in the same order.

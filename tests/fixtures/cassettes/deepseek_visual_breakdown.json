@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"scene_num\": 1, \"visual_descriptions\": [{\"image_prompt\": \"high-angle wide shot, a covered body under a stained white sheet on a poured concrete floor, three foundation guards frozen mid-stride at frame edges, damp concrete floor with hairline cracks, twin fluorescent tubes casting hard shadows, thin condensation mist at knee level, paralytic helplessness, institutional dread\", \"negative_prompt\": \"extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality\", \"sentence_start\": 1, \"sentence_end\": 1, \"entity_visible\": false, \"camera_type\": \"high-angle\"}, {\"image_prompt\": \"\", \"negative_prompt\": \"\", \"sentence_start\": 2, \"sentence_end\": 2, \"entity_visible\": false, \"camera_type\": \"wide\"}, {\"image_prompt\": \"static wide shot, an empty steel evidence table under a single hanging bulb, a blank chain-of-custody form and an unused weapon-tag envelope, bare cinder block walls with peeling green paint, harsh single-source light with hard falloff, still air with no dust motes, procedural futility, institutional denial\", \"negative_prompt\": \"extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality\", \"sentence_start\": 3, \"sentence_end\": 3, \"entity_visible\": false, \"camera_type\": \"wide\"}]}"
+        "content": "scene_num: 1\nvisual_descriptions:\n  - image_prompt: |\n      high-angle wide shot, a covered body under a stained white sheet on a\n      poured concrete floor, three foundation guards frozen mid-stride at\n      frame edges, damp concrete floor with hairline cracks, twin\n      fluorescent tubes casting hard shadows, thin condensation mist at\n      knee level, paralytic helplessness, institutional dread\n    negative_prompt: |\n      extra limbs, extra arms, extra fingers, deformed hands, mutated, bad\n      anatomy, blurry, watermark, text, low quality\n    sentence_start: 1\n    sentence_end: 1\n    entity_visible: false\n    camera_type: \"high-angle\"\n  - image_prompt: \"\"\n    negative_prompt: \"\"\n    sentence_start: 2\n    sentence_end: 2\n    entity_visible: false\n    camera_type: \"wide\"\n  - image_prompt: |\n      static wide shot, an empty steel evidence table under a single\n      hanging bulb, a blank chain-of-custody form and an unused weapon-tag\n      envelope, bare cinder block walls with peeling green paint, harsh\n      single-source light with hard falloff, still air with no dust motes,\n      procedural futility, institutional denial\n    negative_prompt: |\n      extra limbs, extra arms, extra fingers, deformed hands, mutated, bad\n      anatomy, blurry, watermark, text, low quality\n    sentence_start: 3\n    sentence_end: 3\n    entity_visible: false\n    camera_type: \"wide\""
       }
     }
   ],
-  "usage": {"prompt_tokens": 700, "completion_tokens": 250, "total_tokens": 950}
+  "usage": {
+    "prompt_tokens": 700,
+    "completion_tokens": 250,
+    "total_tokens": 950
+  }
 }

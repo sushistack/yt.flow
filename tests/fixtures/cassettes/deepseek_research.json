@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"core_identity\": \"SCP-173 is a Euclid-class hostile sculpture that can only move unobserved.\", \"frozen_descriptor\": \"Silhouette & Build: rigid 2-meter humanoid concrete form. Head/Face: featureless smooth dome. Body Covering: weathered grey concrete with visible rebar seams. Hands & Limbs: elongated clawed fingers. Carried Items: none. Organic Integration Note: reddish-brown staining at the base, origin unknown.\", \"entity_sheet\": \"SCP-173, the Sculpture. Signature trait: only moves when unobserved, closing distance in a blink. Environmental signature: a faint smell of copper and wet concrete, and reddish-brown staining wherever it has stood.\", \"story_logline\": \"Fourteen people are dead and no one has ever seen it move — a concrete statue that only kills when you blink.\", \"dramatic_beats\": \"1) First blinking incident kills a guard. 2) Camera blind spot discovered. 3) Containment chamber redesign after second death.\", \"environment\": \"Underground concrete containment chamber, harsh fluorescent lighting, damp floor stains, oppressive silence.\", \"hooks\": \"Opening hooks: 'Blink and you die.' / 'Fourteen people are dead and no one saw it move.' / 'It has never been photographed moving.' Mid-video twist: cameras don't stop it either. Closing mystery: no one knows where it came from.\"}"
+        "content": "core_identity: |\n  SCP-173 is a Euclid-class hostile sculpture that can only move unobserved.\nfrozen_descriptor: |\n  Silhouette & Build: rigid 2-meter humanoid concrete form. Head/Face:\n  featureless smooth dome. Body Covering: weathered grey concrete with\n  visible rebar seams. Hands & Limbs: elongated clawed fingers. Carried\n  Items: none. Organic Integration Note: reddish-brown staining at the\n  base, origin unknown.\nentity_sheet: |\n  SCP-173, the Sculpture. Signature trait: only moves when unobserved,\n  closing distance in a blink. Environmental signature: a faint smell of\n  copper and wet concrete, and reddish-brown staining wherever it has stood.\nstory_logline: |\n  Fourteen people are dead and no one has ever seen it move — a concrete\n  statue that only kills when you blink.\ndramatic_beats: \"1) First blinking incident kills a guard. 2) Camera blind spot discovered. 3) Containment chamber redesign after second death.\"\nenvironment: \"Underground concrete containment chamber, harsh fluorescent lighting, damp floor stains, oppressive silence.\"\nhooks: |\n  Opening hooks: 'Blink and you die.' / 'Fourteen people are dead and no\n  one saw it move.' / 'It has never been photographed moving.' Mid-video\n  twist: cameras don't stop it either. Closing mystery: no one knows where\n  it came from."
       }
     }
   ],
-  "usage": {"prompt_tokens": 400, "completion_tokens": 180, "total_tokens": 580}
+  "usage": {
+    "prompt_tokens": 400,
+    "completion_tokens": 180,
+    "total_tokens": 580
+  }
 }

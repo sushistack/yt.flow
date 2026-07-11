@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"shots\": [{\"sentence\": 1, \"cast\": []}, {\"sentence\": 2, \"cast\": []}, {\"sentence\": 3, \"cast\": []}]}"
+        "content": "shots:\n  - sentence: 1\n    cast: []\n  - sentence: 2\n    cast: []\n  - sentence: 3\n    cast: []"
       }
     }
   ],
-  "usage": {"prompt_tokens": 200, "completion_tokens": 40, "total_tokens": 240}
+  "usage": {
+    "prompt_tokens": 200,
+    "completion_tokens": 40,
+    "total_tokens": 240
+  }
 }

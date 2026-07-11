@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"overall_pass\": true, \"coverage_pct\": 92.0, \"issues\": [], \"corrections\": [], \"storytelling_score\": 81, \"storytelling_issues\": []}"
+        "content": "overall_pass: true\ncoverage_pct: 92.0\nissues: []\ncorrections: []\nstorytelling_score: 81\nstorytelling_issues: []"
       }
     }
   ],
-  "usage": {"prompt_tokens": 900, "completion_tokens": 80, "total_tokens": 980}
+  "usage": {
+    "prompt_tokens": 900,
+    "completion_tokens": 80,
+    "total_tokens": 980
+  }
 }

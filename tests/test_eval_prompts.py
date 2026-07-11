@@ -113,7 +113,7 @@ def test_seed_dataset_is_idempotent_no_duplicates():
 
 
 def _wire_scenario_capturing_state(monkeypatch, captured, *, error=None, scenes=None):
-    async def fake_scenario_node(state):
+    async def fake_scenario_node(state, *, trace_sink=None):
         captured.append(dict(state))
         if error:
             return {"current_stage": "scenario", "error": error}
@@ -228,7 +228,7 @@ def test_evaluate_label_computes_rule_metrics():
 def test_run_scenario_times_out(monkeypatch):
     import asyncio
 
-    async def slow_scenario_node(state):
+    async def slow_scenario_node(state, *, trace_sink=None):
         await asyncio.sleep(10)
         return {"scenes": [], "current_stage": "scenario", "error": None}
 
@@ -295,7 +295,7 @@ def test_write_artifact_creates_json_file(tmp_path):
 def test_evaluate_label_full_failure_artifact_includes_parsed_state(monkeypatch, tmp_path):
     parsed_state = {"current_stage": "scenario", "error": "boom", "scenes": [{"scene_num": 1}]}
 
-    async def fake_scenario_node(state):
+    async def fake_scenario_node(state, *, trace_sink=None):
         return parsed_state
 
     monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
@@ -306,7 +306,8 @@ def test_evaluate_label_full_failure_artifact_includes_parsed_state(monkeypatch,
     )
 
     data = json.loads(Path(results[0].artifact_path).read_text(encoding="utf-8"))
-    assert data["parsed_state"] == parsed_state
+    # _run_scenario folds in `stages` (Story 6.3) alongside whatever scenario_node returned.
+    assert data["parsed_state"] == {**parsed_state, "stages": []}
 
 
 def test_evaluate_label_writes_artifact_on_failure(monkeypatch, tmp_path):

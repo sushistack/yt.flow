@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 import pytest
+import yaml
 
 import yt_flow.pipeline.nodes.scenario_chain as chain
 import yt_flow.pipeline.nodes.sound_design as sound_design
@@ -159,7 +160,7 @@ def test_visual_breakdown_prompt_file_has_required_placeholders():
 def test_cast_decision_prompt_file_has_required_placeholders():
     prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "cast_decision.md"
     content = prompt_path.read_text(encoding="utf-8")
-    for placeholder in ("{{scene_num}}", "{{scp_id}}", "{{stock_cast_keys}}", "{{characters_present}}", "{{numbered_sentences}}", "{{sentence_count}}"):
+    for placeholder in ("{{scp_id}}", "{{stock_cast_keys}}", "{{characters_present}}", "{{numbered_sentences}}", "{{sentence_count}}"):
         assert placeholder in content, f"missing {placeholder} in cast_decision.md"
     assert "pose_hint" in content
 
@@ -241,6 +242,41 @@ async def test_writing_step_rejects_empty_narration(monkeypatch):
         await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
 
 
+async def test_writing_step_collapses_embedded_newlines_in_narration(monkeypatch):
+    """Live golden-set eval (Story 6.4) caught DeepSeek writing one sentence
+    per physical line inside a YAML ``narration: |`` block literal — collapse
+    it back to the single flowing line JSON output always produced."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n", {}, "stop"
+
+    result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+    assert result["scenes"][0]["narration"] == "첫 문장. 둘째 문장."
+
+
+async def test_research_step_collapses_embedded_newlines_in_freetext_fields(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        raw = (
+            "core_identity: |\n  첫 줄.\n  둘째 줄.\n"
+            "frozen_descriptor: |\n  첫 줄.\n  둘째 줄.\n"
+            "entity_sheet: |\n  첫 줄.\n  둘째 줄.\n"
+            "story_logline: |\n  첫 줄.\n  둘째 줄.\n"
+            "hooks: |\n  첫 줄.\n  둘째 줄.\n"
+        )
+        return raw, {}, "stop"
+
+    result = await chain.research_step("SCP-173", "text", "guide", None, call)
+    for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline", "hooks"):
+        assert result[key] == "첫 줄. 둘째 줄."
+
+
 async def test_visual_breakdown_step_maps_one_shot_per_sentence(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
@@ -306,6 +342,33 @@ async def test_visual_breakdown_step_rejects_non_int_sentence_start(monkeypatch)
     scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
     with pytest.raises(ValueError, match="sentence_start"):
         await chain.visual_breakdown_step("SCP-173", scene, ["문장1."], {1: []}, "desc", "entity sheet", "logline", {}, None, call)
+
+
+async def test_visual_breakdown_step_collapses_embedded_newlines_in_prompts(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        raw = (
+            "scene_num: 1\n"
+            "visual_descriptions:\n"
+            "  - image_prompt: |\n"
+            "      첫 줄.\n"
+            "      둘째 줄.\n"
+            "    negative_prompt: |\n"
+            "      첫 줄.\n"
+            "      둘째 줄.\n"
+            "    sentence_start: 1\n"
+            "    sentence_end: 1\n"
+            "    camera_type: wide\n"
+        )
+        return raw, {}, "stop"
+
+    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
+    result = await chain.visual_breakdown_step("SCP-173", scene, ["문장1."], {1: []}, "desc", "entity sheet", "logline", {}, None, call)
+    assert result[0]["image_prompt"] == "첫 줄. 둘째 줄."
+    assert result[0]["negative_prompt"] == "첫 줄. 둘째 줄."
 
 
 async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatch):
@@ -464,6 +527,19 @@ async def test_review_step_rejects_missing_overall_pass(monkeypatch):
         await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
 
 
+async def test_review_step_retries_non_boolean_overall_pass(monkeypatch):
+    prompt = _CapturingPrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+    responses = iter(["overall_pass: 'false'", "overall_pass: false"])
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    result = await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+    assert result["overall_pass"] is False
+    assert len(prompt.calls) == 2
+
+
 async def test_critic_step_returns_verdict(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
@@ -473,6 +549,19 @@ async def test_critic_step_returns_verdict(monkeypatch):
     result = await chain.critic_step(writing, {1: []}, "guide", None, call)
     assert result["verdict"] == "pass"
     assert result["feedback"]
+
+
+async def test_critic_step_collapses_embedded_newlines_in_feedback(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return 'verdict: pass\nfeedback: |\n  첫 줄.\n  둘째 줄.\nscene_notes: []\n', {}, "stop"
+
+    writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
+    result = await chain.critic_step(writing, {1: []}, "guide", None, call)
+    assert result["feedback"] == "첫 줄. 둘째 줄."
 
 
 async def test_critic_step_rejects_unknown_verdict(monkeypatch):
@@ -523,6 +612,210 @@ async def test_call_stage_uses_fallback_when_label_given(monkeypatch):
     assert calls == [("get_prompt_with_fallback", ("scenario/research",), {"label": "candidate"})]
 
 
+# ── _parse_yaml / _call_stage_with_retry (Story 6.4: YAML output + bounded retry) ──
+
+
+def test_parse_yaml_parses_plain_yaml():
+    assert chain._parse_yaml("key: value") == {"key": "value"}
+
+
+def test_parse_yaml_strips_yaml_fence():
+    assert chain._parse_yaml("```yaml\nkey: value\n```") == {"key": "value"}
+
+
+def test_parse_yaml_strips_bare_fence():
+    assert chain._parse_yaml("```\nkey: value\n```") == {"key": "value"}
+
+
+def test_parse_yaml_strips_json_fence():
+    """A stage still running the pre-YAML production prompt emits JSON, and
+    without json_object mode forcing bare output the model may fence it as
+    ```json — that JSON parses fine as YAML once unfenced."""
+    assert chain._parse_yaml('```json\n{"key": "value"}\n```') == {"key": "value"}
+
+
+def test_parse_yaml_raises_yaml_error_on_malformed_input():
+    with pytest.raises(yaml.YAMLError):
+        chain._parse_yaml("key: [unterminated")
+
+
+class _CapturingPrompt:
+    def __init__(self):
+        self.calls = []
+
+    def compile(self, **variables):
+        self.calls.append(variables)
+        return "rendered"
+
+
+async def test_call_stage_with_retry_succeeds_on_second_attempt(monkeypatch):
+    prompt = _CapturingPrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    responses = iter(["key: [unterminated", "key: value"])
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    def parse(raw):
+        data = chain._parse_yaml(raw)
+        if not isinstance(data, dict) or "key" not in data:
+            raise ValueError("missing key")
+        return data
+
+    result = await chain._call_stage_with_retry("scenario/research", {"a": "b"}, None, call, parse)
+
+    assert result == {"key": "value"}
+    assert len(prompt.calls) == 2
+    assert prompt.calls[0] == {"a": "b", "parse_error": ""}
+    assert prompt.calls[1]["a"] == "b"
+    assert "Output ONLY valid YAML" in prompt.calls[1]["parse_error"]
+
+
+async def test_call_stage_with_retry_exhausts_after_two_attempts(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    call_count = 0
+
+    async def call(rendered, s):
+        nonlocal call_count
+        call_count += 1
+        return "key: [unterminated", {}, "stop"
+
+    def parse(raw):
+        return chain._parse_yaml(raw)
+
+    with pytest.raises(yaml.YAMLError):
+        await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
+    assert call_count == 2  # bounded — no third attempt
+
+
+async def test_call_stage_with_retry_second_failure_is_surfaced_not_first(monkeypatch):
+    """The exception that propagates is the SECOND attempt's failure, even
+    when it's a different error class than the first attempt's."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    responses = iter(["key: [unterminated", "key: value"])  # 1st: YAMLError, 2nd: parses but still invalid
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    def parse(raw):
+        data = chain._parse_yaml(raw)
+        raise ValueError(f"still invalid: {data}")
+
+    with pytest.raises(ValueError, match="still invalid"):
+        await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
+
+
+async def test_call_stage_with_retry_handles_fenced_yaml_output(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return "```yaml\nkey: value\n```", {}, "stop"
+
+    def parse(raw):
+        data = chain._parse_yaml(raw)
+        if not isinstance(data, dict) or "key" not in data:
+            raise ValueError("missing key")
+        return data
+
+    result = await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
+    assert result == {"key": "value"}
+
+
+# ── usage_sink plumbing (Story 6.3: token/cache observability) ─────────────
+
+
+async def test_call_stage_returns_usage_alongside_raw_text(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return "key: value", {"prompt_tokens": 10}, "stop"
+
+    raw, usage = await chain._call_stage("scenario/research", {}, None, call)
+    assert raw == "key: value"
+    assert usage == {"prompt_tokens": 10}
+
+
+async def test_call_stage_with_retry_collects_one_usage_entry_on_first_success(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return "key: value", {"prompt_tokens": 5, "prompt_cache_hit_tokens": 3}, "stop"
+
+    usage_sink: list[dict] = []
+    result = await chain._call_stage_with_retry(
+        "scenario/research", {}, None, call, chain._parse_yaml, usage_sink=usage_sink
+    )
+    assert result == {"key": "value"}
+    assert usage_sink == [{"prompt_tokens": 5, "prompt_cache_hit_tokens": 3}]
+
+
+async def test_call_stage_with_retry_collects_both_usage_entries_on_retry(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    responses = iter([("key: [unterminated", {"prompt_tokens": 1}), ("key: value", {"prompt_tokens": 2})])
+
+    async def call(rendered, s):
+        raw, usage = next(responses)
+        return raw, usage, "stop"
+
+    usage_sink: list[dict] = []
+    result = await chain._call_stage_with_retry(
+        "scenario/research", {}, None, call, chain._parse_yaml, usage_sink=usage_sink
+    )
+    assert result == {"key": "value"}
+    assert usage_sink == [{"prompt_tokens": 1}, {"prompt_tokens": 2}]
+
+
+async def test_research_step_forwards_usage_into_sink(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        payload = {"frozen_descriptor": "desc"}
+        return yaml.dump(payload), {"prompt_tokens": 7, "completion_tokens": 4}, "stop"
+
+    usage_sink: list[dict] = []
+    await chain.research_step("SCP-173", "text", "guide", None, call, usage_sink=usage_sink)
+    assert usage_sink == [{"prompt_tokens": 7, "completion_tokens": 4}]
+
+
+async def test_research_step_usage_sink_defaults_to_none_without_error(monkeypatch):
+    """Existing callers that don't pass usage_sink keep working (Task 2's additive-only requirement)."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        payload = {"frozen_descriptor": "desc"}
+        return yaml.dump(payload), {"prompt_tokens": 7}, "stop"
+
+    result = await chain.research_step("SCP-173", "text", "guide", None, call)
+    assert result["frozen_descriptor"] == "desc"
+
+
+async def test_research_step_retries_once_on_malformed_yaml_then_succeeds(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    responses = iter(
+        [
+            "frozen_descriptor: [unterminated",
+            "core_identity: x\nfrozen_descriptor: x\nentity_sheet: x\nstory_logline: x\n"
+            "dramatic_beats: x\nenvironment: x\nhooks: x",
+        ]
+    )
+
+    async def call(rendered, s):
+        return next(responses), {}, "stop"
+
+    result = await chain.research_step("SCP-173", "text", "guide", None, call)
+    assert result["frozen_descriptor"] == "x"
+
+
 async def test_tts_normalize_step_rewrites_narration(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
@@ -549,6 +842,19 @@ async def test_tts_normalize_step_rewrites_narration(monkeypatch):
     assert result["scenes"][0]["characters_present"] == ["SCP-173"]
     # dual track (Story 5.18 AC:1): display_narration keeps the pre-normalization original
     assert result["scenes"][0]["display_narration"] == writing["scenes"][0]["narration"]
+
+
+async def test_tts_normalize_step_collapses_embedded_newlines_in_narration(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n", {}, "stop"
+
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. 둘째 문장."}]}
+    result = await chain.tts_normalize_step(writing, "guide", None, call)
+    assert result["scenes"][0]["narration"] == "첫 문장. 둘째 문장."
 
 
 async def test_tts_normalize_step_rejects_malformed_payload(monkeypatch):

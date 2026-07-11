@@ -2455,6 +2455,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "sqlmodel" },
     { name = "whisperx" },
 ]
@@ -2480,6 +2481,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = "==2.14.2" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlmodel", specifier = "==0.0.39" },
     { name = "whisperx", specifier = ">=3.8.6" },
 ]

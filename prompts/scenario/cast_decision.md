@@ -1,4 +1,4 @@
-# Stage 3.4: Cast Decision — Scene {{scene_num}}
+# Stage 3.4: Cast Decision
 
 Decide which pre-made character cards appear in each sentence's shot. This
 runs BEFORE the shot is composed — the visual composer will be told exactly
@@ -10,17 +10,9 @@ what you decide here and will never re-decide it, so get it right now.
 - **Fixed stock cast `card_key` values**: {{stock_cast_keys}}
 - A duplicate/offshoot of the entity uses `<scp_id>-<n>`, e.g. `SCP-049-2`.
 
-## Scene Context
-
-- **Characters Present** (from the scene outline): {{characters_present}}
-
-## Numbered Sentences
-
-{{numbered_sentences}}
-
-**Total sentences: {{sentence_count}}**
-
 ## Task
+
+{{parse_error}}
 
 For EACH sentence, decide who is physically visible in that sentence's shot:
 
@@ -61,6 +53,31 @@ Each cast entry needs these fields:
 - `motion_energy`: `"low"` | `"medium"` (default) | `"high"` — intensity of
   whichever `motion_style` you picked. Reach for `"high"` only when the beat
   itself calls for it (panic, violent tremor); most shots are `"medium"`.
+- optional `movement_mode`: `"anchored"` (default, omit the field entirely) |
+  `"drift"` | `"enter"` | `"exit"` | `"cross"` | `"approach"` | `"retreat"` —
+  how this card moves THROUGH the frame during the shot, distinct from
+  `motion_style`'s in-place idle motion above. This is cinematic blocking, not
+  a walk-cycle: a card never actually strides, it eases into/out of/across the
+  frame or scales toward/away from camera.
+  - Omit entirely (`anchored`) for almost every shot — a character standing,
+    sitting, or gesturing in place needs no `movement_mode` at all.
+  - `"drift"` for a small composition shift within the same slot — restless
+    repositioning, not a real entrance/exit.
+  - `"enter"` / `"exit"` only for a motivated shot beat where someone visibly
+    arrives or leaves the frame (a door, a retreat, an ambush).
+  - `"cross"` only when the shot's whole point is a subject crossing from one
+    side of the frame to the other.
+  - `"approach"` for a looming/threat reveal — the subject reads as coming
+    closer to camera over the shot.
+  - `"retreat"` for withdrawal or recession — the subject reads as moving away.
+  - Use `movement_mode` sparingly, at most once or twice per scene. If nothing
+    in the sentence calls for the card to travel, omit it.
+- optional `movement_direction`: `"none"` | `"left"` | `"right"` | `"in"` |
+  `"out"` — only meaningful together with `movement_mode`; omit unless you
+  also set `movement_mode`. Leave unset (or `"none"`) to let the renderer pick
+  a sensible default for the chosen mode.
+- optional `movement_pace`: `"slow"` | `"medium"` | `"fast"` (default `"slow"`)
+  — how quickly the movement resolves; omit unless you also set `movement_mode`.
 
 Multiple people can share a sentence (e.g. the entity and a D-class facing
 each other) — give each their own cast entry with distinct `position`/`depth`
@@ -71,16 +88,32 @@ scene, and never as a substitute for the required base `pose`.
 
 ## Output Format
 
-Output ONLY JSON, no markdown fences, no commentary:
+Output ONLY valid YAML, no markdown fences, no commentary:
 
-```json
-{
-  "shots": [
-    {"sentence": 1, "cast": [{"card_key": "{{scp_id}}", "position": "center", "depth": "near", "pose": "standing", "pose_hint": "reaching toward camera", "motion_style": "breath", "motion_energy": "medium"}]},
-    {"sentence": 2, "cast": []}
-  ]
-}
+```yaml
+shots:
+  - sentence: 1
+    cast:
+      - card_key: "{{scp_id}}"
+        position: "center"
+        depth: "near"
+        pose: "standing"
+        pose_hint: "reaching toward camera"
+        motion_style: "breath"
+        motion_energy: "medium"
+  - sentence: 2
+    cast: []
 ```
 
 `shots` MUST have exactly {{sentence_count}} entries, one per sentence number
 1..{{sentence_count}}, in any order.
+
+## Scene Context
+
+- **Characters Present** (from the scene outline): {{characters_present}}
+
+## Numbered Sentences
+
+{{numbered_sentences}}
+
+**Total sentences: {{sentence_count}}**

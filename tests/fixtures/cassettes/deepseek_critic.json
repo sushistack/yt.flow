@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"verdict\": \"pass\", \"hook_effective\": true, \"retention_risk\": \"low\", \"ending_impact\": \"strong\", \"feedback\": \"훅이 강력하고 몰입도가 높습니다.\", \"scene_notes\": []}"
+        "content": "verdict: \"pass\"\nhook_effective: true\nretention_risk: \"low\"\nending_impact: \"strong\"\nfeedback: |\n  훅이 강력하고 몰입도가 높습니다.\nscene_notes: []"
       }
     }
   ],
-  "usage": {"prompt_tokens": 900, "completion_tokens": 60, "total_tokens": 960}
+  "usage": {
+    "prompt_tokens": 900,
+    "completion_tokens": 60,
+    "total_tokens": 960
+  }
 }

@@ -96,6 +96,9 @@ def seed_dataset(client, dataset_name: str = DATASET_NAME) -> None:
 
 
 async def _run_scenario(item, label: str, *, timeout: float = DEFAULT_ITEM_TIMEOUT_SECONDS) -> dict:
+    """Runs scenario_node and folds in the per-stage token/cache metadata Story 6.3
+    added to `_record_trace` — captured here (not read back from Langfuse) so evidence
+    survives even for a PASSING item, which `write_artifact` used to skip entirely."""
     state = {
         "run_id": f"offline-eval-{label}-{item.input['scp_id']}",
         "scp_id": item.input["scp_id"],
@@ -107,10 +110,12 @@ async def _run_scenario(item, label: str, *, timeout: float = DEFAULT_ITEM_TIMEO
         "prompt_variant": prompt_variant_for_label(label),
         "error": None,
     }
+    stages: list[dict] = []
     try:
-        return await asyncio.wait_for(scenario_node(state), timeout=timeout)
+        out = await asyncio.wait_for(scenario_node(state, trace_sink=stages), timeout=timeout)
     except TimeoutError:
-        return {"scenes": [], "current_stage": "scenario", "error": f"timeout after {timeout:.0f}s"}
+        out = {"scenes": [], "current_stage": "scenario", "error": f"timeout after {timeout:.0f}s"}
+    return {**out, "stages": stages}
 
 
 def _rule_metrics(scenes: list[dict]) -> dict[str, float]:
@@ -170,7 +175,8 @@ def write_artifact(
     raw_output: str | None = None,
     parsed_state: object = None,
 ) -> Path:
-    """Local debug artifact for a failed item/stage (AC3). Never committed — tmp/ is git-ignored."""
+    """Local debug artifact for an item/stage (AC3), written for every item (pass or fail) so
+    Story 6.3's token/cache fields survive the process. Never committed — tmp/ is git-ignored."""
     run_dir.mkdir(parents=True, exist_ok=True)
     path = run_dir / f"{label}-{scp_id}-{stage}.json"
     path.write_text(
@@ -204,7 +210,9 @@ def _to_item_result(item_result) -> ItemResult:
         return ItemResult(scp_id, failed=True, error="evaluator produced no scores", parsed_state=output)
     axes = {ax: by_name[ax].value for ax in AXES}
     rule_metrics = {name: ev.value for name, ev in by_name.items() if name not in AXES and name != "total"}
-    return ItemResult(scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics)
+    # parsed_state carries `stages` (Story 6.3 token/cache fields) through to write_artifact
+    # even on a pass — evidence used to be discarded here for every non-failing item.
+    return ItemResult(scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics, parsed_state=output)
 
 
 def evaluate_label(
@@ -234,10 +242,12 @@ def evaluate_label(
     items = [_to_item_result(ir) for ir in result.item_results]
     if run_dir:
         for r in items:
-            if r.failed:
-                r.artifact_path = str(write_artifact(
-                    run_dir, label=label, scp_id=r.scp_id, stage="full", error=r.error, parsed_state=r.parsed_state,
-                ))
+            # Written for every item, not only failures — parsed_state.stages (Story 6.3)
+            # is the only place prompt_cache_hit_tokens survives after this process exits;
+            # Langfuse's own trace for this run is not reliably time-correlatable after the fact.
+            r.artifact_path = str(write_artifact(
+                run_dir, label=label, scp_id=r.scp_id, stage="full", error=r.error, parsed_state=r.parsed_state,
+            ))
     return items
 
 

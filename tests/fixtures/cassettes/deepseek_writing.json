@@ -8,9 +8,13 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"scp_id\": \"SCP-173\", \"title\": \"눈을 감는 순간\", \"scenes\": [{\"scene_num\": 1, \"narration\": \"14명. 단 하룻밤에 목이 꺾인 채 발견된 재단 인원 수입니다. (정적) 아무도 무기를 찾지 못했습니다.\", \"location\": \"underground containment chamber\", \"characters_present\": [\"SCP-173\"], \"color_palette\": \"cold gray, fluorescent white\", \"atmosphere\": \"claustrophobic dread, oppressive silence\"}]}"
+        "content": "scp_id: \"SCP-173\"\ntitle: \"눈을 감는 순간\"\nscenes:\n  - scene_num: 1\n    narration: |\n      14명. 단 하룻밤에 목이 꺾인 채 발견된 재단 인원 수입니다. (정적) 아무도 무기를 찾지 못했습니다.\n    location: \"underground containment chamber\"\n    characters_present:\n      - \"SCP-173\"\n    color_palette: \"cold gray, fluorescent white\"\n    atmosphere: \"claustrophobic dread, oppressive silence\""
       }
     }
   ],
-  "usage": {"prompt_tokens": 600, "completion_tokens": 200, "total_tokens": 800}
+  "usage": {
+    "prompt_tokens": 600,
+    "completion_tokens": 200,
+    "total_tokens": 800
+  }
 }

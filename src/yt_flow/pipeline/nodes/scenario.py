@@ -47,6 +47,23 @@ def _ms(t0: float) -> int:
     return int((time.perf_counter() - t0) * 1000)
 
 
+_USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "prompt_cache_hit_tokens", "prompt_cache_miss_tokens")
+
+
+def _usage_totals(usage_list: list[dict]) -> dict[str, int]:
+    """Sum DeepSeek `usage` dicts collected for one stage. A missing/absent/
+    non-numeric field degrades to 0 rather than raising [AD-10]."""
+    totals: dict[str, int] = dict.fromkeys(_USAGE_FIELDS, 0)
+    for usage in usage_list:
+        if not isinstance(usage, dict):
+            continue
+        for field in _USAGE_FIELDS:
+            value = usage.get(field)
+            if type(value) is int and value >= 0:
+                totals[field] += value
+    return totals
+
+
 async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | None]:
     """Return (content, usage, finish_reason) from a JSON-mode chat completion."""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
@@ -56,7 +73,6 @@ async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | N
             json={
                 "model": s.deepseek_model,
                 "messages": [{"role": "user", "content": rendered}],
-                "response_format": {"type": "json_object"},
                 "max_tokens": s.deepseek_max_tokens,
             },
         )
@@ -104,10 +120,15 @@ async def _write_and_review(
     label: str | None = None,
 ) -> tuple[dict, dict, dict, dict]:
     t0 = time.perf_counter()
-    writing = await writing_step(scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek, label=label)
-    stages.append({"name": "writing", "latency_ms": _ms(t0)})
+    usage: list[dict] = []
+    writing = await writing_step(
+        scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek,
+        label=label, usage_sink=usage,
+    )
+    stages.append({"name": "writing", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
     t0 = time.perf_counter()
+    breakdown_usage: list[dict] = []
 
     async def _breakdown_for(idx: int, scene: dict) -> tuple[int, list[dict]]:
         sentences = split_sentences(scene["narration"])
@@ -120,30 +141,40 @@ async def _write_and_review(
                 len(writing["scenes"]), len(structure), idx + 1,
             )
             scene_role = {}
-        cast_by_sentence = await cast_decision_step(scp_id, scene, sentences, s, _call_deepseek, label=label)
+        cast_by_sentence = await cast_decision_step(
+            scp_id, scene, sentences, s, _call_deepseek, label=label, usage_sink=breakdown_usage,
+        )
         shots = await visual_breakdown_step(
             scp_id, scene, sentences, cast_by_sentence, frozen_descriptor, entity_sheet, story_logline, scene_role,
-            s, _call_deepseek, label=label,
+            s, _call_deepseek, label=label, usage_sink=breakdown_usage,
         )
         return idx, shots  # positional key — never trust the LLM's own scene_num for lookups
 
     results = await asyncio.gather(*(_breakdown_for(idx, scene) for idx, scene in enumerate(writing["scenes"])))
     visual_by_scene = dict(results)
-    stages.append({"name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene)})
+    stages.append({
+        "name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene),
+        **_usage_totals(breakdown_usage),
+    })
 
     t0 = time.perf_counter()
-    review = await review_step(scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek, label=label)
-    stages.append({"name": "review", "latency_ms": _ms(t0)})
+    usage = []
+    review = await review_step(
+        scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek,
+        label=label, usage_sink=usage,
+    )
+    stages.append({"name": "review", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
     t0 = time.perf_counter()
-    critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek, label=label)
-    stages.append({"name": "critic_agent", "latency_ms": _ms(t0)})
+    usage = []
+    critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
+    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
     return writing, visual_by_scene, review, critic
 
 
 @observe(name="scenario")
-async def scenario_node(state: PipelineState) -> dict:
+async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None = None) -> dict:
     run_id = state.get("run_id", "?")
     t0_total = time.perf_counter()
     stages: list[dict] = []
@@ -163,12 +194,18 @@ async def scenario_node(state: PipelineState) -> dict:
         ).compile()
 
         t0 = time.perf_counter()
-        research = await research_step(state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label)
-        stages.append({"name": "research", "latency_ms": _ms(t0)})
+        usage: list[dict] = []
+        research = await research_step(
+            state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        )
+        stages.append({"name": "research", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
         t0 = time.perf_counter()
-        structure = await structure_step(state["scp_id"], research, format_guide, s, _call_deepseek, label=label)
-        stages.append({"name": "structure", "latency_ms": _ms(t0)})
+        usage = []
+        structure = await structure_step(
+            state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        )
+        stages.append({"name": "structure", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
         writing, visual_by_scene, review, critic = await _write_and_review(
             state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
@@ -185,8 +222,9 @@ async def scenario_node(state: PipelineState) -> dict:
             )
 
         t0 = time.perf_counter()
-        writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label)
-        stages.append({"name": "tts_normalize", "latency_ms": _ms(t0)})
+        usage = []
+        writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
+        stages.append({"name": "tts_normalize", "latency_ms": _ms(t0), **_usage_totals(usage)})
 
         scenes = build_scenes(writing, visual_by_scene, structure)
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total))
@@ -194,3 +232,6 @@ async def scenario_node(state: PipelineState) -> dict:
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total), error=exc)
         return {"current_stage": "scenario", "error": f"stage=scenario run_id={run_id}: {exc}"}
+    finally:
+        if trace_sink is not None:
+            trace_sink.extend(stages)
