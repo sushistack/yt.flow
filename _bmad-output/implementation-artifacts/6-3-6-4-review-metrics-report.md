@@ -115,3 +115,25 @@ Still **pending live execution** (Jay's cost/authorization decision, as with eve
 
 - **SCP-173/096 axis regression triage (AC3):** not yet triaged. Method to apply = repeated-trial comparison (N ≥ 3, matching `REPS_PER_AXIS=3`); a single before/after pair per item is insufficient to call regression vs variance (Story 6.8 precedent).
 - **3-item promotion gate rerun (AC4):** not rerun; `production` labels **not** moved for the 6-3/6-4 set.
+
+### 2026-07-11 Story 6.9 — AC3/AC4 live multi-trial (Jay-authorized, 3 runs)
+
+Ran `--profile promotion` (candidate vs production, all 3 golden items, `YTFLOW_DEEPSEEK_MAX_TOKENS=16000`) **three times** on the reviewed code (commit `01ae6cc`). Per-item `candidate − production` deltas across all runs plus the original 2026-07-11 6.7/6.8 gate:
+
+| item · axis | orig gate | run 1 | run 2 | run 3 |
+|---|---|---|---|---|
+| SCP-049 total | ok | −1.67 (atmo −0.67, art_fid −1.00) | **item FAIL** (`writing_scene_repair: scene coverage mismatch`) | +0.33 |
+| SCP-173 atmosphere | −0.33 | +0.00 | +1.00 | +0.00 |
+| SCP-173 narrative_coherence | −0.33 | +0.00 | +0.00 | −0.67 |
+| SCP-096 narrative_coherence | +0.00 | +0.67 | −0.33 | −0.33 |
+| SCP-096 article_fidelity | −0.33 | +0.33 | +0.67 | +0.00 |
+
+Every 3-item run's **Verdict = FAIL**, but for a *different* cell each time.
+
+**AC3 conclusion — VARIANCE (not a real regression).** No `(item, axis)` cell stays negative across the trials: every cell negative in one run is zero or positive in another (e.g. SCP-173 atmosphere −0.33 → 0 → +1.00 → 0; SCP-096 article_fidelity −0.33 → +0.33 → +0.67 → 0). A real regression from Story 6.3's block-reordering / 6.4's YAML serialization would drive the *same* cell down consistently; instead the negatives wander item-to-item and axis-to-axis run-to-run. This is exactly the full-generation run-to-run variance Story 6.8 excluded from scope — the SCP-173/096 deltas that triggered Story 6.9's AC3 are noise, not a content regression. Per 6.8's precedent: **documented out of scope, no prompt fix chased.**
+
+**AC4 outcome — gate re-run ×3, all FAIL, `production` NOT promoted** (per AC4's "still FAILs → record the failure, do not force promotion" branch). The 6-3/6-4 candidate set remains un-promoted; both stories stay `in-progress`.
+
+**New finding (out of 6.9's scope) — the promotion gate is structurally un-passable for a noise-equivalent candidate.** The gate is zero-tolerance (any single negative delta = FAIL, a deliberate Story 6.6 policy) over a 3-item × 3-axis = 9-cell comparison. Because full-generation variance reliably drives *some* cell slightly negative on every run (as the table shows), a candidate that is statistically equivalent to production still FAILs every time by chance. This is a policy/measurement tension, not a candidate-quality defect, and 6.9 is explicitly scoped out of changing `PROMPT_POLICY.md`'s zero-tolerance rule. Unblocking 6-3/6-4 requires a **separate decision/story**: either a statistical gate (e.g. require the *mean* delta over N runs to be ≥ 0, or a tolerance band inside judge-scoring granularity) or accepting a multi-run "best-of/median" promotion criterion.
+
+**Second new finding (out of scope) — SCP-049's scoped repair is intermittently fragile.** Across the 4 runs SCP-049's `writing_scene_repair` failed two different ways: 16k truncation (orig gate, the runaway that Story 6.9 fixed via full-rewrite fallback) and a `scene coverage mismatch` `ValueError` (run 2: repair returned scenes `[1,2,3,4,5,6]` when `[3,2,4,1,5,6]` were requested). The mismatch is **not** a truncation, so Story 6.9's narrow recovery correctly let it fail the run — live confirmation that the fix's recovery is narrow (only `TruncationError` from `scenario/writing_scene_repair` falls back; every other repair error still fails). The mismatch itself is a separate scoped-repair robustness bug warranting its own follow-up.
