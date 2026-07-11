@@ -32,13 +32,14 @@ uv run python scripts/eval_prompts.py --label candidate
 uv run python scripts/eval_prompts.py --label candidate --baseline production
 ```
 
-**Pass criteria** (before moving the `production` label): the comparison run must exit `0`, which requires, for every golden-set item:
+**Pass criteria** (before moving the `production` label): the comparison run must exit `0`. Under `--profile promotion` the gate is **statistical** (Story 6.10): each golden-set item is regenerated `N` times (`--reps`, default `3`) on *both* candidate and production, and the verdict is judged on the **median** per-item delta:
 
-- No item failed scenario generation or scoring on either label.
-- Every candidate axis score is greater than or equal to the matching production axis score.
-- Candidate total score is greater than or equal to production total score.
+- An item is isolated as failed only if it hard-fails (generation or scoring error) in a *majority* of its `N` runs. A minority failure is dropped from the median and logged in the report — never silently truncated from coverage.
+- For every scoreable item, candidate and production trials are paired by repetition; the **median of those per-trial deltas** must be non-negative for every axis and for the total. A pair with a hard failure on either side contributes no score, while the side-specific failure still counts toward that item's majority-failure rule and is logged.
 
-Any item failure, axis regression, or total regression fails the verdict and blocks promotion. If candidate and production hit the *same* infrastructure failure (e.g. both time out), the verdict is `INCONCLUSIVE` instead of `FAIL` — still a non-zero exit, still blocks promotion, but the report doesn't misreport a broken baseline as a candidate regression.
+Any item that fails a majority of runs, a negative median axis delta, or a negative median total delta fails the verdict and blocks promotion. If candidate and production hit the *same* infrastructure failure (e.g. both time out) in a majority of runs, the verdict is `INCONCLUSIVE` instead of `FAIL` — still a non-zero exit, still blocks promotion, but the report doesn't misreport a broken baseline as a candidate regression.
+
+**Why median-of-N, not single-run zero-tolerance (Story 6.6 → 6.10).** Story 6.6's original gate failed on *any* single negative axis delta. That zero-tolerance rule was correct in intent — a candidate must never regress a quality axis — but over a 3-item × 3-axis = 9-cell comparison, full-scenario **generation** variance reliably drives some cell slightly negative on every run, even when candidate and production are statistically identical (Story 6.9's 4-data-point multi-trial: the negative cell wandered item-to-item and axis-to-axis, never persisting). A statistically-equivalent candidate therefore FAILed by chance every run — the gate was structurally un-passable. The median criterion keeps the exact same quality bar (**median** ≥ 0 on every axis and total) — a *real* regression is negative across trials and still FAILs — while no longer treating one noisy trial as proof of regression. This mirrors the project's own `REPS_PER_AXIS=3` judge-sampling precedent (Story 6.8), extended from *judge* noise to *generation* noise. The median (not the mean) is deliberate: a hard-failing run yields no score at all, and a median simply drops that data point, whereas a mean would need a sentinel value that poisons the result. This is a noise-tolerance change, **not** a loosening of the quality standard.
 
 ## Tiered evaluation profiles (Story 6.6)
 
@@ -51,7 +52,8 @@ uv run python scripts/eval_prompts.py --profile smoke
 # optional: same canary against production too
 uv run python scripts/eval_prompts.py --profile smoke --baseline production
 
-# mandatory once, before promoting: all three items, candidate vs production
+# mandatory once, before promoting: all three items, candidate vs production,
+# median of 3 regenerations per label (statistical gate — Story 6.10)
 uv run python scripts/eval_prompts.py --profile promotion
 ```
 
@@ -61,7 +63,7 @@ Omitting `--profile` keeps the pre-6.6 behavior (backward compatible — no exis
 
 **Authority**: only `--profile promotion`'s `PASS` may justify moving the `production` label. Any `smoke` result — pass or fail — prints and persists `NOT A PROMOTION GATE`; treat it as iteration feedback, not release evidence.
 
-**Runtime knobs for full-scenario profiles**: default per-item timeout is `1200s` (was `600s` — observed real runs exceeding it); `--stage` isolation keeps the smaller `600s` default. Set `YTFLOW_DEEPSEEK_MAX_TOKENS=16000` (the `8192` default truncates `visual_breakdown`) — `--profile promotion` refuses to start at the risky default so a truncation bug can't masquerade as a prompt regression.
+**Runtime knobs for full-scenario profiles**: default per-item timeout is `1200s` (was `600s` — observed real runs exceeding it); `--stage` isolation keeps the smaller `600s` default. Set `YTFLOW_DEEPSEEK_MAX_TOKENS=16000` (the `8192` default truncates `visual_breakdown`) — `--profile promotion` refuses to start at the risky default so a truncation bug can't masquerade as a prompt regression. `--reps N` (default `3` under `promotion`) sets how many regenerations per label the median gate runs; `promotion` refuses `--reps < 3`. Each rep is roughly one full gate's DeepSeek cost, so a 3-rep promotion gate is ~6× a single label run — deliberate: it is the noise budget that makes the verdict trustworthy.
 
 ## `--label` usage
 

@@ -137,3 +137,28 @@ Every 3-item run's **Verdict = FAIL**, but for a *different* cell each time.
 **New finding (out of 6.9's scope) — the promotion gate is structurally un-passable for a noise-equivalent candidate.** The gate is zero-tolerance (any single negative delta = FAIL, a deliberate Story 6.6 policy) over a 3-item × 3-axis = 9-cell comparison. Because full-generation variance reliably drives *some* cell slightly negative on every run (as the table shows), a candidate that is statistically equivalent to production still FAILs every time by chance. This is a policy/measurement tension, not a candidate-quality defect, and 6.9 is explicitly scoped out of changing `PROMPT_POLICY.md`'s zero-tolerance rule. Unblocking 6-3/6-4 requires a **separate decision/story**: either a statistical gate (e.g. require the *mean* delta over N runs to be ≥ 0, or a tolerance band inside judge-scoring granularity) or accepting a multi-run "best-of/median" promotion criterion.
 
 **Second new finding (out of scope) — SCP-049's scoped repair is intermittently fragile.** Across the 4 runs SCP-049's `writing_scene_repair` failed two different ways: 16k truncation (orig gate, the runaway that Story 6.9 fixed via full-rewrite fallback) and a `scene coverage mismatch` `ValueError` (run 2: repair returned scenes `[1,2,3,4,5,6]` when `[3,2,4,1,5,6]` were requested). The mismatch is **not** a truncation, so Story 6.9's narrow recovery correctly let it fail the run — live confirmation that the fix's recovery is narrow (only `TruncationError` from `scenario/writing_scene_repair` falls back; every other repair error still fails). The mismatch itself is a separate scoped-repair robustness bug warranting its own follow-up.
+
+### 2026-07-12 Story 6.10 — statistical (median-of-3) promotion gate, live (Jay-authorized)
+
+Ran the new Story 6.10 statistical gate: `uv run python scripts/eval_prompts.py --profile promotion` at `YTFLOW_DEEPSEEK_MAX_TOKENS=16000`, **3 regenerations per label**, median per-item delta. Artifacts: `tmp/eval-prompts/20260711-233257-1783780377109213869-candidate-production/` (candidate-rep1..3, production-rep1..3, `_profile.json` authority=PROMOTION GATE).
+
+**Median `candidate − production` deltas (over successful runs):**
+
+| item | atmosphere | narrative_coherence | article_fidelity | total | note |
+|---|---|---|---|---|---|
+| SCP-049 | — | — | — | — | **item FAIL** — *production* (baseline) hard-failed 2/3 |
+| SCP-173 | +0.67 | +0.00 | −0.33 | +0.33 | regressed (median) |
+| SCP-096 | **−0.67** | **−0.33** | +0.33 | **−1.00** | regressed (median), all 6 runs scored clean |
+
+**Verdict: FAIL.** `production` labels **NOT** moved; 6-3/6-4 remain un-promoted (AC4 "still FAILs → record, no forced promotion" branch).
+
+> **2026-07-12 review correction:** the initial implementation produced this axis table by subtracting independently aggregated candidate/production medians, rather than taking the median of paired per-repetition deltas required by AC1. The review fixed that calculation. This historical run's authoritative outcome remains **FAIL** without reinterpretation because SCP-049's production side hard-failed a majority (2/3), which independently blocks promotion under both calculations. The SCP-173/SCP-096 axis rows above are retained as historical output only and are not treated as evidence from the corrected paired-delta gate; a future live rerun is required before making a paired-delta claim.
+
+**What the statistical gate changes vs 6.9's finding.** The run verified AC2 live: the gate did not crash on per-run item failures and correctly blocked promotion when production hard-failed a majority for SCP-049. The original SCP-173/SCP-096 calculations were difference-of-medians and therefore do not verify AC1's paired-delta semantics; that semantics is now covered by regression tests and requires a future live rerun for new external evidence. No promotion remains the correct call because the SCP-049 majority failure is independently load-bearing.
+
+**Item hard-failure isolation worked (AC2).** SCP-049 was isolated as FAIL because **production** (the baseline), not candidate, hard-failed a majority (2/3) of runs — and the gate logged both reasons instead of crashing:
+1. a YAML `mapping values are not allowed here` parse error (model emitted `content: 가상 시뮬레이션: 다수의 SCP-049-2 …` — an unquoted colon inside a value), and
+2. a `'location'` `KeyError`.
+Neither is the `scene coverage mismatch` (AC3's target) nor a truncation — AC3's reorder/`SceneCoverageError` fallback is in place but these are **different, production-side** failure classes, so this run did not exercise it. This is a **new baseline-robustness follow-up** (production-label prompt output intermittently emits YAML-invalid `content:` and a `location`-key path fails) — distinct from Story 6.10's scope (candidate gate mechanism + SCP-049 *scoped-repair* robustness). Note `scenario/yaml_syntax_repair` is still unpromoted, so production fell back to a full-stage retry that also failed on SCP-049 twice.
+
+**Net for 6-3/6-4:** the blocker is no longer "the gate can't pass" (6.10 fixed that). With a working median gate, the candidate set now demonstrably regresses SCP-096 on the median of 3 trials. Either the candidate genuinely under-performs on SCP-096, or N=3 medians remain noisy at 0.33-point judge granularity — a further-N rerun (`--reps 5`) is the cheapest disambiguator and is a Jay cost/authorization decision. Until then 6-3/6-4 stay un-promoted.

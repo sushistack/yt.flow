@@ -21,6 +21,7 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.scenario_chain import (
+    SceneCoverageError,
     TruncationError,
     build_scenes,
     cast_decision_step,
@@ -401,6 +402,24 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
                         final_retry_scope,
                         [{"reason": "scene-repair-truncated",
                           "completion_tokens": exc.completion_tokens, "flagged_scene_count": len(indexes)}],
+                    )
+                except SceneCoverageError as exc:
+                    # Story 6.10: the scoped repair returned a scene set that
+                    # can't be mapped back to the flagged subset (a genuine
+                    # coverage mismatch, distinct from a mere reorder — those
+                    # recover inside writing_scene_repair_step and never reach
+                    # here). Like truncation, route to the proven full-rewrite
+                    # path so the item stays scoreable instead of failing the
+                    # whole run. Recovery stays narrow: only this class and
+                    # truncation fall back; every other repair error re-raises.
+                    logger.warning(
+                        "scenario: writing_scene_repair returned an unmappable scene set (%s); "
+                        "falling back to full rewrite.", exc,
+                    )
+                    final_retry_scope = "scene-repair-coverage-fallback"
+                    final_indexes = []
+                    writing, visual_by_scene, review, critic = await _full_rewrite(
+                        final_retry_scope, [{"reason": "scene-repair-coverage-mismatch"}],
                     )
             else:
                 final_retry_scope = "full-fallback"

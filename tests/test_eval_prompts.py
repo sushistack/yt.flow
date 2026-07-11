@@ -1177,3 +1177,183 @@ def test_main_promotion_profile_exits_nonzero_on_inconclusive(monkeypatch):
     monkeypatch.setattr(ep, "scenario_node", timeout_scenario_node)
 
     assert ep.main(["--profile", "promotion"]) == 1
+
+
+# ── statistical (median-of-N) gate: aggregate_runs (Story 6.10, AC1/AC2) ────
+
+
+def test_aggregate_runs_medians_successful_runs():
+    runs = [[_ok("SCP-096", 3, 4, 4)], [_ok("SCP-096", 4, 4, 4)], [_ok("SCP-096", 4, 4, 4)]]
+    agg = ep.aggregate_runs(runs)
+    assert agg[0].axes["atmosphere"] == 4  # median of [3, 4, 4], not mean 3.67
+    assert agg[0].failed is False
+    assert agg[0].n_runs == 3
+    assert agg[0].n_failed_runs == 0
+
+
+def test_aggregate_single_noisy_negative_cell_still_passes():
+    # AC5(a): one run dips atmosphere; the median vs a steady baseline is 0 → PASS.
+    cand = ep.aggregate_runs([[_ok("SCP-096", 3, 4, 4)], [_ok("SCP-096", 4, 4, 4)], [_ok("SCP-096", 4, 4, 4)]])
+    base = ep.aggregate_runs([[_ok("SCP-096", 4, 4, 4)]] * 3)
+    verdict, _ = ep.compare(cand, base)
+    assert verdict == "PASS"
+
+
+def test_aggregate_consistently_negative_cell_still_fails():
+    # AC5(a): a cell negative in every run has a negative median → still FAIL.
+    cand = ep.aggregate_runs([[_ok("SCP-096", 3, 4, 4)]] * 3)
+    base = ep.aggregate_runs([[_ok("SCP-096", 4, 4, 4)]] * 3)
+    verdict, rows = ep.compare(cand, base)
+    assert verdict == "FAIL"
+    assert rows[0]["status"] == "regressed"
+
+
+def test_aggregate_minority_failure_uses_median_of_successes():
+    # AC2/AC5(b): one hard-failing run out of three does not isolate the item.
+    runs = [
+        [ep.ItemResult("SCP-096", failed=True, error="boom")],
+        [_ok("SCP-096", 4, 4, 4)],
+        [_ok("SCP-096", 4, 4, 4)],
+    ]
+    agg = ep.aggregate_runs(runs)
+    assert agg[0].failed is False
+    assert agg[0].n_failed_runs == 1
+    assert agg[0].axes["atmosphere"] == 4
+    assert "boom" in agg[0].failed_run_reasons[0]
+
+
+def test_aggregate_majority_failure_isolates_item():
+    # AC2: fails in a majority of runs → item is FAIL, gate does not crash.
+    runs = [
+        [ep.ItemResult("SCP-096", failed=True, error="boom1")],
+        [ep.ItemResult("SCP-096", failed=True, error="boom2")],
+        [_ok("SCP-096", 4, 4, 4)],
+    ]
+    agg = ep.aggregate_runs(runs)
+    assert agg[0].failed is True
+    assert agg[0].n_failed_runs == 2
+    assert agg[0].failed_run_reasons == ["boom1", "boom2"]
+
+
+def test_aggregate_missing_item_counts_as_failed_run():
+    runs = [
+        [_ok("SCP-096", 4, 4, 4)],
+        [],
+        [],
+    ]
+    agg = ep.aggregate_runs(runs)
+    assert agg[0].failed is True
+    assert agg[0].n_failed_runs == 2
+    assert agg[0].failed_run_reasons == [
+        "missing item result in run 2",
+        "missing item result in run 3",
+    ]
+
+
+def test_compare_uses_median_of_paired_deltas_not_difference_of_medians():
+    candidate = ep.aggregate_runs([
+        [_ok("SCP-096", 0, 4, 4)],
+        [_ok("SCP-096", 100, 4, 4)],
+        [_ok("SCP-096", 100, 4, 4)],
+    ])
+    baseline = ep.aggregate_runs([
+        [_ok("SCP-096", 99, 4, 4)],
+        [_ok("SCP-096", 99, 4, 4)],
+        [_ok("SCP-096", 101, 4, 4)],
+    ])
+    verdict, rows = ep.compare(candidate, baseline)
+    assert rows[0]["deltas"]["atmosphere"] == -1
+    assert verdict == "FAIL"
+
+
+def test_aggregate_all_runs_failed_isolates_item():
+    runs = [[ep.ItemResult("SCP-096", failed=True, error="boom")]] * 3
+    agg = ep.aggregate_runs(runs)
+    assert agg[0].failed is True
+    verdict, _ = ep.compare(agg, ep.aggregate_runs([[_ok("SCP-096", 4, 4, 4)]] * 3))
+    assert verdict == "FAIL"
+
+
+def test_aggregate_preserves_item_order_across_runs():
+    runs = [
+        [_ok("SCP-096", 4, 4, 4), _ok("SCP-173", 4, 4, 4)],
+        [_ok("SCP-096", 4, 4, 4), _ok("SCP-173", 4, 4, 4)],
+    ]
+    agg = ep.aggregate_runs(runs)
+    assert [r.scp_id for r in agg] == ["SCP-096", "SCP-173"]
+
+
+# ── reps resolution (Story 6.10, AC1) ───────────────────────────────────────
+
+
+def test_resolve_profile_promotion_defaults_reps_to_3():
+    resolved = ep.resolve_profile(
+        "promotion", label=None, baseline=None, scp_id=None, stage="full", timeout=None
+    )
+    assert resolved.reps == ep.PROMOTION_REPS == 3
+
+
+def test_resolve_profile_none_defaults_reps_to_1():
+    resolved = ep.resolve_profile(
+        None, label="candidate", baseline="production", scp_id=None, stage="full", timeout=None
+    )
+    assert resolved.reps == 1
+
+
+def test_resolve_profile_smoke_defaults_reps_to_1():
+    resolved = ep.resolve_profile("smoke", label=None, baseline=None, scp_id=None, stage="full", timeout=None)
+    assert resolved.reps == 1
+
+
+def test_resolve_profile_promotion_rejects_reps_below_3():
+    with pytest.raises(ValueError):
+        ep.resolve_profile(
+            "promotion", label=None, baseline=None, scp_id=None, stage="full", timeout=None, reps=2
+        )
+
+
+def test_resolve_profile_reps_override_above_floor():
+    resolved = ep.resolve_profile(
+        "promotion", label=None, baseline=None, scp_id=None, stage="full", timeout=None, reps=5
+    )
+    assert resolved.reps == 5
+
+
+def test_main_promotion_profile_runs_reps_times_per_label(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    captured = []
+    _wire_scenario_capturing_state(monkeypatch, captured)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "promotion"]) == 0
+    # 3 reps × 3 golden items × 2 labels (candidate + production)
+    assert len(captured) == ep.PROMOTION_REPS * len(ep.GOLDEN_IDS) * 2
+    assert {s["scp_id"] for s in captured} == set(ep.GOLDEN_IDS)
+
+
+def test_main_promotion_median_tolerates_single_noisy_run(monkeypatch):
+    # End-to-end: candidate dips atmosphere on exactly one of its runs; the
+    # median gate must still PASS (a zero-tolerance gate would FAIL here).
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+
+    calls = {"n": 0}
+    n_items = len(ep.GOLDEN_IDS)
+
+    async def noisy_score_run(scp_text, artifact_text, settings):
+        calls["n"] += 1
+        # Candidate is evaluated first (reps × items calls), production after.
+        # Dip atmosphere on the very first candidate call only.
+        if calls["n"] == 1:
+            return AxisScores(3, 4, 4, 11)
+        return AxisScores(4, 4, 4, 12)
+
+    monkeypatch.setattr(ep, "_score_run", noisy_score_run)
+
+    assert ep.main(["--profile", "promotion"]) == 0
+    # candidate reps (3) + production reps (3), each covering all items
+    assert calls["n"] == ep.PROMOTION_REPS * n_items * 2

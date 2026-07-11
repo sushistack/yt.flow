@@ -267,18 +267,38 @@ async def test_writing_scene_repair_requires_exact_ordered_coverage(monkeypatch)
     async def call(rendered, s):
         return "scenes:\n  - scene_num: 2\n    narration: fixed\n", {}, "stop"
 
-    with pytest.raises(ValueError, match="expected 2 scenes"):
+    with pytest.raises(chain.SceneCoverageError, match="expected 2 scenes"):
         await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
 
 
-async def test_writing_scene_repair_rejects_extra_or_reordered_identifiers(monkeypatch):
+async def test_writing_scene_repair_reorders_permutation_to_expected(monkeypatch):
+    # Story 6.10: the observed SCP-049 habit is the model returning the requested
+    # scenes in a different order (sorted by scene_num). That is the same scene
+    # set, so it recovers by reordering to the requested positional order — it is
+    # NOT a coverage failure and must not raise.
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    originals = [{"scene_num": 4, "narration": "old 4"}, {"scene_num": 2, "narration": "old 2"}]
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 2\n    narration: fixed 2\n  - scene_num: 4\n    narration: fixed 4\n", {}, "stop"
+
+    result = await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+    assert [sc["scene_num"] for sc in result] == [4, 2]  # reordered back to the requested order
+    assert result[0]["narration"] == "fixed 4"
+    assert result[1]["narration"] == "fixed 2"
+
+
+async def test_writing_scene_repair_genuine_set_mismatch_raises_scene_coverage_error(monkeypatch):
+    # A genuinely different scene set (right count, wrong identifiers) can't be
+    # mapped back to the originals — it is a real coverage mismatch and must
+    # raise SceneCoverageError so the caller falls back to a full rewrite.
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
     originals = [{"scene_num": 2, "narration": "old 2"}, {"scene_num": 4, "narration": "old 4"}]
 
     async def call(rendered, s):
-        return "scenes:\n  - scene_num: 4\n    narration: fixed 4\n  - scene_num: 2\n    narration: fixed 2\n", {}, "stop"
+        return "scenes:\n  - scene_num: 2\n    narration: fixed 2\n  - scene_num: 5\n    narration: wrong\n", {}, "stop"
 
-    with pytest.raises(ValueError, match="coverage mismatch"):
+    with pytest.raises(chain.SceneCoverageError, match="coverage mismatch"):
         await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
 
 

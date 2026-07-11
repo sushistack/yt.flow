@@ -310,13 +310,15 @@ async def test_downstream_stage_truncation_in_repair_pass_fails_run(monkeypatch)
 
 
 async def test_non_truncation_repair_error_still_surfaces_as_error(monkeypatch):
-    # The truncation recovery must be narrow: any other repair failure still
-    # propagates as a run error, never silently swallowed into a full rewrite.
+    # The recovery set is narrow (Story 6.9/6.10): only writing_scene_repair
+    # truncation and a genuine coverage mismatch fall back. Any OTHER repair
+    # failure (here: empty narration) still propagates as a run error, never
+    # silently swallowed into a full rewrite.
     calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
 
     async def boom_repair(*a, **k):
         calls["repair"] += 1
-        raise ValueError("writing_scene_repair: scene coverage mismatch")
+        raise ValueError("writing_scene_repair: scene[1] has empty narration")
 
     monkeypatch.setattr(sc, "writing_scene_repair_step", boom_repair)
     out = await sc.scenario_node(_state())
@@ -325,6 +327,34 @@ async def test_non_truncation_repair_error_still_surfaces_as_error(monkeypatch):
     assert "scenes" not in out
     assert calls["repair"] == 1
     assert calls["writing"] == 1  # no fallback full rewrite fired
+
+
+async def test_scene_repair_coverage_mismatch_falls_back_to_full_rewrite(monkeypatch):
+    # Story 6.10: SCP-049's scoped repair intermittently returns a scene set it
+    # can't map back (SceneCoverageError). Like truncation, that must recover via
+    # a full rewrite so the item stays scoreable, not fail the whole run.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+
+    async def mismatching_repair(*a, **k):
+        calls["repair"] += 1
+        raise sc.SceneCoverageError(
+            "writing_scene_repair: scene coverage mismatch; expected [3, 2] got [2, 3]",
+            prompt_name="scenario/writing_scene_repair",
+        )
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", mismatching_repair)
+    trace_sink: list[dict] = []
+    out = await sc.scenario_node(_state(), trace_sink=trace_sink)
+
+    assert out["error"] is None
+    assert out["scenes"]  # produced scenes via the fallback, not a failed run
+    assert calls["repair"] == 1  # tried the scoped repair exactly once
+    assert calls["writing"] == 2  # then the full rewrite regenerated everything
+    retry_stages = [s for s in trace_sink if s.get("pass_index") == 2]
+    assert retry_stages
+    assert all(s["retry_scope"] == "scene-repair-coverage-fallback" for s in retry_stages)
+    tts_stage = next(s for s in trace_sink if s["name"] == "tts_normalize")
+    assert tts_stage["target_scene_count"] == 0
 
 
 async def test_eight_scenes_one_flag_adds_exactly_five_calls_and_preserves_unflagged(monkeypatch):

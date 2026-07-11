@@ -221,6 +221,23 @@ class TruncationError(ValueError):
         self.raw = raw
 
 
+class SceneCoverageError(ValueError):
+    """``writing_scene_repair`` returned a genuinely different scene set — right
+    count, but identifiers that can't be mapped back to the originals (Story
+    6.10). Subclasses ``ValueError`` so ``_call_stage_with_retry``'s existing
+    semantic-failure retry still gives the model one correction attempt first;
+    only after that does the caller (``_repair_and_review``) fall back to a full
+    rewrite, mirroring the truncation fallback and keeping recovery narrow.
+
+    A mere *reorder* of the same scene set (the observed SCP-049 habit) never
+    reaches here — it is silently reordered at the validation site.
+    """
+
+    def __init__(self, message: str, *, prompt_name: str | None = None):
+        super().__init__(message)
+        self.prompt_name = prompt_name
+
+
 async def _call_stage(
     prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None
 ) -> tuple[str, dict]:
@@ -514,9 +531,10 @@ async def writing_scene_repair_step(
         data = _parse_yaml(raw)
         scenes = data.get("scenes") if isinstance(data, dict) else None
         if not isinstance(scenes, list) or len(scenes) != len(original_scenes):
-            raise ValueError(
+            raise SceneCoverageError(
                 f"writing_scene_repair: expected {len(original_scenes)} scenes, "
-                f"got {len(scenes) if isinstance(scenes, list) else 'non-list'}"
+                f"got {len(scenes) if isinstance(scenes, list) else 'non-list'}",
+                prompt_name="scenario/writing_scene_repair",
             )
         actual_ids: list[object] = []
         for scene in scenes:
@@ -527,9 +545,21 @@ async def writing_scene_repair_step(
             scene["narration"] = _normalize_freetext(scene["narration"])
             actual_ids.append(scene.get("scene_num"))
         if actual_ids != expected_ids:
-            raise ValueError(
-                f"writing_scene_repair: scene coverage mismatch; expected {expected_ids!r}, got {actual_ids!r}"
-            )
+            # Same scene set, wrong order (observed SCP-049 habit: the model
+            # returns the requested scenes sorted by scene_num). Reorder to the
+            # requested positional order so the caller's zip(indexes, repaired)
+            # stays aligned — not a coverage failure. A genuinely different set
+            # (missing/extra/renumbered scenes, or non-unique ids we can't map)
+            # can't be reordered back and is a real coverage mismatch.
+            keys_actual, keys_expected = sorted(map(repr, actual_ids)), sorted(map(repr, expected_ids))
+            if keys_actual == keys_expected and len(set(keys_actual)) == len(actual_ids):
+                by_num = {scene["scene_num"]: scene for scene in scenes}
+                scenes = [by_num[sid] for sid in expected_ids]
+            else:
+                raise SceneCoverageError(
+                    f"writing_scene_repair: scene coverage mismatch; expected {expected_ids!r}, got {actual_ids!r}",
+                    prompt_name="scenario/writing_scene_repair",
+                )
         return scenes
 
     return await _call_stage_with_retry(

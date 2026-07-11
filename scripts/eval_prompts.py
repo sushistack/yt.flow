@@ -48,6 +48,10 @@ LABELS = ("production", "candidate")
 STAGES = ("full", "writing", "cast_decision", "visual_breakdown")
 PROFILES = ("smoke", "promotion")
 SMOKE_DEFAULT_SCP_ID = "SCP-049"  # constant canary for score history (Story 6.6) — do not rotate
+# Median-of-N regenerations per item for the promotion gate (Story 6.10, AC1).
+# Mirrors eval_service.REPS_PER_AXIS=3 — but repeats the *generation* to absorb
+# run-to-run generation noise, not the judge sampling within one generation.
+PROMOTION_REPS = 3
 NOT_A_PROMOTION_GATE = "NOT A PROMOTION GATE"
 PROMOTION_GATE_AUTHORITY = "PROMOTION GATE"
 
@@ -77,6 +81,13 @@ def positive_timeout(value: str) -> float:
     return timeout
 
 
+def positive_int(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return n
+
+
 # ── tiered profile resolution (Story 6.6, AC1-3, AC6) ───────────────────────
 #
 # Pure CLI/config helper: no --profile is a no-op (backward-compatible
@@ -95,6 +106,7 @@ class ResolvedProfile:
     stage: str
     timeout: float
     authority_note: str | None  # non-None only for a profile that is NOT promotion authority
+    reps: int  # generation repetitions the gate medians over (Story 6.10)
 
 
 def resolve_profile(
@@ -105,12 +117,13 @@ def resolve_profile(
     scp_id: str | None,
     stage: str,
     timeout: float | None,
+    reps: int | None = None,
 ) -> ResolvedProfile:
     default_timeout = DEFAULT_STAGE_TIMEOUT_SECONDS if stage != "full" else DEFAULT_ITEM_TIMEOUT_SECONDS
     resolved_timeout = timeout if timeout is not None else default_timeout
 
     if profile is None:
-        return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=None)
+        return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=None, reps=reps or 1)
 
     if profile == "promotion":
         if scp_id is not None:
@@ -121,12 +134,18 @@ def resolve_profile(
         baseline = baseline or "production"
         if label != "candidate" or baseline != "production":
             raise ValueError("--profile promotion only supports --label candidate --baseline production (AC3)")
-        return ResolvedProfile(label, baseline, None, stage, resolved_timeout, authority_note=None)
+        reps = reps or PROMOTION_REPS
+        if reps < PROMOTION_REPS:
+            raise ValueError(
+                f"--profile promotion requires --reps >= {PROMOTION_REPS} — the median gate needs "
+                f"enough trials to absorb generation noise (Story 6.10, AC1)"
+            )
+        return ResolvedProfile(label, baseline, None, stage, resolved_timeout, authority_note=None, reps=reps)
 
     # profile == "smoke"
     label = label or "candidate"
     scp_id = scp_id or SMOKE_DEFAULT_SCP_ID
-    return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=NOT_A_PROMOTION_GATE)
+    return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=NOT_A_PROMOTION_GATE, reps=reps or 1)
 
 
 def prompt_variant_for_label(label: str) -> str | None:
@@ -222,6 +241,14 @@ class ItemResult:
     rule_metrics: dict[str, float] = field(default_factory=dict)
     artifact_path: str | None = None
     parsed_state: object = None
+    # Populated only by aggregate_runs (Story 6.10) — a single run leaves the
+    # defaults, so every existing single-run caller is unaffected.
+    n_runs: int = 1
+    n_failed_runs: int = 0
+    failed_run_reasons: list[str] = field(default_factory=list)
+    # Ordered raw trials retained by aggregate_runs so compare() can take the
+    # median of paired candidate-vs-baseline deltas (not a difference of medians).
+    run_results: list["ItemResult"] = field(default_factory=list, repr=False)
 
 
 def write_artifact(
@@ -434,6 +461,58 @@ def _is_infra_failure(error: str | None) -> bool:
     return bool(error) and "timeout" in error.lower()
 
 
+def aggregate_runs(runs: list[list[ItemResult]]) -> list[ItemResult]:
+    """Collapse N per-item eval runs into one median-based ItemResult per item
+    (Story 6.10, AC1/AC2).
+
+    Judge each item on the **median** of its *successful* runs, not the mean:
+    a hard-failing run (AC2 — e.g. SCP-049's scoped-repair error) produces no
+    score at all, and a median just drops that data point, whereas a mean would
+    need a sentinel value that skews the result. An item is isolated as failed
+    only when it fails in a **majority** of runs (``n_fail * 2 > reps``); a
+    minority failure is recorded in ``n_failed_runs``/``failed_run_reasons`` but
+    does not fail the gate — no silent truncation of coverage. Item order
+    follows first appearance across the runs.
+    """
+    order: list[str] = []
+    for run in runs:
+        for r in run:
+            if r.scp_id not in order:
+                order.append(r.scp_id)
+
+    reps = len(runs)
+    aggregated: list[ItemResult] = []
+    for scp_id in order:
+        group: list[ItemResult] = []
+        for index, run in enumerate(runs, start=1):
+            matches = [r for r in run if r.scp_id == scp_id]
+            if len(matches) == 1:
+                group.append(matches[0])
+            else:
+                reason = "missing item result" if not matches else "duplicate item results"
+                group.append(ItemResult(scp_id, failed=True, error=f"{reason} in run {index}"))
+        successes = [r for r in group if not r.failed]
+        reasons = [r.error or "unknown failure" for r in group if r.failed]
+        n_fail = len(reasons)
+        artifact = next((r.artifact_path for r in group if r.artifact_path), None)
+        if n_fail * 2 > reps or not successes:
+            aggregated.append(ItemResult(
+                scp_id, failed=True,
+                error=(reasons[0] if reasons else "no successful run"),
+                artifact_path=artifact, n_runs=reps, n_failed_runs=n_fail, failed_run_reasons=reasons,
+                run_results=group,
+            ))
+            continue
+        axes = {ax: statistics.median(r.axes[ax] for r in successes) for ax in AXES}
+        aggregated.append(ItemResult(
+            scp_id, failed=False,
+            axes=axes, total=statistics.median(r.total for r in successes if r.total is not None),
+            artifact_path=artifact, n_runs=reps, n_failed_runs=n_fail, failed_run_reasons=reasons,
+            run_results=group,
+        ))
+    return aggregated
+
+
 def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[str, list[dict]]:
     if not candidate or not baseline:
         return "FAIL", [{"scp_id": "*", "status": "no results — dataset empty or run produced nothing"}]
@@ -467,11 +546,44 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
                 "baseline_error": base.error if base and base.failed else ("missing baseline result" if base is None else None),
                 "candidate_artifact": cand.artifact_path if cand.failed else None,
                 "baseline_artifact": base.artifact_path if base and base.failed else None,
+                "n_runs": cand.n_runs,
+                "candidate_failed_runs": cand.n_failed_runs,
+                "baseline_failed_runs": base.n_failed_runs if base else 0,
+                "candidate_fail_reasons": cand.failed_run_reasons,
+                "baseline_fail_reasons": base.failed_run_reasons if base else [],
             })
             continue
 
-        deltas = {ax: cand.axes[ax] - base.axes[ax] for ax in AXES}
-        total_delta = cand.total - base.total
+        paired = [
+            (cand_run, base_run)
+            for cand_run, base_run in zip(cand.run_results, base.run_results, strict=True)
+            if not cand_run.failed and not base_run.failed
+        ] if cand.run_results and base.run_results else []
+        if cand.run_results and base.run_results and not paired:
+            _downgrade("FAIL")
+            rows.append({
+                "scp_id": cand.scp_id,
+                "status": "item failure",
+                "candidate_error": "no paired successful runs",
+                "baseline_error": None,
+                "candidate_artifact": cand.artifact_path,
+                "baseline_artifact": base.artifact_path,
+                "n_runs": cand.n_runs,
+                "candidate_failed_runs": cand.n_failed_runs,
+                "baseline_failed_runs": base.n_failed_runs,
+                "candidate_fail_reasons": cand.failed_run_reasons,
+                "baseline_fail_reasons": base.failed_run_reasons,
+            })
+            continue
+        if paired:
+            deltas = {
+                ax: statistics.median(c.axes[ax] - b.axes[ax] for c, b in paired)
+                for ax in AXES
+            }
+            total_delta = statistics.median(c.total - b.total for c, b in paired)
+        else:
+            deltas = {ax: cand.axes[ax] - base.axes[ax] for ax in AXES}
+            total_delta = cand.total - base.total
         regressed = any(d < 0 for d in deltas.values()) or total_delta < 0
         if regressed:
             _downgrade("FAIL")
@@ -480,6 +592,13 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
             "status": "regressed" if regressed else "ok",
             "deltas": deltas,
             "total_delta": total_delta,
+            # Median-gate provenance (Story 6.10): a minority hard-fail on either
+            # side is tolerated but must stay visible — no silent coverage loss.
+            "n_runs": cand.n_runs,
+            "candidate_failed_runs": cand.n_failed_runs,
+            "baseline_failed_runs": base.n_failed_runs,
+            "candidate_fail_reasons": cand.failed_run_reasons,
+            "baseline_fail_reasons": base.failed_run_reasons,
         })
 
     for scp_id in sorted(set(baseline_by_id) - candidate_ids):
@@ -498,6 +617,7 @@ def print_comparison(candidate_label: str, baseline_label: str, rows: list[dict]
         ):
             row_verdict = "INCONCLUSIVE" if row["status"] == "inconclusive infrastructure failure" else "FAIL"
             print(f"  {row['scp_id']}: {row_verdict} ({row['status']})")
+            _print_run_provenance(row, candidate_label, baseline_label)
             if row.get("candidate_error"):
                 print(f"    {candidate_label}: {row['candidate_error']}")
             if row.get("candidate_artifact"):
@@ -508,8 +628,24 @@ def print_comparison(candidate_label: str, baseline_label: str, rows: list[dict]
                 print(f"    {baseline_label} artifact: {row['baseline_artifact']}")
             continue
         deltas = ", ".join(f"{ax}={d:+.2f}" for ax, d in row["deltas"].items())
-        print(f"  {row['scp_id']}: {row['status']:9s} {deltas}  total={row['total_delta']:+.2f}")
+        n_runs = row.get("n_runs", 1)
+        median_note = f" (median of {n_runs} runs)" if n_runs > 1 else ""
+        print(f"  {row['scp_id']}: {row['status']:9s} {deltas}  total={row['total_delta']:+.2f}{median_note}")
+        _print_run_provenance(row, candidate_label, baseline_label)
     print(f"\nVerdict: {verdict}")
+
+
+def _print_run_provenance(row: dict, candidate_label: str, baseline_label: str) -> None:
+    """Surface per-run hard-failures on either side (Story 6.10, AC2) so a
+    minority failure the median tolerated is never silently dropped from the
+    report."""
+    if row.get("n_runs", 1) <= 1:
+        return
+    for side, label in (("candidate", candidate_label), ("baseline", baseline_label)):
+        n_fail = row.get(f"{side}_failed_runs", 0)
+        if n_fail:
+            reasons = "; ".join(row.get(f"{side}_fail_reasons", []))
+            print(f"    {label}: {n_fail}/{row['n_runs']} run(s) hard-failed — {reasons}")
 
 
 def print_report(label: str, results: list[ItemResult]) -> None:
@@ -569,12 +705,20 @@ def main(argv=None) -> int:
         "--stage", choices=STAGES, default="full",
         help="isolate a scenario stage failure instead of scoring a full run (default: full)",
     )
+    ap.add_argument(
+        "--reps", type=positive_int, default=None,
+        help=(
+            f"baseline comparison only: regenerate each item N times per label and judge on the "
+            f"median delta (default: {PROMOTION_REPS} under --profile promotion, 1 otherwise). "
+            "Absorbs run-to-run generation noise so a single noisy trial no longer fails the gate (Story 6.10)."
+        ),
+    )
     args = ap.parse_args(argv)
 
     try:
         resolved = resolve_profile(
             args.profile, label=args.label, baseline=args.baseline,
-            scp_id=args.scp_id, stage=args.stage, timeout=args.timeout,
+            scp_id=args.scp_id, stage=args.stage, timeout=args.timeout, reps=args.reps,
         )
     except ValueError as exc:
         ap.error(str(exc))
@@ -626,20 +770,38 @@ def main(argv=None) -> int:
         _announce_authority()
         return 1 if not stage_results or any(r.failed for r in stage_results) else 0
 
-    candidate = evaluate_label(
-        client, args.dataset, args.label,
-        max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
-    )
-
     if not args.baseline:
+        candidate = evaluate_label(
+            client, args.dataset, args.label,
+            max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
+        )
         print_report(args.label, candidate)
         _announce_authority()
         return 1 if not candidate or any(r.failed for r in candidate) else 0
 
-    baseline = evaluate_label(
-        client, args.dataset, args.baseline,
-        max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
-    )
+    reps = resolved.reps
+
+    def _eval_reps(label: str) -> list[list[ItemResult]]:
+        # reps==1 writes straight into run_dir (unchanged pre-6.10 layout); >1
+        # gets a per-rep subdir so each regeneration's artifacts don't overwrite.
+        if reps == 1:
+            return [evaluate_label(
+                client, args.dataset, label,
+                max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
+            )]
+        return [
+            evaluate_label(
+                client, args.dataset, label,
+                max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout,
+                run_dir=run_dir / f"{label}-rep{i + 1}",
+            )
+            for i in range(reps)
+        ]
+
+    if reps > 1:
+        print(f"\nStatistical gate: {reps} regenerations per label, median per-item delta (Story 6.10).")
+    candidate = aggregate_runs(_eval_reps(args.label))
+    baseline = aggregate_runs(_eval_reps(args.baseline))
     verdict, rows = compare(candidate, baseline)
     print_comparison(args.label, args.baseline, rows, verdict)
     _announce_authority()
