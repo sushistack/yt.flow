@@ -134,23 +134,55 @@ def _parse_score(raw: str, axis: str) -> int:
         if isinstance(score, bool):
             raise TypeError
         score = int(round(float(score)))  # tolerate "4" / 4.0 from the model
-    except (ValueError, TypeError, KeyError) as exc:
+    except (ValueError, TypeError, KeyError, OverflowError) as exc:
         raise EvalJudgeError(f"axis={axis}: unparseable judge response: {raw!r}") from exc
     if not 1 <= score <= 5:
         raise EvalJudgeError(f"axis={axis}: score {score} outside 1–5")
     return score
 
 
+async def _judge_sample(rendered: str, axis: str, s: Settings) -> int | None:
+    """One judge sample: exactly one bounded retry on a parse failure (Story 6.8).
+
+    Timeouts are not retried here — ``_post_chat`` already retries those once
+    and a persistent timeout should still fail the sample. Returns None if both
+    the original call and the retry fail to parse, so the caller can drop this
+    one sample without losing the other REPS_PER_AXIS-1 already-sampled calls.
+    """
+    for attempt in range(2):  # initial try + one retry on parse failure
+        try:
+            raw = await _post_chat(rendered, s.deepseek_judge_model, s)
+            return _parse_score(raw, axis)
+        except EvalJudgeError:
+            if attempt == 1:
+                return None
+    raise AssertionError("unreachable")  # loop always returns
+
+
 @observe(name="judge-axis")
 async def _judge_axis(scp_text: str, artifact_text: str, axis: str, s: Settings) -> list[int]:
-    """Score one axis REPS_PER_AXIS times (concurrent) and return the raw integers."""
+    """Score one axis REPS_PER_AXIS times (concurrent) and return the raw integers.
+
+    Each sample is retried once on a parse failure, isolated from the other
+    concurrent samples (a dropped sample never raises out of ``asyncio.gather``,
+    so it can't cancel or fail the others). One permanently-failed sample
+    degrades to a REPS_PER_AXIS-1 average; two or more still fail the axis, same
+    as before this story (Story 6.8, AC1/AC2).
+    """
     rendered = get_prompt(JUDGE_PROMPT).compile(
         scp_text=scp_text, artifact_content=artifact_text, axis=axis,
     )
-    raws = await asyncio.gather(
-        *(_post_chat(rendered, s.deepseek_judge_model, s) for _ in range(REPS_PER_AXIS))
+    samples = await asyncio.gather(
+        *(_judge_sample(rendered, axis, s) for _ in range(REPS_PER_AXIS))
     )
-    return [_parse_score(raw, axis) for raw in raws]
+    scores = [score for score in samples if score is not None]
+    if len(scores) < REPS_PER_AXIS:
+        logger.warning(
+            "axis=%s: %d/%d judge samples parsed (rest failed retry)", axis, len(scores), REPS_PER_AXIS
+        )
+    if len(scores) < 2:
+        raise EvalJudgeError(f"axis={axis}: fewer than 2 of {REPS_PER_AXIS} judge samples parsed")
+    return scores
 
 
 async def _score_run(scp_text: str, artifact_text: str, s: Settings) -> AxisScores:

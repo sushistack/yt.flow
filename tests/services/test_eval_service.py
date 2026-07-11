@@ -109,10 +109,99 @@ def test_parse_score_ok(raw, expected):
     '{"score": 0}',       # out of range
     '{"score": 6}',
     '{"score": true}',    # bool rejected
+    '{"score": 1e309}',   # non-finite value must remain retryable
 ])
 def test_parse_score_rejects(raw):
     with pytest.raises(es.EvalJudgeError):
         es._parse_score(raw, "atmosphere")
+
+
+# ── Judge-axis bounded retry / degradation (Story 6.8, AC1/AC2/AC5) ────────
+
+class _ScriptedPostChat:
+    """Give each concurrent sample task its own deterministic response script."""
+
+    def __init__(self, scripts):
+        self.scripts = [list(script) for script in scripts]
+        self.by_task = {}
+        self.calls = 0
+
+    async def __call__(self, rendered, model, s, *, timeout=None):
+        self.calls += 1
+        task = asyncio.current_task()
+        if task not in self.by_task:
+            self.by_task[task] = self.scripts.pop(0)
+        await asyncio.sleep(0)  # ensure all initial samples are concurrently in flight
+        response = self.by_task[task].pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+async def test_judge_axis_one_sample_fails_then_retry_succeeds(monkeypatch):
+    """One of three calls fails to parse, retry succeeds → full 3-sample average."""
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    q = _ScriptedPostChat([
+        ["not json", '{"score": 5}'],
+        ['{"score": 4}'],
+        ['{"score": 3}'],
+    ])
+    monkeypatch.setattr(es, "_post_chat", q)
+    scores = await es._judge_axis("scp", "artifact", "atmosphere", FakeSettings())
+    assert sorted(scores) == [3, 4, 5]
+    assert q.calls == 4  # 3 samples + 1 retry
+
+
+async def test_judge_axis_one_sample_fails_twice_degrades_to_two_of_three(monkeypatch, caplog):
+    """One of three calls fails both the original and the retry → 2-of-3 average, logged."""
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    q = _ScriptedPostChat([
+        ["not json", "still not json"],
+        ['{"score": 4}'],
+        ['{"score": 5}'],
+    ])
+    monkeypatch.setattr(es, "_post_chat", q)
+    with caplog.at_level("WARNING"):
+        scores = await es._judge_axis("scp", "artifact", "atmosphere", FakeSettings())
+    assert sorted(scores) == [4, 5]
+    assert q.calls == 4  # 1 sample x2 attempts (both fail) + 2 samples x1 attempt
+    assert "2/3" in caplog.text
+
+
+async def test_judge_axis_two_samples_fail_raises_like_today(monkeypatch):
+    """Two of three calls permanently fail → axis still fails (unchanged behavior)."""
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    q = _ScriptedPostChat([
+        ["bad-1a", "bad-1b"],
+        ["bad-2a", "bad-2b"],
+        ['{"score": 4}'],
+    ])
+    monkeypatch.setattr(es, "_post_chat", q)
+    with pytest.raises(es.EvalJudgeError):
+        await es._judge_axis("scp", "artifact", "atmosphere", FakeSettings())
+
+
+async def test_judge_sample_retries_eval_judge_error_raised_by_call(monkeypatch):
+    q = _ScriptedPostChat([
+        [es.EvalJudgeError("transient parse failure"), '{"score": 4}'],
+    ])
+    monkeypatch.setattr(es, "_post_chat", q)
+
+    assert await es._judge_sample("rendered", "atmosphere", FakeSettings()) == 4
+    assert q.calls == 2
+
+
+async def test_score_run_averages_degraded_axis_samples(monkeypatch):
+    async def fake_axis(scp_text, artifact_text, axis, s):
+        return [4, 5] if axis == "atmosphere" else [3, 3, 3]
+
+    monkeypatch.setattr(es, "_judge_axis", fake_axis)
+
+    scores = await es._score_run("scp", "artifact", FakeSettings())
+
+    assert scores.atmosphere == 4.5
+    assert scores.narrative_coherence == 3.0
+    assert scores.article_fidelity == 3.0
 
 
 # ── Pairwise + winner logic (AC3, AC4) ──────────────────────────────────────
