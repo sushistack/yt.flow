@@ -252,6 +252,51 @@ async def test_no_valid_scene_uses_explicit_full_fallback_trace(monkeypatch):
     assert retry_stages[0]["rejected_scene_identifiers"][0]["reason"] == "no-valid-scene"
 
 
+async def test_scene_repair_truncation_falls_back_to_full_rewrite(monkeypatch):
+    # Story 6.9: scoped repair can run away past max_tokens even though a full
+    # rewrite of every scene fits — a TruncationError from repair must recover
+    # via the full-rewrite path, not fail the whole run.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+
+    async def truncating_repair(*a, **k):
+        calls["repair"] += 1
+        raise sc.TruncationError(
+            "scenario/writing_scene_repair response truncated (finish_reason=length); raise max_tokens",
+            completion_tokens=16000, raw="가" * 5000,
+        )
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", truncating_repair)
+    trace_sink: list[dict] = []
+    out = await sc.scenario_node(_state(), trace_sink=trace_sink)
+
+    assert out["error"] is None
+    assert out["scenes"]  # produced scenes via the fallback, not a failed run
+    assert calls["repair"] == 1  # tried the scoped repair exactly once
+    assert calls["writing"] == 2  # then the full rewrite regenerated everything
+    retry_stages = [s for s in trace_sink if s.get("pass_index") == 2]
+    assert retry_stages
+    assert all(s["retry_scope"] == "scene-repair-truncated-fallback" for s in retry_stages)
+    assert retry_stages[0]["rejected_scene_identifiers"][0]["reason"] == "scene-repair-truncated"
+
+
+async def test_non_truncation_repair_error_still_surfaces_as_error(monkeypatch):
+    # The truncation recovery must be narrow: any other repair failure still
+    # propagates as a run error, never silently swallowed into a full rewrite.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
+
+    async def boom_repair(*a, **k):
+        calls["repair"] += 1
+        raise ValueError("writing_scene_repair: scene coverage mismatch")
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", boom_repair)
+    out = await sc.scenario_node(_state())
+
+    assert out["error"] and "stage=scenario" in out["error"]
+    assert "scenes" not in out
+    assert calls["repair"] == 1
+    assert calls["writing"] == 1  # no fallback full rewrite fired
+
+
 async def test_eight_scenes_one_flag_adds_exactly_five_calls_and_preserves_unflagged(monkeypatch):
     structure = [{**STRUCTURE[0], "scene_num": i + 1} for i in range(8)]
     writing = {

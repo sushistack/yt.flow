@@ -897,6 +897,23 @@ async def test_call_stage_returns_usage_alongside_raw_text(monkeypatch):
     assert usage == {"prompt_tokens": 10}
 
 
+async def test_call_stage_raises_truncation_error_with_evidence(monkeypatch):
+    # Story 6.9: finish_reason=length must raise TruncationError carrying the
+    # completion token count and raw runaway text so a caller can confirm the
+    # cause (runaway generation, not batch volume) and route on it.
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return "가" * 100, {"completion_tokens": 16000}, "length"
+
+    with pytest.raises(chain.TruncationError) as excinfo:
+        await chain._call_stage("scenario/writing_scene_repair", {}, None, call)
+    assert isinstance(excinfo.value, ValueError)  # existing except paths still catch it
+    assert "truncated" in str(excinfo.value)
+    assert excinfo.value.completion_tokens == 16000
+    assert excinfo.value.raw == "가" * 100
+
+
 async def test_call_stage_with_retry_collects_one_usage_entry_on_first_success(monkeypatch):
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
 

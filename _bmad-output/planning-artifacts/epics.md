@@ -1111,6 +1111,20 @@ DeepSeek의 `response_format: {"type": "json_object"}` 모드가 이 세 실패 
 **AC4**: 회귀 테스트 — 3개 중 1개 파싱 실패→재시도 성공, 3개 중 1개 파싱 실패→재시도도 실패(2개 평균으로 폴백), 3개 중 2개 이상 실패(기존처럼 항목 실패) 케이스 커버.
 **AC5 (범위 제외, 문서화만)**: 생성 자체의 실행 간 편차(narrative_coherence류)는 이 스토리로 해소되지 않음 — 해소하려면 항목당 전체 시나리오 생성을 반복해야 하며 비용이 6.6의 취지와 상충함을 근거와 함께 명시.
 
+### Story 6.9: writing_scene_repair truncation 근본원인 + SCP-173/096 축 회귀 조사·수정
+
+**발의 배경 (2026-07-11):** 6.7/6.8 통합 코드리뷰 게이트(`6-3-6-4-review-metrics-report.md`의 "2026-07-11 Story 6.7/6.8 review gate" 절)에서 6-3/6-4 promotion이 세 번째로 FAIL — 이번엔 6.7/6.8이 고친 문제(YAML 문법 파싱, judge 응답 파싱)와 무관한 두 가지 새 사유: (1) `scenario/writing_scene_repair`가 promotion 강제 하한인 16000 토큰에서도 truncation(`finish_reason=length`), (2) SCP-173가 atmosphere/narrative_coherence 각 -0.33, SCP-096이 article_fidelity -0.33(atmosphere는 +1.67 개선에도 불구) 회귀.
+
+truncation 관련 코드 확인 결과: `_repair_and_review`(`scenario.py:252-266`)가 `writing_scene_repair_step`에 넘기는 `originals`는 `_retry_scope`(`scenario.py:110-141`)가 review.issues + critic.scene_notes에서 모은 유효 scene_num 전체이며, **배치 크기 상한이 없다** — review/critic이 씬 대부분을 동시에 flag하면 한 콜에서 그만큼의 씬 전체 narration을 재작성해야 해 16k에서도 부족할 수 있음(각 씬 프롬프트 자체는 짧음, `prompts/scenario/writing_scene_repair.md` 참조). 이것이 실제 원인인지는 미확증 — truncation 발생 시점의 실제 `len(indexes)`를 아직 관측하지 못함(라이브 재현 필요).
+
+축 회귀 관련: 6.3 AC1(프롬프트 재배치, 지시내용 불변 선언)과 6.4 AC2(JSON→YAML 직렬화 전환, 스키마 불변 선언)가 둘 다 "내용은 그대로, 형식만 변경"을 전제했으나, 실측 결과 atmosphere/narrative_coherence/article_fidelity가 SCP별로 갈려서 하락 — 직렬화 방식 변경 자체가 모델의 실제 서술 스타일에 영향을 줬을 가능성(예: block-literal 지시가 문체를 건조하게 만듦)과, 단순 실행 편차(6.8이 SCP-049 narrative_coherence -0.33을 범위 제외로 문서화한 것과 동일 패턴) 두 가설을 구분해야 함 — 아직 어느 쪽인지 미확증.
+
+**AC1**: 실 SCP-049 golden-set 케이스로 writing_scene_repair가 truncate되는 상황을 라이브 재현하며 `len(indexes)`(동시 repair 대상 씬 수)와 실제 사용 토큰 수를 계측·기록 — 배치 크기가 원인인지, 아니면 소수 씬에서도 발생하는지 확정.
+**AC2**: AC1 결과가 배치 크기 무상한을 원인으로 지목하면, 곧바로 상한 도입으로 가지 말고 이 문제 유형("N개 구조화 항목인데 한 콜 출력 예산이 부족")에 대한 업계 표준 대응(map-reduce식 청크 분할 호출, truncation 지점에서 이어쓰기하는 continuation 프롬프트, 상한+저비용 폴백 위임 등)을 최소 2가지 이상 비교한 뒤 이 프로젝트의 기존 bounded-retry 선례(6.4/6.7/6.8)와의 정합성 기준으로 택일 — 채택 사유를 문서화. 상한 미도입이 근거로 부적절하면(예: 소수 씬에서도 재현) 대안 원인(예: repair 프롬프트가 `original_scenes` 원문을 그대로 반복 출력하려는 경향)을 조사해 별도 수정.
+**AC3**: SCP-173/096 축 회귀가 (a) 6.3/6.4의 직렬화 방식 변경 자체에 의한 실질적 문체 회귀인지, (b) 6.8이 이미 범위 제외로 문서화한 것과 같은 실행 간 생성 편차인지, 단일 전후비교가 아니라 반복시행 비교(동일 candidate를 golden item당 최소 3회 재실행 — 이 프로젝트의 judge 채점 `REPS_PER_AXIS=3` 선례와 동일한 근거)로 구분. (a)로 확인되면 원인이 된 구체적 프롬프트 변경(어느 파일의 어느 지시문)을 특정하되 수정안을 하나로 단정하지 않고 최소 2가지 대안(해당 블록 되돌리기 vs 지시문 문구 조정 vs 문체 가드레일 추가 등)을 비교해 채택 사유를 기록. (b)로 확인되면 6.8의 선례를 따라 이번 스토리 범위에서 제외하고 문서화.
+**AC4**: 두 수정(또는 조사로 확정된 범위 제외) 반영 후 `scripts/eval_prompts.py --profile promotion` 3-item 게이트를 재실행 — PASS 시 `docs/PROMPT_POLICY.md` 절차대로 6-3/6-4 candidate를 production으로 승격, 여전히 FAIL이면 사유를 `6-3-6-4-review-metrics-report.md`에 추가 기록(승격 강행 금지, 기존 정책 불변).
+**AC5**: 회귀 테스트 — AC2에서 배치 상한/청크 로직을 구현했다면 대상 씬 수가 상한을 넘는 경우의 청크 분할(또는 fallback 위임) 동작을 검증하는 단위 테스트 추가.
+
 ## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
 
 **Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.

@@ -100,3 +100,18 @@ Out of scope for 6.8: the earlier "Run 2" `narrative_coherence` **-0.33** delta 
 - Promotion verdict: **FAIL**. SCP-049 candidate failed because `scenario/writing_scene_repair` truncated at 16000 tokens; SCP-173 regressed atmosphere -0.33 and narrative_coherence -0.33; SCP-096 improved atmosphere +1.67 but regressed article_fidelity -0.33.
 - The review fallback for the not-yet-promoted `scenario/yaml_syntax_repair` prompt was exercised three times by production baselines and correctly retained the prior full-stage retry. No malformed judge response killed an item after the 6.8 fix.
 - `production` labels were not moved. The authority gate remains failed for generation truncation/content-score reasons, not for unresolved 6.7/6.8 review findings.
+
+### 2026-07-11 Story 6.9 — writing_scene_repair truncation root cause + fix
+
+Story 6.9 root-caused the `writing_scene_repair` 16k truncation from the retained gate artifact (`tmp/eval-prompts/20260711-164208-.../candidate-SCP-049-full.json`) without a new live run — the per-stage trace already records `target_scene_count` (= `len(indexes)`) and `completion_tokens`:
+
+- SCP-049 has **8 scenes total**. Generating *all 8* narrations from scratch (the `writing` stage) cost only **2,846 completion tokens**. The repair's `len(indexes)` is bounded by the scene count (≤ 8), so the largest possible repair batch is the same ~2,846 tokens — far below the 16,000 ceiling.
+- **Batch size is ruled out.** The scoped-repair call emitted > 5× more tokens than regenerating the entire scenario → degenerate/runaway generation (the repair prompt asks the model to echo `original_scenes` and return them mostly-unchanged, a shape DeepSeek loops on), not a batch-volume problem. A batch cap would not have helped.
+- **Fix:** `scenario_node` now catches the repair `TruncationError` and routes to the existing full-rewrite fallback path (`retry_scope="scene-repair-truncated-fallback"`) — the full rewrite is proven to complete at ~2.8k tokens. Recovery is narrow: any other repair error still fails the run. `TruncationError` now carries `completion_tokens`/`raw` so future truncations self-document.
+
+Confirming smoke (2026-07-11, Jay-authorized single item, `--profile smoke --label candidate` at 16k): SCP-049 completed clean, total 14.00, 9 scenes. Full 9-scene writing = 4,296 completion tokens — independently reconfirms batch size is not the cause. Review+critic passed on pass 1 so the repair path did not fire this run (stochastic); the fix's happy path is confirmed live and the fallback recovery is unit-tested.
+
+Still **pending live execution** (Jay's cost/authorization decision, as with every prior gate run):
+
+- **SCP-173/096 axis regression triage (AC3):** not yet triaged. Method to apply = repeated-trial comparison (N ≥ 3, matching `REPS_PER_AXIS=3`); a single before/after pair per item is insufficient to call regression vs variance (Story 6.8 precedent).
+- **3-item promotion gate rerun (AC4):** not rerun; `production` labels **not** moved for the 6-3/6-4 set.

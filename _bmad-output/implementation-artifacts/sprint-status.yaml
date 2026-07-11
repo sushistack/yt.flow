@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-11  # Stories 6.7/6.8 implemented, ready for review
+last_updated: 2026-07-11  # Story 6.9 created from 6.7/6.8 review-gate re-attempt findings (writing_scene_repair truncation + SCP-173/096 axis regressions)
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -134,6 +134,7 @@ development_status:
   6-6-tiered-prompt-evaluation-gates: done  # 1-item smoke for iteration; 3-item comparison remains promotion authority. 코드리뷰 완료(2건 패치: max-tokens preflight 임계값 버그, PROMOTION_GATE_AUTHORITY 상수+테스트), 3건 보류. 1232 passed/1 skipped, ruff clean
   6-7-yaml-syntax-only-repair-path: done  # 통합 코드리뷰 1건 패치; 1243 passed/1 skipped, ruff clean; smoke 완료, promotion FAIL(writing_scene_repair 16k truncation + 축 회귀), production 미승격
   6-8-golden-set-judge-multi-sample: done  # 통합 코드리뷰 3건 패치; direct EvalJudgeError/비유한 점수/실동시성+평균 검증 강화; live gate에서 malformed judge item failure 재발 없음
+  6-9-scene-repair-truncation-axis-regression: in-progress  # 2026-07-11 6.7/6.8 review gate 3차 FAIL: writing_scene_repair 16k truncation(배치 상한 부재 의심, 미확증) + SCP-173/096 축 회귀(실질 회귀 vs 실행편차 미판별); 6-3/6-4 promotion 재차 미승격
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

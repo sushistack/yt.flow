@@ -21,6 +21,7 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.scenario_chain import (
+    TruncationError,
     build_scenes,
     cast_decision_step,
     critic_step,
@@ -348,26 +349,51 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         final_pass_index = 1
         final_retry_scope = "none"
         final_indexes: list[int] = []
+
+        async def _full_rewrite(scope: str, rejected: list[dict]):
+            # Regenerate every scene from scratch with feedback — the proven,
+            # non-truncating path (Story 6.9: full 8-scene writing ~2.8k tokens).
+            return await _write_and_review(
+                state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+                research.get("entity_sheet", ""), research.get("story_logline", ""),
+                format_guide, _format_feedback(review, critic), s, stages, label=label,
+                pass_index=2, retry_scope=scope, rejected=rejected,
+            )
+
         if critic["verdict"] == "retry" or not review["overall_pass"]:
             indexes, rejected = _retry_scope(review, critic, writing["scenes"])
             final_pass_index = 2
             final_indexes = indexes
             if indexes:
-                final_retry_scope = "scene"
-                writing, visual_by_scene, review, critic = await _repair_and_review(
-                    state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
-                    research.get("entity_sheet", ""), research.get("story_logline", ""), format_guide,
-                    writing, visual_by_scene, review, critic, indexes, rejected, s, stages, label=label,
-                )
+                try:
+                    writing, visual_by_scene, review, critic = await _repair_and_review(
+                        state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
+                        research.get("entity_sheet", ""), research.get("story_logline", ""), format_guide,
+                        writing, visual_by_scene, review, critic, indexes, rejected, s, stages, label=label,
+                    )
+                    final_retry_scope = "scene"
+                except TruncationError as exc:
+                    # Scene-scoped repair ran away past max_tokens even though a full
+                    # rewrite of every scene fits comfortably (Story 6.9: 8-scene
+                    # writing ~2.8k tokens vs repair truncating at 16k). It's a
+                    # degenerate scoped-repair generation, not a batch-volume
+                    # problem, so a batch cap wouldn't help — route to the proven
+                    # full-rewrite path instead of failing the whole run.
+                    logger.warning(
+                        "scenario: writing_scene_repair truncated (completion_tokens=%s, len(indexes)=%d); "
+                        "falling back to full rewrite. runaway preview: %r",
+                        exc.completion_tokens, len(indexes), (exc.raw or "")[:300],
+                    )
+                    final_retry_scope = "scene-repair-truncated-fallback"
+                    writing, visual_by_scene, review, critic = await _full_rewrite(
+                        final_retry_scope,
+                        [{"reason": "scene-repair-truncated",
+                          "completion_tokens": exc.completion_tokens, "flagged_scene_count": len(indexes)}],
+                    )
             else:
                 final_retry_scope = "full-fallback"
-                feedback = _format_feedback(review, critic)
-                fallback_reason = [{"reason": "no-valid-scene", "rejected": rejected}]
-                writing, visual_by_scene, review, critic = await _write_and_review(
-                    state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
-                    research.get("entity_sheet", ""), research.get("story_logline", ""),
-                    format_guide, feedback, s, stages, label=label, pass_index=2,
-                    retry_scope="full-fallback", rejected=fallback_reason,
+                writing, visual_by_scene, review, critic = await _full_rewrite(
+                    "full-fallback", [{"reason": "no-valid-scene", "rejected": rejected}]
                 )
 
         t0 = time.perf_counter()

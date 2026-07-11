@@ -200,14 +200,32 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in _SENTENCE_BOUNDARY.split(text) if p.strip()]
 
 
+class TruncationError(ValueError):
+    """A stage's completion hit ``finish_reason == "length"`` (Story 6.9).
+
+    Subclasses ``ValueError`` so every existing ``except (ValueError, ...)`` /
+    ``except Exception`` path keeps treating truncation as a stage failure. The
+    ``completion_tokens`` and ``raw`` attributes carry the runaway evidence a
+    caller can log/route on — e.g. ``_repair_and_review`` distinguishing a
+    scoped-repair blow-up from an ordinary parse error to fall back to a full
+    rewrite instead of failing the whole run.
+    """
+
+    def __init__(self, message: str, *, completion_tokens: int | None = None, raw: str | None = None):
+        super().__init__(message)
+        self.completion_tokens = completion_tokens
+        self.raw = raw
+
+
 async def _call_stage(
     prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None
 ) -> tuple[str, dict]:
     """Fetch + compile a Langfuse prompt, call DeepSeek, return (raw text, usage dict).
 
-    Raises on truncation (finish_reason == "length") so a caller never has to
-    special-case a partial payload — json.loads on it would fail anyway, but
-    this gives a clearer error message.
+    Raises ``TruncationError`` on truncation (finish_reason == "length") so a
+    caller never has to special-case a partial payload — json.loads on it would
+    fail anyway — and so a caller that CAN recover from truncation (Story 6.9's
+    scoped-repair fallback) can catch it precisely without string-matching.
 
     `label` is the A/B variant's Langfuse label (Story 6.1) — `None` (variant
     A / no variant) must go through `prompt_service.get_prompt` unchanged, not
@@ -222,7 +240,12 @@ async def _call_stage(
     rendered = prompt.compile(**variables)
     raw, usage, finish_reason = await call_deepseek(rendered, s)
     if finish_reason == "length":
-        raise ValueError(f"{prompt_name} response truncated (finish_reason=length); raise max_tokens")
+        completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+        raise TruncationError(
+            f"{prompt_name} response truncated (finish_reason=length); raise max_tokens",
+            completion_tokens=completion_tokens,
+            raw=raw,
+        )
     return raw, usage
 
 
