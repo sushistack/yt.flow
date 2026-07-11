@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-11  # Story 6.9 CLOSED(done): 코드리뷰 수정 + AC3/AC4 라이브 3회 → 축회귀=VARIANCE, 게이트 3회 FAIL(노이즈), production 미승격. 6-3/6-4 블로커 재정의: zero-tolerance 게이트 vs 생성노이즈 → 별도 정책/통계게이트 결정 필요
+# last_updated: 2026-07-11  # Story 6.9 CLOSED(done) + Story 6.10 발의(backlog): 6-3/6-4 언블록용 통계 게이트+SCP-049 repair 견고성 1스토리. 6-3/6-4 블로커=측정/정책(생성노이즈 vs zero-tolerance), 6.10 median 게이트 PASS 시 승격
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -135,6 +135,7 @@ development_status:
   6-7-yaml-syntax-only-repair-path: done  # 통합 코드리뷰 1건 패치; 1243 passed/1 skipped, ruff clean; smoke 완료, promotion FAIL(writing_scene_repair 16k truncation + 축 회귀), production 미승격
   6-8-golden-set-judge-multi-sample: done  # 통합 코드리뷰 3건 패치; direct EvalJudgeError/비유한 점수/실동시성+평균 검증 강화; live gate에서 malformed judge item failure 재발 없음
   6-9-scene-repair-truncation-axis-regression: done  # 2026-07-11 CLOSED: truncation→full-rewrite fallback 구현+코드리뷰(narrow-recovery 수정, 01ae6cc). AC3 라이브 3회 멀티트라이얼 → 축 회귀는 VARIANCE 확정(6.8 선례, out of scope). AC4 게이트 3회 전부 FAIL(매번 다른 노이즈 셀) → production 미승격. 신규 out-of-scope 블로커 2건: (1)zero-tolerance 게이트가 생성 노이즈로 사실상 통과불가 → 6-3/6-4 언블록엔 정책/통계게이트 별도 결정 필요, (2)SCP-049 scoped-repair 간헐 취약(truncation+coverage mismatch)
+  6-10-statistical-promotion-gate-repair-robustness: backlog  # 2026-07-11 발의(6.9 AC3/AC4 결과 + Jay 결정): 6-3/6-4 언블록. zero-tolerance→통계(median-of-N) 게이트 + 아이템 하드실패 격리 + SCP-049 scoped-repair coverage-mismatch 복구를 한 스토리로. median PASS 시 6-3/6-4 production 승격·종결
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

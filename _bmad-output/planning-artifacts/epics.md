@@ -1125,6 +1125,16 @@ truncation 관련 코드 확인 결과: `_repair_and_review`(`scenario.py:252-26
 **AC4**: 두 수정(또는 조사로 확정된 범위 제외) 반영 후 `scripts/eval_prompts.py --profile promotion` 3-item 게이트를 재실행 — PASS 시 `docs/PROMPT_POLICY.md` 절차대로 6-3/6-4 candidate를 production으로 승격, 여전히 FAIL이면 사유를 `6-3-6-4-review-metrics-report.md`에 추가 기록(승격 강행 금지, 기존 정책 불변).
 **AC5**: 회귀 테스트 — AC2에서 배치 상한/청크 로직을 구현했다면 대상 씬 수가 상한을 넘는 경우의 청크 분할(또는 fallback 위임) 동작을 검증하는 단위 테스트 추가.
 
+### Story 6.10: 통계적 promotion 게이트 + SCP-049 scoped-repair 견고성 (6-3/6-4 언블록)
+
+**발의 배경 (2026-07-11):** 6.9의 AC3/AC4 라이브 3회 멀티트라이얼(`6-3-6-4-review-metrics-report.md`의 "2026-07-11 Story 6.9 — AC3/AC4 live multi-trial" 절)로 6-3/6-4가 승격 못 하는 **진짜 원인이 재정의**됨. 크래시성 원인(타임아웃/YAML/judge/truncation)은 6.6~6.9로 전부 제거됐고, SCP-173/096 축 회귀는 **실질 회귀가 아니라 run-to-run 생성 편차(VARIANCE)**로 확정(4개 데이터포인트 어느 (항목,축) 셀도 음수 유지 못 함). 그럼에도 게이트가 매번 FAIL한 이유는 **측정/정책 문제**다: zero-tolerance 게이트(음수 델타 하나 = FAIL, 6.6의 의도적 정책)를 3항목×3축=9칸 비교에 적용하면 생성 노이즈가 매 런 어딘가 음수를 만들어, production과 통계적으로 동등한 후보도 확률적으로 매번 FAIL한다 — **구조적으로 통과 불가**. 부수적으로 SCP-049의 scoped `writing_scene_repair`가 간헐적으로 하드 실패(원 게이트=truncation, run2=`scene coverage mismatch`)해 채점 자체가 안 되는 별도 견고성 버그도 노출됨. Jay 결정(2026-07-11): 두 문제를 한 스토리로 묶어 통계 게이트 + repair 견고성을 함께 해결.
+
+**AC1**: `scripts/eval_prompts.py --profile promotion`의 zero-tolerance 판정을 **통계적 기준으로 교체** — 동일 candidate/production을 golden item당 N회(N≥3, `REPS_PER_AXIS=3` 선례) 재생성해 항목별 델타의 **median(중앙값)**으로 PASS/FAIL을 판정(음수 노이즈 단일 셀이 전체를 죽이지 않도록). 단순 mean이 아니라 median/best-of-N을 택하는 이유(간헐 하드실패 런이 mean을 오염시키는 문제, AC3의 SCP-049 사례)를 Dev Notes에 기록. `docs/PROMPT_POLICY.md`의 승격 기준 문구도 함께 개정(zero-tolerance → 통계적 게이트), 6.6이 zero-tolerance를 도입한 근거와의 관계를 명시.
+**AC2**: N회 재실행 중 **일부 아이템이 하드 실패(에러로 미채점)해도** 게이트가 무너지지 않도록 — 성공한 런들의 median으로 판정하고, 특정 아이템이 과반 런에서 실패하면 그 아이템만 FAIL로 격리(전체 게이트 크래시 금지). 실패 런 수/사유를 리포트에 로깅(무성 절단 금지).
+**AC3**: SCP-049 scoped `writing_scene_repair`의 `scene coverage mismatch` 견고성 수정 — repair가 요청한 씬 집합과 다른 순서/구성으로 반환할 때(예: 요청 `[3,2,4,1,5,6]` → 반환 `[1,2,3,4,5,6]`) 하드 실패 대신 복구(정렬 무관 매칭으로 커버리지 검증, 또는 truncation과 동일하게 full-rewrite fallback 위임). 6.9의 narrow-recovery 계약(truncation만 fallback)과의 정합성을 유지하며 어떤 repair 실패 클래스를 복구 대상에 추가할지 명시.
+**AC4**: AC1~AC3 반영 후 새 통계 게이트로 6-3/6-4 candidate를 N회 재실행 — median 판정 PASS 시 `docs/PROMPT_POLICY.md` 절차대로 production 승격, 6-3/6-4를 done으로 종결. 여전히 FAIL이면 사유를 `6-3-6-4-review-metrics-report.md`에 기록.
+**AC5**: 회귀 테스트 — (a) median 게이트 판정(노이즈 단일 음수 셀이 PASS를 막지 않음 / 일관된 음수는 여전히 FAIL), (b) 아이템 하드실패 격리(1개 실패가 전체 게이트를 죽이지 않음), (c) SCP-049 coverage-mismatch 복구 경로.
+
 ## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
 
 **Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.
