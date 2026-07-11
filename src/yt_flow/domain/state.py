@@ -25,6 +25,16 @@ CastPose = Literal["standing", "sitting"]  # closed v1 vocabulary — free-text 
 CharacterMotionStyle = Literal["hold", "breath", "sway", "tremble", "pulse", "glitch"]
 CharacterMotionEnergy = Literal["low", "medium", "high"]
 
+# Story 8.9: closed screen-blocking vocabulary for a card's movement *through*
+# the frame (distinct from 8.8's in-place idle motion above). Cinematic
+# blocking, not a walk-cycle sim — video_node maps each mode to a
+# deterministic x/y/scale curve over the shot's duration.
+CharacterMovementMode = Literal[
+    "anchored", "drift", "enter", "exit", "cross", "approach", "retreat",
+]
+CharacterMovementDirection = Literal["none", "left", "right", "in", "out"]
+CharacterMovementPace = Literal["slow", "medium", "fast"]
+
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
 
 # Story 8.5 — closed location key vocabulary for pre-built stock background
@@ -58,6 +68,9 @@ class CastMember(TypedDict):
     pose_hint: NotRequired[str]  # Story 8.4 on-demand key-art pose; advisory, falls back to `pose`
     motion_style: NotRequired[CharacterMotionStyle]  # Story 8.8; absent == parser/resolver default "breath"
     motion_energy: NotRequired[CharacterMotionEnergy]  # Story 8.8; absent == parser/resolver default "medium"
+    movement_mode: NotRequired[CharacterMovementMode]  # Story 8.9; absent == parser/resolver default "anchored"
+    movement_direction: NotRequired[CharacterMovementDirection]  # Story 8.9; absent == default "none"
+    movement_pace: NotRequired[CharacterMovementPace]  # Story 8.9; absent == default "slow"
 
 
 class WordTiming(TypedDict):

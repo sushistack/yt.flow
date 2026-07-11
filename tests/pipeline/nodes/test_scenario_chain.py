@@ -1298,6 +1298,124 @@ def test_parse_cast_invalid_motion_energy_normalizes_to_medium(bad_energy):
     assert chain.parse_cast(raw)[0]["motion_energy"] == "medium"
 
 
+# ── movement_mode / movement_direction / movement_pace (Story 8.9) ──────────
+
+
+def test_parse_cast_missing_movement_fields_are_omitted():
+    raw = [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]
+    member = chain.parse_cast(raw)[0]
+    assert "movement_mode" not in member
+    assert "movement_direction" not in member
+    assert "movement_pace" not in member
+
+
+@pytest.mark.parametrize("mode", sorted(chain._VALID_MOVEMENT_MODES))
+def test_parse_cast_every_legal_movement_mode_passes_through(mode):
+    raw = [{
+        "card_key": "SCP-049", "position": "center", "depth": "near", "pose": "standing",
+        "movement_mode": mode,
+    }]
+    assert chain.parse_cast(raw)[0]["movement_mode"] == mode
+
+
+@pytest.mark.parametrize("pace", sorted(chain._VALID_MOVEMENT_PACES))
+def test_parse_cast_every_legal_movement_pace_passes_through(pace):
+    raw = [{
+        "card_key": "SCP-049", "position": "center", "depth": "near", "pose": "standing",
+        "movement_mode": "drift", "movement_pace": pace,
+    }]
+    assert chain.parse_cast(raw)[0]["movement_pace"] == pace
+
+
+@pytest.mark.parametrize("bad_mode", ["walk", "", 5, ["enter"], None])
+def test_parse_cast_invalid_movement_mode_normalizes_to_anchored(bad_mode):
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_mode": bad_mode,
+    }]
+    assert chain.parse_cast(raw)[0]["movement_mode"] == "anchored"
+
+
+@pytest.mark.parametrize("bad_pace", ["snail", "", 3, ["slow"], None])
+def test_parse_cast_invalid_movement_pace_normalizes_to_slow(bad_pace):
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_mode": "drift", "movement_pace": bad_pace,
+    }]
+    assert chain.parse_cast(raw)[0]["movement_pace"] == "slow"
+
+
+@pytest.mark.parametrize("mode", ["anchored", "drift"])
+def test_parse_cast_anchored_and_drift_force_direction_none(mode):
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_mode": mode, "movement_direction": "right",
+    }]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == "none"
+
+
+def test_parse_cast_approach_forces_direction_in():
+    raw = [{
+        "card_key": "SCP-049", "position": "center", "depth": "mid", "pose": "standing",
+        "movement_mode": "approach", "movement_direction": "left",
+    }]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == "in"
+
+
+def test_parse_cast_retreat_forces_direction_out():
+    raw = [{
+        "card_key": "SCP-049", "position": "center", "depth": "mid", "pose": "standing",
+        "movement_mode": "retreat", "movement_direction": "right",
+    }]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == "out"
+
+
+@pytest.mark.parametrize(
+    ("mode", "position", "expected"),
+    [
+        ("enter", "left", "left"),
+        ("enter", "right", "right"),
+        ("enter", "center", "left"),
+        ("exit", "left", "left"),
+        ("exit", "right", "right"),
+        ("exit", "center", "left"),
+    ],
+)
+def test_parse_cast_enter_exit_default_direction_matches_position(mode, position, expected):
+    raw = [{"card_key": "SCP-049", "position": position, "depth": "near", "pose": "standing", "movement_mode": mode}]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == expected
+
+
+@pytest.mark.parametrize(
+    ("position", "expected"),
+    [("left", "right"), ("right", "left"), ("center", "right")],
+)
+def test_parse_cast_cross_default_direction_is_opposite_of_position(position, expected):
+    raw = [{"card_key": "SCP-049", "position": position, "depth": "near", "pose": "standing", "movement_mode": "cross"}]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == expected
+
+
+def test_parse_cast_cross_keeps_explicit_valid_direction():
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_mode": "cross", "movement_direction": "left",
+    }]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == "left"
+
+
+def test_parse_cast_movement_direction_alone_defaults_mode_and_pace():
+    """Any single movement key present triggers full resolution of all three
+    (Story 8.9 leniency rule — interdependent, unlike 8.8's independent keys)."""
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_direction": "right",
+    }]
+    member = chain.parse_cast(raw)[0]
+    assert member["movement_mode"] == "anchored"
+    assert member["movement_direction"] == "none"  # anchored forces direction back to none
+    assert member["movement_pace"] == "slow"
+
+
 # ── parse_location_key (Story 8.5: closed LocationKey vocabulary leniency) ──────
 
 

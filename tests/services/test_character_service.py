@@ -2,6 +2,8 @@
 AC: 2, 3, 4, 5
 """
 
+from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
 from sqlmodel import Session, select
@@ -10,12 +12,14 @@ from yt_flow import db
 from yt_flow.db.models import CharacterCard as CharacterCardModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
+from yt_flow.services import character_service
 from yt_flow.services.character_service import (
     CharacterService,
     _is_private_host,
     _validate_create,
 )
 from yt_flow.services.image_search import WikiImage
+from tests.stubs.fakes import TINY_PNG
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -403,6 +407,130 @@ class TestWikiFirstReferenceSearch:
         result = await svc.search_references("SCP-096", tmp_path, max_results=10)
         assert len(result) == 1
         assert result[0].url == "https://ddg.example/fallback.png"
+
+
+# ── Langfuse tracing coverage (spec-langfuse-tracing-coverage-audit) ─────────
+
+
+class TestVisionEnrichmentTracing:
+    """Vision LLM enrichment had zero tracing — a failure now marks the current
+    span level=ERROR before returning its existing (unchanged) fallback."""
+
+    @pytest.mark.asyncio
+    async def test_marks_span_error_on_http_failure(self, service, monkeypatch, tmp_path):
+        service._settings.character_vision_api_key = "test-key"
+        img_path = tmp_path / "ref.png"
+        img_path.write_bytes(TINY_PNG)
+
+        calls = []
+
+        class _FakeLF:
+            def update_current_span(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(character_service, "get_client", lambda: _FakeLF())
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.TimeoutException("vision timeout")
+            result = await service.enrich_descriptor_from_references("SCP-096", [str(img_path)])
+
+        assert result is None  # AC2: unchanged fallback (no existing descriptor to fall back to)
+        assert len(calls) == 1
+        assert calls[0]["level"] == "ERROR"
+        assert "vision timeout" in calls[0]["status_message"]
+
+
+class TestSelectEntityAnglesTracing:
+    """_select_entity_angles' three silent-fallback branches previously left only a
+    logger.warning — each now marks the span level=WARNING naming which check failed."""
+
+    @staticmethod
+    def _seed(service, scp_id="SCP-096"):
+        from datetime import datetime, timezone
+        c = service.create_character(scp_id, f"Character {scp_id}")
+        c.angle_front_path = "/tmp/front.png"
+        c.updated_at = datetime.now(tz=timezone.utc).isoformat()
+        service._session.add(c)
+        service._session.commit()
+        service._session.refresh(c)
+        return c
+
+    @staticmethod
+    def _catalogue():
+        return [{"scene_num": 1, "shot_id": "S001", "narration": "n",
+                  "camera_angle": "", "camera_movement": ""}]
+
+    @pytest.mark.asyncio
+    async def test_marks_warning_on_llm_call_failure(self, service, monkeypatch):
+        self._seed(service)
+        calls = []
+
+        class _FakeLF:
+            def update_current_span(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(character_service, "get_client", lambda: _FakeLF())
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.ConnectError("network down")
+            result = await service._select_entity_angles("SCP-096", self._catalogue())
+
+        assert result == {"1:S001": {"angle": "front", "fallback": True}}  # AC3: unchanged fallback
+        assert len(calls) == 1
+        assert calls[0]["level"] == "WARNING"
+        assert "llm_call_failed" in calls[0]["status_message"]
+
+    @pytest.mark.asyncio
+    async def test_marks_warning_on_invalid_json(self, service, monkeypatch):
+        self._seed(service)
+        calls = []
+
+        class _FakeLF:
+            def update_current_span(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(character_service, "get_client", lambda: _FakeLF())
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"choices": [{"message": {"content": "not json at all!!"}}]}
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = _Resp()
+            result = await service._select_entity_angles("SCP-096", self._catalogue())
+
+        assert result == {"1:S001": {"angle": "front", "fallback": True}}
+        assert len(calls) == 1
+        assert calls[0]["level"] == "WARNING"
+        assert "invalid_json" in calls[0]["status_message"]
+
+    @pytest.mark.asyncio
+    async def test_marks_warning_on_non_array_response(self, service, monkeypatch):
+        self._seed(service)
+        calls = []
+
+        class _FakeLF:
+            def update_current_span(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(character_service, "get_client", lambda: _FakeLF())
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"choices": [{"message": {"content": '{"key": "value"}'}}]}
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = _Resp()
+            result = await service._select_entity_angles("SCP-096", self._catalogue())
+
+        assert result == {"1:S001": {"angle": "front", "fallback": True}}
+        assert len(calls) == 1
+        assert calls[0]["level"] == "WARNING"
+        assert "non_array_response" in calls[0]["status_message"]
 
 
 # ── Layer-boundary test ──────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
-from yt_flow.pipeline.nodes import character_motion
+from yt_flow.pipeline.nodes import character_motion, character_movement
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     AMBIENT_VOLUME,
@@ -371,9 +371,11 @@ def _overlay_filter(
     spec: EffectSpec | None = None, duration: float | None = None,
     depth: str = "near",
     motion_style: str = "sway", motion_energy: str = "medium",
+    movement_mode: str = "anchored", movement_direction: str = "none",
+    movement_pace: str = "slow",
 ) -> str:
     """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
-    [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8]
+    [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8] [Story 8.9 AC:5,7]
 
     ``eval=frame`` is REQUIRED and set explicitly: under the ``eval=init`` default
     for *some* builds the ``t``/``n`` timeline vars collapse to NAN and the
@@ -385,21 +387,27 @@ def _overlay_filter(
 
     ``position`` anchors the card horizontally at a rule-of-thirds fraction of
     ``main_w`` (1/3, 1/2, or 2/3) instead of dead-centering it — multiple cards
-    need to occupy distinct screen positions. When ``spec`` is given (parallax
-    on, Story 7.3), a direction-derived macro pan term rides *on top of* the
-    idle-motion terms, its amplitude scaled by ``_DEPTH_PARALLAX[depth]``.
-    ``spec=None`` reverts to the fixed-size idle-motion-only string (parallax off).
+    need to occupy distinct screen positions. Composition order (Story 8.9
+    AC:5): 8.3 anchor -> 8.9 movement curve -> 7.3 parallax pan -> 8.8 idle
+    motion. ``movement_mode="anchored"`` (the default) contributes nothing, so
+    the pre-8.9 string is unchanged when a card has no movement fields. When
+    ``spec`` is given (parallax on, Story 7.3), a direction-derived macro pan
+    term rides *on top of* movement, its amplitude scaled by
+    ``_DEPTH_PARALLAX[depth]``. ``spec=None`` reverts to the fixed-size
+    idle-motion-only string (parallax off).
     """
     x_frac = _POSITION_X_FRAC.get(position, _POSITION_X_FRAC["center"])
     phase = k * PHASE_STEP
-    x_terms = character_motion.axis_terms(motion_style, motion_energy, "x", phase)
-    y_terms = character_motion.axis_terms(motion_style, motion_energy, "y", phase)
+    movement = character_movement.build_movement_terms(
+        mode=movement_mode, direction=movement_direction, pace=movement_pace,
+        position=position, depth=depth, duration=duration or 0.0,
+    )
     x = f"main_w*{x_frac}-overlay_w/2"
-    if x_terms:
-        x += " + " + " + ".join(x_terms)
+    if movement.x_terms:
+        x += " + " + " + ".join(movement.x_terms)
     y = "(main_h-overlay_h)/2"
-    if y_terms:
-        y += " + " + " + ".join(y_terms)
+    if movement.y_terms:
+        y += " + " + " + ".join(movement.y_terms)
     if spec is not None and duration:
         sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
         pan_amp = CHAR_PAN_AMPLITUDE_PX * _DEPTH_PARALLAX.get(depth, _DEPTH_PARALLAX["mid"])
@@ -407,6 +415,12 @@ def _overlay_filter(
             x += f" + ({sx * pan_amp})*t/{duration}"
         if sy:
             y += f" + ({sy * pan_amp})*t/{duration}"
+    x_terms = character_motion.axis_terms(motion_style, motion_energy, "x", phase)
+    y_terms = character_motion.axis_terms(motion_style, motion_energy, "y", phase)
+    if x_terms:
+        x += " + " + " + ".join(x_terms)
+    if y_terms:
+        y += " + " + " + ".join(y_terms)
     return f"overlay=x='{x}':y='{y}':eval=frame"
 
 
@@ -421,6 +435,24 @@ def _motion_scale_filter(motion_style: str = "sway", motion_energy: str = "mediu
     rhythm.
     """
     terms = character_motion.axis_terms(motion_style, motion_energy, "scale", k * PHASE_STEP)
+    if not terms:
+        return ""
+    expr = " + ".join(terms)
+    return f"scale=w='iw*(1+({expr}))':h='ih*(1+({expr}))':eval=frame"
+
+
+def _movement_scale_filter(
+    mode: str, direction: str, pace: str, position: str, depth: str, duration: float,
+) -> str:
+    """Time-varying scale for ``approach``/``retreat`` (Story 8.9 AC:5,7). Empty
+    string for every other mode — the caller skips appending a filter stage
+    entirely, same convention as ``_motion_scale_filter``'s hold/glitch skip.
+    Chained right after ``_character_scale_filter``'s depth-cap anchor and
+    before parallax/idle-motion scale stages (AC:5 composition order).
+    """
+    terms = character_movement.build_movement_terms(
+        mode=mode, direction=direction, pace=pace, position=position, depth=depth, duration=duration,
+    ).scale_terms
     if not terms:
         return ""
     expr = " + ".join(terms)
@@ -601,6 +633,8 @@ def _record_trace(
     upscale_pass: bool = True,
     card_counts: list[int] | None = None,
     motion_style_counts: dict[str, int] | None = None,
+    movement_mode_counts: dict[str, int] | None = None,
+    movement_pace_counts: dict[str, int] | None = None,
     cast_resolution: dict | None = None,
     chapter_cards_enabled: bool = False,
     chapter_card_duration: float | None = None,
@@ -641,6 +675,13 @@ def _record_trace(
             "character_motion": {
                 "table_version": character_motion.MOTION_TABLE_VERSION,
                 "style_counts": motion_style_counts or {},
+            },
+            # Story 8.9: screen-blocking mode/pace counts, same non-fatal
+            # tracing posture as 8.8's style_counts above.
+            "character_movement": {
+                "table_version": character_movement.MOVEMENT_TABLE_VERSION,
+                "mode_counts": movement_mode_counts or {},
+                "pace_counts": movement_pace_counts or {},
             },
             "ending_credit": ending_credit,
             "ending_credit_error": ending_credit_error,
@@ -799,18 +840,29 @@ async def _compose_scene(
             position = card.get("position", "center")
             motion_style = card.get("motion_style", "breath")
             motion_energy = card.get("motion_energy", "medium")
+            movement_mode = card.get("movement_mode", "anchored")
+            movement_direction = card.get("movement_direction", "none")
+            movement_pace = card.get("movement_pace", "slow")
+            # Movement (Story 8.9 AC:5): chained right after the depth-cap anchor,
+            # before parallax/idle-motion scale stages. "" for anchored — the
+            # pre-8.9 chain is unchanged.
+            movement_scale = _movement_scale_filter(
+                movement_mode, movement_direction, movement_pace, position, depth, duration,
+            )
+            char_chain = _character_scale_filter(depth)
+            if movement_scale:
+                char_chain += f",{movement_scale}"
             # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the
             # background's spec, amplified per depth. Off → fixed-size idle motion.
             if parallax_enabled:
                 char_spec = _character_spec(spec, depth)
-                char_chain = (
-                    f"{_character_scale_filter(depth)},"
-                    f"{_character_zoom_filter(char_spec, duration)}"
-                )
-                overlay = _overlay_filter(position, k, char_spec, duration, depth, motion_style, motion_energy)
+                char_chain += f",{_character_zoom_filter(char_spec, duration)}"
             else:
-                char_chain = _character_scale_filter(depth)
-                overlay = _overlay_filter(position, k, None, None, depth, motion_style, motion_energy)
+                char_spec = None
+            overlay = _overlay_filter(
+                position, k, char_spec, duration, depth, motion_style, motion_energy,
+                movement_mode, movement_direction, movement_pace,
+            )
             # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
             # stage for breath/sway/tremble/pulse so it composes with either branch above.
             pulse = _motion_scale_filter(motion_style, motion_energy, k)
@@ -1400,6 +1452,12 @@ async def video_node(state: PipelineState) -> dict:
         motion_style_counts = dict(Counter(
             card.get("motion_style", "breath") for card in rendered_cards
         ))
+        movement_mode_counts = dict(Counter(
+            card.get("movement_mode", "anchored") for card in rendered_cards
+        ))
+        movement_pace_counts = dict(Counter(
+            card.get("movement_pace", "slow") for card in rendered_cards
+        ))
 
         _record_trace(
             run_id=run_id, scene_count=len(scenes),
@@ -1407,6 +1465,8 @@ async def video_node(state: PipelineState) -> dict:
             returncode=0, effects=effects_meta, upscale_pass=True,
             card_counts=card_counts,
             motion_style_counts=motion_style_counts,
+            movement_mode_counts=movement_mode_counts,
+            movement_pace_counts=movement_pace_counts,
             cast_resolution=cast_meta if cast_meta else None,
             chapter_cards_enabled=chapter_cards_enabled,
             chapter_card_duration=card_duration,

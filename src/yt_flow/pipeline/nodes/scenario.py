@@ -91,8 +91,9 @@ def _record_trace(*, stages: list[dict], total_latency_ms: int, error: Exception
             metadata={
                 "stages": stages,
                 "total_latency_ms": total_latency_ms,
-                **({"error": repr(error)} if error is not None else {}),
+                **({"error": str(error)} if error is not None else {}),
             },
+            **({"level": "ERROR", "status_message": str(error)} if error is not None else {}),
         )
     except Exception:  # noqa: BLE001 — a tracing failure must never break the pipeline
         pass

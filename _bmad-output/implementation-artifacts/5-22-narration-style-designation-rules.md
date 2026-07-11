@@ -1,5 +1,6 @@
 ---
 created: 2026-07-09
+baseline_commit: 92cdb8ff585b20488e2f980122a5bedceed43e07
 story_key: 5-22-narration-style-designation-rules
 story_id: "5.22"
 epic: 5
@@ -50,11 +51,11 @@ Iteration 1 scene 1 (run `d55a265b`): 13 sentences, nearly all ending `-했습�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Export production `scenario/writing` → `prompts/scenario/writing.md`; commit as-is; diff vs legacy template and record findings (AC:1)
-- [ ] Task 2: Add ending-variety + register-guard rules (AC:2)
-- [ ] Task 3: Add designation rules (AC:3)
-- [ ] Task 4: Review-loop checklist line (AC:4)
-- [ ] Task 5: Seed candidate + golden-set gate (AC:5)
+- [x] Task 1: Export production `scenario/writing` → `prompts/scenario/writing.md`; commit as-is; diff vs legacy template and record findings (AC:1)
+- [x] Task 2: Add ending-variety + register-guard rules (AC:2)
+- [x] Task 3: Add designation rules (AC:3)
+- [x] Task 4: Review-loop checklist line (AC:4)
+- [ ] Task 5: Seed candidate + golden-set gate (AC:5) — **BLOCKED, see Debug Log**
 - [ ] Task 6: Candidate run, style measurements, Dev Agent Record evidence (AC:6,7)
 - [ ] Task 7: Hand promotion to Jay with evidence (label move is Jay's action per PROMPT_POLICY)
 
@@ -77,8 +78,26 @@ Iteration 1 scene 1 (run `d55a265b`): 13 sentences, nearly all ending `-했습�
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+- Task 1 diff vs legacy (`/mnt/work/projects/yt.pipe/templates/scenario/03_writing.md`): content identical except single-`{var}` → `{{var}}` placeholder syntax. Confirms the diagnostic note in Context: the rhythm rule ("문장 리듬 변화: 긴 묘사 문장과 짧은 임팩트 문장을 번갈아") was **present-but-too-weak** in production, not dropped — it was prose advice with no checkable constraint, which is why iteration-1 ignored it.
+- Task 4: both `scenario/review` (`overall_pass`) and `scenario/critic_agent` (`verdict`) gate the single retry (`scenario.py:179`, `if critic["verdict"]=="retry" or not review["overall_pass"]`). Asked Jay whether to repatriate a second prompt (`scenario/review.md`) since it had no repo file — approved. Added checklist item 8 to `scenario/review.md` (ending-monotony + designation-violation issue types, gating `overall_pass` like the other checklist items, not advisory like the storytelling sub-scores).
+- Task 5 (golden-set gate) — **BLOCKED, not complete**: ran `scripts/eval_prompts.py --label candidate --baseline production` 3x, all three FAILed:
+  - Run 1: candidate JSON parse errors on SCP-049 and SCP-173 (`Expecting ',' delimiter`); production also failed independently on SCP-173 (empty narration); SCP-096 regressed article_fidelity -0.67.
+  - Run 2: production baseline failed independently (cast_decision 1:1 mapping mismatch, SCP-049); SCP-173 candidate regressed atmosphere -1.00; SCP-096 candidate improved all axes (+3.00 total).
+  - Run 3: candidate JSON parse error again on SCP-173 (different offset); judge itself failed to parse its own response on SCP-049 (candidate) and SCP-173 (production); SCP-096 regressed hard this time (-2.67 total, opposite of run 2).
+  - Isolated repro of SCP-173 candidate alone (outside the gate, via a monkeypatched `_call_deepseek` capturing every raw LLM response): 2 of 5 attempts hit the same JSON parse error, 3 succeeded cleanly producing correct output (e.g. "D계급 인원" instead of "D-9341" — designation rule works when it doesn't crash). The failing raw text itself was never captured because `eval_prompts.py`'s own artifact writer (`write_artifact`) only fires on the `--stage` isolation codepath, not the full `--baseline` comparison codepath used here — `candidate-SCP-173-full.json` artifacts all show `raw_output: null`.
+  - Conclusion so far: axis-score variance is enormous run-to-run (SCP-096 total swung from +3.00 to -2.67 with no prompt change between runs) and production itself fails independently in every run for unrelated reasons — this points at pre-existing judge/pipeline instability, not a regression caused by this story's writing/review prompt edits. Not fully proven (raw text of the actual JSON break was never captured before Jay paused the investigation).
+  - **Jay's direction (2026-07-10, mid-session):** stop chasing this under the JSON hypothesis — plans to change the scenario chain's LLM output format from JSON to YAML to reduce parse fragility. This is a pipeline code change, out of scope for this prompt-only story (workflow_decision: "no code changes"). Story is paused pending that change; resume Task 5 (re-seed candidate if prompt files changed further, rerun the gate) once the format change lands.
 
 ### Completion Notes List
 
+- Tasks 1–4 complete: `prompts/scenario/writing.md` and `prompts/scenario/review.md` repatriated (2 separate commits, second one Jay-approved), ending-variety/register-guard rules, designation rules, and review checklist item 8 all added. `candidate` label seeded for both (only these two prompts actually changed content — everything else in `prompts/` skipped, confirming `migrate_prompts.py --source prompts` parent-dir usage is correct/safe).
+- Task 5 (golden-set gate) paused mid-investigation at Jay's explicit request — see Debug Log. Story left `in-progress`, not moved to `review`. Do not resume Task 5 until the JSON→YAML output-format change (Jay's, separate/future work) lands, then re-run `uv run python scripts/eval_prompts.py --label candidate --baseline production`.
+
 ### File List
+
+- `prompts/scenario/writing.md` (new)
+- `prompts/scenario/review.md` (new)

@@ -224,6 +224,7 @@ def _compute_rule_metrics(
 # ── Pairwise comparison + winner determination (AC3, AC4) ──────────────────
 
 
+@observe(name="pairwise-once")
 async def _pairwise_once(scp_text: str, first: str, second: str, s: Settings) -> str:
     """One ordered LLM comparison. Returns "A"|"B"|"tie" (A/B are the *labels* of
     ``first``/``second``, so the caller controls ordering for bias mitigation)."""
@@ -431,6 +432,9 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
             pairwise=pairwise, winner=winner, winner_run_id=winner_run_id,
             reason=reason, langfuse_trace_url=trace_url,
         )
+    except Exception as exc:  # noqa: BLE001 — mark the span, then let the exception through unchanged
+        _mark_trace_error(span, exc)
+        raise
     finally:
         _exit_trace(span)
 
@@ -692,3 +696,15 @@ def _exit_trace(span) -> None:
             span.__exit__(None, None, None)
         except Exception:  # noqa: BLE001
             pass
+
+
+def _mark_trace_error(span, exc: Exception) -> None:
+    """Best-effort mark the still-open "ab-evaluation" span as failed before
+    ``_exit_trace`` closes it — otherwise a raised exception leaves the trace
+    looking like a clean success (AD-10: tracing itself must never raise)."""
+    if span is None:
+        return
+    try:
+        get_client().update_current_span(level="ERROR", status_message=str(exc))
+    except Exception:  # noqa: BLE001
+        pass

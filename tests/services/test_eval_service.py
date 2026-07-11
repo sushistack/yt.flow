@@ -417,6 +417,60 @@ def test_enter_trace_keys_on_ab_pair_id(monkeypatch):
     assert rec["ctx"]["trace_id"] == "trace-pair-1"
 
 
+async def test_evaluate_ab_marks_span_error_and_reraises(monkeypatch, _memdb):
+    """Spec: langfuse tracing coverage audit — evaluate_ab raises mid-scoring:
+    the "ab-evaluation" span is marked level=ERROR before _exit_trace runs, and
+    the original exception still reaches the caller unchanged."""
+    _seed_run("run-a")
+    _seed_run("run-b", ab_pair_id="run-a")
+    monkeypatch.setattr(es, "_load_state",
+                        lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
+    _wire(monkeypatch, score_fn=lambda c, a: 4, winner_fn=lambda f, s: "first")
+
+    span_calls = []
+
+    class _Span:
+        def __enter__(self_):
+            return self_
+        def __exit__(self_, *a):
+            return False
+
+    class _FakeLF:
+        def create_trace_id(self, *, seed=None):
+            return f"trace-{seed}"
+        def start_as_current_observation(self, *, name, as_type, trace_context):
+            return _Span()
+        def update_current_span(self, **kw):
+            span_calls.append(kw)
+
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLF())
+
+    boom = RuntimeError("scoring exploded")
+
+    def raise_boom(*a, **k):
+        raise boom
+
+    monkeypatch.setattr(es, "_compute_rule_metrics", raise_boom)
+
+    with pytest.raises(RuntimeError, match="scoring exploded"):
+        await es.evaluate_ab("run-a", "run-b")
+
+    assert len(span_calls) == 1
+    assert span_calls[0]["level"] == "ERROR"
+    assert span_calls[0]["status_message"] == "scoring exploded"
+
+
+def test_pairwise_once_carries_observe_decorator():
+    """Spec: langfuse tracing coverage audit — _pairwise_once gets its own
+    @observe span instead of being invisible inside the opaque parent span."""
+    import inspect
+
+    source = inspect.getsource(es)
+    marker = "async def _pairwise_once("
+    preceding = source[: source.index(marker)]
+    assert preceding.rstrip().endswith('@observe(name="pairwise-once")')
+
+
 def _return(value):
     async def _coro():
         return value

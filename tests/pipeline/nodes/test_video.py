@@ -100,13 +100,16 @@ def _card(
     path: str, *, card_key: str = "SCP-096", position: str = "center", depth: str = "near",
     pose: str = "standing", angle: str = "front", fallback: bool = False,
     motion_style: str = "breath", motion_energy: str = "medium",
+    movement_mode: str = "anchored", movement_direction: str = "none", movement_pace: str = "slow",
 ) -> dict:
     """A resolved card dict, the shape resolve_cast_cards returns (Story 8.3
-    Interfaces, Story 8.8 adds motion_style/motion_energy)."""
+    Interfaces, Story 8.8 adds motion_style/motion_energy, Story 8.9 adds
+    movement_mode/movement_direction/movement_pace)."""
     return {
         "card_key": card_key, "pose": pose, "angle": angle, "path": path,
         "fallback": fallback, "position": position, "depth": depth,
         "motion_style": motion_style, "motion_energy": motion_energy,
+        "movement_mode": movement_mode, "movement_direction": movement_direction, "movement_pace": movement_pace,
     }
 
 
@@ -995,6 +998,65 @@ def test_overlay_filter_center_directions_contribute_zero_pan():
         assert _overlay_filter(spec=ch, duration=2.0) == _overlay_filter()
 
 
+# ── Character locomotion / screen blocking (Story 8.9) ──────────────────────
+
+
+def test_overlay_filter_anchored_movement_is_unchanged():
+    """movement_mode='anchored' (the default) reproduces the pre-8.9 string
+    byte-for-byte, with and without parallax. [AC:10]"""
+    assert _overlay_filter() == _overlay_filter(movement_mode="anchored")
+    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX), "near")
+    parallax_on = _overlay_filter(spec=ch, duration=2.0, depth="near")
+    assert parallax_on == _overlay_filter(spec=ch, duration=2.0, depth="near", movement_mode="anchored")
+
+
+def test_overlay_filter_enter_adds_main_w_term():
+    """A movement mode other than anchored contributes a main_w-scaled term. [AC:7]"""
+    f = _overlay_filter(duration=2.0, movement_mode="enter", movement_direction="left")
+    assert "main_w*(1-" in f
+    assert f != _overlay_filter(duration=2.0)
+
+
+def test_overlay_filter_movement_composes_before_parallax_and_idle_motion():
+    """Composition order (AC:5): anchor -> movement -> parallax -> idle motion.
+    The movement term must appear in the x string BEFORE the parallax pan term
+    and BEFORE the idle-motion sine term."""
+    ch = _character_spec(EffectSpec(direction="pan-right", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX), "near")
+    f = _overlay_filter(
+        spec=ch, duration=2.0, depth="near", motion_style="sway", motion_energy="medium",
+        movement_mode="enter", movement_direction="left",
+    )
+    x_expr = f.split("x='", 1)[1].split("'", 1)[0]
+    movement_pos = x_expr.index("main_w*(1-")
+    pan_pos = x_expr.index(")*t/2.0")
+    sine_pos = x_expr.index("sin(t*")
+    assert movement_pos < pan_pos < sine_pos
+
+
+def test_overlay_filter_drift_and_cross_add_single_x_term():
+    anchored = _overlay_filter(duration=2.0)
+    drift = _overlay_filter(duration=2.0, movement_mode="drift")
+    cross = _overlay_filter(duration=2.0, movement_mode="cross", movement_direction="right", position="left")
+    assert drift != anchored and str(video.character_movement.DRIFT_PX) in drift
+    assert cross != anchored
+
+
+def test_movement_scale_filter_empty_for_non_scale_modes():
+    for mode in ("anchored", "drift", "enter", "exit", "cross"):
+        assert video._movement_scale_filter(mode, "none", "slow", "center", "mid", 2.0) == ""
+
+
+def test_movement_scale_filter_approach_retreat_produce_scale_terms():
+    for mode in ("approach", "retreat"):
+        f = video._movement_scale_filter(mode, "in" if mode == "approach" else "out", "slow", "center", "near", 2.0)
+        assert f.startswith("scale=w='iw*(1+(")
+        assert "eval=frame" in f
+
+
+def test_movement_scale_filter_zero_duration_is_empty():
+    assert video._movement_scale_filter("approach", "in", "slow", "center", "near", 0.0) == ""
+
+
 # ── Multi-card cast compositing (Story 8.3) ───────────────────────────────────
 
 
@@ -1323,6 +1385,50 @@ async def test_video_node_two_cards_stacking_and_positions(monkeypatch, tmp_path
     assert left_anchor in fc and right_anchor in fc
     # far/right's overlay stage is painted before near/left's
     assert fc.index(right_anchor) < fc.index(left_anchor)
+
+
+async def test_video_node_moving_card_keeps_depth_derived_stacking(monkeypatch, tmp_path, assets):
+    """[Story 8.9 AC:9] A card with movement fields still stacks purely by
+    depth — z-order is never dynamically re-derived from movement_mode."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, card_key="SCP-096", position="left", depth="near",
+              movement_mode="cross", movement_direction="right"),
+        _card(assets.character2, card_key="STOCK-d-class", position="right", depth="far"),
+    ]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member("SCP-096", position="left", depth="near"),
+              _cast_member("STOCK-d-class", position="right", depth="far")],
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    fc = captured[0]
+    # far (STOCK-d-class, no movement) still paints first regardless of the
+    # near card's movement_mode — depth alone drives stacking.
+    assert fc.index("[c0]") < fc.index("[c1]")
+
+
+async def test_video_node_threads_resolved_card_movement_fields(monkeypatch, tmp_path, assets):
+    """A card's movement_mode/direction/pace from the resolver reaches the
+    filtergraph. [AC:5,7]"""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    fake, captured = _capture_arg_flag("-filter_complex")
+    monkeypatch.setattr(video, "_run_ffmpeg", fake)
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, movement_mode="approach", movement_direction="in", movement_pace="medium"),
+    ]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    char_chain = captured[0].split("[1:v]", 1)[1].split("[c0]", 1)[0]
+    assert "scale=w='iw*(1+(" in char_chain
 
 
 # ── Character micro-motion technique threading (Story 8.8) ─────────────────────
@@ -1706,6 +1812,29 @@ async def test_trace_records_motion_style_counts(monkeypatch, tmp_path, assets):
     assert captured.get("motion_style_counts") == {"tremble": 1, "hold": 1}
 
 
+async def test_trace_records_movement_mode_and_pace_counts(monkeypatch, tmp_path, assets):
+    """[Story 8.9 AC:12] Trace metadata aggregates counts per movement_mode and
+    movement_pace, non-fatal like 8.8's motion_style_counts."""
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+    _inject_resolver(monkeypatch, {"1:S001": [
+        _card(assets.character, card_key="SCP-096", position="left",
+              movement_mode="enter", movement_direction="left", movement_pace="fast"),
+        _card(assets.character2, card_key="STOCK-d-class", position="right"),
+    ]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member("SCP-096", position="left"), _cast_member("STOCK-d-class", position="right")],
+    )
+    await video_node(_state([scene]))
+
+    assert captured.get("movement_mode_counts") == {"enter": 1, "anchored": 1}
+    assert captured.get("movement_pace_counts") == {"fast": 1, "slow": 1}
+
+
 async def test_trace_character_overlay_false_when_absent(monkeypatch, tmp_path, assets):
     captured: dict = {}
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
@@ -1852,6 +1981,43 @@ async def test_motion_style_filtergraph_renders_real_ffmpeg(tmp_path, style):
         str(out),
     )
     assert rc == 0, f"style={style!r} filtergraph rejected by ffmpeg: {stderr[-500:]}"
+    assert out.exists()
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+@pytest.mark.parametrize(
+    ("mode", "direction"),
+    [("enter", "left"), ("exit", "right"), ("cross", "right"), ("approach", "in"), ("retreat", "out")],
+)
+async def test_movement_mode_filtergraph_renders_real_ffmpeg(tmp_path, mode, direction):
+    """Real FFmpeg: every movement_mode's overlay + movement-scale expressions
+    parse and render rc=0 — a syntax regression in build_movement_terms would
+    be caught here even though the string-level unit tests never invoke
+    ffmpeg. [Story 8.9 AC:13]"""
+    from yt_flow.pipeline.nodes.video import _run_ffmpeg, _zoompan_filter
+
+    spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    zp = _zoompan_filter(spec, duration=1.0)
+    char_chain = _character_scale_filter()
+    movement_scale = video._movement_scale_filter(mode, direction, "medium", "center", "near", 1.0)
+    if movement_scale:
+        char_chain += f",{movement_scale}"
+    overlay = _overlay_filter(
+        duration=1.0, movement_mode=mode, movement_direction=direction, movement_pace="medium",
+    )
+    fc = f"[0:v]{zp}[bg];[1:v]{char_chain}[char];[bg][char]{overlay}[out]"
+
+    out = tmp_path / f"ov_{mode}.mp4"
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=1",
+        "-f", "lavfi", "-i", "color=c=red@0.5:s=64x64:r=25:d=1,format=rgba",
+        "-filter_complex", fc,
+        "-map", "[out]",
+        "-frames:v", "25", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    )
+    assert rc == 0, f"mode={mode!r} filtergraph rejected by ffmpeg: {stderr[-500:]}"
     assert out.exists()
 
 

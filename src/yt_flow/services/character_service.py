@@ -26,6 +26,7 @@ from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.domain.png import has_alpha
+from yt_flow.observability import get_client, observe
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
 
@@ -557,6 +558,7 @@ class CharacterService:
 
     # ── Vision LLM Descriptor Enrichment (AC1, AC2) ───────────────────────
 
+    @observe(name="character-vision-enrich")
     async def enrich_descriptor_from_references(
         self,
         scp_id: str,
@@ -630,6 +632,10 @@ class CharacterService:
 
         except (httpx.HTTPError, ValueError, KeyError, IndexError, AttributeError) as exc:
             logger.warning("enrich_descriptor_from_references: Vision LLM call failed for %s: %s", scp_id, exc)
+            try:
+                get_client().update_current_span(level="ERROR", status_message=str(exc))
+            except Exception:  # noqa: BLE001 — tracing must never break the pipeline
+                pass
             # Fallback: use existing visual_descriptor if present
             character = self.check_existing_character(scp_id)
             if character and character.visual_descriptor:
@@ -1316,6 +1322,7 @@ class CharacterService:
             return None
         return self._abs_asset_path(path), "standing", pose != "standing"
 
+    @observe(name="select-entity-angles")
     async def _select_entity_angles(
         self, scp_id: str, shot_catalogue: list[dict],
     ) -> dict[str, dict]:
@@ -1366,16 +1373,19 @@ class CharacterService:
             raw = data["choices"][0]["message"]["content"].strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             logger.warning("resolve_cast_cards: LLM call failed for %s: %s", scp_id, exc)
+            self._mark_angle_fallback("llm_call_failed", str(exc))
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("resolve_cast_cards: invalid JSON from LLM: %r", raw[:200])
+            self._mark_angle_fallback("invalid_json", raw[:200])
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         if not isinstance(parsed, list):
             logger.warning("resolve_cast_cards: expected JSON array, got %s", type(parsed).__name__)
+            self._mark_angle_fallback("non_array_response", type(parsed).__name__)
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         # Only catalogue shots are honored — hallucinated or malformed-id LLM
@@ -1407,6 +1417,15 @@ class CharacterService:
         """Map every catalogued shot to the fallback angle (LLM failed / invalid data)."""
         return {f"{s['scene_num']}:{s['shot_id']}": {"angle": angle, "fallback": True}
                 for s in shot_catalogue}
+
+    @staticmethod
+    def _mark_angle_fallback(reason: str, detail: str) -> None:
+        """Best-effort span WARNING naming which fallback branch fired — today only
+        a ``logger.warning``, with nothing distinguishing the branch in Langfuse."""
+        try:
+            get_client().update_current_span(level="WARNING", status_message=f"{reason}: {detail}")
+        except Exception:  # noqa: BLE001 — tracing must never break the pipeline
+            pass
 
     @staticmethod
     def _load_angle_selection_prompt(

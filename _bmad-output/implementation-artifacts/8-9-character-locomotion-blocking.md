@@ -1,5 +1,6 @@
 ---
 created: 2026-07-08
+baseline_commit: 2820d1acb625575b4224ec3ba91bd56a304a8165
 story_key: 8-9-character-locomotion-blocking
 story_id: "8.9"
 epic: 8

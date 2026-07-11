@@ -23,6 +23,9 @@ from yt_flow.domain.state import (
     CastPosition,
     CharacterMotionEnergy,
     CharacterMotionStyle,
+    CharacterMovementDirection,
+    CharacterMovementMode,
+    CharacterMovementPace,
     LOCATION_KEYS,
     LocationKey,
     STOCK_CAST_KEYS,
@@ -47,6 +50,9 @@ _VALID_POSES = {"standing", "sitting"}
 _POSE_HINT_MAX_CHARS = 80
 _VALID_MOTION_STYLES = {"hold", "breath", "sway", "tremble", "pulse", "glitch"}
 _VALID_MOTION_ENERGIES = {"low", "medium", "high"}
+_VALID_MOVEMENT_MODES = {"anchored", "drift", "enter", "exit", "cross", "approach", "retreat"}
+_VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
+_VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
 
 
@@ -88,6 +94,42 @@ def _parse_motion_field(entry: dict, key: str, valid: set[str], default: str) ->
     return value if value in valid else default
 
 
+def _repair_movement(mode: str, direction: str, position: str) -> str:
+    """Interfaces compatibility-repair table (Story 8.9): an incompatible
+    mode/direction pair normalizes, it never fails the scenario stage."""
+    if mode in ("anchored", "drift"):
+        return "none"
+    if mode == "approach":
+        return "in"
+    if mode == "retreat":
+        return "out"
+    if direction in ("left", "right"):
+        return direction
+    if mode in ("enter", "exit"):
+        return "right" if position == "right" else "left"
+    if mode == "cross":
+        if position == "left":
+            return "right"
+        if position == "right":
+            return "left"
+        return "right"  # center defaults to right
+    return direction
+
+
+def _parse_movement_fields(entry: dict, position: str) -> tuple[str, str, str] | None:
+    """Story 8.9 leniency rule, same absent-stays-absent philosophy as
+    ``_parse_motion_field`` — but movement's three sub-fields are
+    interdependent (direction compatibility depends on mode + position), so
+    presence of ANY one movement key resolves and sets all three together.
+    """
+    if not any(key in entry for key in ("movement_mode", "movement_direction", "movement_pace")):
+        return None
+    mode = _normalize_enum(entry.get("movement_mode"), _VALID_MOVEMENT_MODES, "anchored")
+    direction = _normalize_enum(entry.get("movement_direction"), _VALID_MOVEMENT_DIRECTIONS, "none")
+    pace = _normalize_enum(entry.get("movement_pace"), _VALID_MOVEMENT_PACES, "slow")
+    return mode, _repair_movement(mode, direction, position), pace
+
+
 def parse_cast(raw: object) -> list[CastMember]:
     """Normalize a visual_breakdown shot's raw ``cast`` payload (Epic 8
     Interfaces rules 4-6). Never raises — a taxonomy violation degrades
@@ -118,6 +160,12 @@ def parse_cast(raw: object) -> list[CastMember]:
         motion_energy = _parse_motion_field(entry, "motion_energy", _VALID_MOTION_ENERGIES, "medium")
         if motion_energy is not None:
             member["motion_energy"] = cast(CharacterMotionEnergy, motion_energy)
+        movement = _parse_movement_fields(entry, position)
+        if movement is not None:
+            movement_mode, movement_direction, movement_pace = movement
+            member["movement_mode"] = cast(CharacterMovementMode, movement_mode)
+            member["movement_direction"] = cast(CharacterMovementDirection, movement_direction)
+            member["movement_pace"] = cast(CharacterMovementPace, movement_pace)
         members.append(member)
     return members
 

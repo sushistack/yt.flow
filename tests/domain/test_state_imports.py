@@ -16,7 +16,10 @@ EXPECTED_FIELDS = {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
         "camera_angle", "camera_movement", "image_path", "cast", "location_key",
     },
-    "CastMember": {"card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy"},
+    "CastMember": {
+        "card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy",
+        "movement_mode", "movement_direction", "movement_pace",
+    },
     "SceneState": {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
         "word_timings", "subtitle_path", "mood", "title", "kicker", "display_narration",

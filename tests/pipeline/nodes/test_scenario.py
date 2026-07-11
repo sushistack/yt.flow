@@ -10,6 +10,11 @@ import pytest
 
 import yt_flow.pipeline.nodes.scenario as sc
 
+# Captured before the autouse `_isolate` fixture below monkeypatches
+# `sc._record_trace` to a no-op — tests that exercise the real function call
+# this reference directly instead of the (per-test) stubbed module attribute.
+_real_record_trace = sc._record_trace
+
 
 class FakeSettings:
     deepseek_api_key = "sk-test"
@@ -382,3 +387,125 @@ async def test_tts_normalize_receives_variant_b_candidate_label(monkeypatch):
 
     assert out.get("error") is None
     assert label_calls["tts_normalize"] == "candidate"
+
+
+# ── _usage_totals / stage token-field enrichment (Story 6.3) ───────────────
+
+
+def test_usage_totals_sums_across_calls():
+    usage_list = [
+        {"prompt_tokens": 10, "completion_tokens": 5, "prompt_cache_hit_tokens": 8, "prompt_cache_miss_tokens": 2},
+        {"prompt_tokens": 20, "completion_tokens": 3, "prompt_cache_hit_tokens": 15, "prompt_cache_miss_tokens": 5},
+    ]
+    assert sc._usage_totals(usage_list) == {
+        "prompt_tokens": 30,
+        "completion_tokens": 8,
+        "prompt_cache_hit_tokens": 23,
+        "prompt_cache_miss_tokens": 7,
+    }
+
+
+def test_usage_totals_empty_list_is_all_zero():
+    assert sc._usage_totals([]) == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 0,
+    }
+
+
+def test_usage_totals_degrades_missing_or_bad_fields_to_zero_without_raising():
+    usage_list = [
+        {"prompt_tokens": 10},  # other fields absent
+        {"prompt_tokens": None, "completion_tokens": "not-a-number"},  # wrong types
+        {"prompt_tokens": True, "completion_tokens": -1},  # bool/negative are not valid counts
+        "not-a-dict",  # malformed entry entirely
+        {"prompt_tokens": 5, "prompt_cache_hit_tokens": 3},
+    ]
+    assert sc._usage_totals(usage_list) == {
+        "prompt_tokens": 15,
+        "completion_tokens": 0,
+        "prompt_cache_hit_tokens": 3,
+        "prompt_cache_miss_tokens": 0,
+    }
+
+
+async def test_scenario_node_copies_stages_to_explicit_trace_sink(monkeypatch):
+    _stub_chain(monkeypatch)
+    trace_sink = []
+
+    out = await sc.scenario_node(_state(), trace_sink=trace_sink)
+
+    assert out["error"] is None
+    assert [stage["name"] for stage in trace_sink] == [
+        "research", "structure", "writing", "visual_breakdown", "review", "critic_agent", "tts_normalize",
+    ]
+
+
+async def test_scenario_node_stages_carry_token_fields(monkeypatch):
+    """AC3/AC4: every stages.append(...) site folds in usage-derived token fields."""
+    captured = {}
+    monkeypatch.setattr(sc, "_record_trace", lambda **kw: captured.update(kw))
+
+    async def fake_research(*a, usage_sink=None, **k):
+        if usage_sink is not None:
+            usage_sink.append({"prompt_tokens": 100, "prompt_cache_hit_tokens": 60})
+        return RESEARCH
+
+    async def fake_structure(*a, usage_sink=None, **k):
+        if usage_sink is not None:
+            usage_sink.append({"prompt_tokens": 50})
+        return STRUCTURE
+
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "research_step", fake_research)
+    monkeypatch.setattr(sc, "structure_step", fake_structure)
+
+    out = await sc.scenario_node(_state())
+    assert out.get("error") is None
+
+    stages_by_name = {s["name"]: s for s in captured["stages"]}
+    assert stages_by_name["research"]["prompt_tokens"] == 100
+    assert stages_by_name["research"]["prompt_cache_hit_tokens"] == 60
+    assert stages_by_name["research"]["prompt_cache_miss_tokens"] == 0
+    assert stages_by_name["structure"]["prompt_tokens"] == 50
+    # Stages whose fakes never touch usage_sink still carry the zeroed fields (AC3).
+    assert stages_by_name["writing"]["prompt_tokens"] == 0
+    assert stages_by_name["visual_breakdown"]["prompt_cache_hit_tokens"] == 0
+
+
+def test_record_trace_marks_error_level_and_status_message(monkeypatch):
+    """Spec: langfuse tracing coverage audit — a caught scenario error must mark
+    the span level=ERROR with status_message=str(error), not just a blind span."""
+    calls = []
+
+    class _FakeLF:
+        def update_current_span(self, **kw):
+            calls.append(kw)
+
+    monkeypatch.setattr(sc, "get_client", lambda: _FakeLF())
+
+    err = ValueError("stage=scenario run_id=run-123: boom")
+    _real_record_trace(stages=[{"name": "research", "latency_ms": 1}], total_latency_ms=5, error=err)
+
+    assert len(calls) == 1
+    assert calls[0]["level"] == "ERROR"
+    assert calls[0]["status_message"] == str(err)
+
+
+def test_record_trace_success_path_has_no_error_level(monkeypatch):
+    """Companion case: the success path (error=None) must not set level/status_message
+    at all — only the error branch does."""
+    calls = []
+
+    class _FakeLF:
+        def update_current_span(self, **kw):
+            calls.append(kw)
+
+    monkeypatch.setattr(sc, "get_client", lambda: _FakeLF())
+
+    _real_record_trace(stages=[{"name": "research", "latency_ms": 1}], total_latency_ms=5, error=None)
+
+    assert len(calls) == 1
+    assert "level" not in calls[0]
+    assert "status_message" not in calls[0]

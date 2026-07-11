@@ -1051,6 +1051,43 @@ Jay가 `data/voices/sutak.mp3`를 7.68초(스테레오, 권장 미달)에서 12.
 
 candidate가 골든셋+A/B를 통과하면 production 라벨을 자동 이동하는 스크립트/CI. 수동 승격(라벨 이동은 Langfuse UI 클릭 1회)의 빈도가 부담이 될 때만 발의 — YAGNI.
 
+### Story 6.3: DeepSeek 프롬프트 캐시-히트 최적화 + 토큰/비용 관측성
+
+**발의 배경 (2026-07-10):** Jay가 "LLM 호출이 생각보다 많이 발생한다"고 지적, 조사 결과 `scenario_node` 1회 실행이 정상 패스 `6+2N`(N=씬 수, 보통 8-12 → 22-30콜), 재시도 1회 시 `9+4N`(41-57콜)의 DeepSeek 호출을 발생시킴을 확인(8.10의 `cast_decision_step` 분리 + 5-4의 `tts_normalize_step` 추가가 설계 문서 `2026-07-03-scenario-multistage-design.md`의 추정치(정상 12-16, 재시도 최대 ~20)를 이미 낡게 만든 상태였음). A/B 실행은 여기서 다시 ×2.
+
+호출 수 자체를 줄이는 재병합(cast_decision+visual_breakdown 통합)은 8.10에서 이미 시도했다가 되돌린 회귀(deepseek-v4-flash가 복합 호출에서 `entity_visible` 구 스키마로 퇴행, 8.1에서 0/125 샷 재현)라 다시 시도하지 않는다. 대신 업계 표준 비용 절감 기법 중 이 파이프라인에 안전하게 적용 가능한 것 하나만 적용: **DeepSeek Context Caching on Disk**(자동 활성화 기능, 코드 변경 없이도 동작하지만 프롬프트 구조가 캐시 친화적이어야 효과가 남 — 일치하는 프롬프트 접두사는 1/10 가격, `prompt_cache_hit_tokens` $0.014/M vs `prompt_cache_miss_tokens` $0.14/M, 최대 90% 절감)을 극대화하도록 프롬프트 템플릿을 재배치하고, 현재 전혀 관측되지 않는 토큰/캐시 사용량을 트레이스에 노출한다.
+
+**AC1**: `prompts/scenario/*.md` 각 템플릿에서 씬/런 전체에 걸쳐 불변인 블록(시스템 지시문, `format_guide`, `frozen_descriptor`/`scp_visual_reference`, `entity_sheet`, `story_logline`)을 씬별로 변하는 블록(`scene_num`, `narration`, `numbered_sentences`, `cast_by_sentence` 등)보다 앞으로 재배치. 프롬프트 지시 내용 자체는 변경 없음 — 순서만 조정. `docs/PROMPT_POLICY.md` 절차 준수(candidate 라벨 선행 검증 후 production 승격).
+**AC2**: `_call_stage`(`scenario_chain.py:153-174`)가 현재 버리는 `_call_deepseek`의 `usage` dict(`scenario.py:50-66`)를 스테이지별로 수집해 `_record_trace`의 stage 메타데이터에 `prompt_tokens`/`completion_tokens`/`prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`로 기록.
+**AC3**: 실 SCP 1건 라이브 실행으로 재배치 전/후 캐시-히트 토큰 비율을 비교해 개선을 정량 증거로 남김(특히 씬 반복 호출인 cast_decision/visual_breakdown에서 히트율 증가 기대).
+**AC4 (문서화, 구현 아님)**: 호출 수 자체를 줄이는 방향(씬 배치 통합 호출, 씬 단위 부분 재시도)은 이번 스토리 범위 밖 — 재병합은 8.10 회귀 이력 때문에 위험하고, 부분 재시도는 `writing_step`이 전 씬을 한 콜로 재작성하는 현재 계약과 상충해 별도 재설계가 필요함을 근거와 함께 `deferred-work.md`에 기록.
+
+### Story 6.4: 시나리오 체인 YAML 출력 전환 + 스테이지 단위 bounded 재시도
+
+**발의 배경 (2026-07-10):** Jay가 골든셋 게이트 3회 실행 중 `scenario` 스테이지에서 간헐적 `json.JSONDecodeError`(`Expecting ',' delimiter` 등, 매번 다른 offset)를 재현·캡처. 라이브 재현 조사 결과 `finish_reason`은 항상 `stop`이었고(즉 truncation이 원인이 아님), 실패 유형이 최소 3가지로 분리됨을 확인: (1) truncation(`finish_reason=length`, 원인·해법 기지 — `deepseek_max_tokens` 기본값 8192가 `scripts/eval_prompts.py`에 `_RISKY_DEFAULT_MAX_TOKENS`로 이미 문서화된 위험값), (2) 순수 JSON 문법 깨짐(`Expecting ',' delimiter` 등 — candidate 라벨 스테이지에서만 관측, 한국어 나레이션/대사 인용문의 따옴표·개행 이스케이프 실패로 추정되나 원문 바이트 단위 확증은 비용 문제로 보류), (3) valid JSON이지만 스키마 위반(`visual_breakdown`이 `visual_descriptions`를 리스트가 아닌 값으로 반환 등 — 포맷과 무관한 별도 신뢰성 문제).
+
+DeepSeek의 `response_format: {"type": "json_object"}` 모드가 이 세 실패 중 어느 것도 막지 못하는 것으로 실측되어(순수 문법 에러가 실제로 재현됨 — 하드 grammar-constrained decoding이 아니거나 최소한 완전하지 않음), "JSON 강제 모드니까 안전하다"는 전제가 성립하지 않음. 그렇다고 YAML 전환만으로 세 실패 유형이 다 고쳐지는 것도 아님(truncation·스키마 위반은 포맷 무관) — 그래서 이번 스토리는 두 가지를 함께 적용: ① 자유 텍스트 필드(나레이션, `image_prompt` 등)에서 따옴표/개행 이스케이프 문제 자체를 구조적으로 없애는 YAML(block literal `|`) 출력 전환, ② 세 실패 유형 전부에 걸쳐 효과가 있는 **스테이지 단위 bounded 1회 재시도**(파싱/스키마 검증 실패 시 에러를 프롬프트에 넣어 해당 스테이지만 1번 더 호출) — 이미 5-23/5-11의 bounded-retry 선례와 동일한 패턴. `deepseek_max_tokens` 기본값 상향은 별도 사안으로 이번 스토리 범위 밖(재발 시 별도 스토리).
+
+부수 발견: `scripts/migrate_prompts.py`가 소스로 기대하는 `prompts/scenario/format_guide.md`가 이 repo에 실존하지 않음(Langfuse에만 존재) — PROMPT_POLICY.md 룰 1("repo가 source of truth") 기존 위반, 이번 프롬프트 일괄 수정 전 선행 복구 필요.
+
+**AC1**: `prompts/scenario/format_guide.md`를 Langfuse `production` 라벨의 현재 내용으로 복구해 repo에 커밋 — 이후 모든 프롬프트 편집의 전제조건(PROMPT_POLICY 룰 1 준수 회복).
+**AC2**: `prompts/scenario/{research,structure,writing,cast_decision,visual_breakdown,review,critic_agent,tts_normalize}.md` + `format_guide.md`의 "Output ONLY a JSON object" 계열 지시를 YAML 출력 지시로 교체, 나레이션/`image_prompt`/`core_identity`/`frozen_descriptor`/`entity_sheet`/`story_logline`/`hooks`/`feedback` 등 자유 텍스트 필드는 block literal(`|`) 예시로 명시. 지시 내용(스키마 자체)은 불변 — 직렬화 방식만 교체.
+**AC3**: `scenario.py`의 `_call_deepseek`에서 `response_format: {"type": "json_object"}` 제거(YAML 자유 생성과 양립 불가) — 나머지 호출 시그니처/반환 shape 불변.
+**AC4**: `scenario_chain.py`의 모든 `json.loads(raw)` 호출(8곳)을 공용 YAML 파싱 헬퍼로 교체 — 모델이 지시를 어기고 \`\`\`yaml 코드펜스로 감싸 반환해도 방어적으로 스트립 후 파싱.
+**AC5**: `_call_stage`를 감싸는 신규 `_call_stage_with_retry` 도입 — 파싱(`yaml.YAMLError`) 또는 기존 스키마 검증(`ValueError`) 실패 시, 직전 에러 메시지를 `{{parse_error}}` 변수로 채운 동일 프롬프트로 해당 스테이지만 정확히 1회 재호출. 8개 템플릿 전부에 `{{parse_error}}` 플레이스홀더 추가(평소엔 빈 문자열 — 기존 `glossary_section` 패턴과 동일). 재시도도 실패하면 예외는 그대로 전파(기존 `scenario_node`의 `PipelineState.error` 서페이싱 동작 불변).
+**AC6**: 변경된 8개 템플릿은 `docs/PROMPT_POLICY.md` 기존 절차(candidate 라벨 시딩 → `scripts/eval_prompts.py` 골든셋 게이트 통과) 없이 production 승격 불가 — 이번 스토리가 정책/게이트 자체를 바꾸지 않음.
+**AC7**: `tests/fixtures/cassettes/deepseek_*.json`의 `choices[0].message.content`를 YAML 텍스트로 갱신 + bounded 재시도(1회차 실패→2회차 성공, 양쪽 실패→에러 전파, 코드펜스 방어 스트립) 회귀 테스트 추가.
+
+관련: [Story 6.3](#story-63-deepseek-프롬프트-캐시-히트-최적화--토큰비용-관측성)이 **동일한 8개 프롬프트 파일**을 재배치 중(uncommitted, ready-for-dev) — 두 스토리를 병렬로 건드리면 diff 충돌 확실, 순차 진행 권장(먼저 착수한 쪽의 결과 위에 나머지가 리베이스).
+
+### Story 6.5: 재시도 신 단위 부분 수정
+
+현재 review/critic이 재시도를 요구하면 writing + 모든 신의 cast/visual + review/critic을 전부 반복한다. review issues와 critic scene_notes의 유효한 신 번호를 합져 해당 신만 한 번의 배치 writing repair로 고친 뒤 cast/visual을 재생성하고, 나머지 신은 그대로 재사용한다. 재시도 추가 호출을 `3+2N`에서 `3+2k`(k=문제 신 수)로 줄이며, 유효한 신을 식별할 수 없을 때만 기존 전체 재작성을 bounded fallback으로 유지한다. 상세 AC와 merge/trace 가드레일은 스토리 파일 참조.
+
+### Story 6.6: 계층형 프롬프트 평가 게이트
+
+개발 내부 루프와 production 승격 게이트를 분리한다. `smoke`는 고정 canary SCP-049 1개로 빠른 건강성 피드백을 제공하지만 승격 권한이 없고, `promotion`만 기존 3개 candidate-vs-production zero-regression 기준을 유지한다. 즉 3개 검증을 매 편집마다 돌리지 않고 production 직전 1회로 빈도를 줄이며, 단일 smoke PASS가 production 승격으로 오용되지 않게 CLI/아티팩트/정책에 명시한다.
+
 ## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
 
 **Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.
