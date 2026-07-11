@@ -68,6 +68,14 @@ What this story does instead is the safe, industry-standard lever: DeepSeek's **
 
 - Jay approved using one of three golden items, so SCP-096 alone was rerun after reseeding candidate. The default-8192 attempt truncated candidate `visual_breakdown`; the 16000-token attempt timed out symmetrically for both candidate and production after 600 seconds. Both comparisons were inconclusive and correctly returned FAIL. No production label was moved and no further LLM retry was made.
 
+#### Full 3-item promotion re-attempt after Story 6.6 (2026-07-11)
+
+- Story 6.6 raised the full-scenario eval timeout 600s→1200s specifically because this story's and 6.4's promotion attempts timed out symmetrically. Re-ran `--profile promotion` twice live to check whether that unblocks promotion.
+- **Timeout confirmed fixed**: neither rerun hit a timeout on any of the 6 full scenario chains (3 items × 2 labels).
+- **Run 1** failed for a cause outside this story: `production` baseline crashed on SCP-096/SCP-173 because `scenario/writing_scene_repair` (Story 6.5) had never been promoted to `production` — fixed by adding the `production` label to its existing candidate version (see [6-5](6-5-scenario-scoped-repair-retry.md)'s Change Log). SCP-049 also hit a one-off judge-response parse failure on `candidate` (did not recur in run 2 — looks like eval-harness/judge noise, not a candidate defect).
+- **Run 2** (after the label fix): SCP-096 PASS (all axes ≥ production). SCP-049 FAIL — `narrative_coherence` regressed -0.33 despite a net-positive total (+0.67); the gate's zero-tolerance any-negative-axis rule fails it regardless of total. SCP-173 FAIL — a `yaml.YAMLError` (`mapping values are not allowed here`, a plain-scalar value containing an unescaped colon) survived the bounded retry and propagated. SCP-173 has been the noisy/borderline item across every prior 6-3/6-4/6-6 gate attempt (different axis flips each time) — this looks like the same stochastic-noise pattern rather than a new deterministic defect, but it was not re-run a third time to confirm (cost).
+- **Verdict: still FAIL.** Jay's direction: stop here rather than spend a third live run chasing SCP-173 noise. `production` label NOT moved for the 6-3/6-4 prompt set (unlike `writing_scene_repair`, which was a distinct, already-decided fix). Status remains in-progress.
+
 ## Dev Notes
 
 ### Source Context

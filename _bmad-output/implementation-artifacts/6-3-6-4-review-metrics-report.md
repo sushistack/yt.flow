@@ -68,3 +68,20 @@ The locally changed `scenario/review` prompt was reseeded under `candidate`, the
 | `max_tokens=16000` | Timeout after 600s | Timeout after 600s | Inconclusive / FAIL |
 
 Neither attempt demonstrates a candidate regression: the first hit the already-documented output limit, and the second failed symmetrically on candidate and baseline. The gate correctly blocks promotion because a broken baseline cannot justify moving the production label. No further live retries were made.
+
+### 2026-07-11 full 3-item promotion re-attempt (post-6.6)
+
+Story 6.6 raised the eval item timeout 600s→1200s specifically because the timeout above blocked this gate. Re-ran `scripts/eval_prompts.py --profile promotion` live, twice.
+
+- **Timeout: confirmed fixed.** No timeout on either rerun, across 6 full scenario chains each.
+- **Run 1**: `production` baseline crashed on SCP-096 and SCP-173 — `scenario/writing_scene_repair` (Story 6.5) had a `candidate` label only, never `production`, so any run needing the scene-repair path 404'd. This is a live production gap in an already-`done` story, not a 6-3/6-4 defect. Fixed: added `production` to the existing candidate version's labels via the Langfuse SDK (`update_prompt`, no content change, no new version).
+- **Run 2** (after the fix):
+
+  | Item | Verdict | Detail |
+  |---|---|---|
+  | SCP-096 | PASS | atmosphere +0.33, narrative_coherence +0.33, article_fidelity +0.00, total +0.67 |
+  | SCP-049 | FAIL | narrative_coherence **-0.33** (single-axis regression; total +0.67 but zero-tolerance policy fails on any negative axis) |
+  | SCP-173 | FAIL | `yaml.YAMLError: mapping values are not allowed here` — survived the bounded retry, propagated as a run failure |
+
+- **Verdict: FAIL.** SCP-173 has flipped between different failing axes/errors across every 6-3/6-4/6-6 gate attempt to date — consistent with LLM-judge/generation stochastic noise on that specific golden item rather than a deterministic code defect, but this was not re-run a third time to confirm (live-API cost). SCP-049's axis regression is new to this run.
+- Jay's direction: stop here rather than spend a third live run. `production` label was **not** moved for the 6-3/6-4 prompt set. Both stories remain `in-progress`.

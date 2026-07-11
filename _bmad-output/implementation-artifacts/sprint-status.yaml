@@ -128,9 +128,9 @@ development_status:
   epic-6: in-progress
   6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: done  # depends on 6-1
-  6-3-prompt-cache-hit-optimization: in-progress  # Review fixes complete; full 3-item gate and production promotion remain pending
-  6-4-scenario-yaml-output-bounded-retry: in-progress  # Review fixes complete; exact live retry rate and full gate/promotion remain pending
-  6-5-scenario-scoped-repair-retry: done  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded. 코드리뷰 완료(5건 패치: scene_num-position mismatch guard, _format_scene_feedback None-fallback, AC9 테스트 3건 추가), 3건 보류. 1232 passed/1 skipped, ruff clean
+  6-3-prompt-cache-hit-optimization: in-progress  # 2026-07-11 재시도(6.6 타임아웃 픽스 적용): 타임아웃은 해소 확인, 그러나 3-item promotion 게이트 여전히 FAIL(SCP-049 단일축 회귀, SCP-173 YAML 파싱 크래시 — 노이즈 의심이나 미확정). production 미승격.
+  6-4-scenario-yaml-output-bounded-retry: in-progress  # 2026-07-11 재시도: 동일 게이트 런, 동일 사유로 FAIL. production 미승격.
+  6-5-scenario-scoped-repair-retry: done  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded. 코드리뷰 완료(5건 패치: scene_num-position mismatch guard, _format_scene_feedback None-fallback, AC9 테스트 3건 추가), 3건 보류. 1232 passed/1 skipped, ruff clean. 2026-07-11 post-hoc: writing_scene_repair가 production 라벨 누락으로 실제 production 런에서도 404 나는 갭 발견+수정(라벨만 추가, 컨텐츠 변경 없음)
   6-6-tiered-prompt-evaluation-gates: done  # 1-item smoke for iteration; 3-item comparison remains promotion authority. 코드리뷰 완료(2건 패치: max-tokens preflight 임계값 버그, PROMOTION_GATE_AUTHORITY 상수+테스트), 3건 보류. 1232 passed/1 skipped, ruff clean
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────

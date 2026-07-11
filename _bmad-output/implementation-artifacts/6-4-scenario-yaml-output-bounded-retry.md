@@ -72,6 +72,14 @@ Given (1) is already understood/out of scope and (3) is orthogonal to serializat
 
 - SCP-096-only gate: default 8192 tokens hit the known `finish_reason=length` class in candidate `visual_breakdown`; a single controlled rerun at 16000 tokens timed out after 600 seconds on both candidate and production. This supplies no regression signal and no promotion authority. Further live retries were stopped.
 
+#### Full 3-item promotion re-attempt after Story 6.6 (2026-07-11)
+
+- Same rerun as [6-3](6-3-prompt-cache-hit-optimization.md#full-3-item-promotion-re-attempt-after-story-66-2026-07-11) — the two stories share the same candidate-seeded templates and the same gate run. Full detail there; summary for this story's own YAML/retry scope:
+- Timeout (the reason both prior gate attempts failed) is confirmed fixed by 6.6's 1200s default — neither of the two reruns timed out.
+- Run 1's failures were caused by 6.5's `scenario/writing_scene_repair` prompt missing a `production` label, not by this story's YAML/retry contract — fixed (label added, no content change).
+- Run 2: SCP-096 PASS. SCP-049 FAIL on a single-axis regression (net total positive, but the gate has zero tolerance for any negative axis). SCP-173 FAIL with a live `yaml.YAMLError` (`mapping values are not allowed here`) that survived this story's bounded retry and propagated to the top-level error — a real instance of the "second failure propagates" case this story's design explicitly allows for, on the golden-set item (SCP-173) that has been noisy/borderline across every prior gate run of 6-3/6-4/6-6. Not confirmed as a new deterministic defect (not re-run a third time — cost), but also not ruled out; the raw failing output wasn't preserved by the eval script for this failure shape, so the exact offending field could not be isolated locally.
+- **Verdict: still FAIL.** Golden gate and production promotion remain incomplete for the same reason as before this session (SCP-173 noise) plus a newly surfaced SCP-049 axis regression — Task 8 stays unchecked, status remains in-progress.
+
 ## Dev Notes
 
 ### Source Context
