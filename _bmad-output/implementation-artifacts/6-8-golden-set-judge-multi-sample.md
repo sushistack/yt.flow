@@ -15,7 +15,7 @@ evidence: "2026-07-11 live rerun (run 1) of the 6-3/6-4 promotion gate: SCP-049'
 
 # Story 6.8: Judge-Scoring Bounded Retry — One Malformed Response Shouldn't Kill an Item
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -44,11 +44,11 @@ Separately, run 2 of the same gate rerun (after this specific SCP-049 crash didn
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add a bounded-retry wrapper around each `_post_chat` call inside `_judge_axis` — on `EvalJudgeError`, retry that one call exactly once; do not let one call's failure cancel the other two in-flight `asyncio.gather` members. (AC:1)
-- [ ] Task 2: Change `_judge_axis`'s aggregation so 1 permanently-failed-of-3 sample degrades to a 2-sample average instead of raising; 2+ permanently-failed samples still raise/fail as today. (AC:2)
-- [ ] Task 3: Thread through (or log) the per-axis successful-sample count for debug visibility, matching the project's existing artifact-persistence conventions (`scripts/eval_prompts.py`'s per-item artifacts). (AC:3)
-- [ ] Task 4: Unit tests for the three degradation scenarios in AC5, using the existing judge-call test-double seams. (AC:5)
-- [ ] Task 5: Update this story's Dev Notes / `6-3-6-4-review-metrics-report.md` with the out-of-scope generation-variance note (AC:6) — do not attempt to fix it here.
+- [x] Task 1: Add a bounded-retry wrapper around each `_post_chat` call inside `_judge_axis` — on `EvalJudgeError`, retry that one call exactly once; do not let one call's failure cancel the other two in-flight `asyncio.gather` members. (AC:1)
+- [x] Task 2: Change `_judge_axis`'s aggregation so 1 permanently-failed-of-3 sample degrades to a 2-sample average instead of raising; 2+ permanently-failed samples still raise/fail as today. (AC:2)
+- [x] Task 3: Thread through (or log) the per-axis successful-sample count for debug visibility, matching the project's existing artifact-persistence conventions (`scripts/eval_prompts.py`'s per-item artifacts). (AC:3)
+- [x] Task 4: Unit tests for the three degradation scenarios in AC5, using the existing judge-call test-double seams. (AC:5)
+- [x] Task 5: Update this story's Dev Notes / `6-3-6-4-review-metrics-report.md` with the out-of-scope generation-variance note (AC:6) — do not attempt to fix it here.
 
 ## Dev Notes
 
@@ -73,7 +73,7 @@ Raising `REPS_PER_AXIS` from 3 to, say, 5 was considered as an alternative and r
 ### Out Of Scope
 
 - Multi-sampling judge scoring beyond what `REPS_PER_AXIS=3` already provides — already implemented (Story 4.2), not this story's concern.
-- The `narrative_coherence`-type single-axis regression seen on an otherwise-successful item (run 2 of the 2026-07-11 rerun) — likely full-generation run-to-run variance, not a judge-scoring defect; fixing it would mean repeating full scenario generation per golden item, which conflicts with Story 6.6's cost-reduction goal. Not attempted here.
+- The `narrative_coherence`-type single-axis regression seen on an otherwise-successful item (run 2 of the 2026-07-11 rerun) — likely full-generation run-to-run variance, not a judge-scoring defect; fixing it would mean repeating full scenario generation per golden item, which conflicts with Story 6.6's cost-reduction goal. Not attempted here. Documented in `6-3-6-4-review-metrics-report.md`'s new "2026-07-11 promotion gate rerun (post-6.6, further re-attempt)" section alongside this story's fix (AC6).
 - Any change to `docs/PROMPT_POLICY.md`'s zero-tolerance pass criteria (any negative axis = FAIL) — that policy stays exactly as Story 6.6 deliberately set it; this story only makes the *measurement* underneath it more robust to a single transient parse failure, not more lenient in what it accepts as a real regression.
 - Story 6.7's YAML syntax-repair path — a different, unrelated failure class (scenario-stage output, not judge output).
 
@@ -92,20 +92,39 @@ Raising `REPS_PER_AXIS` from 3 to, say, 5 was considered as an alternative and r
 
 ### Agent Model Used
 
-_Not yet implemented._
+Claude Sonnet 5 (claude-sonnet-5)
 
 ### Debug Log References
 
-_Not yet implemented._
+- Initial implementation used unit-level fake `_post_chat` calls only.
+- Review regression: `uv run pytest -q` — 1243 passed, 1 skipped, 1 warning; focused review suite — 257 passed; Ruff clean.
+- Live smoke and promotion exercised the shared judge path without another malformed-response item failure. Promotion still failed for generation truncation and real axis regressions; see the 6.7 record and metrics report.
 
 ### Completion Notes List
 
-_Not yet implemented._
+- Added `_judge_sample()`, a small helper local to `eval_service.py` that wraps one `_post_chat` + `_parse_score` pair with exactly one retry on `EvalJudgeError` (not on timeout — `_post_chat` already retries those). Returns `None` when both attempts fail to parse, instead of raising, so the failure never escapes into `_judge_axis`'s `asyncio.gather` and can't cancel/fail the other two in-flight samples (AC1).
+- `_judge_axis` now gathers `_judge_sample` calls (never raises per-sample), filters out `None`s, and only raises `EvalJudgeError` when fewer than 2 of `REPS_PER_AXIS` samples parsed — otherwise it returns however many succeeded (2 or 3), and `_score_run`'s existing `statistics.fmean` call already averages over whatever length list it receives, so no changes were needed to `_score_run` itself (AC2).
+- Chose logging (`logger.warning`, degraded-sample-count message) over adding a new field to `AxisScores`/threading a count through `store_evaluation_results`/Langfuse persistence — AC3 explicitly marks this "not a hard requirement," and the project has no existing per-axis sample-count consumer to wire it into; logging is the cheaper option that doesn't lose the information (AC3).
+- AC4 required no code change: the fix lives entirely inside the shared `_judge_axis`/`_judge_sample` path in `eval_service.py`, which both `--profile smoke` and `--profile promotion` already call through `scripts/eval_prompts.py`'s `_score_evaluator`.
+- Added deterministic task-scoped concurrent tests covering AC5's three scenarios, direct-call `EvalJudgeError` retry, non-finite score handling, and end-to-end degraded averaging.
+- Updated `6-3-6-4-review-metrics-report.md` with a new dated section documenting the SCP-049 `unparseable judge response` incident that motivated this story, the root cause, and the fix — and explicitly restated that the separate `narrative_coherence` generation-variance finding from an earlier rerun is out of scope here (AC6).
+- Full regression suite (`pytest -q`, whole repo) and `ruff check` both pass; see File List for everything touched.
 
 ### File List
 
-_Not yet implemented._
+- `src/yt_flow/services/eval_service.py` — added `_judge_sample()`; rewrote `_judge_axis()` for per-sample bounded retry, isolated-failure aggregation, and degraded-sample-count logging.
+- `tests/services/test_eval_service.py` — added `_RawQueue` fake and 3 tests for the AC5 degradation scenarios.
+- `_bmad-output/implementation-artifacts/6-3-6-4-review-metrics-report.md` — added the incident write-up + explicit out-of-scope note (AC6).
+- `_bmad-output/implementation-artifacts/6-8-golden-set-judge-multi-sample.md` — this story file (tasks, Dev Notes cross-reference, Dev Agent Record, Change Log, Status).
 
 ## Change Log
 
+### Review Findings
+
+- [x] [Review][Patch] Convert non-finite judge scores into retryable `EvalJudgeError` results [`src/yt_flow/services/eval_service.py`] — fixed by handling `OverflowError` in `_parse_score`.
+- [x] [Review][Patch] Isolate `EvalJudgeError` raised directly by an individual judge call [`src/yt_flow/services/eval_service.py`] — fixed by moving `_post_chat` inside the bounded retry guard.
+- [x] [Review][Patch] Exercise actual concurrent sample isolation and end-to-end degraded averaging [`tests/services/test_eval_service.py`] — fixed with task-scoped response scripts and `_score_run` coverage.
+
 - 2026-07-11: Story created from a live finding during the 6-3/6-4 promotion gate re-attempt (SCP-049 judge-response parse crash). Initial "add judge multi-sampling" premise was checked against `eval_service.py` and found already implemented (`REPS_PER_AXIS=3`); rescoped to bounded retry + graceful degradation on a single failed sample. Status: backlog.
+- 2026-07-11: Implemented bounded retry-once + isolated-failure degradation in `_judge_axis` (`eval_service.py`); added `_judge_sample()` helper. 3 new unit tests for the AC5 degradation scenarios. Updated `6-3-6-4-review-metrics-report.md` with the incident + out-of-scope generation-variance note (AC6). Full suite (1238 passed, 1 skipped) + ruff clean. Status: review.
+- 2026-07-11: Code review completed; 3 patches applied, concurrent isolation strengthened, full regression green, live shared-path gate exercised. Status: done.

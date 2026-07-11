@@ -16,7 +16,7 @@ evidence: "2026-07-11 live rerun of the 6-3/6-4 promotion gate (post-6.6 timeout
 
 # Story 6.7: YAML Syntax-Only Repair Path
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -59,13 +59,13 @@ This story does two things: (1) finish the block-literal conversion Story 6.4 st
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Convert `review.md`'s remaining plain-scalar free-text fields to block-literal (`|`) examples; update surrounding instruction prose if it references the old style. (AC:1)
-- [ ] Task 2: Convert `critic_agent.md`'s `scene_notes[].issue`/`suggestion` the same way. (AC:2)
-- [ ] Task 3: Extend `review_step`'s and `critic_step`'s `parse()` closures to apply `_normalize_freetext` to the AC1/AC2 fields. (AC:3)
-- [ ] Task 4: Add a new `scenario/yaml_syntax_repair` prompt template (small — broken text + error in, corrected YAML out) and seed it under `candidate` via `scripts/migrate_prompts.py`. (AC:5, 6)
-- [ ] Task 5: Split `_call_stage_with_retry`'s except clause — `yaml.YAMLError` calls the new syntax-repair path; `ValueError` keeps the existing full-regeneration retry. Both bounded to one attempt; a syntax-repair failure does not fall back to full regeneration (AC7). (AC:4, 7)
-- [ ] Task 6: Unit tests for the routing split, the syntax-repair path's success/failure, and the AC3 normalization. (AC:8)
-- [ ] Task 7: Run `--profile smoke`, then `--profile promotion` once fixes land; record the result in this story's Dev Agent Record. Do not promote to `production` until it passes — this story does not change the gate's pass criteria (that is Story 6.8's scope, if pursued).
+- [x] Task 1: Convert `review.md`'s remaining plain-scalar free-text fields to block-literal (`|`) examples; update surrounding instruction prose if it references the old style. (AC:1)
+- [x] Task 2: Convert `critic_agent.md`'s `scene_notes[].issue`/`suggestion` the same way. (AC:2)
+- [x] Task 3: Extend `review_step`'s and `critic_step`'s `parse()` closures to apply `_normalize_freetext` to the AC1/AC2 fields. (AC:3)
+- [x] Task 4: Add a new `scenario/yaml_syntax_repair` prompt template (small — broken text + error in, corrected YAML out) and seed it under `candidate` via `scripts/migrate_prompts.py`. (AC:5, 6)
+- [x] Task 5: Split `_call_stage_with_retry`'s except clause — `yaml.YAMLError` calls the new syntax-repair path; `ValueError` keeps the existing full-regeneration retry. Both bounded to one attempt; a syntax-repair failure does not fall back to full regeneration (AC7). (AC:4, 7)
+- [x] Task 6: Unit tests for the routing split, the syntax-repair path's success/failure, and the AC3 normalization. (AC:8)
+- [x] Task 7: Run `--profile smoke`, then `--profile promotion` once fixes land; record the result in this story's Dev Agent Record. Do not promote to `production` until it passes — this story does not change the gate's pass criteria (that is Story 6.8's scope, if pursued).
 
 ## Dev Notes
 
@@ -113,20 +113,44 @@ A simpler alternative — just bump `_call_stage_with_retry`'s bound from one re
 
 ### Agent Model Used
 
-_Not yet implemented._
+GPT-5 Codex
 
 ### Debug Log References
 
-_Not yet implemented._
+- RED: targeted routing/normalization tests initially failed 3 cases as expected.
+- GREEN: `uv run pytest tests/pipeline/nodes/test_scenario_chain.py tests/test_prompt_migration.py -q` — 210 passed.
+- Regression: `uv run pytest -q` — 1235 passed, 1 skipped, 1 warning.
+- Quality: `uv run ruff check src/yt_flow/pipeline/nodes/scenario_chain.py tests/pipeline/nodes/test_scenario_chain.py scripts/migrate_prompts.py` — passed.
+- Candidate seed: `scenario/review`, `scenario/critic_agent`, and `scenario/yaml_syntax_repair` created under `candidate`.
+- Smoke: failed at `scenario/review` due to the known default 8192-token truncation; artifact `tmp/eval-prompts/20260711-161020-1783753820327222459-candidate/candidate-SCP-049-full.json`.
+- Review regression: `uv run pytest -q` — 1243 passed, 1 skipped, 1 warning; focused review suite — 257 passed; Ruff clean.
+- Review smoke (`YTFLOW_DEEPSEEK_MAX_TOKENS=16000`): SCP-049 completed, atmosphere 4.33 / narrative_coherence 5.00 / article_fidelity 2.33, total 11.67. Health feedback only.
+- Review promotion: FAIL. SCP-049 candidate `scenario/writing_scene_repair` truncated even at 16000 tokens; SCP-173 regressed atmosphere -0.33 and narrative_coherence -0.33; SCP-096 regressed article_fidelity -0.33. Artifact: `tmp/eval-prompts/20260711-164208-1783755728393879121-candidate-production/`. `production` was not promoted.
 
 ### Completion Notes List
 
-_Not yet implemented._
+- Converted all specified review/critic free-text schema examples to YAML block literals and normalized their parsed string values without adding validation strictness.
+- Split bounded retry routing: `yaml.YAMLError` gets one syntax-only repair call with only broken YAML + parser error; `ValueError` retains one full-stage regeneration.
+- Added bounded success/failure, routing, usage, and nested normalization coverage; full regression suite is green.
+- Code review fixed the production-baseline dependency on the not-yet-promoted repair prompt by preserving the old full-stage retry until the repair prompt has a production label; the live promotion run exercised this fallback three times successfully.
+- Smoke and promotion were executed during review. The implementation review is complete, but the unrelated/generative gate failures still block moving the changed prompts to `production`.
 
 ### File List
 
-_Not yet implemented._
+- `_bmad-output/implementation-artifacts/6-7-yaml-syntax-only-repair-path.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `prompts/scenario/critic_agent.md`
+- `prompts/scenario/review.md`
+- `prompts/scenario/yaml_syntax_repair.md`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py`
+- `tests/pipeline/nodes/test_scenario_chain.py`
 
 ## Change Log
 
+### Review Findings
+
+- [x] [Review][Patch] Preserve the production baseline when the candidate-only repair prompt is not yet promoted [`src/yt_flow/pipeline/nodes/scenario_chain.py`] — fixed with an explicit prompt-fetch fallback to the prior full-stage retry; a missing candidate seed still fails loudly.
+
 - 2026-07-11: Story created from a live finding during the 6-3/6-4 promotion gate re-attempt (SCP-173 YAML crash surviving bounded retry). Status: backlog.
+- 2026-07-11: Implemented YAML syntax-only repair routing, block-literal prompt hardening, normalization, and tests. Moved to review with the authority promotion gate explicitly deferred to review by Jay.
+- 2026-07-11: Code review completed; 1 patch applied, full regression green, smoke completed, promotion gate FAIL recorded, production unchanged. Status: done.

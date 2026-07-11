@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-08  # Story 8.6 코드리뷰 완료 → done
+# last_updated: 2026-07-11  # Stories 6.7/6.8 통합 코드리뷰 완료 → done; promotion gate FAIL 기록, production 미승격
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-11  # Stories 6.5/6.6 code review complete, both done
+last_updated: 2026-07-11  # Stories 6.7/6.8 implemented, ready for review
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -132,8 +132,8 @@ development_status:
   6-4-scenario-yaml-output-bounded-retry: in-progress  # 2026-07-11 재시도: 동일 게이트 런, 동일 사유로 FAIL. production 미승격.
   6-5-scenario-scoped-repair-retry: done  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded. 코드리뷰 완료(5건 패치: scene_num-position mismatch guard, _format_scene_feedback None-fallback, AC9 테스트 3건 추가), 3건 보류. 1232 passed/1 skipped, ruff clean. 2026-07-11 post-hoc: writing_scene_repair가 production 라벨 누락으로 실제 production 런에서도 404 나는 갭 발견+수정(라벨만 추가, 컨텐츠 변경 없음)
   6-6-tiered-prompt-evaluation-gates: done  # 1-item smoke for iteration; 3-item comparison remains promotion authority. 코드리뷰 완료(2건 패치: max-tokens preflight 임계값 버그, PROMOTION_GATE_AUTHORITY 상수+테스트), 3건 보류. 1232 passed/1 skipped, ruff clean
-  6-7-yaml-syntax-only-repair-path: ready-for-dev  # 2026-07-11 6-3/6-4 재시도에서 발견: review.md/critic_agent.md 자유 텍스트 필드 block-literal 누락 + yaml.YAMLError/ValueError 미구분 재시도 라우팅
-  6-8-golden-set-judge-multi-sample: ready-for-dev  # 2026-07-11 6-3/6-4 재시도에서 발견: judge 채점(REPS_PER_AXIS=3, 이미 구현됨) 3개 중 1개 파싱실패가 항목 전체를 죽임 — bounded retry+2/3 평균 폴백 추가. narrative_coherence류 생성 편차는 범위 밖(문서화)
+  6-7-yaml-syntax-only-repair-path: done  # 통합 코드리뷰 1건 패치; 1243 passed/1 skipped, ruff clean; smoke 완료, promotion FAIL(writing_scene_repair 16k truncation + 축 회귀), production 미승격
+  6-8-golden-set-judge-multi-sample: done  # 통합 코드리뷰 3건 패치; direct EvalJudgeError/비유한 점수/실동시성+평균 검증 강화; live gate에서 malformed judge item failure 재발 없음
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

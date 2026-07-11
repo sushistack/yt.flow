@@ -84,4 +84,19 @@ Story 6.6 raised the eval item timeout 600s→1200s specifically because the tim
   | SCP-173 | FAIL | `yaml.YAMLError: mapping values are not allowed here` — survived the bounded retry, propagated as a run failure |
 
 - **Verdict: FAIL.** SCP-173 has flipped between different failing axes/errors across every 6-3/6-4/6-6 gate attempt to date — consistent with LLM-judge/generation stochastic noise on that specific golden item rather than a deterministic code defect, but this was not re-run a third time to confirm (live-API cost). SCP-049's axis regression is new to this run.
+
+### 2026-07-11 promotion gate rerun (post-6.6, further re-attempt)
+
+A further live rerun of `--profile promotion` failed outright on SCP-049 with `EvalJudgeError: unparseable judge response` — one of the three concurrent `_judge_axis` samples for an axis returned malformed JSON (an unescaped control character inside a string value, the judge-output analogue of Story 6.4's scenario-output JSON-escaping problem). Traced to `eval_service.py`: `REPS_PER_AXIS=3` already averages judge noise per axis (Story 4.2/OQ-1), but a bare `asyncio.gather` propagated any single sample's parse failure and discarded the other two already-successful samples, killing the axis and the whole item. Fixed by Story 6.8 (bounded retry-once per sample, degrade to a 2-of-3 average when one sample permanently fails to parse; still fail the axis when 2+ of 3 fail, unchanged from before).
+
+Out of scope for 6.8: the earlier "Run 2" `narrative_coherence` **-0.33** delta on SCP-049 (above) is a difference between two already-3x-averaged scores from two separate scenario-generation runs — more likely full-generation run-to-run variance (DeepSeek's narration text differs slightly on every live run) than a judge-scoring defect. Confirming/fixing that would require repeating full scenario generation multiple times per golden item, which runs directly against Story 6.6's cost-reduction goal. Not attempted here; see Story 6.8's Dev Notes for the same reasoning.
 - Jay's direction: stop here rather than spend a third live run. `production` label was **not** moved for the 6-3/6-4 prompt set. Both stories remain `in-progress`.
+
+### 2026-07-11 Story 6.7/6.8 review gate
+
+- Local review verification: **1243 passed, 1 skipped**; Ruff clean.
+- Smoke at `YTFLOW_DEEPSEEK_MAX_TOKENS=16000`: SCP-049 completed with atmosphere 4.33, narrative_coherence 5.00, article_fidelity 2.33, total 11.67.
+- Promotion artifact: `tmp/eval-prompts/20260711-164208-1783755728393879121-candidate-production/`.
+- Promotion verdict: **FAIL**. SCP-049 candidate failed because `scenario/writing_scene_repair` truncated at 16000 tokens; SCP-173 regressed atmosphere -0.33 and narrative_coherence -0.33; SCP-096 improved atmosphere +1.67 but regressed article_fidelity -0.33.
+- The review fallback for the not-yet-promoted `scenario/yaml_syntax_repair` prompt was exercised three times by production baselines and correctly retained the prior full-stage retry. No malformed judge response killed an item after the 6.8 fix.
+- `production` labels were not moved. The authority gate remains failed for generation truncation/content-score reasons, not for unresolved 6.7/6.8 review findings.
