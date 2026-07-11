@@ -54,6 +54,17 @@ The code now guarantees at most two calls per stage for parse/schema failures: o
 ## Validation and release status
 
 - Local focused verification: **269 passed**; Ruff clean.
-- No new LLM calls were made during this review, per the token-minimization request.
+- Initial review made no new LLM calls. A later user-approved single-item gate used SCP-096 only.
 - Existing live evidence has SCP-049 and SCP-096 passing isolated candidate checks. SCP-173 remained judge-noisy despite a positive latest total delta; the combined three-item gate was not rerun.
 - Candidate was not promoted to production. Promotion remains gated by the prompt policy's full golden-set requirement; this review does not claim that incomplete external gate passed.
+
+### 2026-07-11 single-item gate attempt
+
+The locally changed `scenario/review` prompt was reseeded under `candidate`, then SCP-096 alone was compared with production:
+
+| Attempt | Candidate | Production | Verdict |
+|---|---|---|---|
+| Default `max_tokens=8192` | `visual_breakdown` truncated (`finish_reason=length`) | Not usable for comparison | Inconclusive / FAIL |
+| `max_tokens=16000` | Timeout after 600s | Timeout after 600s | Inconclusive / FAIL |
+
+Neither attempt demonstrates a candidate regression: the first hit the already-documented output limit, and the second failed symmetrically on candidate and baseline. The gate correctly blocks promotion because a broken baseline cannot justify moving the production label. No further live retries were made.

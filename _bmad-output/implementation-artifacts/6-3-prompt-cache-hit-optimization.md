@@ -62,7 +62,11 @@ What this story does instead is the safe, industry-standard lever: DeepSeek's **
 - [x] [Review][Patch] Reject boolean and negative usage counters [`src/yt_flow/pipeline/nodes/scenario.py`]
 - [x] [Review][Patch] Preserve the fixed review prefix ahead of retry-varying generated inputs [`prompts/scenario/review.md`]
 - [x] [Review][Patch] Persist cache and YAML reliability evidence with explicit measurement limits [`6-3-6-4-review-metrics-report.md`]
-- [ ] [Review][Decision] Full three-item golden gate and production promotion remain incomplete — no new LLM validation was run per Jay's token-minimization direction; promotion remains blocked by prompt policy.
+- [ ] [Review][Decision] Golden gate and production promotion remain incomplete — the approved SCP-096-only follow-up was inconclusive; promotion remains blocked by prompt policy.
+
+#### Single-item follow-up (2026-07-11)
+
+- Jay approved using one of three golden items, so SCP-096 alone was rerun after reseeding candidate. The default-8192 attempt truncated candidate `visual_breakdown`; the 16000-token attempt timed out symmetrically for both candidate and production after 600 seconds. Both comparisons were inconclusive and correctly returned FAIL. No production label was moved and no further LLM retry was made.
 
 ## Dev Notes
 

@@ -65,8 +65,12 @@ Given (1) is already understood/out of scope and (3) is orthogonal to serializat
 - [x] [Review][Patch] Validate sentence coverage and boolean `overall_pass` before accepting YAML [`src/yt_flow/pipeline/nodes/scenario_chain.py`]
 - [x] [Review][Patch] Sanitize and cap model-derived validation feedback before retry [`src/yt_flow/pipeline/nodes/scenario_chain.py`]
 - [x] [Review][Patch] Add focused regression coverage for review fixes [`tests/pipeline/nodes/test_scenario_chain.py`]
-- [ ] [Review][Decision] Exact first-attempt YAML parse-error/retry rate is unavailable in historical evidence; no new live calls were made to manufacture a denominator.
-- [ ] [Review][Decision] Full three-item golden gate and production promotion remain incomplete under the token-minimization direction.
+- [ ] [Review][Decision] Exact first-attempt YAML parse-error/retry rate remains unavailable; the approved single-item follow-up produced no usable denominator.
+- [ ] [Review][Decision] Golden gate and production promotion remain incomplete because the SCP-096-only follow-up was inconclusive.
+
+#### Single-item follow-up (2026-07-11)
+
+- SCP-096-only gate: default 8192 tokens hit the known `finish_reason=length` class in candidate `visual_breakdown`; a single controlled rerun at 16000 tokens timed out after 600 seconds on both candidate and production. This supplies no regression signal and no promotion authority. Further live retries were stopped.
 
 ## Dev Notes
 
