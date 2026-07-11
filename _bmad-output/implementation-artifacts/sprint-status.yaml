@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-11  # Stories 6.3–6.4 review fixes complete; live gate/promotion remains pending
+last_updated: 2026-07-11  # Stories 6.5/6.6 code review complete, both done
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -130,8 +130,8 @@ development_status:
   6-2-golden-set-offline-eval: done  # depends on 6-1
   6-3-prompt-cache-hit-optimization: in-progress  # Review fixes complete; full 3-item gate and production promotion remain pending
   6-4-scenario-yaml-output-bounded-retry: in-progress  # Review fixes complete; exact live retry rate and full gate/promotion remain pending
-  6-5-scenario-scoped-repair-retry: ready-for-dev  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded
-  6-6-tiered-prompt-evaluation-gates: ready-for-dev  # 1-item smoke for iteration; 3-item comparison remains promotion authority
+  6-5-scenario-scoped-repair-retry: done  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded. 코드리뷰 완료(5건 패치: scene_num-position mismatch guard, _format_scene_feedback None-fallback, AC9 테스트 3건 추가), 3건 보류. 1232 passed/1 skipped, ruff clean
+  6-6-tiered-prompt-evaluation-gates: done  # 1-item smoke for iteration; 3-item comparison remains promotion authority. 코드리뷰 완료(2건 패치: max-tokens preflight 임계값 버그, PROMOTION_GATE_AUTHORITY 상수+테스트), 3건 보류. 1232 passed/1 skipped, ruff clean
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

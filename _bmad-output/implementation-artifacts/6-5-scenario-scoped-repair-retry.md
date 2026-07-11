@@ -8,11 +8,12 @@ depends_on:
   - 6-3-prompt-cache-hit-optimization
   - 6-4-scenario-yaml-output-bounded-retry
 evidence: "SCP-096 candidate/production eval on 2026-07-11 exceeded the 600s item timeout. Completed stage latency was 480.590s candidate and 572.352s production; both entered the scenario-level full retry. visual_breakdown alone took 98.903-132.942s per pass."
+baseline_commit: 66c8d2899d73b9945e5de4f7398b885eea78b01b
 ---
 
 # Story 6.5: Scene-Scoped Scenario Repair Retry
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -35,18 +36,29 @@ so that one review failure does not repeat writing and visual generation for eve
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Extract pure retry-scope helpers from review/critic output (AC: 1, 5)
-  - [ ] Return positional indexes and rejected identifiers/reasons without mutating model output.
-  - [ ] Keep `_format_feedback` for full fallback; add scene-scoped feedback formatting.
-- [ ] Task 2: Add `writing_scene_repair_step` and prompt (AC: 2, 8)
-  - [ ] Reuse `_call_stage_with_retry`, YAML parsing, usage sink, prompt label fallback, and freetext normalization.
-  - [ ] Validate exact requested-scene coverage before merging.
-- [ ] Task 3: Split `_write_and_review` into reusable initial-pass and scoped-repair seams (AC: 3-6)
-  - [ ] Do not add a LangGraph node, DB state, service, or dependency.
-  - [ ] Preserve `build_scenes` positional contracts and existing normal-path output.
-- [ ] Task 4: Extend trace metadata without adding spans (AC: 7)
-- [ ] Task 5: Add focused orchestration/parser/prompt tests (AC: 9)
-- [ ] Task 6: Seed candidate and perform one cost-bounded validation (AC: 8, 10)
+- [x] Task 1: Extract pure retry-scope helpers from review/critic output (AC: 1, 5)
+  - [x] Return positional indexes and rejected identifiers/reasons without mutating model output.
+  - [x] Keep `_format_feedback` for full fallback; add scene-scoped feedback formatting.
+- [x] Task 2: Add `writing_scene_repair_step` and prompt (AC: 2, 8)
+  - [x] Reuse `_call_stage_with_retry`, YAML parsing, usage sink, prompt label fallback, and freetext normalization.
+  - [x] Validate exact requested-scene coverage before merging.
+- [x] Task 3: Split `_write_and_review` into reusable initial-pass and scoped-repair seams (AC: 3-6)
+  - [x] Do not add a LangGraph node, DB state, service, or dependency.
+  - [x] Preserve `build_scenes` positional contracts and existing normal-path output.
+- [x] Task 4: Extend trace metadata without adding spans (AC: 7)
+- [x] Task 5: Add focused orchestration/parser/prompt tests (AC: 9)
+- [x] Task 6: Seed candidate and perform one cost-bounded validation (AC: 8, 10)
+
+### Review Findings
+
+- [x] [Review][Patch] `_retry_scope` trusts review/critic `scene_num` as a direct positional index without verifying it matches `writing["scenes"][idx]["scene_num"]`, contradicting the codebase's own "never trust LLM scene_num for lookups" rule enforced in `_breakdown_for` [src/yt_flow/pipeline/nodes/scenario.py:_retry_scope] — fixed: added a `scene_num-mismatch` rejection guard + regression test
+- [x] [Review][Patch] `_format_scene_feedback`'s chained `.get(a, .get(b, .get(c, default)))` fallback doesn't fall through when a key is present but explicitly `None`; `critic_step` doesn't schema-validate `scene_notes` entries so this is reachable [src/yt_flow/pipeline/nodes/scenario.py:_format_scene_feedback] — fixed: switched to `or`-chained fallback
+- [x] [Review][Patch] AC9 requires a "critic-only flags" test through the real `scenario_node` path; existing fixtures always have empty `scene_notes`, so no test exercises scoped repair triggered purely by critic feedback [tests/pipeline/nodes/test_scenario.py] — added `test_critic_only_flag_triggers_scene_scoped_repair`
+- [x] [Review][Patch] AC9 requires proof that a second quality failure after scoped repair stays bounded (no third pass); only the full-fallback branch's boundedness is tested [tests/pipeline/nodes/test_scenario.py] — added `test_second_review_failure_after_scene_repair_remains_bounded`
+- [x] [Review][Patch] AC9 requires trace/token aggregation coverage across both passes for the scene-scoped branch; only the full-fallback branch's trace fields are asserted via `trace_sink` [tests/pipeline/nodes/test_scenario.py] — added `test_scene_repair_trace_fields_and_usage_recorded`
+- [x] [Review][Defer] If `writing_scene_repair_step` exhausts its own bounded retry and raises even with valid scenes identified, `scenario_node`'s top-level catch surfaces the whole run as failed rather than falling back to full rewrite — matches the pre-existing pattern for any exhausted per-stage bounded retry, not a new regression — deferred, pre-existing
+- [x] [Review][Defer] `target_scene_count`/`target_scene_indexes` for the first pass and full-fallback are computed from `len(structure)` independent of the actual `writing_step` scene count, slightly inaccurate in the documented writing/structure-count-mismatch edge case; observability-only under AD-10 — deferred, pre-existing
+- [x] [Review][Defer] `_retry_scope` silently drops an entire malformed (non-list) `review["issues"]`/`critic["scene_notes"]` source without a trace entry; AC1's rejection-recording guarantee is written at the per-identifier level, not source-shape level — deferred, out of AC1's literal scope
 
 ## Dev Notes
 
@@ -98,10 +110,43 @@ so that one review failure does not repeat writing and visual generation for eve
 
 ### Agent Model Used
 
+GPT-5 Codex
+
+### Implementation Plan
+
+- Extract deterministic retry-scope and feedback helpers before changing orchestration.
+- Add a bounded YAML repair stage that validates exact ordered scene coverage.
+- Merge repaired writing and regenerated visuals by validated positional index, then rerun quality once.
+- Preserve the full-rewrite fallback and enrich existing stage metadata without new spans.
+- Prove call-count, preservation, parser, fallback, and bounded-retry contracts with local fakes.
+
 ### Debug Log References
+
+- Focused scenario suite: `219 passed in 0.56s`; Ruff: clean.
+- Full regression suite: `1191 passed, 1 skipped` in 255.41s.
+- Controlled SCP-173 fake (`N=8`, `k=1`): 0.91s wall time; scoped retry added 5 calls (repair + cast + visual + review + critic), `retry_scope=scene`; fake usage/cache values remain zero and all token/cache fields were present.
+- Candidate seed: `scenario/writing_scene_repair` created via `scripts/migrate_prompts.py`; production label not moved.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented validated review/critic scene-scope extraction with duplicate and invalid identifier evidence.
+- Added exact-coverage scene writing repair and positional writing/visual merge while preserving unflagged objects.
+- Kept one explicit full fallback when no valid scene is derivable and retained the two-pass quality bound.
+- Added pass/scope/target/rejection metadata alongside latency and existing token/cache totals on existing stages.
+- Added focused parser and orchestration coverage, including the `N=8,k=1` five-call proof and controlled validation.
 
 ### File List
+
+- `_bmad-output/implementation-artifacts/6-5-scenario-scoped-repair-retry.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `prompts/scenario/writing_scene_repair.md`
+- `src/yt_flow/pipeline/nodes/scenario.py`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py`
+- `tests/pipeline/nodes/test_scenario.py`
+- `tests/pipeline/nodes/test_scenario_chain.py`
+
+## Change Log
+
+- 2026-07-11: Implemented scene-scoped scenario repair retry, bounded full fallback, trace metadata, candidate prompt seeding, and regression coverage. Status moved to review.
+- 2026-07-11: Code review (bmad-code-review, joint with 6.6) complete — 5 findings fixed (scene_num-position mismatch guard in `_retry_scope`, `_format_scene_feedback` None-fallback bug, 3 missing AC9 tests: critic-only flags, second-failure-bounded scoped repair, scoped-repair trace/token coverage), 3 deferred (exhausted-repair-retry fallback gap, structure-vs-writing scene-count trace mismatch, malformed-source rejection recording), 12 dismissed as noise/false-positive/matches-existing-pattern. Full regression suite green (1232 passed, 1 skipped), ruff clean. Status → done.
