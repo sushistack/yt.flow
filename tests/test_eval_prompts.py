@@ -789,3 +789,391 @@ def test_main_rejects_baseline_without_label():
 def test_main_rejects_label_equal_to_baseline():
     with pytest.raises(SystemExit):
         ep.main(["--label", "production", "--baseline", "production"])
+
+
+# ── profile resolution: pure helper (AC1-3, AC6, Story 6.6) ────────────────
+
+
+def test_resolve_profile_none_is_pure_passthrough():
+    resolved = ep.resolve_profile(
+        None, label="candidate", baseline="production", scp_id="SCP-096", stage="writing", timeout=42.0
+    )
+    assert resolved.label == "candidate"
+    assert resolved.baseline == "production"
+    assert resolved.scp_id == "SCP-096"
+    assert resolved.stage == "writing"
+    assert resolved.timeout == 42.0
+    assert resolved.authority_note is None
+
+
+def test_resolve_profile_none_defaults_full_timeout():
+    resolved = ep.resolve_profile(None, label=None, baseline=None, scp_id=None, stage="full", timeout=None)
+    assert resolved.timeout == ep.DEFAULT_ITEM_TIMEOUT_SECONDS
+
+
+def test_resolve_profile_none_defaults_stage_timeout():
+    resolved = ep.resolve_profile(None, label=None, baseline=None, scp_id=None, stage="writing", timeout=None)
+    assert resolved.timeout == ep.DEFAULT_STAGE_TIMEOUT_SECONDS
+
+
+def test_resolve_profile_smoke_defaults_canary_and_label():
+    resolved = ep.resolve_profile(
+        "smoke", label=None, baseline=None, scp_id=None, stage="full", timeout=None
+    )
+    assert resolved.scp_id == ep.SMOKE_DEFAULT_SCP_ID
+    assert resolved.label == "candidate"
+    assert resolved.baseline is None
+    assert resolved.authority_note == ep.NOT_A_PROMOTION_GATE
+
+
+def test_resolve_profile_smoke_scp_id_override():
+    resolved = ep.resolve_profile(
+        "smoke", label=None, baseline=None, scp_id="SCP-173", stage="full", timeout=None
+    )
+    assert resolved.scp_id == "SCP-173"
+
+
+def test_resolve_profile_smoke_allows_baseline():
+    resolved = ep.resolve_profile(
+        "smoke", label=None, baseline="production", scp_id=None, stage="full", timeout=None
+    )
+    assert resolved.baseline == "production"
+    assert resolved.authority_note == ep.NOT_A_PROMOTION_GATE
+
+
+def test_resolve_profile_smoke_allows_stage_isolation():
+    resolved = ep.resolve_profile(
+        "smoke", label=None, baseline=None, scp_id=None, stage="writing", timeout=None
+    )
+    assert resolved.stage == "writing"
+    assert resolved.timeout == ep.DEFAULT_STAGE_TIMEOUT_SECONDS
+
+
+def test_resolve_profile_promotion_defaults_label_and_baseline():
+    resolved = ep.resolve_profile(
+        "promotion", label=None, baseline=None, scp_id=None, stage="full", timeout=None
+    )
+    assert resolved.label == "candidate"
+    assert resolved.baseline == "production"
+    assert resolved.scp_id is None
+    assert resolved.authority_note is None
+    assert resolved.timeout == ep.DEFAULT_ITEM_TIMEOUT_SECONDS
+
+
+def test_resolve_profile_promotion_rejects_scp_id():
+    with pytest.raises(ValueError):
+        ep.resolve_profile("promotion", label=None, baseline=None, scp_id="SCP-096", stage="full", timeout=None)
+
+
+def test_resolve_profile_promotion_rejects_stage_isolation():
+    with pytest.raises(ValueError):
+        ep.resolve_profile("promotion", label=None, baseline=None, scp_id=None, stage="writing", timeout=None)
+
+
+def test_resolve_profile_promotion_rejects_mismatched_label_baseline():
+    with pytest.raises(ValueError):
+        ep.resolve_profile(
+            "promotion", label="production", baseline="candidate", scp_id=None, stage="full", timeout=None
+        )
+
+
+# ── smoke profile CLI behavior (AC2, AC4, Story 6.6) ────────────────────────
+
+
+def test_main_smoke_profile_runs_only_default_canary(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    captured = []
+    _wire_scenario_capturing_state(monkeypatch, captured)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "smoke"]) == 0
+    assert {s["scp_id"] for s in captured} == {ep.SMOKE_DEFAULT_SCP_ID}
+    assert {s["prompt_variant"] for s in captured} == {"B"}  # candidate by default
+
+
+def test_main_smoke_profile_prints_not_a_promotion_gate_on_pass(monkeypatch, capsys):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "smoke"]) == 0
+    assert ep.NOT_A_PROMOTION_GATE in capsys.readouterr().out
+
+
+def test_main_smoke_profile_prints_not_a_promotion_gate_on_fail(monkeypatch, capsys):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [], error="boom")
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "smoke"]) == 1
+    assert ep.NOT_A_PROMOTION_GATE in capsys.readouterr().out
+
+
+def test_main_smoke_profile_persists_authority_metadata(monkeypatch, tmp_path):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "_new_run_dir", lambda *parts: tmp_path / "-".join(parts))
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    ep.main(["--profile", "smoke"])
+
+    meta = json.loads((tmp_path / "candidate" / "_profile.json").read_text(encoding="utf-8"))
+    assert meta == {"profile": "smoke", "authority": ep.NOT_A_PROMOTION_GATE}
+
+
+def test_main_smoke_profile_allows_stage_isolation(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _stub_stage_functions(monkeypatch)
+    monkeypatch.setattr(ep, "get_prompt_with_fallback", lambda *a, **k: FakePrompt())
+
+    assert ep.main(["--profile", "smoke", "--stage", "writing"]) == 0
+
+
+# ── promotion profile CLI behavior (AC3, AC5, AC6, Story 6.6) ───────────────
+
+
+def test_main_promotion_profile_rejects_scp_id():
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion", "--scp-id", "SCP-096"])
+
+
+def test_main_promotion_profile_rejects_stage_isolation():
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion", "--stage", "writing"])
+
+
+def test_main_promotion_profile_runs_all_three_items(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    captured = []
+    _wire_scenario_capturing_state(monkeypatch, captured)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "promotion"]) == 0
+    assert {s["scp_id"] for s in captured} == set(ep.GOLDEN_IDS)
+
+
+def test_main_promotion_profile_uses_1200s_default_timeout(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    captured = {}
+    real_evaluate_label = ep.evaluate_label
+
+    def spy_evaluate_label(*a, **k):
+        captured.update(k)
+        return real_evaluate_label(*a, **k)
+
+    monkeypatch.setattr(ep, "evaluate_label", spy_evaluate_label)
+
+    ep.main(["--profile", "promotion"])
+
+    assert captured["timeout"] == ep.DEFAULT_ITEM_TIMEOUT_SECONDS == 1200.0
+
+
+def test_main_promotion_profile_rejects_risky_default_max_tokens(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS})())
+
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion"])
+
+
+def test_main_promotion_profile_does_not_reject_raised_max_tokens(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "promotion"]) == 0
+
+
+def test_main_promotion_profile_rejects_intermediate_risky_max_tokens(monkeypatch):
+    # A value below 16000 still truncates visual_breakdown even if it isn't the
+    # exact 8192 default — the preflight must reject any value under the floor.
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 10000})())
+
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion"])
+
+
+def test_main_promotion_profile_persists_authority_metadata(monkeypatch, tmp_path):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "_new_run_dir", lambda *parts: tmp_path / "-".join(parts))
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    ep.main(["--profile", "promotion"])
+
+    meta = json.loads((tmp_path / "candidate-production" / "_profile.json").read_text(encoding="utf-8"))
+    assert meta == {"profile": "promotion", "authority": ep.PROMOTION_GATE_AUTHORITY}
+
+
+def test_main_smoke_profile_not_rejected_by_risky_default_max_tokens(monkeypatch):
+    """Only promotion hard-blocks on the risky default — smoke stays a fast, unblocked loop."""
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--profile", "smoke"]) == 0
+
+
+# ── no-profile backward compatibility (AC1, Story 6.6) ──────────────────────
+
+
+def test_main_without_profile_still_accepts_scp_id(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    captured = []
+    _wire_scenario_capturing_state(monkeypatch, captured)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    assert ep.main(["--label", "production", "--scp-id", "SCP-049"]) == 0
+    assert {s["scp_id"] for s in captured} == {"SCP-049"}
+
+
+def test_main_without_profile_default_full_timeout_is_1200(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    captured = {}
+    real_evaluate_label = ep.evaluate_label
+
+    def spy_evaluate_label(*a, **k):
+        captured.update(k)
+        return real_evaluate_label(*a, **k)
+
+    monkeypatch.setattr(ep, "evaluate_label", spy_evaluate_label)
+
+    ep.main(["--label", "production"])
+
+    assert captured["timeout"] == 1200.0
+
+
+def test_main_without_profile_default_stage_timeout_is_600(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _stub_stage_functions(monkeypatch)
+
+    captured = {}
+    real_run_stage = ep.run_stage
+
+    def spy_run_stage(*a, **k):
+        captured.update(k)
+        return real_run_stage(*a, **k)
+
+    monkeypatch.setattr(ep, "run_stage", spy_run_stage)
+
+    ep.main(["--label", "production", "--stage", "writing"])
+
+    assert captured["timeout"] == 600.0
+
+
+def test_main_without_profile_no_authority_banner_printed(monkeypatch, capsys):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    ep.main(["--label", "production"])
+
+    assert "PROMOTION GATE" not in capsys.readouterr().out
+
+
+def test_main_without_profile_writes_no_profile_metadata(monkeypatch, tmp_path):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "_new_run_dir", lambda *parts: tmp_path / "-".join(parts))
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    ep.main(["--label", "production"])
+
+    assert not (tmp_path / "production" / "_profile.json").exists()
+
+
+# ── INCONCLUSIVE symmetric infrastructure failure (AC8, Story 6.6) ──────────
+
+
+def test_compare_inconclusive_on_symmetric_timeout():
+    candidate = [ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s")]
+    baseline = [ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s")]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "INCONCLUSIVE"
+    assert rows[0]["status"] == "inconclusive infrastructure failure"
+
+
+def test_compare_stays_fail_when_only_candidate_times_out():
+    candidate = [ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s")]
+    baseline = [_ok("SCP-096", 4, 4, 4)]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "FAIL"
+    assert rows[0]["status"] == "item failure"
+
+
+def test_compare_stays_fail_when_timeout_and_non_timeout_error_mixed():
+    candidate = [ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s")]
+    baseline = [ep.ItemResult("SCP-096", failed=True, error="scoring failed: boom")]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "FAIL"
+    assert rows[0]["status"] == "item failure"
+
+
+def test_compare_fail_from_other_item_overrides_inconclusive():
+    candidate = [
+        ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s"),
+        _ok("SCP-173", 3, 4, 4),  # regressed vs baseline
+    ]
+    baseline = [
+        ep.ItemResult("SCP-096", failed=True, error="timeout after 1200s"),
+        _ok("SCP-173", 4, 4, 4),
+    ]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "FAIL"
+
+
+def test_print_comparison_labels_inconclusive_row(capsys):
+    rows = [{
+        "scp_id": "SCP-096",
+        "status": "inconclusive infrastructure failure",
+        "candidate_error": "timeout after 1200s",
+        "baseline_error": "timeout after 1200s",
+        "candidate_artifact": None,
+        "baseline_artifact": None,
+    }]
+    ep.print_comparison("candidate", "production", rows, "INCONCLUSIVE")
+    out = capsys.readouterr().out
+    assert "SCP-096: INCONCLUSIVE (inconclusive infrastructure failure)" in out
+    assert "Verdict: INCONCLUSIVE" in out
+
+
+def test_main_promotion_profile_exits_nonzero_on_inconclusive(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+
+    async def timeout_scenario_node(state, *, trace_sink=None):
+        return {"scenes": [], "current_stage": "scenario", "error": "timeout after 1200s"}
+
+    monkeypatch.setattr(ep, "scenario_node", timeout_scenario_node)
+
+    assert ep.main(["--profile", "promotion"]) == 1

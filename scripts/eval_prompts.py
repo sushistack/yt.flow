@@ -46,16 +46,24 @@ GOLDEN_IDS = ("SCP-096", "SCP-173", "SCP-049")
 SCPS_PATH = Path(__file__).parent.parent / "data" / "scps.json"
 LABELS = ("production", "candidate")
 STAGES = ("full", "writing", "cast_decision", "visual_breakdown")
+PROFILES = ("smoke", "promotion")
+SMOKE_DEFAULT_SCP_ID = "SCP-049"  # constant canary for score history (Story 6.6) — do not rotate
+NOT_A_PROMOTION_GATE = "NOT A PROMOTION GATE"
+PROMOTION_GATE_AUTHORITY = "PROMOTION GATE"
 
-# 10 min: a full scenario item runs ~10 sequential/fanned-out DeepSeek calls
-# (research, structure, writing, cast_decision+visual_breakdown per scene,
-# review, critic, tts_normalize, possibly a full retry) each capped at 120s
-# by _call_deepseek's own httpx timeout (AC4).
-DEFAULT_ITEM_TIMEOUT_SECONDS = 600.0
+# A full scenario item was observed taking >20min against the previous 600s
+# default, timing out symmetrically on candidate and production alike (Story
+# 6.6 evidence). 1200s covers the observed runtime for full-scenario gates.
+DEFAULT_ITEM_TIMEOUT_SECONDS = 1200.0
+# Stage isolation only runs one chain segment — the smaller pre-6.6 default still fits (AC5).
+DEFAULT_STAGE_TIMEOUT_SECONDS = 600.0
 ARTIFACT_ROOT = Path(__file__).parent.parent / "tmp" / "eval-prompts"
 
 # Settings.deepseek_max_tokens' own default — truncation-prone for the scenario chain (AC6).
 _RISKY_DEFAULT_MAX_TOKENS = 8192
+# Minimum safe value for a full-scenario promotion gate (AC5) — not just "not the default",
+# since any value below this still truncates visual_breakdown.
+_MIN_MAX_TOKENS_FOR_PROMOTION = 16000
 
 
 def _new_run_dir(*parts: str) -> Path:
@@ -67,6 +75,58 @@ def positive_timeout(value: str) -> float:
     if timeout <= 0:
         raise argparse.ArgumentTypeError("timeout must be greater than 0")
     return timeout
+
+
+# ── tiered profile resolution (Story 6.6, AC1-3, AC6) ───────────────────────
+#
+# Pure CLI/config helper: no --profile is a no-op (backward-compatible
+# promotion-shaped behavior, AC1). "smoke" is a fast one-canary iteration gate
+# that never authorizes promotion (AC2, AC4). "promotion" is the only profile
+# whose PASS may move the production label — it always runs all three golden
+# items against candidate-vs-production and rejects any diagnostic narrowing
+# (AC3, AC6).
+
+
+@dataclass
+class ResolvedProfile:
+    label: str | None
+    baseline: str | None
+    scp_id: str | None
+    stage: str
+    timeout: float
+    authority_note: str | None  # non-None only for a profile that is NOT promotion authority
+
+
+def resolve_profile(
+    profile: str | None,
+    *,
+    label: str | None,
+    baseline: str | None,
+    scp_id: str | None,
+    stage: str,
+    timeout: float | None,
+) -> ResolvedProfile:
+    default_timeout = DEFAULT_STAGE_TIMEOUT_SECONDS if stage != "full" else DEFAULT_ITEM_TIMEOUT_SECONDS
+    resolved_timeout = timeout if timeout is not None else default_timeout
+
+    if profile is None:
+        return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=None)
+
+    if profile == "promotion":
+        if scp_id is not None:
+            raise ValueError("--profile promotion rejects --scp-id: all three golden items are mandatory (AC3)")
+        if stage != "full":
+            raise ValueError("--profile promotion rejects --stage isolation: it is diagnostic-only, never promotion authority (AC6)")
+        label = label or "candidate"
+        baseline = baseline or "production"
+        if label != "candidate" or baseline != "production":
+            raise ValueError("--profile promotion only supports --label candidate --baseline production (AC3)")
+        return ResolvedProfile(label, baseline, None, stage, resolved_timeout, authority_note=None)
+
+    # profile == "smoke"
+    label = label or "candidate"
+    scp_id = scp_id or SMOKE_DEFAULT_SCP_ID
+    return ResolvedProfile(label, baseline, scp_id, stage, resolved_timeout, authority_note=NOT_A_PROMOTION_GATE)
 
 
 def prompt_variant_for_label(label: str) -> str | None:
@@ -332,7 +392,7 @@ def run_stage(
     stage: str,
     *,
     scp_id: str | None = None,
-    timeout: float = DEFAULT_ITEM_TIMEOUT_SECONDS,
+    timeout: float = DEFAULT_STAGE_TIMEOUT_SECONDS,
     run_dir: Path | None = None,
 ) -> list[StageResult]:
     dataset = client.get_dataset(dataset_name)
@@ -363,7 +423,15 @@ def print_stage_report(label: str, stage: str, results: list[StageResult]) -> No
             print(f"    artifact: {r.artifact_path}")
 
 
-# ── baseline comparison (AC6) ────────────────────────────────────────────────
+# ── baseline comparison (AC6, AC8) ──────────────────────────────────────────
+
+_VERDICT_RANK = {"PASS": 0, "INCONCLUSIVE": 1, "FAIL": 2}
+
+
+def _is_infra_failure(error: str | None) -> bool:
+    """A timeout is the one failure class `_run_scenario` produces that reflects
+    infrastructure health rather than the prompt/model output (AC8)."""
+    return bool(error) and "timeout" in error.lower()
 
 
 def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[str, list[dict]]:
@@ -375,13 +443,26 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
     rows: list[dict] = []
     verdict = "PASS"
 
+    def _downgrade(new: str) -> None:
+        nonlocal verdict
+        if _VERDICT_RANK[new] > _VERDICT_RANK[verdict]:
+            verdict = new
+
     for cand in candidate:
         base = baseline_by_id.get(cand.scp_id)
         if cand.failed or base is None or base.failed:
-            verdict = "FAIL"
+            # Both sides hitting the same infra failure class (e.g. timeout) is not
+            # regression evidence — a broken baseline can't justify promoting the
+            # candidate, but it also isn't proof the candidate itself regressed (AC8).
+            symmetric_infra = (
+                cand.failed and base is not None and base.failed
+                and _is_infra_failure(cand.error) and _is_infra_failure(base.error)
+            )
+            status = "inconclusive infrastructure failure" if symmetric_infra else "item failure"
+            _downgrade("INCONCLUSIVE" if symmetric_infra else "FAIL")
             rows.append({
                 "scp_id": cand.scp_id,
-                "status": "item failure",
+                "status": status,
                 "candidate_error": cand.error if cand.failed else None,
                 "baseline_error": base.error if base and base.failed else ("missing baseline result" if base is None else None),
                 "candidate_artifact": cand.artifact_path if cand.failed else None,
@@ -393,7 +474,7 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
         total_delta = cand.total - base.total
         regressed = any(d < 0 for d in deltas.values()) or total_delta < 0
         if regressed:
-            verdict = "FAIL"
+            _downgrade("FAIL")
         rows.append({
             "scp_id": cand.scp_id,
             "status": "regressed" if regressed else "ok",
@@ -402,7 +483,7 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
         })
 
     for scp_id in sorted(set(baseline_by_id) - candidate_ids):
-        verdict = "FAIL"
+        _downgrade("FAIL")
         rows.append({"scp_id": scp_id, "status": "missing from candidate run"})
 
     return verdict, rows
@@ -411,8 +492,12 @@ def compare(candidate: list[ItemResult], baseline: list[ItemResult]) -> tuple[st
 def print_comparison(candidate_label: str, baseline_label: str, rows: list[dict], verdict: str) -> None:
     print(f"\n=== {candidate_label} vs {baseline_label} (golden-set) ===")
     for row in rows:
-        if row["status"] in ("item failure", "missing from candidate run", "no results — dataset empty or run produced nothing"):
-            print(f"  {row['scp_id']}: FAIL ({row['status']})")
+        if row["status"] in (
+            "item failure", "missing from candidate run",
+            "no results — dataset empty or run produced nothing", "inconclusive infrastructure failure",
+        ):
+            row_verdict = "INCONCLUSIVE" if row["status"] == "inconclusive infrastructure failure" else "FAIL"
+            print(f"  {row['scp_id']}: {row_verdict} ({row['status']})")
             if row.get("candidate_error"):
                 print(f"    {candidate_label}: {row['candidate_error']}")
             if row.get("candidate_artifact"):
@@ -441,20 +526,44 @@ def print_report(label: str, results: list[ItemResult]) -> None:
         print(f"    rules: {metrics}")
 
 
+def write_profile_metadata(run_dir: Path, profile: str, authority_note: str | None) -> Path:
+    """Persists which profile authorized this run and whether it may move the
+    production label — separate from per-item artifacts so their schema stays
+    unchanged (AC4)."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "_profile.json"
+    path.write_text(
+        json.dumps({"profile": profile, "authority": authority_note or PROMOTION_GATE_AUTHORITY}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Golden-set offline prompt regression eval (Story 6.2)")
+    ap = argparse.ArgumentParser(description="Golden-set offline prompt regression eval (Story 6.2/6.6)")
     ap.add_argument("--dataset", default=DATASET_NAME)
     ap.add_argument("--label", choices=LABELS)
     ap.add_argument("--baseline", choices=LABELS)
+    ap.add_argument(
+        "--profile", choices=PROFILES,
+        help=(
+            "smoke: one-canary fast iteration gate, never promotion authority. "
+            "promotion: mandatory three-item candidate-vs-production gate. "
+            "Omit for pre-6.6 backward-compatible behavior."
+        ),
+    )
     ap.add_argument("--seed", action="store_true", help="seed/update the golden dataset from data/scps.json")
     ap.add_argument("--max-concurrency", type=int, default=3)
     ap.add_argument("--scp-id", choices=GOLDEN_IDS, help="run only this golden SCP item")
     ap.add_argument(
-        "--timeout", type=positive_timeout, default=DEFAULT_ITEM_TIMEOUT_SECONDS,
-        help=f"per-item timeout in seconds (default: {DEFAULT_ITEM_TIMEOUT_SECONDS:.0f})",
+        "--timeout", type=positive_timeout, default=None,
+        help=(
+            f"per-item timeout in seconds (default: {DEFAULT_ITEM_TIMEOUT_SECONDS:.0f} full scenario, "
+            f"{DEFAULT_STAGE_TIMEOUT_SECONDS:.0f} stage isolation)"
+        ),
     )
     ap.add_argument(
         "--stage", choices=STAGES, default="full",
@@ -462,12 +571,28 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
+    try:
+        resolved = resolve_profile(
+            args.profile, label=args.label, baseline=args.baseline,
+            scp_id=args.scp_id, stage=args.stage, timeout=args.timeout,
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
+    args.label, args.baseline, args.scp_id, args.timeout = resolved.label, resolved.baseline, resolved.scp_id, resolved.timeout
+
     if args.baseline and not args.label:
         ap.error("--baseline requires --label")
     if args.label and args.baseline and args.label == args.baseline:
         ap.error("--label and --baseline must differ")
     if args.stage != "full" and args.baseline:
         ap.error("--stage isolation does not support --baseline comparison; run each label separately")
+
+    if args.profile == "promotion" and Settings().deepseek_max_tokens < _MIN_MAX_TOKENS_FOR_PROMOTION:
+        ap.error(
+            f"--profile promotion requires YTFLOW_DEEPSEEK_MAX_TOKENS >= {_MIN_MAX_TOKENS_FOR_PROMOTION} "
+            f"(currently {Settings().deepseek_max_tokens}) — anything below that truncates visual_breakdown "
+            "and can masquerade as a prompt regression (AC5)"
+        )
 
     client = build_client()
 
@@ -486,12 +611,19 @@ def main(argv=None) -> int:
         )
 
     run_dir = _new_run_dir(*([args.label, args.baseline] if args.baseline else [args.label]))
+    if args.profile:
+        write_profile_metadata(run_dir, args.profile, resolved.authority_note)
+
+    def _announce_authority() -> None:
+        if resolved.authority_note:
+            print(f"\n{resolved.authority_note} — health feedback only, does not authorize moving the production label.")
 
     if args.stage != "full":
         stage_results = run_stage(
             client, args.dataset, args.label, args.stage, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir
         )
         print_stage_report(args.label, args.stage, stage_results)
+        _announce_authority()
         return 1 if not stage_results or any(r.failed for r in stage_results) else 0
 
     candidate = evaluate_label(
@@ -501,6 +633,7 @@ def main(argv=None) -> int:
 
     if not args.baseline:
         print_report(args.label, candidate)
+        _announce_authority()
         return 1 if not candidate or any(r.failed for r in candidate) else 0
 
     baseline = evaluate_label(
@@ -509,6 +642,7 @@ def main(argv=None) -> int:
     )
     verdict, rows = compare(candidate, baseline)
     print_comparison(args.label, args.baseline, rows, verdict)
+    _announce_authority()
     return 0 if verdict == "PASS" else 1
 
 
