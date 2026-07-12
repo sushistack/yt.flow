@@ -32,7 +32,7 @@ Write the narration script for an SCP video about {{scp_id}}.
 
 ### 필수 몰입 기법 (전부 사용)
 1. **2인칭 (당신)**: 시나리오 전체에서 최소 3회. 시청자를 이야기 안에 집어넣으세요.
-   - ❌ "D계급 인원은 격리실에 입장했습니다."
+   - ❌ "이 인물이 격리실에 입장했습니다."
    - ✅ "당신이 그 문을 열었다고 생각해보세요. 안에서 뭔가 기다리고 있습니다."
 2. **감각 묘사**: 2~3씬마다 시각 외 감각을 하나 이상 사용 (소리, 냄새, 촉감, 온도).
    - "축축한 콘크리트 냄새가 코를 찌릅니다. 어둠 속에서 무언가 긁히는 소리가 들립니다."
@@ -55,9 +55,9 @@ Write the narration script for an SCP video about {{scp_id}}.
   1. 평서형 (-했습니다/-입니다/-습니다)
   2. 의문형 (-까요?/-을까요? — 위 "극적 질문" 기법과 동일)
   3. 명사형/단문 종결 (예: "겨우 0.1초.", "정적.") — 임팩트 비트에 사용
-  4. 도치·여운형 (예: "아무도 몰랐습니다, 그날 밤까지는.") — 드물게만, 남용 금지
+  4. 도치 구조 (어순을 바꿔 여운을 남기는 기법, 예: "아무도 몰랐습니다, 그날 밤까지는.") — 드물게만 사용. **주의**: 도치는 어순 변화이지 종결형 자체를 바꾸지 않습니다 (위 예시도 결국 "-았습니다"). 3연속 금지 규칙은 위 1~3의 종결형만 세고, 도치는 그중 하나로 계산하세요.
 - **비트별 리듬**: 클라이맥스 비트는 짧은 단문·명사형 종결 위주로. 여파(aftermath) 비트는 긴 문장도 허용.
-- **존댓말 기조 유지 (Register Guard)**: 종결어미는 다양화하되 항상 합니다/입니다체(존댓말) 기반을 유지하세요. 반말이나 전면적 구어체(예: "~거든", "~잖아")로의 전환은 금지 — 바꾸는 건 리듬이지 격식이 아닙니다.
+- **존댓말 기조 유지 (Register Guard)**: 종결어미는 다양화하되 항상 합니다/입니다체(존댓말) 기반을 유지하세요. 위 "말투" 항목의 구어체 혼합은 어휘·뉘앙스에 한정되며, 문장 종결을 반말이나 전면적 구어체(예: "~거든", "~잖아")로 바꾸는 것은 금지 — 바꾸는 건 리듬이지 격식이 아닙니다.
 
 ### 인물 지칭 규칙 (Designation Rules)
 - **주연이 아닌 인물은 역할로 지칭하세요**: "D계급 인원", "연구원", "경비원", "요원" 등. D-9341, Dr. ███ 같은 개별 일련번호로 반복 지칭하지 마세요 — TTS가 "디 구삼사일"처럼 어색하게 읽습니다.
@@ -111,7 +111,7 @@ entity_visible: true
 location: "underground containment chamber"
 characters_present:
   - "SCP-173"
-  - "D-9341"
+  - "D계급 인원"
 color_palette: "desaturated blues and grays, cold fluorescent white"
 atmosphere: "claustrophobic, sterile, oppressive silence"
 ```
@@ -120,7 +120,7 @@ atmosphere: "claustrophobic, sterile, oppressive silence"
 
 ### Scene Metadata Rules:
 - `location`: **REQUIRED** — Brief English description of where this scene takes place (e.g., "underground containment chamber", "Site-19 hallway B-7"). NEVER leave empty.
-- `characters_present`: **REQUIRED** — Array of character/entity names visible or referenced in this scene. Must include specific identifiers (e.g., "D-9341", not just "D-class"). NEVER leave as null or empty array.
+- `characters_present`: **REQUIRED** — Array of character/entity names visible or referenced in this scene, using the SAME reference the narration uses (role label per 인물 지칭 규칙 above, e.g. "D계급 인원" — NOT a serial designation like "D-9341"). If multiple non-protagonists of the same role appear in one scene, disambiguate with a suffix (e.g. "D계급 인원 A", "D계급 인원 B"). NEVER leave as null or empty array.
 - `color_palette`: **REQUIRED** — Dominant colors and visual tone for this scene's imagery (e.g., "cold gray, fluorescent white, blood-red accents"). NEVER leave empty.
 - `atmosphere`: **REQUIRED** — One-line mood/atmosphere description for image generation context (e.g., "claustrophobic dread, oppressive silence"). NEVER leave empty.
 
@@ -136,5 +136,6 @@ Output as a YAML object with fields: scp_id, title, scenes (a list of scene obje
 - [ ] `location` is filled with a specific English description (NOT empty string)
 - [ ] `color_palette` describes dominant colors for this scene (NOT empty string)
 - [ ] `atmosphere` describes the mood in one line (NOT empty string)
+- [ ] Re-read this scene's `narration` sentence by sentence: no same final-ending form (-했습니다/-입니다/-습니다/-니다/-까요? 등, 각각 다른 형태로 계산) repeats 3 times in a row. If it does, rewrite one of the 3 sentences to break the run before outputting.
 
 If ANY check fails, fix the offending field before outputting.
