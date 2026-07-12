@@ -1171,9 +1171,10 @@ class CharacterService:
         Character row for scp_id", which no longer applies since stock cards
         exist independently of the entity). Each ``card`` dict carries
         ``card_key``, ``pose``, ``angle``, ``path``, ``fallback`` (Interfaces)
-        plus ``position``/``depth``/``motion_style``/``motion_energy`` copied
-        straight from the cast member (Story 8.8 adds the latter two, same
-        default-on-missing convention as position/depth) —
+        plus ``position``/``depth``/``motion_style``/``motion_energy``/
+        ``movement_mode``/``movement_direction``/``movement_pace`` copied
+        straight from the cast member (Story 8.8 adds motion_*, 8.9 adds
+        movement_*, same default-on-missing convention as position/depth) —
         video_node needs them for stacking/scale/anchor/motion and re-deriving
         them after members are filtered out would just duplicate this method's
         skip logic.
@@ -1237,6 +1238,9 @@ class CharacterService:
                                 "depth": member.get("depth", "mid"),
                                 "motion_style": member.get("motion_style", "breath"),
                                 "motion_energy": member.get("motion_energy", "medium"),
+                                "movement_mode": member.get("movement_mode", "anchored"),
+                                "movement_direction": member.get("movement_direction", "none"),
+                                "movement_pace": member.get("movement_pace", "slow"),
                             })
                             continue
                         miss = (card_key, hint_pose)
@@ -1288,6 +1292,9 @@ class CharacterService:
                         "depth": member.get("depth", "mid"),
                         "motion_style": member.get("motion_style", "breath"),
                         "motion_energy": member.get("motion_energy", "medium"),
+                        "movement_mode": member.get("movement_mode", "anchored"),
+                        "movement_direction": member.get("movement_direction", "none"),
+                        "movement_pace": member.get("movement_pace", "slow"),
                     })
                 if cards:
                     result[shot_key] = cards

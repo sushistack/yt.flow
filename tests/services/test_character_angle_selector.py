@@ -77,6 +77,7 @@ def _scene(num, narration="narration text", shots=None):
 def _cast_member(
     card_key="SCP-096", *, position="center", depth="near", pose="standing",
     motion_style=None, motion_energy=None, pose_hint=None,
+    movement_mode=None, movement_direction=None, movement_pace=None,
 ):
     member = {"card_key": card_key, "position": position, "depth": depth, "pose": pose}
     if pose_hint is not None:
@@ -85,6 +86,12 @@ def _cast_member(
         member["motion_style"] = motion_style
     if motion_energy is not None:
         member["motion_energy"] = motion_energy
+    if movement_mode is not None:
+        member["movement_mode"] = movement_mode
+    if movement_direction is not None:
+        member["movement_direction"] = movement_direction
+    if movement_pace is not None:
+        member["movement_pace"] = movement_pace
     return member
 
 
@@ -325,6 +332,42 @@ class TestResolveCastCardsHappyPath:
         assert card["motion_energy"] == "high"
 
     @pytest.mark.asyncio
+    async def test_card_defaults_movement_fields_when_member_omits_them(self, service):
+        """Story 8.9: same default-on-missing convention as motion_style/motion_energy."""
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("STOCK-d-class")]),
+        ])]
+
+        result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["movement_mode"] == "anchored"
+        assert card["movement_direction"] == "none"
+        assert card["movement_pace"] == "slow"
+
+    @pytest.mark.asyncio
+    async def test_card_carries_explicit_movement_fields(self, service):
+        """Story 8.9: a parser-normalized movement_mode/direction/pace passes
+        through resolve_cast_cards to reach video_node's filtergraph — this
+        was previously dropped (movement fields weren't copied at all), so
+        every real run silently rendered as movement_mode="anchored"."""
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member(
+                "STOCK-d-class", movement_mode="enter",
+                movement_direction="left", movement_pace="medium",
+            )]),
+        ])]
+
+        result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["movement_mode"] == "enter"
+        assert card["movement_direction"] == "left"
+        assert card["movement_pace"] == "medium"
+
+    @pytest.mark.asyncio
     async def test_stock_member_uses_available_angle_when_front_missing(self, service):
         """A partial stock row should still resolve instead of being skipped just
         because the deterministic front preference is unavailable."""
@@ -560,6 +603,29 @@ class TestResolveCastCardsSpecialPose:
         assert card["angle"] == "front"
         assert card["path"] == "/tmp/hint_front.png"
         assert card["fallback"] is False
+
+    @pytest.mark.asyncio
+    async def test_pose_hint_hit_still_carries_movement_fields(self, service):
+        """Story 8.9: the pose_hint branch is a separate code path from the
+        base-pose branch and must copy movement_* the same way (both branches
+        previously dropped movement_* entirely)."""
+        _seed_character(service, "SCP-096")
+        hint = "kneeling over a corpse"
+        service.save_card("SCP-096", pose_hint_key(hint), "front", "/tmp/hint_front.png")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member(
+                "SCP-096", pose_hint=hint,
+                movement_mode="approach", movement_direction="in", movement_pace="fast",
+            )]),
+        ])]
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock):
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+
+        card = result["1:S001"][0]
+        assert card["movement_mode"] == "approach"
+        assert card["movement_direction"] == "in"
+        assert card["movement_pace"] == "fast"
 
     @pytest.mark.asyncio
     async def test_pose_hint_miss_falls_back_to_base_pose_with_warning(self, service, caplog):
