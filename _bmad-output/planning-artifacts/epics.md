@@ -1218,6 +1218,33 @@ Jay 시청 피드백(2026-07-09, iteration 1 run `d55a265b` #5/#6). 근본 원�
 
 Jay 시청 피드백(2026-07-09 #2/#3). iteration 1 실측: position 분포 center 65/right 10/left 8 — 코드는 3분할 배치를 지원하는데 LLM이 center로 도피; depth 분포 near 37/mid 44/far 2 — 사실상 전부 크게 뽑혀 "크기가 우연히 맞은 느낌". 코드 변경 없음, `prompts/scenario/cast_decision.md` 규칙 추가: ① rule-of-thirds 배분 원칙 + 연속 샷 center 반복 금지(관찰/대화/이동 구도는 좌우 슬롯), ② camera_angle↔depth 정합 규칙(wide↔far/mid, close-up↔near 등 표), ③ few-shot 예시를 분포 교정용으로 교체. 파생 개체(`<scp_id>-<n>`) 어휘는 이 스토리에서 건드리지 않음(049-2 카드 갭은 별도 결정 대기). 배경 구도 다양화(오프센터 앵글)는 visual_breakdown 프롬프트에 1줄 — center 편향의 절반은 중앙 소실점 배경이 원인. PROMPT_POLICY 준수: candidate 시딩→golden-set 게이트→승격. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+### Story 8.15: STOCK 캐릭터 얼굴 마스크 편향 수정
+
+2026-07-12 라이브 E2E 런(SCP-049, run `c6be1954`) 리뷰 중 Jay가 스크린샷으로 발견: `assets/characters/STOCK-d-class/epoch_1/front_candidate_1.png`, `STOCK-researcher/epoch_1/front_candidate_1.png` 둘 다 SCP-049 본인과 동일한 해골 마스크+빨간 눈 얼굴로 렌더링됨 — 일반인 얼굴이어야 할 D계급/연구원(STOCK-researcher 서술 자체가 "researcher **or doctor**"라 "의사"는 별도 롤 아님)이 개체와 구분이 안 감. `scripts/seed_stock_cast.py`의 `STOCK_DESCRIPTORS`엔 옷차림·체형만 있고 얼굴 언급이 전혀 없음 — 캐릭터 생성 LoRA/체크포인트가 SCP 마스크 쪽으로 편향돼 얼굴 미지정 시 그리로 붕괴하는 것으로 추정. STOCK-security도 같은 원인 가능성 있어 동일 검수 대상에 포함. 수정: `STOCK_DESCRIPTORS`에 명시적 얼굴 지침("ordinary human face, no mask, no glowing eyes, plain forgettable features") + negative prompt 보강, epoch_2로 3종 전원 재생성, Jay 승인 게이트. 서비스 분리 불필요(기존 `seed_stock_cast.py` 콘텐츠 수정). (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.16: 깊이 인지 배치 + IC-Light 재조명 — 카드 컴포지팅 고도화
+
+2026-07-12 라이브 E2E 런 스크린샷 리뷰(Jay): 카드가 배경 원근/바닥에 안 맞고 공중에 뜬 것처럼 보임(스케일·배치 결함) — 8.7 harmonization(Tier 1/2, 틴트·컨택트섀도)은 색/조명 불일치용이라 이 결함엔 대응 못 함(현재 런은 `composite_harmonization_tier=0` 기본값으로 돌아 Tier 1/2조차 미적용 상태였음도 확인됨). Epic 8 자체를 되돌려 전면 img2img 재생성으로 가자는 제안도 검토했으나, 실제 논문(arXiv 2512.16954 "Lights, Camera, Consistency: A Multistage Pipeline for Character-Stable AI Video Stories") 조사 결과 그 방식도 배치·스케일·오클루전 메커니즘이 전혀 없어(텍스트 설명 + I2I의 암묵적 공간 이해에만 의존) 동일 결함이 재발할 위험이 확인됨. 업계 실무 자료(2026 AI 애니메이션 프로덕션 리포트)도 "캐릭터·배경을 따로 생성해 레이어로 합성"이 동시 생성보다 안정적이라고 명시 — 카드 아키텍처(8.1-8.13) 유지 결정, 대신 다음 두 조각을 추가:
+① **깊이 인지 배치**: 배경 생성 직후 monocular depth 모델(예 Depth-Anything, 로컬 실행) 1회 실행 → 바닥면/소실점 추정. `position`/`depth` enum을 고정 좌표표가 아니라 이 depth map 기반 계산값으로 변환해 실제 배경마다 정확한 스케일/앵커를 얻는다. 같은 depth map으로 오클루전 마스크를 만들어 전경 오브젝트가 카드보다 앞이면 카드를 가리게 처리(현재 카드 오버레이엔 오클루전 개념 자체가 없음).
+② **IC-Light 재조명**: `ComfyUI-IC-Light-Native`(`iclight_sd15_fbc`, background-conditioned 모델)를 설치해 배경 조명에 맞춰 카드를 재조명 — 8.7 스토리가 "로컬 커스텀 노드 부재로 deferred" 처리한 가정이 최신 조사로는 더 이상 유효하지 않을 가능성이 큼(해당 노드가 실제 존재·문서화됨), 실제 설치·ROCm 안정성(추가 SD1.5 로드가 크래시 빈도에 미치는 영향)은 이 스토리에서 재검증 필요.
+Tier 1/2는 IC-Light 비활성/실패 시 폴백으로 유지(별도 스토리로 분리하지 않고 이 스토리의 AC로 흡수). 구현은 신규 **`services/compositing_service.py`**로 분리 — `video_node`의 ffmpeg 조립 로직에 depth/relight 호출을 직접 섞지 않고 "카드+배경+메타 → 배치·조명 보정된 합성 이미지"라는 좁은 인터페이스로 캡슐화(복잡도를 파이프라인 핵심부 밖으로 격리). **필수 AC**: D5(앵글 불일치)/D10(인페인트 흉터)/D11(환경 오컷)/D13(무알파 전체 덮음) — 1.6b/5-6/5-7 시절 결함 — 재발 방지를 명시적으로 검증. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.17: 스톡 로케이션 플레이트 실데이터 생성 + AI 자동 라벨링
+
+8.5는 스토리 자체는 "done"이지만 2026-07-12 확인 결과 `location_plates` DB 테이블 행 0개, `assets/locations/`도 빈 디렉토리 — 스키마/서비스/시드스크립트는 완성됐으나 한 번도 실행된 적이 없어 image_node의 STOCK fast-path가 실전에서 전혀 타지 않고 매 런마다 배경을 새로 생성 중이었음("done"의 정의에 산출물 존재 검증이 빠져 있었던 사례). 실행: `scripts/seed_location_plates.py`로 14개 LocationKey × 3배리언트 = 42장 생성(ComfyUI IPAdapter 스타일 앵커, 기존 로직과 완전 독립된 오프라인 배치 — 파이프라인 코드/배선 변경 없음). 라벨링은 전량 수동 대신 이미 배선된 Qwen-VL(5.13 인프라 재사용, HITL 관행)로 1차 자동 검수: location_key 설명 정합성 / 원치 않는 인물·텍스트 여부(배경 프롬프트 순응도, D11류) / 품질을 스코어링해 명확 통과는 auto-approved, 애매한 것만 draft로 남겨 Jay 큐에 노출. Jay는 `scripts/approve_location_plate.py`로 플래그된 것만 최종 검토("나는 최종 검사만"). (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.18: cast_decision 출력 결정론적 배치 다양성 validator
+
+8.12(프롬프트 캘리브레이션만)로 분포는 크게 개선됐으나(center 78%→16.8%) "연속 샷 center 반복 금지" 같은 규칙 준수는 여전히 LLM이 프롬프트 지시를 얼마나 잘 따르느냐에만 의존 — 코드 레벨 강제가 없음. 6.7/6.11의 결정론적 repair 패턴을 재사용: cast_decision 출력이 배치 다양성 규칙(연속 N샷 이상 동일 position/depth 금지, camera_angle↔depth 모순 등)을 위반하면 LLM 재호출 없이 결정론적 재배정(round-robin 등)으로 즉시 수정. 순수 함수형 검증/보정 로직이라 별도 서비스로 분리하지 않고 `scenario_chain.py` 내부 함수로 구현 — 서비스 추출은 이 경우 불필요한 인터페이스(ponytail: 1개 구현에 인터페이스 금지). 회귀 테스트: LLM이 의도적으로 전부 동일 값을 낸 fake 케이스로 repair 동작 검증. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.19: 임베딩 기반 자산 재사용 판정 계층
+
+5.5(비주얼 정합성, done) 이후에도 이미지-나레이션 불일치가 지속 관찰됨(Jay, 2026-07-12) — 원인은 "STOCK 재사용 vs 자유생성" 판단이 계산된 유사도가 아니라 LLM의 프롬프트 판단에만 의존하기 때문으로 추정(8.18과 동일 근본 원인 계열: "잘 부탁하기"에 머물러 있음). 업계 선례(arXiv 2307.06940 "Animate-A-Story: Storytelling with Retrieval-Augmented Video Generation" — 텍스트로 기존 자산을 검색하고, 검색 결과가 신규 생성을 가이드하는 하이브리드 구조, CLIP류 임베딩 유사도 기반) 적용. 신규 **`services/asset_retrieval_service.py`**로 분리 — 샷의 image_prompt/narration 세그먼트를 임베딩하고 STOCK 로케이션/카드 라이브러리 항목(설명 텍스트)과 유사도 계산 → 임계값 이상이면 재사용(8.16의 depth/relight로 해당 배경에 맞게 추가 보정), 미만이면 자유생성 후 8.6 라이브러리에 신규 draft로 등록(라이브러리가 런을 거듭할수록 자기 성장). cast_decision과 location 판단 양쪽이 공유하는 좁은 인터페이스("텍스트 → 최적 매칭 자산 또는 None")로 설계 — 복잡도를 별도 서비스로 격리. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+### Story 8.20: OpenPose 골격 조건화 액션 포즈 생성
+
+2026-07-12 SCP-049 라이브 런 실측: cast 배치 151건 중 pose enum은 standing 105/sitting 46 단 두 값뿐이고, `pose_hint`(자유 텍스트 특수 동작 묘사) 요청은 10건인데 `special_pose_max_per_run=3` 캡 때문에 최대 3건만 실제 카드 생성 가능 — 151건 중 148건이 사실상 동일 정적 스프라이트 반복(Jay: "획일적"). 업계 선례 조사: OpenPose ControlNet + IPAdapter FaceID(weight~1.2 권장) 조합이 정체성 95%+ 유지하며 포즈를 바꾸는 표준 기법인데, 현재 8.4는 `pose_hint`를 순수 텍스트 프롬프트로만 소비 — 골격 조건화가 없음. 오픈소스 `ComfyUI_VNCCS`(Visual Novel Character Creation Suite — 캐릭터 정체성 유지하며 포즈/표정 다양화가 목적으로 이미 존재)를 자체 구현 전에 우선 평가. 채택 시 신규 **`services/pose_service.py`**로 분리(8.4의 온디맨드 트리거 인프라는 재사용, 실제 생성 호출만 텍스트 프롬프트에서 골격 조건화로 교체) — 복잡도를 캐릭터 카드 파이프라인 핵심부 밖으로 격리. **즉시 완화책(스토리 아님, config 변경)**: `special_pose_max_per_run` 캡 상향만으로도 지금 인프라 그대로 반복 즉시 완화 가능. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
 ## Epic 9: Localization Config — 콘텐츠 언어 스위치
 
 Jay 결정(2026-07-07): SCP 채널은 한국어로 확정 진행하되, 향후 언어 피벗 가능성에 대비해 "한국어 하드코딩"을 명시적 config 스위치 뒤로 옮긴다. Scope는 스위치 자체뿐 — 실제 다국어 생성(프롬프트 번역, TTS 자연화 규칙, 자막 타이포그래피 재조정)은 이 Epic의 범위가 아니다(YAGNI). 지금 하드코딩된 지점(scenario LLM 프롬프트 5개, TTS 자연화 단계, subtitle.py 타이포 상수)을 건드리지 않고, 새 config 값이 "ko" 외의 값으로 바뀌면 파이프라인이 조용히 깨진 결과물을 만들지 않고 즉시 명확하게 실패하도록 만든다.
@@ -1225,3 +1252,13 @@ Jay 결정(2026-07-07): SCP 채널은 한국어로 확정 진행하되, 향후 �
 ### Story 9.1: 콘텐츠 언어 config 스위치
 
 `Settings.content_language`(env `YTFLOW_CONTENT_LANGUAGE`, 기본값 `"ko"`) 신설. `scenario_node` 진입 시 `"ko"`가 아니면 즉시 `NotImplementedError`로 실패(다국어 생성은 미구현임을 명시). 현재 한국어에 암묵적으로 의존하는 지점 전체(scenario 프롬프트 5개, `tts_normalize`, subtitle.py의 Pretendard 타이포/줄바꿈 상수)를 config.py 주석에 한 곳에 모아 문서화 — 실제 동작 변경 없음, 향후 다국어 작업의 체크리스트 역할. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+## Epic 10: 서사 구조 다양화
+
+2026-07-12 Jay 시청 피드백(SCP-049 E2E 런) 발의. `prompts/scenario/structure.md`가 "INCIDENT-FIRST 4막 구조"(사건으로 시작→미스터리 확장→정체 공개→미해결 결말)를 모든 SCP에 강제하는 유일한 고정 템플릿임을 확인 — 서사 구조 다양성이 지금까지 스코프에 들어간 적이 없어 매 에피소드가 같은 패턴으로 반복되는 것으로 체감됨.
+
+### Story 10.1: 스토리 아키타입 다변화
+
+고정 INCIDENT-FIRST 4막 외에 2-3개 아키타입 추가(예: 인터뷰/증언 로그식, 봉쇄 실패식, 배치 성공식) — 실제 다큐/크리피파스타 페이싱 기법(콜드 오픈, 신뢰 못 할 화자, 비선형 타임라인) 레퍼런스 반영. SCP별 로테이션 또는 LLM이 소재에 맞게 선택. 아키타입별 골든 예시(few-shot) 1-2개씩 큐레이션해 6.2 golden-set 인프라에 연결, PROMPT_POLICY 절차 준수. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+**운영 잡일 (스토리 번호 없음, 2026-07-12 Jay 시청 피드백)**: ① 챕터 카드 표시 시간 2배 — `MIN_CARD_DURATION`(1.5→3.0)/`MAX_CARD_DURATION`(2.5→5.0), `video.py`. ② 씬 경계 음성 fade/오버랩 원인 조사 — 5.9/5.16 코드는 나레이션 무가공 통과를 보장하므로(재확인 완료) 실제로 들리는 현상의 원인은 7.1 사이드체인 릴리즈 "숨쉬기" 또는 Qwen TTS 발화 꼬리 중 하나로 추정, 실제 파형 분석 후 원인 확정 필요.
