@@ -44,7 +44,7 @@ def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
     parallax_enabled: bool = False, cc_attribution: bool = False,
-    composite_harmonization_tier: int = 0,
+    composite_harmonization_tier: int = 0, min_shot_clip_sec: float = 2.0,
 ):
     # ponytail: fake settings default cards/sound-design/post-fx/parallax/
     # cc_attribution/composite_harmonization_tier OFF so pre-existing tests
@@ -63,6 +63,7 @@ def _settings_ns(
         parallax_enabled=parallax_enabled,
         cc_attribution=cc_attribution,
         composite_harmonization_tier=composite_harmonization_tier,
+        min_shot_clip_sec=min_shot_clip_sec,
     )
 
 
@@ -530,12 +531,13 @@ def test_validate_rejects_nonpositive_audio_duration(assets, bad):
         _validate_scene_assets([scene])
 
 
-def test_validate_ignores_unused_later_shot_missing_image(assets):
-    """Only the first image-bearing shot is rendered, so a later shot's missing
-    image must not abort the run."""
+def test_validate_fails_on_later_shot_missing_image(assets):
+    """[Story 8.11] Every image-bearing shot gets its own clip now (not just
+    the first), so a later shot's missing image must fail validation too."""
     scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
-    scene["shots"].append(_shot("/does/not/exist.png"))  # unused second shot
-    _validate_scene_assets([scene])  # should not raise
+    scene["shots"].append(_shot("/does/not/exist.png", shot_id="S002"))
+    with pytest.raises(FileNotFoundError, match="shot S002: image_path not found"):
+        _validate_scene_assets([scene])
 
 
 # ── video_node: happy path ────────────────────────────────────────────────────
@@ -2075,7 +2077,9 @@ async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_pa
             audio_duration=narration_dur,
         )
         seg_path, _spec, _has_char = await asyncio.wait_for(
-            video._compose_scene(scene, scene_num, out_dir, cards=cards, sound_design_enabled=True),
+            video._compose_scene(
+                scene, scene_num, out_dir, cards_by_shot={"S001": cards}, sound_design_enabled=True,
+            ),
             timeout=15,
         )
         assert seg_path.exists()
@@ -2084,6 +2088,110 @@ async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_pa
             f"{label} branch: segment duration {seg_dur:.2f}s should match "
             f"narration ({narration_dur}s), not run away on the looped sound-design beds"
         )
+
+
+# ── Per-shot cut assembly integration (Story 8.11) ────────────────────────────
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg or ffprobe not installed",
+)
+async def test_per_shot_cut_assembly_integration(monkeypatch, tmp_path):
+    """Real FFmpeg: a 3-shot scene cuts into 3 distinct-color clips, each
+    timed to its own sentence window, joined into one segment. [AC:1,2,3,9]
+
+    Regression guard for the bug this story fixes: 87 shots generated, 8 used
+    (one frozen Ken-Burns image per scene) — here 3 shots must all appear on
+    screen at their own window, not just the first.
+    """
+    async def _solid_png(path: Path, color: str) -> None:
+        rc, _ = await video._run_ffmpeg(
+            "-y", "-f", "lavfi", "-i", f"color=c={color}:s=4x4:r=1:d=1", "-frames:v", "1", str(path),
+        )
+        assert rc == 0, f"solid-color fixture render failed for {color}"
+
+    red, green, blue = tmp_path / "red.png", tmp_path / "green.png", tmp_path / "blue.png"
+    await _solid_png(red, "red")
+    await _solid_png(green, "green")
+    await _solid_png(blue, "blue")
+    image2 = tmp_path / "image2.png"
+    await _solid_png(image2, "white")
+
+    narration_dur = 6.0
+    narration = tmp_path / "narr.wav"
+    rc, _ = await video._run_ffmpeg(
+        "-y", "-f", "lavfi", "-i", f"sine=frequency=220:sample_rate=8000:duration={narration_dur}", str(narration),
+    )
+    assert rc == 0
+    subtitle = tmp_path / "sub.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:06,000\nhi\n\n", encoding="utf-8")
+
+    audio2 = tmp_path / "narr2.wav"
+    rc, _ = await video._run_ffmpeg(
+        "-y", "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=8000:duration=1.0", str(audio2),
+    )
+    assert rc == 0
+    subtitle2 = tmp_path / "sub2.srt"
+    subtitle2.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n\n", encoding="utf-8")
+
+    def _bg_shot(shot_id: str, sentence_idx: int, image_path: Path) -> dict:
+        return {
+            "shot_id": shot_id, "sentence_indices": [sentence_idx], "image_prompt": "p",
+            "negative_prompt": "n", "camera_angle": None, "camera_movement": None,
+            "image_path": str(image_path), "cast": [], "location_key": None,
+        }
+
+    scene1 = {
+        "scene_num": 1,
+        "narration": "빨강. 초록. 파랑.",
+        "shots": [_bg_shot("S001", 0, red), _bg_shot("S002", 1, green), _bg_shot("S003", 2, blue)],
+        "audio_path": str(narration), "audio_duration": narration_dur,
+        "word_timings": [
+            {"word": "빨강", "start_sec": 0.0, "end_sec": 2.0},
+            {"word": "초록", "start_sec": 2.0, "end_sec": 4.0},
+            {"word": "파랑", "start_sec": 4.0, "end_sec": 6.0},
+        ],
+        "subtitle_path": str(subtitle), "mood": "clinical", "title": "", "kicker": "",
+        "display_narration": "빨강. 초록. 파랑.",
+    }
+    scene2 = {
+        "scene_num": 2,
+        "narration": "하나.",
+        "shots": [_bg_shot("S001", 0, image2)],
+        "audio_path": str(audio2), "audio_duration": 1.0, "word_timings": [],
+        "subtitle_path": str(subtitle2), "mood": "clinical", "title": "", "kicker": "",
+        "display_narration": "하나.",
+    }
+
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, min_shot_clip_sec=0.0))
+    out = await video_node(_state([scene1, scene2], run_id="run-cut"))
+
+    assert out.get("error") is None
+    run_dir = tmp_path / "run-cut"
+    shot_clips = sorted((run_dir / "shots").glob("scene_001_*.mp4"))
+    assert len(shot_clips) == 3  # AC:9 — cut count == kept-shot count, no merge at min=0.0
+
+    seg1 = run_dir / "seg_001.mp4"
+    assert seg1.exists()
+
+    async def _frame_rgb(path: Path, t: float) -> tuple[int, int, int]:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-ss", str(t), "-i", str(path),
+            "-vframes", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        assert len(stdout) >= 3, f"no frame decoded at t={t}"
+        return stdout[0], stdout[1], stdout[2]
+
+    # Window midpoints: shot1 [0,2)->1.0, shot2 [2,4)->3.0, shot3 [4,6)->5.0.
+    r1 = await _frame_rgb(seg1, 1.0)
+    r2 = await _frame_rgb(seg1, 3.0)
+    r3 = await _frame_rgb(seg1, 5.0)
+    assert r1[0] > r1[1] + 40 and r1[0] > r1[2] + 40, f"expected red at t=1.0, got {r1}"
+    assert r2[1] > r2[0] + 40 and r2[1] > r2[2] + 40, f"expected green at t=3.0, got {r2}"
+    assert r3[2] > r3[0] + 40 and r3[2] > r3[1] + 40, f"expected blue at t=5.0, got {r3}"
 
 
 # ── Story 1.13 / 8.3: cast card resolver injection integration ────────────────

@@ -26,7 +26,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
-from yt_flow.pipeline.nodes import character_motion, character_movement
+from yt_flow.pipeline.nodes import character_motion, character_movement, shot_timing
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     AMBIENT_VOLUME,
@@ -701,15 +701,18 @@ def _validate_scene_assets(
     """Raise before FFmpeg if required per-scene assets are missing. [AC:2]"""
     for scene in scenes:
         n = scene["scene_num"]
-        # Validate only the shot _compose_scene will actually render (first with an
-        # image) — don't abort a run over an unused later shot's missing image.
-        shot = next((s for s in (scene.get("shots") or []) if s.get("image_path")), None)
-        if shot is None:
+        # Story 8.11: every image-bearing shot gets its own clip now (not just
+        # the first), so every one of them must exist on disk.
+        rendered_shots = [s for s in (scene.get("shots") or []) if s.get("image_path")]
+        if not rendered_shots:
             raise ValueError(f"scene {n}: no shot has a valid image_path")
-        img = shot["image_path"]
-        assert img is not None  # selected because image_path is truthy
-        if not Path(img).exists():
-            raise FileNotFoundError(f"scene {n}: image_path not found: {img!r}")
+        for shot in rendered_shots:
+            img = shot["image_path"]
+            assert img is not None  # selected because image_path is truthy
+            if not Path(img).exists():
+                raise FileNotFoundError(
+                    f"scene {n} shot {shot['shot_id']}: image_path not found: {img!r}"
+                )
         audio = scene.get("audio_path")
         if not audio or not Path(audio).exists():
             raise FileNotFoundError(f"scene {n}: audio_path missing or not found: {audio!r}")
@@ -752,51 +755,141 @@ _OUTPUT_ARGS = (
 )
 
 
-async def _compose_scene(
-    scene: SceneState,
-    scene_index: int,
-    out_dir: Path,
+def _build_card_chain(
+    zp_chain: str,
+    ordered_cards: list[dict],
+    spec: EffectSpec,
+    duration: float,
+    mood: str | None,
     *,
-    cards: list[dict] | None = None,
-    sound_design_enabled: bool = False,
-    post_fx_enabled: bool = False,
-    parallax_enabled: bool = False,
-    include_stinger: bool = True,
-    composite_harmonization_tier: int = 0,
-) -> tuple[Path, EffectSpec, bool]:
-    """Render one scene segment: Ken Burns zoompan + burned SRT, optionally with
-    N transparent cast cards composited on top with per-card idle motion,
-    optionally with a mood-driven BGM/ambient/stinger mix ducked under the
-    narration, optionally with a mood-driven color grade + constant
-    vignette/grain applied before subtitle burn-in.
+    parallax_enabled: bool,
+    composite_harmonization_tier: int,
+) -> tuple[list[str], str]:
+    """Background zoompan + N stacked card overlays, far painted first, near
+    last/on top. [Story 8.3 AC:6,7] [Story 8.7] [Story 8.8] [Story 8.9]
+
+    Shared by the single-pass scene render (`_render_scene_fast`) and Story
+    8.11's per-shot silent-clip pass (`_compose_shot_clip`) — one
+    implementation of the overlay chain so the two can never drift. Returns
+    (chain_parts, final_label); final_label == "bg" when ordered_cards is
+    empty (caller decides whether the ";".join'd chain needs a -filter_complex
+    at all in that case).
+    """
+    # Composite harmonization (Story 8.7): lazy import behind the tier check
+    # so tier=0 never touches this module (AC:13 — ponytail, don't import
+    # what you don't use).
+    harmonize = composite_harmonization_tier >= 1
+    light_wrap = composite_harmonization_tier >= 2
+    tint = ""
+    build_contact_shadow = build_light_wrap = None
+    if harmonize:
+        from yt_flow.pipeline.nodes.composite_harmonization import (
+            build_contact_shadow,
+            build_sprite_tint,
+        )
+        tint = build_sprite_tint(mood)
+    if light_wrap:
+        from yt_flow.pipeline.nodes.composite_harmonization import build_light_wrap
+
+    chain_parts = [f"[0:v]{zp_chain}[bg]"]
+    prev_label = "bg"
+    for k, card in enumerate(ordered_cards):
+        depth = card.get("depth", "mid")
+        position = card.get("position", "center")
+        motion_style = card.get("motion_style", "breath")
+        motion_energy = card.get("motion_energy", "medium")
+        movement_mode = card.get("movement_mode", "anchored")
+        movement_direction = card.get("movement_direction", "none")
+        movement_pace = card.get("movement_pace", "slow")
+        # Movement (Story 8.9 AC:5): chained right after the depth-cap anchor,
+        # before parallax/idle-motion scale stages. "" for anchored — the
+        # pre-8.9 chain is unchanged.
+        movement_scale = _movement_scale_filter(
+            movement_mode, movement_direction, movement_pace, position, depth, duration,
+        )
+        char_chain = _character_scale_filter(depth)
+        if movement_scale:
+            char_chain += f",{movement_scale}"
+        # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the
+        # background's spec, amplified per depth. Off → fixed-size idle motion.
+        if parallax_enabled:
+            char_spec = _character_spec(spec, depth)
+            char_chain += f",{_character_zoom_filter(char_spec, duration)}"
+        else:
+            char_spec = None
+        overlay = _overlay_filter(
+            position, k, char_spec, duration, depth, motion_style, motion_energy,
+            movement_mode, movement_direction, movement_pace,
+        )
+        # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
+        # stage for breath/sway/tremble/pulse so it composes with either branch above.
+        pulse = _motion_scale_filter(motion_style, motion_energy, k)
+        if pulse:
+            char_chain += f",{pulse}"
+        # Tier 1 (Story 8.7 AC:1): mood tint on the sprite, before overlay.
+        if harmonize:
+            char_chain += f",{tint}"
+        out_label = f"o{k}"
+        chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
+
+        # Tier 1 (AC:2): contact shadow, composited between bg and the card.
+        base_label = prev_label
+        if harmonize:
+            shadow = build_contact_shadow(card)
+            chain_parts.append(f"color=c=black:s={COMP_W}x{COMP_H},format=rgba[sh{k}src]")
+            chain_parts.append(f"[sh{k}src]{shadow}[sh{k}]")
+            chain_parts.append(f"[{base_label}][sh{k}]overlay=x=0:y=0[shg{k}]")
+            base_label = f"shg{k}"
+
+        # Tier 2 (AC:5,6): light wrap between the tinted card and the overlay.
+        # base_label feeds both light_wrap's edge-detection AND the final
+        # overlay below — split it first, same "Invalid file index"/"matches
+        # no streams" hazard build_light_wrap's own char_label split guards
+        # against (live-verified: ffmpeg rejects a label consumed twice).
+        card_label = f"c{k}"
+        if light_wrap:
+            bg_a, bg_b = f"wbg{k}a", f"wbg{k}b"
+            chain_parts.append(f"[{base_label}]split=2[{bg_a}][{bg_b}]")
+            wrapped_label = f"cw{k}"
+            chain_parts.append(build_light_wrap(bg_a, card_label, wrapped_label, position=position))
+            card_label = wrapped_label
+            base_label = bg_b
+
+        chain_parts.append(f"[{base_label}][{card_label}]{overlay}[{out_label}]")
+        prev_label = out_label
+
+    return chain_parts, prev_label
+
+
+async def _render_scene_fast(
+    shot: ShotData,
+    spec: EffectSpec,
+    duration: float,
+    seg_path: Path,
+    n: int,
+    *,
+    cards: list[dict],
+    mood: str | None,
+    audio_path: str,
+    subtitle_path: str,
+    sound_design_enabled: bool,
+    post_fx_enabled: bool,
+    parallax_enabled: bool,
+    include_stinger: bool,
+    composite_harmonization_tier: int,
+) -> None:
+    """Render a scene segment in a single ffmpeg pass: Ken Burns zoompan +
+    burned SRT, optionally with N cast cards + mood-driven sound design/post-fx.
     [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9] [Story 8.3 AC:6,7,8,9]
 
-    `include_stinger=False` (Story 5.17 AC:7) omits this scene's own baked
-    scene-entry stinger — set by the caller for a scene immediately preceded
-    by a chapter card, since the card now carries that boundary's stinger hit.
-
-    `cards` (Story 8.3): resolved cast cards for the rendered shot, each
-    carrying ``path``/``position``/``depth`` (Interfaces + resolver output).
-    Empty/``None`` renders today's background-only branch verbatim (AC:8).
-
-    Returns (segment_path, effect_spec, cards_overlaid).
+    The pre-8.11 code path — used by `_compose_scene` whenever a scene's
+    shot-clip plan is a single clip (nothing to cut, the common case).
+    [Story 8.11 — ponytail: no concat overhead when there's nothing to concat]
     """
-    n = scene["scene_num"]
-    shots = scene.get("shots") or []
-    shot = next((s for s in shots if s.get("image_path")), None)
-    if shot is None:  # defensive; _validate_scene_assets guarantees this upstream
-        raise ValueError(f"scene {n}: no shot has a valid image_path")
     bg_path = shot["image_path"]
-    audio_path: str = scene["audio_path"]  # type: ignore[assignment]
-    subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
-    duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive upstream
-    seg_path = out_dir / f"seg_{n:03d}.mp4"
-
-    spec = select_effect(shot, scene_index)
     zp_chain = _zoompan_filter(spec, duration)
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
     fontsdir = _escape_subtitles_path(_subtitle_fontsdir().resolve())
-    mood = scene.get("mood")
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
     # so every chain below degrades to today's byte-for-byte ungraded output.
     post_filter = build_post_filter(mood) if post_fx_enabled else ""
@@ -817,88 +910,11 @@ async def _compose_scene(
             inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
         inputs += ["-i", audio_path]
 
-        # Composite harmonization (Story 8.7): lazy import behind the tier check
-        # so tier=0 never touches this module (AC:13 — ponytail, don't import
-        # what you don't use).
-        harmonize = composite_harmonization_tier >= 1
-        light_wrap = composite_harmonization_tier >= 2
-        tint = ""
-        build_contact_shadow = build_light_wrap = None
-        if harmonize:
-            from yt_flow.pipeline.nodes.composite_harmonization import (
-                build_contact_shadow,
-                build_sprite_tint,
-            )
-            tint = build_sprite_tint(mood)
-        if light_wrap:
-            from yt_flow.pipeline.nodes.composite_harmonization import build_light_wrap
-
-        chain_parts = [f"[0:v]{zp_chain}[bg]"]
-        prev_label = "bg"
-        for k, card in enumerate(ordered_cards):
-            depth = card.get("depth", "mid")
-            position = card.get("position", "center")
-            motion_style = card.get("motion_style", "breath")
-            motion_energy = card.get("motion_energy", "medium")
-            movement_mode = card.get("movement_mode", "anchored")
-            movement_direction = card.get("movement_direction", "none")
-            movement_pace = card.get("movement_pace", "slow")
-            # Movement (Story 8.9 AC:5): chained right after the depth-cap anchor,
-            # before parallax/idle-motion scale stages. "" for anchored — the
-            # pre-8.9 chain is unchanged.
-            movement_scale = _movement_scale_filter(
-                movement_mode, movement_direction, movement_pace, position, depth, duration,
-            )
-            char_chain = _character_scale_filter(depth)
-            if movement_scale:
-                char_chain += f",{movement_scale}"
-            # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the
-            # background's spec, amplified per depth. Off → fixed-size idle motion.
-            if parallax_enabled:
-                char_spec = _character_spec(spec, depth)
-                char_chain += f",{_character_zoom_filter(char_spec, duration)}"
-            else:
-                char_spec = None
-            overlay = _overlay_filter(
-                position, k, char_spec, duration, depth, motion_style, motion_energy,
-                movement_mode, movement_direction, movement_pace,
-            )
-            # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
-            # stage for breath/sway/tremble/pulse so it composes with either branch above.
-            pulse = _motion_scale_filter(motion_style, motion_energy, k)
-            if pulse:
-                char_chain += f",{pulse}"
-            # Tier 1 (Story 8.7 AC:1): mood tint on the sprite, before overlay.
-            if harmonize:
-                char_chain += f",{tint}"
-            out_label = f"o{k}"
-            chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
-
-            # Tier 1 (AC:2): contact shadow, composited between bg and the card.
-            base_label = prev_label
-            if harmonize:
-                shadow = build_contact_shadow(card)
-                chain_parts.append(f"color=c=black:s={COMP_W}x{COMP_H},format=rgba[sh{k}src]")
-                chain_parts.append(f"[sh{k}src]{shadow}[sh{k}]")
-                chain_parts.append(f"[{base_label}][sh{k}]overlay=x=0:y=0[shg{k}]")
-                base_label = f"shg{k}"
-
-            # Tier 2 (AC:5,6): light wrap between the tinted card and the overlay.
-            # base_label feeds both light_wrap's edge-detection AND the final
-            # overlay below — split it first, same "Invalid file index"/"matches
-            # no streams" hazard build_light_wrap's own char_label split guards
-            # against (live-verified: ffmpeg rejects a label consumed twice).
-            card_label = f"c{k}"
-            if light_wrap:
-                bg_a, bg_b = f"wbg{k}a", f"wbg{k}b"
-                chain_parts.append(f"[{base_label}]split=2[{bg_a}][{bg_b}]")
-                wrapped_label = f"cw{k}"
-                chain_parts.append(build_light_wrap(bg_a, card_label, wrapped_label, position=position))
-                card_label = wrapped_label
-                base_label = bg_b
-
-            chain_parts.append(f"[{base_label}][{card_label}]{overlay}[{out_label}]")
-            prev_label = out_label
+        chain_parts, prev_label = _build_card_chain(
+            zp_chain, ordered_cards, spec, duration, mood,
+            parallax_enabled=parallax_enabled,
+            composite_harmonization_tier=composite_harmonization_tier,
+        )
         chain_parts.append(f"[{prev_label}]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
         video_chain = ";".join(chain_parts)
         video_map = "[out]"
@@ -922,7 +938,7 @@ async def _compose_scene(
         # background-only branch's video chain is folded into filter_complex here
         # (labeled [vout]) instead of staying a -vf string. Hazard 2: input_offset/
         # narration_label differ per branch — see class docstring in sound_design.py.
-        resolved_mood = resolve_mood(scene.get("mood"))
+        resolved_mood = resolve_mood(mood)
         sound_args = build_sound_design_args(resolved_mood, include_stinger=include_stinger)
         sound_fragment, audio_out_label = build_sound_design_filter(
             resolved_mood, duration, narration_label, input_offset, include_stinger=include_stinger,
@@ -960,7 +976,225 @@ async def _compose_scene(
         raise RuntimeError(f"FFmpeg scene {n} failed (rc={rc}): {stderr[-500:]}")
     if not seg_path.exists():
         raise RuntimeError(f"FFmpeg scene {n}: output not created: {seg_path}")
-    return seg_path, spec, num_cards > 0
+
+
+_SHOT_CLIP_OUTPUT_ARGS = ("-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p")
+
+
+async def _compose_shot_clip(
+    shot: ShotData,
+    spec: EffectSpec,
+    duration: float,
+    out_path: Path,
+    *,
+    cards: list[dict],
+    mood: str | None,
+    parallax_enabled: bool,
+    composite_harmonization_tier: int,
+) -> None:
+    """Render one shot's silent background+cards clip — pass 1 of Story 8.11's
+    per-shot cut assembly. No audio, no subtitle burn, no post-fx: those apply
+    once at scene level in pass 2 (`_assemble_scene_from_clips`). `duration`
+    is the shot's own clip span (its sentence window), not the scene's
+    audio_duration — 8.9's movement curves key off this.
+    """
+    bg_path = shot["image_path"]
+    zp_chain = _zoompan_filter(spec, duration)
+    ordered_cards = sorted(cards or [], key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
+
+    if ordered_cards:
+        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        for card in ordered_cards:
+            inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
+        chain_parts, prev_label = _build_card_chain(
+            zp_chain, ordered_cards, spec, duration, mood,
+            parallax_enabled=parallax_enabled,
+            composite_harmonization_tier=composite_harmonization_tier,
+        )
+        ffmpeg_args = [
+            "-y", *inputs,
+            "-filter_complex", ";".join(chain_parts),
+            "-map", f"[{prev_label}]",
+            "-t", str(duration),
+            *_SHOT_CLIP_OUTPUT_ARGS, str(out_path),
+        ]
+    else:
+        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        ffmpeg_args = [
+            "-y", *inputs,
+            "-vf", zp_chain,
+            "-t", str(duration),
+            *_SHOT_CLIP_OUTPUT_ARGS, str(out_path),
+        ]
+
+    rc, stderr = await _run_ffmpeg(*ffmpeg_args)
+    if rc != 0:
+        raise RuntimeError(f"FFmpeg shot clip {shot['shot_id']} failed (rc={rc}): {stderr[-500:]}")
+    if not out_path.exists():
+        raise RuntimeError(f"FFmpeg shot clip {shot['shot_id']}: output not created: {out_path}")
+
+
+async def _assemble_scene_from_clips(
+    clip_paths: list[Path],
+    duration: float,
+    seg_path: Path,
+    *,
+    audio_path: str,
+    subtitle_path: str,
+    mood: str | None,
+    sound_design_enabled: bool,
+    post_fx_enabled: bool,
+    include_stinger: bool,
+) -> None:
+    """Concat pass-1's silent shot clips — hard cuts, no crossfade (Dev Notes:
+    the documentary idiom, avoids re-introducing 5.16's retired xfade
+    problems) — then burn subtitles + mix narration audio/sound design/
+    post-fx exactly as `_render_scene_fast` does for a single clip. Pass 2 of
+    Story 8.11's per-shot cut assembly. [AC:6]
+    """
+    n_clips = len(clip_paths)
+    sub = _escape_subtitles_path(Path(subtitle_path).resolve())
+    fontsdir = _escape_subtitles_path(_subtitle_fontsdir().resolve())
+    post_filter = build_post_filter(mood) if post_fx_enabled else ""
+    post_label = f"{post_filter}[graded];[graded]" if post_fx_enabled else ""
+
+    concat_labels = "".join(f"[{i}:v]" for i in range(n_clips))
+    video_chain = (
+        f"{concat_labels}concat=n={n_clips}:v=1:a=0[concat_v];"
+        f"[concat_v]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
+    )
+
+    inputs: list[str] = []
+    for p in clip_paths:
+        inputs += ["-i", str(p)]
+    inputs += ["-i", audio_path]
+    narration_label = f"[{n_clips}:a]"
+    input_offset = n_clips + 1
+    narration_map = f"{n_clips}:a"
+
+    if sound_design_enabled:
+        resolved_mood = resolve_mood(mood)
+        sound_args = build_sound_design_args(resolved_mood, include_stinger=include_stinger)
+        sound_fragment, audio_out_label = build_sound_design_filter(
+            resolved_mood, duration, narration_label, input_offset, include_stinger=include_stinger,
+        )
+        ffmpeg_args = [
+            "-y", *inputs, *sound_args,
+            "-filter_complex", f"{video_chain};{sound_fragment}",
+            "-map", "[vout]", "-map", audio_out_label,
+            "-t", str(duration),
+            *_OUTPUT_ARGS, str(seg_path),
+        ]
+    else:
+        ffmpeg_args = [
+            "-y", *inputs,
+            "-filter_complex", video_chain,
+            "-map", "[vout]", "-map", narration_map,
+            *_OUTPUT_ARGS, str(seg_path),
+        ]
+
+    rc, stderr = await _run_ffmpeg(*ffmpeg_args)
+    if rc != 0:
+        raise RuntimeError(f"FFmpeg scene assembly failed (rc={rc}): {stderr[-500:]}")
+    if not seg_path.exists():
+        raise RuntimeError(f"FFmpeg scene assembly: output not created: {seg_path}")
+
+
+async def _compose_scene(
+    scene: SceneState,
+    scene_index: int,
+    out_dir: Path,
+    *,
+    cards_by_shot: dict[str, list[dict]] | None = None,
+    sound_design_enabled: bool = False,
+    post_fx_enabled: bool = False,
+    parallax_enabled: bool = False,
+    include_stinger: bool = True,
+    composite_harmonization_tier: int = 0,
+    min_shot_clip_sec: float = 2.0,
+) -> tuple[Path, EffectSpec, bool]:
+    """Render one scene segment. [AC:1,3] [Story 7.1] [Story 7.2] [Story 8.3] [Story 8.11]
+
+    `include_stinger=False` (Story 5.17 AC:7) omits this scene's own baked
+    scene-entry stinger — set by the caller for a scene immediately preceded
+    by a chapter card, since the card now carries that boundary's stinger hit.
+
+    `cards_by_shot` (Story 8.3/8.11): resolved cast cards keyed by shot_id,
+    covering every rendered shot in the scene (not just one representative
+    shot). A shot absent from the mapping (or mapped to []) renders
+    background-only.
+
+    Story 8.11: the scene's shots are cut into clips timed to the narration
+    sentences each shot was written for (`shot_timing.plan_shot_clips`)
+    instead of Ken-Burnsing the first shot for the whole scene. A single-clip
+    plan (nothing to cut — the common case) renders through the original
+    one-pass path (`_render_scene_fast`, byte-identical to pre-8.11 output).
+    A multi-clip plan renders each shot's silent clip (`_compose_shot_clip`)
+    then concats + burns subtitles/audio/sound-design/post-fx once
+    (`_assemble_scene_from_clips`).
+
+    Returns (segment_path, effect_spec, cards_overlaid) — effect_spec is the
+    first rendered clip's spec (the scene-level trace-metadata representative).
+    """
+    n = scene["scene_num"]
+    shots = scene.get("shots") or []
+    rendered_shots = [s for s in shots if s.get("image_path")]
+    if not rendered_shots:  # defensive; _validate_scene_assets guarantees this upstream
+        raise ValueError(f"scene {n}: no shot has a valid image_path")
+    audio_path: str = scene["audio_path"]  # type: ignore[assignment]
+    subtitle_path: str = scene["subtitle_path"]  # type: ignore[assignment]
+    duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive upstream
+    mood = scene.get("mood")
+    seg_path = out_dir / f"seg_{n:03d}.mp4"
+    cards_by_shot = cards_by_shot or {}
+
+    plan = shot_timing.plan_shot_clips(
+        rendered_shots, scene.get("word_timings") or [], scene.get("narration") or "",
+        duration, min_shot_clip_sec=min_shot_clip_sec,
+    )
+    logger.info(
+        "scene %d: %d shots -> %d clips (merged %d)",
+        n, len(rendered_shots), len(plan), max(0, len(rendered_shots) - len(plan)),
+    )
+
+    if len(plan) == 1:
+        clip = plan[0]
+        cards = cards_by_shot.get(clip.shot["shot_id"], [])
+        spec = select_effect(clip.shot, scene_index)
+        await _render_scene_fast(
+            clip.shot, spec, duration, seg_path, n,
+            cards=cards, mood=mood, audio_path=audio_path, subtitle_path=subtitle_path,
+            sound_design_enabled=sound_design_enabled, post_fx_enabled=post_fx_enabled,
+            parallax_enabled=parallax_enabled, include_stinger=include_stinger,
+            composite_harmonization_tier=composite_harmonization_tier,
+        )
+        return seg_path, spec, bool(cards)
+
+    shots_dir = out_dir / "shots"
+    shots_dir.mkdir(parents=True, exist_ok=True)
+    clip_paths: list[Path] = []
+    specs: list[EffectSpec] = []
+    any_cards = False
+    for local_i, clip in enumerate(plan):
+        cards = cards_by_shot.get(clip.shot["shot_id"], [])
+        any_cards = any_cards or bool(cards)
+        spec = select_effect(clip.shot, scene_index * 100 + local_i)
+        specs.append(spec)
+        clip_path = shots_dir / f"scene_{n:03d}_{clip.shot['shot_id']}.mp4"
+        await _compose_shot_clip(
+            clip.shot, spec, clip.duration, clip_path,
+            cards=cards, mood=mood, parallax_enabled=parallax_enabled,
+            composite_harmonization_tier=composite_harmonization_tier,
+        )
+        clip_paths.append(clip_path)
+
+    await _assemble_scene_from_clips(
+        clip_paths, duration, seg_path,
+        audio_path=audio_path, subtitle_path=subtitle_path, mood=mood,
+        sound_design_enabled=sound_design_enabled, post_fx_enabled=post_fx_enabled,
+        include_stinger=include_stinger,
+    )
+    return seg_path, specs[0], any_cards
 
 
 def _card_hold_audio_input(mood: str | None, *, sound_design_enabled: bool) -> tuple[list[str], list[str]]:
@@ -1311,42 +1545,51 @@ async def video_node(state: PipelineState) -> dict:
         card_counts: list[int] = []
         rendered_cards: list[dict] = []
         for i, scene in enumerate(scenes):
-            shot_for_scene = next((sh for sh in scene.get("shots") or [] if sh.get("image_path")), None)
-            shot_key = f"{scene['scene_num']}:{shot_for_scene['shot_id']}" if shot_for_scene else None
-            scene_cards = [
-                card for card in (cast_cards.get(shot_key, []) if shot_key else [])
-                if isinstance(card, dict) and card.get("path")
-            ]
-            # Tier 3 (Story 8.7 AC:10): substitute the re-lit sprite for a STOCK
-            # (card, location) pair before composition — never inside
-            # _compose_scene, so the composition loop makes no ComfyUI calls.
-            location_key = shot_for_scene.get("location_key") if shot_for_scene else None
-            if relit_map and location_key:
-                relit_scene_cards = []
-                for card in scene_cards:
-                    relit_path = relit_map.get((card.get("card_key"), location_key))
-                    if relit_path is None:
-                        relit_scene_cards.append(card)
-                        continue
-                    try:
-                        if has_alpha(Path(relit_path).read_bytes()):
-                            relit_scene_cards.append({**card, "path": str(relit_path)})
-                        else:
-                            logger.warning("Relit sprite has no alpha; using original card: %s", relit_path)
-                            relit_scene_cards.append(card)
-                    except OSError as exc:
-                        logger.warning("Relit sprite unreadable; using original card %s: %s", relit_path, exc)
-                        relit_scene_cards.append(card)
-                scene_cards = relit_scene_cards
+            # Story 8.11: every rendered shot gets its own clip now, so cards
+            # are resolved per shot (not just for one representative shot).
+            rendered_shots_for_scene = [sh for sh in scene.get("shots") or [] if sh.get("image_path")]
+            cards_by_shot: dict[str, list[dict]] = {}
+            for sh in rendered_shots_for_scene:
+                shot_key = f"{scene['scene_num']}:{sh['shot_id']}"
+                shot_cards = [
+                    card for card in cast_cards.get(shot_key, [])
+                    if isinstance(card, dict) and card.get("path")
+                ]
+                # Tier 3 (Story 8.7 AC:10): substitute the re-lit sprite for a STOCK
+                # (card, location) pair before composition — never inside
+                # _compose_scene, so the composition loop makes no ComfyUI calls.
+                # Each shot substitutes using its OWN location_key (Story 8.11).
+                location_key = sh.get("location_key")
+                if relit_map and location_key:
+                    relit_shot_cards = []
+                    for card in shot_cards:
+                        relit_path = relit_map.get((card.get("card_key"), location_key))
+                        if relit_path is None:
+                            relit_shot_cards.append(card)
+                            continue
+                        try:
+                            if has_alpha(Path(relit_path).read_bytes()):
+                                relit_shot_cards.append({**card, "path": str(relit_path)})
+                            else:
+                                logger.warning("Relit sprite has no alpha; using original card: %s", relit_path)
+                                relit_shot_cards.append(card)
+                        except OSError as exc:
+                            logger.warning("Relit sprite unreadable; using original card %s: %s", relit_path, exc)
+                            relit_shot_cards.append(card)
+                    shot_cards = relit_shot_cards
+                cards_by_shot[sh["shot_id"]] = shot_cards
+
             seg_path, spec, has_char = await _compose_scene(
                 scene, i, run_dir,
-                cards=scene_cards,
+                cards_by_shot=cards_by_shot,
                 sound_design_enabled=s.sound_design_enabled,
                 post_fx_enabled=s.post_fx_enabled,
                 parallax_enabled=s.parallax_enabled,
                 composite_harmonization_tier=s.composite_harmonization_tier,
                 include_stinger=not (chapter_cards_enabled and i > 0),
+                min_shot_clip_sec=s.min_shot_clip_sec,
             )
+            scene_cards = [card for shot_cards in cards_by_shot.values() for card in shot_cards]
             card_counts.append(len(scene_cards))
             rendered_cards.extend(scene_cards)
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive

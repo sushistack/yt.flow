@@ -72,6 +72,7 @@ def _settings_ns(tmp_path, *, composite_harmonization_tier=0):
         parallax_enabled=False,
         cc_attribution=False,
         composite_harmonization_tier=composite_harmonization_tier,
+        min_shot_clip_sec=2.0,
     )
 
 
@@ -506,11 +507,11 @@ async def test_tier1_tier2_filtergraph_renders_real_ffmpeg(tmp_path, tier):
 
     seg_path, _spec, has_char = await _compose_scene(
         scene, 0, tmp_path,
-        cards=[{
+        cards_by_shot={"S001": [{
             "card_key": "SCP-096", "pose": "standing", "angle": "front",
             "path": str(character), "fallback": False, "position": "center",
             "depth": "near", "motion_style": "sway", "motion_energy": "medium",
-        }],
+        }]},
         composite_harmonization_tier=tier,
     )
     assert has_char is True
@@ -538,7 +539,7 @@ async def test_tier2_two_cards_no_label_collision_real_ffmpeg(tmp_path):
 
     seg_path, _spec, has_char = await _compose_scene(
         scene, 0, tmp_path,
-        cards=[
+        cards_by_shot={"S001": [
             {
                 "card_key": "SCP-096", "pose": "standing", "angle": "front",
                 "path": str(character), "fallback": False, "position": "left",
@@ -549,7 +550,7 @@ async def test_tier2_two_cards_no_label_collision_real_ffmpeg(tmp_path):
                 "path": str(character), "fallback": False, "position": "right",
                 "depth": "near", "motion_style": "breath", "motion_energy": "low",
             },
-        ],
+        ]},
         composite_harmonization_tier=2,
     )
     assert has_char is True

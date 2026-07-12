@@ -150,3 +150,8 @@ class Settings(BaseSettings):
     # tier-0 vs tier-1 A/B run confirms the visual win.
     composite_harmonization_tier: int = Field(0, ge=0, le=3)
     iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
+
+    # Per-shot cut assembly (Story 8.11): a shot's clip window shorter than this
+    # merges into the previous shot's clip (first shot merges forward). 0.0
+    # disables merging entirely.
+    min_shot_clip_sec: float = Field(2.0, ge=0.0)

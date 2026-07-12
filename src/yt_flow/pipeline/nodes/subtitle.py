@@ -199,6 +199,38 @@ def _sentence_to_cues(sentence: str, start: float, end: float) -> list[Alignment
     ]
 
 
+def sentence_windows(timings: list[WordTiming], spoken_text: str) -> list[tuple[float, float]]:
+    """Per-sentence (start, end) windows from the spoken track's word timings.
+
+    The unit `sentence_cues` builds its cues from and Story 8.11's per-shot cut
+    assembly derives its clip boundaries from — one implementation, so cuts
+    and subtitles can never drift apart. Degrades to apportioning windows by
+    character length when the word-timings count doesn't match the spoken
+    word count (or there are none). [AC:1,7]
+    """
+    spoken_sentences = split_sentences(spoken_text)
+    if not spoken_sentences or not timings:
+        return []
+
+    spoken_word_counts = [len(s.split()) for s in spoken_sentences]
+    if sum(spoken_word_counts) != len(timings):
+        logger.warning(
+            "sentence_cues: word_timings count (%d) != spoken word count (%d); "
+            "apportioning sentence windows by character length, falling back to spoken text",
+            len(timings), sum(spoken_word_counts),
+        )
+        start, end = timings[0]["start_sec"], timings[-1]["end_sec"]
+        return _apportion([len(s) for s in spoken_sentences], start, end)
+
+    windows: list[tuple[float, float]] = []
+    idx = 0
+    for wc in spoken_word_counts:
+        group = timings[idx: idx + wc]
+        windows.append((group[0]["start_sec"], group[-1]["end_sec"]))
+        idx += wc
+    return windows
+
+
 def sentence_cues(
     timings: list[WordTiming], spoken_text: str, display_text: str
 ) -> list[AlignmentSegment]:
@@ -225,23 +257,11 @@ def sentence_cues(
 
     spoken_word_counts = [len(s.split()) for s in spoken_sentences]
     if sum(spoken_word_counts) != len(timings):
-        logger.warning(
-            "sentence_cues: word_timings count (%d) != spoken word count (%d); "
-            "apportioning sentence windows by character length, falling back to spoken text",
-            len(timings), sum(spoken_word_counts),
-        )
         # AC:7 — a word_timings/text mismatch is exactly the "degrade to spoken track"
         # case, not just a re-apportioning case; display_sentences must fall back too.
         display_sentences = spoken_sentences
-        start, end = timings[0]["start_sec"], timings[-1]["end_sec"]
-        windows = _apportion([len(s) for s in spoken_sentences], start, end)
-    else:
-        windows = []
-        idx = 0
-        for wc in spoken_word_counts:
-            group = timings[idx: idx + wc]
-            windows.append((group[0]["start_sec"], group[-1]["end_sec"]))
-            idx += wc
+
+    windows = sentence_windows(timings, spoken_text)
 
     cues: list[AlignmentSegment] = []
     for (start, end), sentence in zip(windows, display_sentences):
