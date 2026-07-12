@@ -258,7 +258,7 @@ def test_run_scenario_times_out(monkeypatch):
 def test_evaluate_label_passes_timeout_to_run_scenario(monkeypatch):
     captured_timeouts = []
 
-    async def fake_run_scenario(item, label, *, timeout=ep.DEFAULT_ITEM_TIMEOUT_SECONDS):
+    async def fake_run_scenario(item, label, *, timeout=ep.DEFAULT_ITEM_TIMEOUT_SECONDS, no_cache=False):
         captured_timeouts.append(timeout)
         return {"scenes": [{"scene_num": 1, "narration": "hi", "shots": [{"image_prompt": "p"}]}], "current_stage": "scenario", "error": None}
 
@@ -386,7 +386,9 @@ class FakeSettings:
 
 class FakePrompt:
     def compile(self, **variables):
-        return "rendered"
+        # Real prompts render distinct text per stage; a fixed "rendered" would make every
+        # stage's cache key collide with the story-6.13 stage cache now wired in by default.
+        return f"rendered:{sorted(variables.items())}"
 
 
 def _stub_stage_functions(monkeypatch, *, fail_at=None):
@@ -1418,3 +1420,312 @@ def test_single_label_run_not_frozen(monkeypatch):
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
     assert ep.main(["--label", "candidate"]) in (0, 1)  # runs; not blocked by the freeze
+
+
+# ── stage cache (Story 6.13) ─────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache(tmp_path, monkeypatch):
+    # Story 6.13's cache is content-addressed local JSON under CACHE_ROOT — redirect it
+    # into pytest's per-test tmp_path so cache entries never leak across tests/runs
+    # (the test-isolation-workspace-pollution gotcha applies here too).
+    monkeypatch.setattr(ep, "CACHE_ROOT", tmp_path / "cache")
+
+
+def test_cache_key_differs_for_different_rendered_text():
+    assert ep._cache_key("a", "model", 8192) != ep._cache_key("b", "model", 8192)
+
+
+def test_cache_key_differs_for_different_model():
+    assert ep._cache_key("same", "model-1", 8192) != ep._cache_key("same", "model-2", 8192)
+
+
+def test_cache_key_differs_for_different_max_tokens():
+    # max_tokens governs truncation (_RISKY_DEFAULT_MAX_TOKENS) — a bump meant to fix
+    # a truncated response must not silently replay the old truncated cache entry.
+    assert ep._cache_key("same", "model", 8192) != ep._cache_key("same", "model", 16000)
+
+
+def test_cache_get_miss_returns_none():
+    assert ep._cache_get(ep._cache_key("never cached", "model", 8192)) is None
+
+
+def test_cache_put_then_get_roundtrips():
+    key = ep._cache_key("rendered", "model", 8192)
+    ep._cache_put(key, "raw text", {"completion_tokens": 5}, "stop")
+    assert ep._cache_get(key) == ("raw text", {"completion_tokens": 5}, "stop")
+
+
+def test_cache_get_treats_corrupt_json_as_a_miss():
+    # A process killed mid-write (Ctrl-C/OOM during the 600-1200s eval timeouts this
+    # script uses) can leave a truncated file — must degrade to a miss, not crash.
+    key = ep._cache_key("rendered", "model", 8192)
+    ep.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    (ep.CACHE_ROOT / f"{key}.json").write_text('{"raw": "incomplete', encoding="utf-8")
+    assert ep._cache_get(key) is None
+
+
+def test_cached_call_deepseek_hits_cache_on_identical_rendered_text_and_model():
+    import asyncio
+
+    calls = {"n": 0}
+
+    async def fake_call(rendered, s):
+        calls["n"] += 1
+        return ("raw", {}, "stop")
+
+    wrapped = ep._cached_call_deepseek(fake_call)
+
+    asyncio.run(wrapped("same text", FakeSettings()))
+    asyncio.run(wrapped("same text", FakeSettings()))
+
+    assert calls["n"] == 1  # AC8(a): identical rendered text + model -> exactly one real call
+
+
+def test_cached_call_deepseek_misses_on_changed_text_but_hits_unrelated_unchanged_key():
+    import asyncio
+
+    calls = []
+
+    async def fake_call(rendered, s):
+        calls.append(rendered)
+        return (f"raw-{rendered}", {}, "stop")
+
+    wrapped = ep._cached_call_deepseek(fake_call)
+
+    first = asyncio.run(wrapped("a", FakeSettings()))
+    repeat_of_first = asyncio.run(wrapped("a", FakeSettings()))  # unrelated, unchanged -> still hits
+    second = asyncio.run(wrapped("b", FakeSettings()))  # changed rendered text -> misses
+
+    assert calls == ["a", "b"]  # AC8(b): only the changed key produced a second real call
+    assert repeat_of_first == first
+    assert second == ("raw-b", {}, "stop")
+
+
+def test_cached_call_deepseek_caches_truncated_response_unconditionally():
+    import asyncio
+
+    calls = {"n": 0}
+
+    async def fake_call(rendered, s):
+        calls["n"] += 1
+        return ("{truncated partial json", {}, "length")
+
+    wrapped = ep._cached_call_deepseek(fake_call)
+
+    first = asyncio.run(wrapped("x", FakeSettings()))
+    second = asyncio.run(wrapped("x", FakeSettings()))
+
+    assert calls["n"] == 1
+    assert first == second == ("{truncated partial json", {}, "length")
+
+
+def test_run_scenario_wires_cache_wrapper_for_scenario_node_call(monkeypatch):
+    import asyncio
+
+    original = ep.scenario_module._call_deepseek
+    seen = {}
+
+    async def fake_scenario_node(state, *, trace_sink=None):
+        seen["wrapped"] = ep.scenario_module._call_deepseek is not original
+        return {"scenes": [], "current_stage": "scenario", "error": None}
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+
+    item = FakeDatasetItem("SCP-096", {"scp_id": "SCP-096", "scp_text": "x"})
+    asyncio.run(ep._run_scenario(item, "production"))
+
+    assert seen["wrapped"] is True  # AC6: caching wrapper substituted for the duration of the call
+    assert ep.scenario_module._call_deepseek is original  # ...and restored afterward
+
+
+def test_run_scenario_no_cache_leaves_call_deepseek_unwrapped(monkeypatch):
+    import asyncio
+
+    original = ep.scenario_module._call_deepseek
+    seen = {}
+
+    async def fake_scenario_node(state, *, trace_sink=None):
+        seen["unwrapped"] = ep.scenario_module._call_deepseek is original
+        return {"scenes": [], "current_stage": "scenario", "error": None}
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+
+    item = FakeDatasetItem("SCP-096", {"scp_id": "SCP-096", "scp_text": "x"})
+    asyncio.run(ep._run_scenario(item, "production", no_cache=True))
+
+    assert seen["unwrapped"] is True  # AC4: --no-cache never substitutes the wrapper
+
+
+def test_run_scenario_restores_call_deepseek_even_when_scenario_node_raises(monkeypatch):
+    import asyncio
+
+    original = ep.scenario_module._call_deepseek
+
+    async def raising_scenario_node(state, *, trace_sink=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ep, "scenario_node", raising_scenario_node)
+
+    item = FakeDatasetItem("SCP-096", {"scp_id": "SCP-096", "scp_text": "x"})
+    with pytest.raises(RuntimeError):
+        asyncio.run(ep._run_scenario(item, "production"))
+
+    assert ep.scenario_module._call_deepseek is original  # AC6: restored even on raise
+
+
+def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(monkeypatch):
+    """AC4/AC7/AC8(c): with --no-cache, every stage call goes straight to
+    _call_deepseek even though every stage renders the exact same text (which
+    would otherwise collide on one cache key) — proving the bypass is real,
+    not just "no collision happened to occur"."""
+    import asyncio
+    import json as jsonlib
+
+    class ConstantPrompt:
+        def compile(self, **variables):
+            return "identical rendered text for every stage"
+
+    responses = [
+        (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (jsonlib.dumps({"scenes": [{"scene_num": 1}]}), {}, "stop"),
+        (jsonlib.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop"),
+    ]
+
+    async def scripted_call_deepseek(rendered, s):
+        return responses.pop(0)
+
+    monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: ConstantPrompt())
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: ConstantPrompt())
+    monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
+
+    failed, actual_stage, error, finish_reason, raw = asyncio.run(
+        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0, no_cache=True)
+    )
+
+    assert failed is False
+    assert actual_stage == "writing"
+    assert responses == []  # all 3 canned responses consumed fresh — none served from cache
+
+
+def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(monkeypatch):
+    """AC1/AC2/AC8: through the real _run_stage_chain/_recording_call wiring point
+    (not the _cached_call_deepseek helper in isolation) — a second run with identical
+    scp_id/scp_text/settings hits cache for every stage; no second real call is made."""
+    import asyncio
+
+    responses = [
+        (json.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (json.dumps({"scenes": [{"scene_num": 1}]}), {}, "stop"),
+        (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop"),
+    ]
+    calls = {"n": 0}
+
+    async def scripted_call_deepseek(rendered, s):
+        calls["n"] += 1
+        return responses.pop(0)
+
+    monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
+
+    for _ in range(2):
+        failed, actual_stage, error, finish_reason, raw = asyncio.run(
+            ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+        )
+        assert failed is False
+        assert actual_stage == "writing"
+
+    assert responses == []  # all 3 canned responses consumed exactly once
+    assert calls["n"] == 3  # the second run's 3 stage calls were all served from cache
+
+
+def test_run_scenario_cache_enabled_hits_cache_on_second_call(monkeypatch):
+    """AC1/AC6/AC8 through the real _run_scenario monkeypatch wiring point: a second
+    _run_scenario call for the same item makes no additional underlying DeepSeek call."""
+    import asyncio
+
+    calls = {"n": 0}
+
+    async def fake_underlying(rendered, s):
+        calls["n"] += 1
+        return ("raw", {}, "stop")
+
+    monkeypatch.setattr(ep, "_call_deepseek", fake_underlying)
+
+    async def fake_scenario_node(state, *, trace_sink=None):
+        await ep.scenario_module._call_deepseek("same rendered text", FakeSettings())
+        return {"scenes": [], "current_stage": "scenario", "error": None}
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+
+    item = FakeDatasetItem("SCP-096", {"scp_id": "SCP-096", "scp_text": "x"})
+    asyncio.run(ep._run_scenario(item, "production"))
+    asyncio.run(ep._run_scenario(item, "production"))
+
+    assert calls["n"] == 1  # second call served from cache through the real wiring point
+
+
+def test_main_threads_no_cache_flag_into_evaluate_label(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    captured = {}
+    real_evaluate_label = ep.evaluate_label
+
+    def spy_evaluate_label(*a, **k):
+        captured.update(k)
+        return real_evaluate_label(*a, **k)
+
+    monkeypatch.setattr(ep, "evaluate_label", spy_evaluate_label)
+
+    ep.main(["--label", "production", "--no-cache"])
+
+    assert captured["no_cache"] is True
+
+
+def test_main_promotion_reps_force_no_cache_even_without_flag(monkeypatch):
+    """Each rep must be an independent regeneration for Story 6.10's median-of-N
+    noise gate — serving rep 2..N from rep 1's cache would collapse the sample to
+    one draw, so the reps loop always passes no_cache=True regardless of --no-cache."""
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    captured_no_cache = []
+    real_evaluate_label = ep.evaluate_label
+
+    def spy_evaluate_label(*a, **k):
+        captured_no_cache.append(k.get("no_cache"))
+        return real_evaluate_label(*a, **k)
+
+    monkeypatch.setattr(ep, "evaluate_label", spy_evaluate_label)
+
+    assert ep.main(["--profile", "promotion"]) == 0  # note: no --no-cache flag passed
+
+    assert captured_no_cache == [True] * (ep.PROMOTION_REPS * 2)  # candidate reps + production reps
+
+
+def test_main_default_no_cache_is_false(monkeypatch):
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    captured = {}
+    real_evaluate_label = ep.evaluate_label
+
+    def spy_evaluate_label(*a, **k):
+        captured.update(k)
+        return real_evaluate_label(*a, **k)
+
+    monkeypatch.setattr(ep, "evaluate_label", spy_evaluate_label)
+
+    ep.main(["--label", "production"])
+
+    assert captured["no_cache"] is False

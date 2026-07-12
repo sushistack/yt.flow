@@ -17,6 +17,7 @@ Usage:
 import argparse
 import asyncio
 import copy
+import hashlib
 import json
 import os
 import statistics
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from langfuse import Evaluation  # noqa: E402
 
 from yt_flow.config import Settings  # noqa: E402
+from yt_flow.pipeline.nodes import scenario as scenario_module  # noqa: E402
 from yt_flow.pipeline.nodes.scenario import _call_deepseek, scenario_node  # noqa: E402
 from yt_flow.pipeline.nodes.scenario_chain import (  # noqa: E402
     cast_decision_step,
@@ -70,6 +72,7 @@ DEFAULT_ITEM_TIMEOUT_SECONDS = 1200.0
 # Stage isolation only runs one chain segment — the smaller pre-6.6 default still fits (AC5).
 DEFAULT_STAGE_TIMEOUT_SECONDS = 600.0
 ARTIFACT_ROOT = Path(__file__).parent.parent / "tmp" / "eval-prompts"
+CACHE_ROOT = ARTIFACT_ROOT / "cache"
 
 # Settings.deepseek_max_tokens' own default — truncation-prone for the scenario chain (AC6).
 _RISKY_DEFAULT_MAX_TOKENS = 8192
@@ -179,10 +182,71 @@ def seed_dataset(client, dataset_name: str = DATASET_NAME) -> None:
         client.create_dataset_item(dataset_name=dataset_name, id=scp_id, input={"scp_id": scp_id, "scp_text": scp_text})
 
 
+# ── stage-call cache (Story 6.13) ───────────────────────────────────────────
+#
+# Keyed on the exact rendered prompt text + model name (AC1, AC3) — this is
+# strictly what changes whenever a Langfuse prompt version or a variable
+# changes, so it's a stronger, simpler key than a separate version field
+# (see Dev Notes). Local JSON files under CACHE_ROOT; no TTL/eviction (YAGNI —
+# entries only grow when a prompt's rendered text actually changes).
+
+
+def _cache_key(rendered: str, model: str, max_tokens: int) -> str:
+    # max_tokens is part of the actual request body (scenario.py's _call_deepseek)
+    # and directly governs truncation (_RISKY_DEFAULT_MAX_TOKENS below) — omitting
+    # it would let a max-tokens bump meant to fix a truncated response instead
+    # silently replay the old truncated cache entry.
+    return hashlib.sha256(f"{rendered}\0{model}\0{max_tokens}".encode()).hexdigest()
+
+
+def _cache_get(key: str) -> tuple[str, dict, str | None] | None:
+    path = CACHE_ROOT / f"{key}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data["raw"], data["usage"], data["finish_reason"]
+    except (json.JSONDecodeError, KeyError):
+        return None  # partial/corrupt write (e.g. process killed mid-run) — treat as a miss
+
+
+def _cache_put(key: str, raw: str, usage: dict, finish_reason: str | None) -> None:
+    CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    path = CACHE_ROOT / f"{key}.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(
+        json.dumps({"raw": raw, "usage": usage, "finish_reason": finish_reason}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    tmp.replace(path)  # atomic on POSIX — a reader never observes a partially-written file
+
+
+def _cached_call_deepseek(call_deepseek):
+    """Wraps a ``call_deepseek(rendered, s) -> (raw, usage, finish_reason)`` callable
+    with the stage cache. Model name + max_tokens come from the ``s`` argument each
+    call already carries (AC1) — never constructs its own ``Settings()``. Caches the
+    real call's result unconditionally, including a truncated (finish_reason ==
+    "length") one, so a cached truncation replays the same downstream
+    ``TruncationError`` deterministically."""
+
+    async def wrapper(rendered, s):
+        key = _cache_key(rendered, s.deepseek_model, s.deepseek_max_tokens)
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+        raw, usage, finish_reason = await call_deepseek(rendered, s)
+        _cache_put(key, raw, usage, finish_reason)
+        return raw, usage, finish_reason
+
+    return wrapper
+
+
 # ── scenario task + scoring evaluator ───────────────────────────────────────
 
 
-async def _run_scenario(item, label: str, *, timeout: float = DEFAULT_ITEM_TIMEOUT_SECONDS) -> dict:
+async def _run_scenario(
+    item, label: str, *, timeout: float = DEFAULT_ITEM_TIMEOUT_SECONDS, no_cache: bool = False
+) -> dict:
     """Runs scenario_node and folds in the per-stage token/cache metadata Story 6.3
     added to `_record_trace` — captured here (not read back from Langfuse) so evidence
     survives even for a PASSING item, which `write_artifact` used to skip entirely."""
@@ -198,10 +262,27 @@ async def _run_scenario(item, label: str, *, timeout: float = DEFAULT_ITEM_TIMEO
         "error": None,
     }
     stages: list[dict] = []
+    # scenario_node's internal *_step calls reference scenario.py's module-level
+    # `_call_deepseek` by name directly (no injectable parameter) — the only seam
+    # available without touching scenario.py/scenario_chain.py (AC5, AC6).
+    #
+    # evaluate_label() runs several _run_scenario calls concurrently
+    # (max_concurrency), all sharing this one module attribute. Set/restore
+    # always relative to the fixed `_call_deepseek` imported at module load
+    # (never whatever the attribute currently holds) so an overlapping task's
+    # finally-restore can never leave the module stuck on a stale wrapper —
+    # worst case under interleaving is an occasional missed cache hit (a wasted
+    # real call), never corruption or a permanently-patched module.
+    # ponytail: doesn't eliminate every interleaving race, just its unsafe
+    # outcomes; add a lock around the patch window if a real bug surfaces.
+    if not no_cache:
+        scenario_module._call_deepseek = _cached_call_deepseek(_call_deepseek)
     try:
         out = await asyncio.wait_for(scenario_node(state, trace_sink=stages), timeout=timeout)
     except TimeoutError:
         out = {"scenes": [], "current_stage": "scenario", "error": f"timeout after {timeout:.0f}s"}
+    finally:
+        scenario_module._call_deepseek = _call_deepseek
     return {**out, "stages": stages}
 
 
@@ -319,6 +400,7 @@ def evaluate_label(
     scp_id: str | None = None,
     timeout: float = DEFAULT_ITEM_TIMEOUT_SECONDS,
     run_dir: Path | None = None,
+    no_cache: bool = False,
 ) -> list[ItemResult]:
     dataset = client.get_dataset(dataset_name)
     if scp_id:
@@ -326,7 +408,7 @@ def evaluate_label(
         dataset.items = [item for item in dataset.items if item.input["scp_id"] == scp_id]
 
     async def _task(*, item):
-        return await _run_scenario(item, label, timeout=timeout)
+        return await _run_scenario(item, label, timeout=timeout, no_cache=no_cache)
 
     result = dataset.run_experiment(
         name=f"golden-eval-{label}",
@@ -366,7 +448,7 @@ class StageResult:
 
 
 async def _run_stage_chain(
-    scp_id: str, scp_text: str, label: str, stage: str, s: Settings, timeout: float
+    scp_id: str, scp_text: str, label: str, stage: str, s: Settings, timeout: float, *, no_cache: bool = False
 ) -> tuple[bool, str, str | None, str | None, str | None]:
     """Returns (failed, actual_stage, error, finish_reason, raw_output) — finish_reason/raw_output
     come from the last DeepSeek call made before failure (AC3)."""
@@ -374,10 +456,15 @@ async def _run_stage_chain(
     last_raw: str | None = None
     last_finish_reason: str | None = None
     current_stage = "format_guide"
+    # `_call_deepseek` resolves the module global at this call's entry (not at
+    # import time), so a test's monkeypatch.setattr(ep, "_call_deepseek", ...) done
+    # before invoking _run_stage_chain is honored (AC7); it is then fixed for the
+    # duration of this one run, not re-resolved per stage.
+    deepseek_call = _call_deepseek if no_cache else _cached_call_deepseek(_call_deepseek)
 
     async def _recording_call(rendered, settings):
         nonlocal last_raw, last_finish_reason
-        raw, usage, finish_reason = await _call_deepseek(rendered, settings)
+        raw, usage, finish_reason = await deepseek_call(rendered, settings)
         last_raw, last_finish_reason = raw, finish_reason
         return raw, usage, finish_reason
 
@@ -429,6 +516,7 @@ def run_stage(
     scp_id: str | None = None,
     timeout: float = DEFAULT_STAGE_TIMEOUT_SECONDS,
     run_dir: Path | None = None,
+    no_cache: bool = False,
 ) -> list[StageResult]:
     dataset = client.get_dataset(dataset_name)
     items = [item for item in dataset.items if scp_id is None or item.input["scp_id"] == scp_id]
@@ -437,7 +525,7 @@ def run_stage(
     for item in items:
         item_scp_id = item.input["scp_id"]
         failed, actual_stage, error, finish_reason, raw = asyncio.run(
-            _run_stage_chain(item_scp_id, item.input["scp_text"], label, stage, s, timeout)
+            _run_stage_chain(item_scp_id, item.input["scp_text"], label, stage, s, timeout, no_cache=no_cache)
         )
         artifact_path = None
         if failed and run_dir:
@@ -721,6 +809,10 @@ def main(argv=None) -> int:
             "Absorbs run-to-run generation noise so a single noisy trial no longer fails the gate (Story 6.10)."
         ),
     )
+    ap.add_argument(
+        "--no-cache", action="store_true",
+        help="bypass the golden-set stage cache entirely — no read, no write (Story 6.13, for suspected cache bugs)",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -796,7 +888,8 @@ def main(argv=None) -> int:
 
     if args.stage != "full":
         stage_results = run_stage(
-            client, args.dataset, args.label, args.stage, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir
+            client, args.dataset, args.label, args.stage, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
+            no_cache=args.no_cache,
         )
         print_stage_report(args.label, args.stage, stage_results)
         _announce_authority()
@@ -806,6 +899,7 @@ def main(argv=None) -> int:
         candidate = evaluate_label(
             client, args.dataset, args.label,
             max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
+            no_cache=args.no_cache,
         )
         print_report(args.label, candidate)
         _announce_authority()
@@ -820,12 +914,18 @@ def main(argv=None) -> int:
             return [evaluate_label(
                 client, args.dataset, label,
                 max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout, run_dir=run_dir,
+                no_cache=args.no_cache,
             )]
+        # Each rep exists to draw an independent regeneration for the median-of-N
+        # noise gate (Story 6.10) — serving rep 2..N from rep 1's cache entry would
+        # collapse the whole sample to one draw and silently defeat the gate, so
+        # this loop always bypasses the cache regardless of --no-cache.
         return [
             evaluate_label(
                 client, args.dataset, label,
                 max_concurrency=args.max_concurrency, scp_id=args.scp_id, timeout=args.timeout,
                 run_dir=run_dir / f"{label}-rep{i + 1}",
+                no_cache=True,
             )
             for i in range(reps)
         ]
