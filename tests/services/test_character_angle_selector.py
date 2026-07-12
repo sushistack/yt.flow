@@ -302,6 +302,26 @@ class TestResolveCastCardsHappyPath:
         assert card["depth"] == "mid"
 
     @pytest.mark.asyncio
+    async def test_derived_entity_key_resolves_once_character_row_exists(self, service):
+        """Story 8.13 AC6: `check_existing_character`/card resolution are data-driven
+        on card_key — a `<scp_id>-<n>` derived key needs no special-casing here,
+        it resolves exactly like any other non-entity card_key once a Character
+        row exists for it (e.g. via on-demand generation)."""
+        _seed_character(service, "SCP-049-2")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("SCP-049-2", position="left", depth="far")]),
+        ])]
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            result = await service.resolve_cast_cards("SCP-049", scenes)  # not the run entity itself
+            mock_post.assert_not_called()
+
+        card = result["1:S001"][0]
+        assert card["card_key"] == "SCP-049-2"
+        assert card["angle"] == "front"
+        assert card["fallback"] is False
+
+    @pytest.mark.asyncio
     async def test_card_defaults_motion_fields_when_member_omits_them(self, service):
         """Story 8.8: same default-on-missing convention as position/depth."""
         _seed_character(service, "STOCK-d-class")

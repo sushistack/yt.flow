@@ -509,6 +509,79 @@ async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
         logger.warning("special pose provisioning failed for %s", scp_id, exc_info=True)
 
 
+async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
+    """Best-effort post-scenario provisioning for Story 8.13 derived-entity cards.
+
+    ``cast_decision.md`` teaches the LLM a ``<scp_id>-<n>`` vocabulary for a
+    duplicate/offshoot of the run's own entity (e.g. "SCP-049-2"), but nothing
+    ever generated a card for that key — ``resolve_cast_cards`` silently skips
+    every shot referencing it. Mirrors ``_ensure_special_pose_cards``'s AD-10
+    envelope: any miss or generation failure degrades to that existing skip
+    behavior, never run failure.
+    """
+    try:
+        settings = _settings()
+        if settings.comfyui_mock:
+            return
+        prefix = f"{scp_id}-"
+        keys: list[str] = []
+        seen: set[str] = set()
+        for scene in scenes or []:
+            for shot in scene.get("shots", []):
+                for member in shot.get("cast", []) or []:
+                    if not isinstance(member, dict):
+                        continue
+                    card_key = member.get("card_key")
+                    if not isinstance(card_key, str) or not card_key.startswith(prefix):
+                        continue
+                    if not card_key[len(prefix):].isdigit():
+                        continue
+                    if card_key not in seen:
+                        seen.add(card_key)
+                        keys.append(card_key)
+        if not keys:
+            return
+
+        with Session(db._engine) as session:
+            svc = CharacterService(session, settings=settings)
+            to_generate = [key for key in keys if svc.check_existing_character(key) is None]
+            if not to_generate:
+                return
+            cap = max(0, settings.derived_entity_max_per_run)
+            skipped = to_generate[cap:]
+            if skipped:
+                logger.warning(
+                    "derived entity provisioning for %s capped at %d; skipped %s",
+                    scp_id, cap, skipped,
+                )
+
+            base = svc.check_existing_character(scp_id)
+            anchor_path: str | None = None
+            if base is not None and base.angle_front_path:
+                anchor_path = str(Path(settings.assets_path) / base.angle_front_path)
+            else:
+                logger.warning(
+                    "derived entity provisioning for %s: base entity has no front card, "
+                    "generating without a family-resemblance anchor", scp_id,
+                )
+            base_descriptor = (base.visual_descriptor if base is not None else "") or (
+                f"{scp_id}, an SCP Foundation anomaly"
+            )
+            descriptor = f"{base_descriptor}\nA reclassified/duplicate instance of {scp_id}."
+
+            for card_key in to_generate[:cap]:
+                try:
+                    await svc.generate_cards_from_descriptor(
+                        card_key, descriptor, pose="standing", anchor_path=anchor_path,
+                    )
+                except Exception:  # noqa: BLE001 — one derived entity must not block a run
+                    logger.warning(
+                        "derived entity card generation failed for %s", card_key, exc_info=True,
+                    )
+    except Exception:  # noqa: BLE001 — auxiliary provisioning must never fail the run
+        logger.warning("derived entity provisioning failed for %s", scp_id, exc_info=True)
+
+
 async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
                     prompt_variant: Any = None) -> None:
     """Kick off the pipeline: stream until the first gate interrupt (or terminal state).
@@ -562,6 +635,7 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
         snap = await _graph.aget_state(config)
         values = snap.values or {}
         await _ensure_special_pose_cards(values.get("scp_id", ""), values.get("scenes") or [])
+        await _ensure_derived_entity_cards(values.get("scp_id", ""), values.get("scenes") or [])
     await _run(run_id, _graph.astream(Command(resume=decision), config, stream_mode="updates"), sse_registry)
 
 

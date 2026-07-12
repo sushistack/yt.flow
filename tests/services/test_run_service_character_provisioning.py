@@ -8,7 +8,9 @@ exactly like ``tests/services/test_character_service*.py`` fake them — no
 network, no ComfyUI.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from sqlmodel import Session, select
 
@@ -415,3 +417,213 @@ async def test_special_pose_provisioning_generation_failure_swallowed(monkeypatc
     monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
 
     await run_service._ensure_special_pose_cards("SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse")))
+
+
+def _derived_entity_scenes(*card_keys):
+    return [{
+        "scene_num": 1,
+        "shots": [{
+            "shot_id": f"S{i:04d}",
+            "cast": [{"card_key": card_key, "position": "center", "depth": "mid", "pose": "standing"}],
+        } for i, card_key in enumerate(card_keys, start=1)],
+    }]
+
+
+async def test_derived_entity_provisioning_skips_mock_mode(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.comfyui_mock = True
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+
+    assert calls == []
+
+
+async def test_derived_entity_provisioning_no_derived_keys_noop(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    # Only stock/base cast, no `<scp_id>-<n>` derived member anywhere.
+    await run_service._ensure_derived_entity_cards(
+        "SCP-049", _derived_entity_scenes("SCP-049", "STOCK-d-class"),
+    )
+
+    assert calls == []
+
+
+async def test_derived_entity_provisioning_dedup_generates_once(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        CharacterService(session, settings=settings).create_character("SCP-049", "SCP-049")
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    # 5 shots reference the same derived key — generated exactly once (AC1/AC2 dedup).
+    await run_service._ensure_derived_entity_cards(
+        "SCP-049", _derived_entity_scenes(*(["SCP-049-2"] * 5)),
+    )
+
+    assert calls == ["SCP-049-2"]
+
+
+async def test_derived_entity_provisioning_existing_row_skips(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        svc = CharacterService(session, settings=settings)
+        svc.create_character("SCP-049", "SCP-049")
+        svc.create_character("SCP-049-2", "SCP-049-2")
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+
+    assert calls == []  # a Character row already exists for SCP-049-2 — nothing to do
+
+
+async def test_derived_entity_provisioning_uses_base_front_card_as_anchor(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        svc = CharacterService(session, settings=settings)
+        base = svc.create_character("SCP-049", "SCP-049")
+        svc.update_character(base.id, angle_front_path="SCP-049/epoch_1/front_candidate_1.png",
+                              visual_descriptor="a plague doctor in tattered robes")
+    captured = {}
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        captured["card_key"] = card_key
+        captured["descriptor"] = descriptor
+        captured["anchor_path"] = anchor_path
+        captured["pose"] = pose
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+
+    assert captured["card_key"] == "SCP-049-2"
+    assert captured["pose"] == "standing"
+    assert captured["anchor_path"] == str(Path(settings.assets_path) / "SCP-049/epoch_1/front_candidate_1.png")
+    assert "a plague doctor in tattered robes" in captured["descriptor"]
+    assert "SCP-049" in captured["descriptor"]
+
+
+async def test_derived_entity_provisioning_missing_base_front_card_degrades(monkeypatch, tmp_path, caplog):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        CharacterService(session, settings=settings).create_character("SCP-049", "SCP-049")  # no front card
+    captured = {}
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        captured["anchor_path"] = anchor_path
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    with caplog.at_level("WARNING"):
+        await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+
+    assert captured["anchor_path"] is None  # degrade path — no anchor, generation still proceeds
+    assert "no front card" in caplog.text
+
+
+async def test_derived_entity_provisioning_cap_and_warning(monkeypatch, tmp_path, caplog):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.derived_entity_max_per_run = 1
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    with caplog.at_level("WARNING"):
+        await run_service._ensure_derived_entity_cards(
+            "SCP-049", _derived_entity_scenes("SCP-049-2", "SCP-049-3"),
+        )
+
+    assert calls == ["SCP-049-2"]
+    assert "capped at 1" in caplog.text
+    assert "SCP-049-3" in caplog.text
+
+
+async def test_derived_entity_provisioning_generation_failure_swallowed(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))  # must not raise
+
+
+
+async def test_resume_run_invokes_derived_entity_provisioning(monkeypatch):
+    """One-line production wiring: resume_run's scenario-approve path must call
+    _ensure_derived_entity_cards alongside _ensure_special_pose_cards."""
+    calls = []
+
+    async def fake_ensure(scp_id, scenes):
+        calls.append(scp_id)
+
+    monkeypatch.setattr(run_service, "_ensure_derived_entity_cards", fake_ensure)
+    monkeypatch.setattr(run_service, "_ensure_special_pose_cards", AsyncMock())
+
+    class _FakeSnapshot:
+        values = {"scp_id": "SCP-049", "scenes": []}
+
+    async def fake_aget_state(config):
+        return _FakeSnapshot()
+
+    monkeypatch.setattr(run_service, "_graph", SimpleNamespace(
+        aget_state=fake_aget_state, astream=lambda *a, **k: iter(()),
+    ))
+    monkeypatch.setattr(run_service, "_write_run", lambda *a, **k: None)
+
+    async def fake_run(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(run_service, "_run", fake_run)
+
+    await run_service.resume_run("run-1", "scenario", "approve")
+
+    assert calls == ["SCP-049"]

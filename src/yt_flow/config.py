@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     character_image_height: int = 1216
     special_pose_max_per_run: int = 3
 
+    # Derived-entity on-demand cards (Story 8.13): a cast_decision `<scp_id>-<n>`
+    # duplicate/offshoot gets a full card generated the first time it's referenced.
+    derived_entity_max_per_run: int = 2
+
     # Vision LLM descriptor enrichment (Story 5.13). DashScope Qwen-VL — the DeepSeek
     # account has no vision-capable model at all (text-only), so this is a distinct
     # provider from deepseek_*, not just a different model on the same account.
