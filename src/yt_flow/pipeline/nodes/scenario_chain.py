@@ -105,16 +105,22 @@ def _repair_movement(mode: str, direction: str, position: str) -> str:
         return "in"
     if mode == "retreat":
         return "out"
-    if direction in ("left", "right"):
-        return direction
-    if mode in ("enter", "exit"):
-        return "right" if position == "right" else "left"
     if mode == "cross":
+        # An explicit direction on the same side as position is degenerate
+        # (start/end thirds coincide -> zero-amplitude "cross"), so only a
+        # genuinely different side passes through; same-side/none fall back
+        # to the opposite-of-position default.
+        if direction in ("left", "right") and direction != position:
+            return direction
         if position == "left":
             return "right"
         if position == "right":
             return "left"
         return "right"  # center defaults to right
+    if direction in ("left", "right"):
+        return direction
+    if mode in ("enter", "exit"):
+        return "right" if position == "right" else "left"
     return direction
 
 

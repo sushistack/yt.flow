@@ -1590,6 +1590,18 @@ def test_parse_cast_invalid_movement_pace_normalizes_to_slow(bad_pace):
     assert chain.parse_cast(raw)[0]["movement_pace"] == "slow"
 
 
+@pytest.mark.parametrize("bad_direction", ["up", "", 5, ["left"], None])
+def test_parse_cast_invalid_movement_direction_normalizes_then_repairs(bad_direction):
+    """An invalid movement_direction normalizes to "none" (AC:2) and then
+    goes through the same mode-aware repair as an absent direction — here
+    "enter" + position="left" repairs "none" to "left"."""
+    raw = [{
+        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "movement_mode": "enter", "movement_direction": bad_direction,
+    }]
+    assert chain.parse_cast(raw)[0]["movement_direction"] == "left"
+
+
 @pytest.mark.parametrize("mode", ["anchored", "drift"])
 def test_parse_cast_anchored_and_drift_force_direction_none(mode):
     raw = [{
@@ -1641,11 +1653,26 @@ def test_parse_cast_cross_default_direction_is_opposite_of_position(position, ex
 
 
 def test_parse_cast_cross_keeps_explicit_valid_direction():
+    """An explicit direction different from position is a genuine choice and
+    passes through unchanged (here overriding center's "right" default)."""
     raw = [{
-        "card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing",
+        "card_key": "SCP-049", "position": "center", "depth": "near", "pose": "standing",
         "movement_mode": "cross", "movement_direction": "left",
     }]
     assert chain.parse_cast(raw)[0]["movement_direction"] == "left"
+
+
+@pytest.mark.parametrize("position", ["left", "right"])
+def test_parse_cast_cross_same_side_direction_falls_back_to_opposite(position):
+    """An explicit direction equal to position would collapse "cross" into a
+    zero-amplitude no-op (start/end thirds coincide), so it is repaired to
+    the opposite side instead of trusted as-is."""
+    raw = [{
+        "card_key": "SCP-049", "position": position, "depth": "near", "pose": "standing",
+        "movement_mode": "cross", "movement_direction": position,
+    }]
+    expected = "right" if position == "left" else "left"
+    assert chain.parse_cast(raw)[0]["movement_direction"] == expected
 
 
 def test_parse_cast_movement_direction_alone_defaults_mode_and_pace():
