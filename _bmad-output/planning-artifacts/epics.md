@@ -1135,6 +1135,27 @@ truncation 관련 코드 확인 결과: `_repair_and_review`(`scenario.py:252-26
 **AC4**: AC1~AC3 반영 후 새 통계 게이트로 6-3/6-4 candidate를 N회 재실행 — median 판정 PASS 시 `docs/PROMPT_POLICY.md` 절차대로 production 승격, 6-3/6-4를 done으로 종결. 여전히 FAIL이면 사유를 `6-3-6-4-review-metrics-report.md`에 기록.
 **AC5**: 회귀 테스트 — (a) median 게이트 판정(노이즈 단일 음수 셀이 PASS를 막지 않음 / 일관된 음수는 여전히 FAIL), (b) 아이템 하드실패 격리(1개 실패가 전체 게이트를 죽이지 않음), (c) SCP-049 coverage-mismatch 복구 경로.
 
+### Story 6.12: A/B 승격 게이트 동결 + 6-3/6-4 후보 승격 보류
+
+**발의 배경 (2026-07-12):** 6.10의 통계 게이트로 baseline은 비교 가능해졌으나 corrected paired-delta 게이트가 여전히 FAIL(SCP-049 total −1.00, SCP-173 art_fidelity −0.33, SCP-096 total −0.83) — majority hard-fail 없이 순수 품질 델타 음수. 즉 블로커가 "측정 노이즈"에서 "**후보 프롬프트가 production보다 실제로 낮음**"으로 확정됨. Jay 결정: (1) 6-3/6-4는 **코드가 완성**됐으므로 done 처리하고, 후보 프롬프트의 production 승격만 이 스토리로 분리·보류. (2) 지금은 개발 단계로 **파이프라인 완성도(Epic 8 등)**가 우선이며, A/B 승격 게이트는 production 품질 튜닝 국면에서만 의미가 있고 토큰을 크게 소모하므로, **파이프라인 완성 전까지 자동/수동 어디서도 쓸데없이 돌지 않게 동결**한다.
+
+**AC1**: `scripts/eval_prompts.py`에서 `--baseline`이 붙은 실행(= candidate-vs-production A/B; `--profile promotion` 포함)은 `YTFLOW_ALLOW_AB_GATE=1` override 없이는 즉시 hard-error(argparse error). 단일 라벨 실행(`--label X`, `--baseline` 없음)과 `--profile smoke`는 진단용으로 계속 허용. **구현 완료(2026-07-12).**
+**AC2**: `docs/PROMPT_POLICY.md`에 동결 배너 추가(사유·override·해제 조건 명시). **구현 완료.**
+**AC3**: 회귀 테스트 — override 없을 때 `--baseline`/`--profile promotion` 차단, override 있을 때 통과, 단일 라벨은 미차단. **구현 완료(test_eval_prompts.py 3건 + autouse 인증 픽스처).**
+**AC4 (보류/후속)**: 파이프라인 완성 후 품질 튜닝 국면 재개 시 게이트를 un-freeze하고 median 통계 게이트로 6-3/6-4(및 Epic 8에서 보류된 8-5/8-8 등 candidate)를 재평가·승격. 이 AC는 이 스토리 범위 밖의 미래 작업 트리거로만 기록.
+
+### Story 6.13: 골든셋 평가 스테이지 단위 캐싱
+
+**발의 배경 (2026-07-12):** Jay가 프롬프트 수정이 여러 스테이지 파일에 걸쳐 산발적으로 일어나는 와중에, 하나만 고쳐도 `scripts/eval_prompts.py`가 골든셋 3개 SCP × 8개 스테이지(research/structure/writing/cast_decision/visual_breakdown×N/review/critic_agent/tts_normalize) 전체를 처음부터 재실행하는 낭비를 지적 — 6-3/6-4/6-7~6-11이 반복 지불한 라이브 게이트 비용/타임아웃(`6-3-6-4-review-metrics-report.md`)이 정확히 이 문제의 증상. 업계 표준(promptfoo) 확인: 로컬 디스크 캐시(`~/.promptfoo/cache`)에 결과를 저장하고 캐시 키에 버전 식별자를 포함시켜 프롬프트가 바뀌면 해당 항목만 자동 무효화하는 패턴이 표준. Langfuse Datasets/Experiments는 결과 기록·비교용 관측 도구이지 memoization 저장소가 아니므로(Epic 6 목표 "Langfuse native 기능만 재사용, 별도 인프라 없음"과도 상충) 이번 캐시는 Langfuse가 아닌 로컬 파일로 구현한다. 캐싱 단위는 SCP 항목이 아니라 **스테이지**(`_call_stage`) — 3개 항목이 전부 같은 8개 스테이지를 통과하므로, 항목 단위 캐싱은 프롬프트 하나만 바뀌어도 항목 전체가 무효화돼 지금과 동일한 효과 없음. DeepSeek 자체 prefix-cache(6-3, 호출은 하되 싸게)와는 다른 레이어(호출 자체를 스킵)로 상호보완적이며 서로 변경하지 않는다.
+
+**AC1**: `scenario_chain.py`의 `_call_stage`(6-3에서 `usage_sink` out-parameter가 추가된 동일 함수) 호출 지점에 스테이지 단위 캐시를 적용 — 캐시 키는 `hash(prompt name + label + Langfuse prompt object의 version + compiled variables + model)`. 캐시 히트 시 DeepSeek 호출을 스킵하고 캐시된 `(raw, usage)`를 그대로 반환.
+**AC2**: 캐시는 로컬 JSON 파일(`tmp/eval-prompts/cache/` 하위, git-ignored) — 신규 의존성 없이 stdlib `hashlib`/`json`/`pathlib`만 사용.
+**AC3**: `scripts/eval_prompts.py`에 `--no-cache` 플래그 추가(promptfoo 컨벤션과 동일한 이름) — 캐시 우회가 필요할 때 강제 재실행.
+**AC4**: 이 캐시는 `scripts/eval_prompts.py`의 골든셋 실행 경로에만 적용 — `run_service`/`scenario_node`의 실제 파이프라인 실행 경로는 건드리지 않음(운영 트래픽 캐싱이 아니라 회귀 게이트 전용).
+**AC5**: 회귀 테스트 — (a) 동일 버전 재실행은 캐시 히트로 DeepSeek 호출이 발생하지 않음, (b) 프롬프트가 재시딩되어 버전이 오르면 해당 스테이지만 캐시 미스로 재실행되고 나머지 스테이지는 여전히 캐시 히트, (c) `--no-cache`는 전체 스테이지를 무조건 재실행.
+
+**Out of scope**: 6-12가 동결한 A/B promotion 게이트(`--baseline`) 자체의 재개 여부 — 이 스토리는 게이트가 얼마나 도는지와 무관하게, 돌 때 드는 비용을 줄이는 것만 다룸.
+
 ## Epic 7: 영상 프로덕션 밸류 II — 사운드·후처리·패럴랙스·트랜지션·자막
 
 **Goal:** Epic 5(2026-07-03 첫 실전 렌더 리뷰 피드백)와는 별도로 발의된 "영상미 개선" 확장 이니셔티브 5건을 처리한다. 전부 새 LangGraph 노드 없이 `video_node`/`_compose_scene`(또는 `subtitle.py`)을 확장하는 순수 필터·에셋 추가라 하나의 에픽으로 묶는다. 상세 설계는 각 스토리가 참조하는 `docs/superpowers/specs/*.md` 참조.
