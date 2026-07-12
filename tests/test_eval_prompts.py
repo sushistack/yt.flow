@@ -19,6 +19,20 @@ import eval_prompts as ep  # noqa: E402
 from yt_flow.services.eval_service import AxisScores  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _authorize_ab_gate(monkeypatch):
+    # Story 6-12: the A/B candidate-vs-production gate is frozen unless
+    # YTFLOW_ALLOW_AB_GATE=1. These tests exercise the gate mechanics, so they
+    # run authorized; the freeze guard itself has dedicated tests that delenv it.
+    monkeypatch.setenv(ep.AB_GATE_OVERRIDE_ENV, "1")
+    # Story 8-12: --baseline additionally hard-refuses whenever CLAUDECODE/AI_AGENT
+    # is present (unconditional, not overridable) — unset both so these tests run
+    # as if from a plain terminal, same as CI. The AI-session block has its own
+    # dedicated test below that sets CLAUDECODE back on.
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("AI_AGENT", raising=False)
+
+
 # ── prompt_variant_for_label (AC2, AC3, AC8) ────────────────────────────────
 
 
@@ -1357,3 +1371,50 @@ def test_main_promotion_median_tolerates_single_noisy_run(monkeypatch):
     assert ep.main(["--profile", "promotion"]) == 0
     # candidate reps (3) + production reps (3), each covering all items
     assert calls["n"] == ep.PROMOTION_REPS * n_items * 2
+
+
+# ── A/B gate freeze (Story 6-12) ────────────────────────────────────────────
+
+
+def test_baseline_comparison_frozen_without_override(monkeypatch, capsys):
+    monkeypatch.delenv(ep.AB_GATE_OVERRIDE_ENV, raising=False)
+    with pytest.raises(SystemExit):
+        ep.main(["--label", "candidate", "--baseline", "production"])
+    assert "FROZEN" in capsys.readouterr().err
+
+
+def test_promotion_profile_frozen_without_override(monkeypatch, capsys):
+    monkeypatch.delenv(ep.AB_GATE_OVERRIDE_ENV, raising=False)
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion"])
+    assert "FROZEN" in capsys.readouterr().err
+
+
+def test_baseline_blocked_in_ai_session_even_with_override(monkeypatch, capsys):
+    # Story 8-12: unlike AB_GATE_OVERRIDE_ENV, this check is not an env var an
+    # AI session can flip for itself — CLAUDECODE present blocks --baseline
+    # unconditionally, override or not.
+    monkeypatch.setenv("CLAUDECODE", "1")
+    with pytest.raises(SystemExit):
+        ep.main(["--label", "candidate", "--baseline", "production"])
+    assert "AI coding session" in capsys.readouterr().err
+
+
+def test_baseline_blocked_even_when_ai_session_var_is_empty_string(monkeypatch, capsys):
+    # Presence, not truthiness: CLAUDECODE="" is still an AI-session marker
+    # (some harnesses set the var without a value) and must still block.
+    monkeypatch.setenv("CLAUDECODE", "")
+    with pytest.raises(SystemExit):
+        ep.main(["--label", "candidate", "--baseline", "production"])
+    assert "AI coding session" in capsys.readouterr().err
+
+
+def test_single_label_run_not_frozen(monkeypatch):
+    # A single-label diagnostic (no --baseline) stays open even without the override.
+    monkeypatch.delenv(ep.AB_GATE_OVERRIDE_ENV, raising=False)
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    _wire_scenario_capturing_state(monkeypatch, [])
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+    assert ep.main(["--label", "candidate"]) in (0, 1)  # runs; not blocked by the freeze

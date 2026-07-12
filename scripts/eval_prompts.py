@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import copy
 import json
+import os
 import statistics
 import sys
 import time
@@ -54,6 +55,13 @@ SMOKE_DEFAULT_SCP_ID = "SCP-049"  # constant canary for score history (Story 6.6
 PROMOTION_REPS = 3
 NOT_A_PROMOTION_GATE = "NOT A PROMOTION GATE"
 PROMOTION_GATE_AUTHORITY = "PROMOTION GATE"
+
+# Story 6-12: the candidate-vs-production A/B gate is FROZEN during pipeline
+# development. Any run with a --baseline (the two-sided comparison) burns heavy
+# tokens (full-scenario regeneration × 2 labels × reps) and only matters for
+# production-quality tuning — deferred until the pipeline itself is complete.
+# Set this env var to "1" to run it deliberately once quality tuning resumes.
+AB_GATE_OVERRIDE_ENV = "YTFLOW_ALLOW_AB_GATE"
 
 # A full scenario item was observed taking >20min against the previous 600s
 # default, timing out symmetrically on candidate and production alike (Story
@@ -730,6 +738,30 @@ def main(argv=None) -> int:
         ap.error("--label and --baseline must differ")
     if args.stage != "full" and args.baseline:
         ap.error("--stage isolation does not support --baseline comparison; run each label separately")
+
+    # Story 6-12: A/B gate frozen during pipeline development. --baseline means a
+    # candidate-vs-production comparison — the token-heavy A/B. Single-label and
+    # --profile smoke (no --baseline) diagnostics stay open.
+    #
+    # 2026-07-12: an AI session ran this override mid-story on request, then had to be
+    # stopped by Jay. This check is deliberately NOT overridable by any env var an AI
+    # session could set for itself — if CLAUDECODE/AI_AGENT is present, --baseline is
+    # refused outright, no exceptions, no matter what an AI session is instructed to do.
+    if args.baseline and ("CLAUDECODE" in os.environ or "AI_AGENT" in os.environ):
+        ap.error(
+            "A/B candidate-vs-production gate cannot run inside an AI coding session "
+            "(CLAUDECODE/AI_AGENT env detected) — this is unconditional, not an env-var "
+            f"toggle an agent can flip for itself. Jay runs --baseline / {AB_GATE_OVERRIDE_ENV}=1 "
+            "manually in a plain terminal outside any AI session."
+        )
+    if args.baseline and os.environ.get(AB_GATE_OVERRIDE_ENV) != "1":
+        ap.error(
+            "A/B candidate-vs-production gate is FROZEN during pipeline development "
+            "(Story 6-12 / docs/PROMPT_POLICY.md). It burns heavy tokens and only matters "
+            "for production-quality tuning, not pipeline completeness. "
+            f"Set {AB_GATE_OVERRIDE_ENV}=1 to run it deliberately once the pipeline is complete. "
+            "Single-label runs (--label X, no --baseline) and --profile smoke remain available."
+        )
 
     if args.profile == "promotion" and Settings().deepseek_max_tokens < _MIN_MAX_TOKENS_FOR_PROMOTION:
         ap.error(
