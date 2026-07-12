@@ -754,77 +754,30 @@ class _CapturingPrompt:
         return "rendered"
 
 
-async def test_call_stage_with_retry_repairs_unquoted_colon_without_semantic_change(monkeypatch):
+async def test_call_stage_with_retry_repairs_freetext_colon_deterministically(monkeypatch):
+    """Story 6.11: an unquoted colon in a free-text field is repaired
+    deterministically (block-literal) with NO second DeepSeek call and no LLM
+    repair prompt — the old ``scenario/yaml_syntax_repair`` path is gone."""
     stage_prompt = _CapturingPrompt()
-    repair_prompt = _CapturingPrompt()
-    monkeypatch.setattr(
-        "yt_flow.services.prompt_service.get_prompt",
-        lambda name, **kwargs: repair_prompt if name == "scenario/yaml_syntax_repair" else stage_prompt,
-    )
-
-    broken = "content: SCP-049 says: remain calm"
-    repaired = 'content: "SCP-049 says: remain calm"'
-    responses = iter([broken, repaired])
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: stage_prompt)
+    call_count = 0
 
     async def call(rendered, s):
-        return next(responses), {}, "stop"
+        nonlocal call_count
+        call_count += 1
+        return "frozen_descriptor: SCP-049 says: remain calm", {}, "stop"
 
     def parse(raw):
         data = chain._parse_yaml(raw)
-        if not isinstance(data, dict) or "content" not in data:
-            raise ValueError("missing content")
+        if not isinstance(data, dict) or "frozen_descriptor" not in data:
+            raise ValueError("missing frozen_descriptor")
         return data
 
     result = await chain._call_stage_with_retry("scenario/research", {"a": "b"}, None, call, parse)
 
-    assert result == {"content": "SCP-049 says: remain calm"}
+    assert result == {"frozen_descriptor": "SCP-049 says: remain calm"}
+    assert call_count == 1  # deterministic fix adds no model call
     assert stage_prompt.calls == [{"a": "b", "parse_error": ""}]
-    assert repair_prompt.calls[0]["broken_yaml"] == broken
-    assert "mapping values are not allowed" in repair_prompt.calls[0]["yaml_error"]
-    assert set(repair_prompt.calls[0]) == {"broken_yaml", "yaml_error"}
-
-
-async def test_call_stage_with_retry_preserves_production_behavior_before_repair_promotion(
-    monkeypatch, caplog
-):
-    stage_prompt = _CapturingPrompt()
-
-    def get_prompt(name, **kwargs):
-        if name == "scenario/yaml_syntax_repair":
-            raise chain.prompt_service.PromptFetchError("missing production repair prompt")
-        return stage_prompt
-
-    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", get_prompt)
-    responses = iter(["key: [unterminated", "key: value"])
-
-    async def call(rendered, s):
-        return next(responses), {}, "stop"
-
-    with caplog.at_level("WARNING"):
-        result = await chain._call_stage_with_retry(
-            "scenario/research", {"a": "b"}, None, call, chain._parse_yaml
-        )
-
-    assert result == {"key": "value"}
-    assert len(stage_prompt.calls) == 2
-    assert "full-stage retry" in caplog.text
-
-
-async def test_call_stage_with_retry_does_not_hide_missing_candidate_repair_prompt(monkeypatch):
-    def get_with_fallback(name, **kwargs):
-        if name == "scenario/yaml_syntax_repair":
-            raise chain.prompt_service.PromptFetchError("missing candidate repair prompt")
-        return FakePrompt()
-
-    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt_with_fallback", get_with_fallback)
-
-    async def call(rendered, s):
-        return "key: [unterminated", {}, "stop"
-
-    with pytest.raises(chain.prompt_service.PromptFetchError, match="missing candidate"):
-        await chain._call_stage_with_retry(
-            "scenario/research", {}, None, call, chain._parse_yaml, label="candidate"
-        )
 
 
 async def test_call_stage_with_retry_routes_value_error_to_full_regeneration(monkeypatch):
@@ -849,7 +802,10 @@ async def test_call_stage_with_retry_routes_value_error_to_full_regeneration(mon
     assert "Previous output failed validation" in stage_prompt.calls[1]["parse_error"]
 
 
-async def test_call_stage_with_retry_exhausts_after_two_attempts(monkeypatch):
+async def test_call_stage_with_retry_yaml_error_normalizer_cannot_fix_propagates(monkeypatch):
+    """Story 6.11: a YAML-syntax failure the deterministic normalizer can't
+    repair (not a free-text scalar) propagates after exactly ONE model call —
+    no LLM fallback, no second attempt."""
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
     )
@@ -860,31 +816,31 @@ async def test_call_stage_with_retry_exhausts_after_two_attempts(monkeypatch):
         call_count += 1
         return "key: [unterminated", {}, "stop"
 
-    def parse(raw):
-        return chain._parse_yaml(raw)
-
     with pytest.raises(yaml.YAMLError):
-        await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
-    assert call_count == 2  # bounded — no third attempt
+        await chain._call_stage_with_retry("scenario/research", {}, None, call, chain._parse_yaml)
+    assert call_count == 1  # deterministic YAML repair adds no model call
 
 
-async def test_call_stage_with_retry_second_failure_is_surfaced_not_first(monkeypatch):
-    """The exception that propagates is the SECOND attempt's failure, even
-    when it's a different error class than the first attempt's."""
+async def test_call_stage_with_retry_semantic_retry_is_bounded(monkeypatch):
+    """A semantic (ValueError) validation failure retries exactly once; a second
+    ValueError propagates unchanged (bounded — no third attempt)."""
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
     )
-    responses = iter(["key: [unterminated", "key: value"])  # 1st: YAMLError, 2nd: parses but still invalid
+    call_count = 0
 
     async def call(rendered, s):
-        return next(responses), {}, "stop"
+        nonlocal call_count
+        call_count += 1
+        return "other: value", {}, "stop"
 
     def parse(raw):
-        data = chain._parse_yaml(raw)
-        raise ValueError(f"still invalid: {data}")
+        chain._parse_yaml(raw)
+        raise ValueError(f"still invalid attempt {call_count}")
 
-    with pytest.raises(ValueError, match="still invalid"):
+    with pytest.raises(ValueError, match="attempt 2"):
         await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
+    assert call_count == 2  # bounded — no third attempt
 
 
 async def test_call_stage_with_retry_handles_fenced_yaml_output(monkeypatch):
@@ -903,6 +859,60 @@ async def test_call_stage_with_retry_handles_fenced_yaml_output(monkeypatch):
 
     result = await chain._call_stage_with_retry("scenario/research", {}, None, call, parse)
     assert result == {"key": "value"}
+
+
+# ── _blockify_freetext_scalars (Story 6.11: deterministic YAML free-text repair) ──
+
+
+def test_blockify_repairs_top_level_freetext_colon():
+    broken = "frozen_descriptor: SCP-049 is: a plague doctor"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(broken)
+    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    assert data == {"frozen_descriptor": "SCP-049 is: a plague doctor"}  # byte-identical value
+
+
+def test_blockify_repairs_scene_list_narration_colon():
+    broken = "scenes:\n  - scene_num: 1\n    narration: 박사가 말했다: 위험해\n    mood: dread"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(broken)
+    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    assert data["scenes"][0]["narration"] == "박사가 말했다: 위험해"
+    assert data["scenes"][0]["scene_num"] == 1  # sibling keys untouched
+    assert data["scenes"][0]["mood"] == "dread"
+
+
+def test_blockify_repairs_dash_narration_colon():
+    broken = "scenes:\n  - narration: he said: run"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(broken)
+    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    assert data["scenes"][0] == {"narration": "he said: run"}
+
+
+def test_blockify_repairs_shot_image_and_negative_prompt_colon():
+    broken = "shots:\n  - image_prompt: dark hall, style: cinematic\n    negative_prompt: blurry: bad"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(broken)
+    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    assert data["shots"][0]["image_prompt"] == "dark hall, style: cinematic"
+    assert data["shots"][0]["negative_prompt"] == "blurry: bad"
+
+
+def test_blockify_leaves_valid_output_unchanged():
+    ok = "scenes:\n  - scene_num: 1\n    mood: dread"  # no free-text inline scalar
+    assert chain._blockify_freetext_scalars(ok) == ok
+
+
+def test_blockify_skips_existing_block_literal():
+    already = "narration: |-\n  he said: run"
+    assert chain._blockify_freetext_scalars(already) == already
+
+
+def test_blockify_does_not_touch_non_freetext_keys():
+    # a colon in a non-free-text value is out of scope — left broken, not rewritten
+    src = "mood: dread: extra"
+    assert chain._blockify_freetext_scalars(src) == src
 
 
 # ── usage_sink plumbing (Story 6.3: token/cache observability) ─────────────
@@ -956,15 +966,21 @@ async def test_call_stage_with_retry_collects_one_usage_entry_on_first_success(m
 async def test_call_stage_with_retry_collects_both_usage_entries_on_retry(monkeypatch):
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
 
-    responses = iter([("key: [unterminated", {"prompt_tokens": 1}), ("key: value", {"prompt_tokens": 2})])
+    responses = iter([("other: value", {"prompt_tokens": 1}), ("key: value", {"prompt_tokens": 2})])
 
     async def call(rendered, s):
         raw, usage = next(responses)
         return raw, usage, "stop"
 
+    def parse(raw):
+        data = chain._parse_yaml(raw)
+        if "key" not in data:  # semantic (ValueError) failure triggers the second model call
+            raise ValueError("missing key")
+        return data
+
     usage_sink: list[dict] = []
     result = await chain._call_stage_with_retry(
-        "scenario/research", {}, None, call, chain._parse_yaml, usage_sink=usage_sink
+        "scenario/research", {}, None, call, parse, usage_sink=usage_sink
     )
     assert result == {"key": "value"}
     assert usage_sink == [{"prompt_tokens": 1}, {"prompt_tokens": 2}]
@@ -994,13 +1010,16 @@ async def test_research_step_usage_sink_defaults_to_none_without_error(monkeypat
     assert result["frozen_descriptor"] == "desc"
 
 
-async def test_research_step_retries_once_on_malformed_yaml_then_succeeds(monkeypatch):
+async def test_research_step_retries_once_on_semantic_failure_then_succeeds(monkeypatch):
+    """A semantic-validation failure (missing frozen_descriptor) still triggers
+    exactly one full-stage retry. (YAML *syntax* failures are now handled
+    deterministically without a second model call — Story 6.11.)"""
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
     )
     responses = iter(
         [
-            "frozen_descriptor: [unterminated",
+            "core_identity: x",  # valid YAML but missing non-empty frozen_descriptor → ValueError
             "core_identity: x\nfrozen_descriptor: x\nentity_sheet: x\nstory_logline: x\n"
             "dramatic_beats: x\nenvironment: x\nhooks: x",
         ]

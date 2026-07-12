@@ -136,7 +136,7 @@ development_status:
   6-8-golden-set-judge-multi-sample: done  # 통합 코드리뷰 3건 패치; direct EvalJudgeError/비유한 점수/실동시성+평균 검증 강화; live gate에서 malformed judge item failure 재발 없음
   6-9-scene-repair-truncation-axis-regression: done  # 2026-07-11 CLOSED: truncation→full-rewrite fallback 구현+코드리뷰(narrow-recovery 수정, 01ae6cc). AC3 라이브 3회 멀티트라이얼 → 축 회귀는 VARIANCE 확정(6.8 선례, out of scope). AC4 게이트 3회 전부 FAIL(매번 다른 노이즈 셀) → production 미승격. 신규 out-of-scope 블로커 2건: (1)zero-tolerance 게이트가 생성 노이즈로 사실상 통과불가 → 6-3/6-4 언블록엔 정책/통계게이트 별도 결정 필요, (2)SCP-049 scoped-repair 간헐 취약(truncation+coverage mismatch)
   6-10-statistical-promotion-gate-repair-robustness: done  # 2026-07-12 코드리뷰 완료: paired per-rep delta median, 누락/중복 item hard-fail 집계, missing/extra scene SceneCoverageError 복구 등 findings 3건 수정. 1265 passed/1 skip, ruff clean. 기존 live Verdict=FAIL은 SCP-049 production 2/3 hard-fail로 여전히 유효; production 미승격, 6-3/6-4 in-progress 유지. paired-delta 축 라이브 증거는 추후 재런 필요
-  6-11-deterministic-yaml-freetext-normalization: backlog  # 2026-07-12 발의: SCP-049 live unquoted-colon hard-fail(6.7 LLM repair가 같은 결함 재생산). free-text 콜론 class를 결정론적 block-literal 정규화로 대체(6.7 LLM yaml_syntax_repair 제거). happy path/의미검증 ValueError 경로 불변, on-failure-only. Jay 승인(설계)
+  6-11-deterministic-yaml-freetext-normalization: review  # 2026-07-12 구현완료: _blockify_freetext_scalars(결정론적 block-literal 변환) + _call_stage_with_retry YAMLError 경로가 LLM yaml_syntax_repair 대신 결정론 정규화 호출로 대체(6.7 LLM 경로+PromptFetchError 폴백 삭제). on-failure-only, happy path/의미검증 ValueError 경로 불변. 신규 7 normalizer 테스트+3형태 회귀, LLM-repair 테스트 2건 제거/4건 의미경로로 재구성. 1271 passed/1 skip, ruff clean. Task5(라이브 게이트 재런) Jay 미룸
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress

@@ -12,6 +12,8 @@ converts it into ``PipelineState.error`` exactly as before.
 import json
 import logging
 import re
+import time
+from pathlib import Path
 from typing import Any, cast
 
 import yaml
@@ -262,6 +264,21 @@ async def _call_stage(
     raw, usage, finish_reason = await call_deepseek(rendered, s)
     if finish_reason == "length":
         completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+        # ponytail: TruncationError.raw is dropped on every stage except
+        # writing_scene_repair (which logs a 300-char preview). Persist the FULL
+        # runaway completion so it survives the ephemeral terminal — this is the
+        # evidence needed to root-cause runaway generation (Story 6.9/6.10).
+        # Delete this dump once the runaway is characterized.
+        dump = Path("tmp/truncations") / f"{prompt_name.replace('/', '_')}-{time.time_ns()}.txt"
+        try:
+            dump.parent.mkdir(parents=True, exist_ok=True)
+            dump.write_text(raw or "")
+            logger.warning(
+                "%s truncated (completion_tokens=%s); full runaway raw -> %s",
+                prompt_name, completion_tokens, dump,
+            )
+        except OSError:  # capture must never mask the real TruncationError
+            logger.warning("%s truncated (completion_tokens=%s); raw dump failed", prompt_name, completion_tokens)
         raise TruncationError(
             f"{prompt_name} response truncated (finish_reason=length); raise max_tokens",
             prompt_name=prompt_name,
@@ -309,6 +326,59 @@ def _normalize_freetext(text: str) -> str:
     return " ".join(text.split())
 
 
+# Free-text fields the scenario prompts emit as block-literal scalars. When the
+# model instead emits one inline and its value contains a YAML structural char
+# (an unquoted colon, quote, or '#'), safe_load raises YAMLError. These keys are
+# ALWAYS free-text-valued (never structural mappings), so rewriting an inline
+# value as a block literal is a byte-preserving, LLM-free repair (Story 6.11).
+# `hooks` (a list of scalars) is a different shape and out of scope.
+FREETEXT_KEYS = (
+    "narration", "image_prompt", "negative_prompt", "core_identity",
+    "frozen_descriptor", "entity_sheet", "story_logline", "feedback",
+)
+
+_FREETEXT_INLINE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<dash>- )?(?P<key>" + "|".join(FREETEXT_KEYS) + r"):[ \t]+(?P<val>\S.*)$"
+)
+
+
+def _blockify_freetext_scalars(raw: str) -> str:
+    """Rewrite each inline free-text value as a YAML block literal (``|-``) so an
+    embedded colon/quote/``#`` can't break parsing. Deterministic replacement for
+    the LLM ``yaml_syntax_repair`` path (Story 6.11).
+
+    Only ``FREETEXT_KEYS`` lines with a non-empty inline value are touched; a
+    value already written as a ``|``/``>`` block scalar is left alone. Block
+    content is indented deeper than the key (accounting for a ``- `` list-item
+    marker) and preserved verbatim. Intended to run ONLY on output that already
+    failed ``yaml.safe_load`` — a value that parsed fine is never rewritten.
+    """
+    out: list[str] = []
+    for line in raw.splitlines():
+        m = _FREETEXT_INLINE_RE.match(line)
+        if m is None or m.group("val")[:1] in ("|", ">"):
+            out.append(line)
+            continue
+        indent, dash = m.group("indent"), m.group("dash") or ""
+        content_indent = indent + " " * (len(dash) + 2)  # deeper than the key column
+        out.append(f"{indent}{dash}{m.group('key')}: |-")
+        out.append(f"{content_indent}{m.group('val')}")
+    return "\n".join(out)
+
+
+def _dump_bad_output(kind: str, prompt_name: str, raw: str) -> Path:
+    """Persist a full model output that failed to PARSE (finish_reason=stop,
+    yaml.YAMLError). Today this raw is dropped everywhere, so this is the only
+    place the exact offending text (e.g. an unquoted colon in a scalar —
+    'mapping values are not allowed here') can be recovered. 6.4/6.7 both failed
+    to capture it. Temporary diagnostic; delete once the class is characterized.
+    """
+    dump = Path("tmp/yaml-failures") / f"{prompt_name.replace('/', '_')}-{kind}-{time.time_ns()}.txt"
+    dump.parent.mkdir(parents=True, exist_ok=True)
+    dump.write_text(raw or "")
+    return dump
+
+
 async def _call_stage_with_retry(
     prompt_name: str,
     variables: dict,
@@ -319,52 +389,42 @@ async def _call_stage_with_retry(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ):
-    """Bounded (exactly one) self-correcting retry for a stage's parse+validate
-    step. YAML syntax failures use a small syntax-only repair prompt; semantic
-    validation failures feed the error back into the original stage prompt.
-    A second failure propagates unchanged — never an unbounded retry loop.
+    """Bounded self-correcting retry for a stage's parse+validate step. A YAML
+    *syntax* failure is repaired deterministically — inline free-text scalars are
+    rewritten as block literals and re-parsed once (Story 6.11, no LLM call);
+    a *semantic* validation failure feeds the error back into the original stage
+    prompt for exactly one retry. A second failure propagates unchanged — never
+    an unbounded retry loop.
 
     ``usage_sink``, when given, collects each underlying DeepSeek call's raw
-    ``usage`` dict (one entry normally, two if the retry fires) — Story 6.3's
-    token/cache observability seam, additive to every existing caller.
+    ``usage`` dict (one entry normally, two if the semantic retry fires) —
+    Story 6.3's token/cache observability seam, additive to every existing
+    caller. The deterministic YAML repair adds no DeepSeek call, so it appends
+    nothing.
     """
     raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_deepseek, label=label)
     if usage_sink is not None:
         usage_sink.append(usage)
     try:
         return parse(raw)
-    except yaml.YAMLError as exc:
+    except yaml.YAMLError:
+        # Deterministic repair (Story 6.11): rewrite inline free-text scalars as
+        # block literals and re-parse once. No LLM, no third attempt. A second
+        # failure propagates; we dump the still-broken raw so a class the
+        # normalizer does NOT cover (not free-text-colon) can be characterized.
         try:
-            raw, usage = await _call_stage(
-                "scenario/yaml_syntax_repair",
-                {"broken_yaml": raw, "yaml_error": str(exc)},
-                s,
-                call_deepseek,
-                label=label,
-            )
-        except prompt_service.PromptFetchError:
-            if label == "candidate":
-                raise
-            # ponytail: before the new repair prompt is promoted, production
-            # baselines retain the previous full-regeneration behavior. This
-            # avoids making the promotion gate depend on a not-yet-promoted
-            # prompt while still surfacing a missing candidate seed.
-            logger.warning(
-                "scenario/yaml_syntax_repair is unavailable for %s; using full-stage retry",
-                label or "production",
-            )
-            error_text = " ".join(str(exc).split())[:500]
-            retry_variables = {
-                **variables,
-                "parse_error": f"Previous output failed validation: {error_text}. "
-                "Output ONLY valid YAML, no prose, no markdown code fences.",
-            }
-            raw, usage = await _call_stage(
-                prompt_name, retry_variables, s, call_deepseek, label=label
-            )
-        if usage_sink is not None:
-            usage_sink.append(usage)
-        return parse(raw)
+            return parse(_blockify_freetext_scalars(raw))
+        except yaml.YAMLError as exc2:
+            try:
+                dump = _dump_bad_output("unfixed", prompt_name, raw)
+                logger.warning(
+                    "%s YAML parse failed and deterministic normalization did not fix it "
+                    "(%s); broken raw -> %s",
+                    prompt_name, " ".join(str(exc2).split())[:160], dump,
+                )
+            except OSError:  # capture must never mask the real failure
+                pass
+            raise
     except ValueError as exc:
         error_text = " ".join(str(exc).split())[:500]
         retry_variables = {
