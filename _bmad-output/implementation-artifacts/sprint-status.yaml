@@ -161,7 +161,7 @@ development_status:
   8-10-cast-decision-split-call: done  # 8.1 cast 0/125 미채움 버그 근본원인 규명(deepseek-v4-flash가 복잡한 visual_breakdown 호출에서 entity_visible 구 스키마로 회귀) + 수정: cast 결정을 별도 소형 LLM 호출로 분리(cast_decision_step 신설, visual_breakdown은 이미 결정된 cast만 소비). 실 DeepSeek 재검증 완료(전 샷 cast 채워짐 + 배경전용 확인). 834 passed, ruff clean
   8-11-per-shot-cut-assembly: ready-for-dev  # iteration-1 피드백 #5/#6: video_node 씬당 1배경(video.py:745) → 샷 단위 서브클립, sentence_indices+word_timings 타이밍; 87장 생성 8장 사용 문제 해소; 최우선
   8-12-cast-placement-scale-calibration: ready-for-dev  # iteration-1 피드백 #2/#3: cast_decision 프롬프트 전용 — rule-of-thirds 배분(실측 center 65/right 10/left 8), camera_angle↔depth 정합(near 37/mid 44/far 2); 8-11 이후 체감
-  8-13-derived-entity-card-on-demand: ready-for-dev  # <scp_id>-<n> 파생 개체(예 SCP-049-2) 카드 부재로 10샷 스킵된 iteration-1 갭; 8.4 온디맨드 인프라 재사용, Jay 선택(어휘 제한 대신 생성)
+  8-13-derived-entity-card-on-demand: done  # <scp_id>-<n> 파생 개체(예 SCP-049-2) 카드 부재로 10샷 스킵된 iteration-1 갭; 8.4 온디맨드 인프라 재사용, Jay 선택(어휘 제한 대신 생성); resume_run 배선(스토리 문서의 start_run 가정은 틀림, 실코드로 확인); d55a265b 실 체크포인트+ComfyUI 라이브 검증 완료(10/10 샷 카드 복구). 코드리뷰(Blind+Edge+Auditor)에서 스왈로우된 생성실패가 영구 미재시도 스텁 Character row를 남기는 버그 발견+수정(_ensure_character_reference 선례 따라 롤백), 로그 메시지/헬퍼 재사용 패치 2건 추가 적용, defer 4건(8.4/5.8 공유 선례 패턴)
 
   # ── Epic 9: Localization Config — 콘텐츠 언어 스위치 ────────────────────────
   epic-9: in-progress
