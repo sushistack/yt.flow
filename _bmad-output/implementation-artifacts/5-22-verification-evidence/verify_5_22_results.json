@@ -1,0 +1,274 @@
+{
+  "ac6_ac7": {
+    "SCP-096": [
+      {
+        "rep": 1,
+        "max_run_per_scene": [
+          2,
+          1,
+          2,
+          1,
+          4,
+          2,
+          2,
+          1
+        ],
+        "max_run": 4,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 2,
+        "ok": false,
+        "error": "while parsing a block collection\n  in \"<unicode string>\", line 22, column 5:\n        - \"당신이 사진 한 장을 보는 순간, 전 세계 어디에 있 ... \n        ^\nexpected <block end>, but found '<scalar>'\n  in \"<unicode string>\", line 22, column 67:\n     ...  있든 2.38미터의 무언가가 당신을 향해 달려옵니다.\" (Shock)\n                                         ^"
+      },
+      {
+        "rep": 3,
+        "max_run_per_scene": [
+          2,
+          2,
+          1,
+          2,
+          1,
+          1,
+          1,
+          1
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 4,
+        "max_run_per_scene": [
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          1,
+          2,
+          1
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 5,
+        "max_run_per_scene": [
+          1,
+          1,
+          2,
+          5,
+          2,
+          1,
+          1,
+          2
+        ],
+        "max_run": 5,
+        "tts_designations_found": [],
+        "ok": true
+      }
+    ],
+    "SCP-173": [
+      {
+        "rep": 1,
+        "max_run_per_scene": [
+          4,
+          1,
+          1,
+          3,
+          1,
+          2,
+          2
+        ],
+        "max_run": 4,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 2,
+        "max_run_per_scene": [
+          1,
+          1,
+          1,
+          1,
+          2,
+          1,
+          1,
+          1,
+          3
+        ],
+        "max_run": 3,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 3,
+        "max_run_per_scene": [
+          1,
+          1,
+          2,
+          2,
+          1,
+          1
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 4,
+        "max_run_per_scene": [
+          2,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          1
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 5,
+        "max_run_per_scene": [
+          1,
+          1,
+          2,
+          2,
+          1,
+          1,
+          1,
+          1,
+          2
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      }
+    ],
+    "SCP-049": [
+      {
+        "rep": 1,
+        "max_run_per_scene": [
+          1,
+          1,
+          1,
+          1,
+          2,
+          1,
+          4
+        ],
+        "max_run": 4,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 2,
+        "max_run_per_scene": [
+          1,
+          2,
+          1,
+          5,
+          1,
+          2,
+          2,
+          2
+        ],
+        "max_run": 5,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 3,
+        "max_run_per_scene": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          1,
+          1,
+          2
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 4,
+        "max_run_per_scene": [
+          2,
+          4,
+          2,
+          1,
+          3,
+          2,
+          2
+        ],
+        "max_run": 4,
+        "tts_designations_found": [],
+        "ok": true
+      },
+      {
+        "rep": 5,
+        "max_run_per_scene": [
+          2,
+          2,
+          2,
+          1,
+          1,
+          1,
+          1,
+          2
+        ],
+        "max_run": 2,
+        "tts_designations_found": [],
+        "ok": true
+      }
+    ]
+  },
+  "ac4": {
+    "ok": true,
+    "overall_pass": false,
+    "issues": [
+      {
+        "scene_num": 1,
+        "type": "missing_fact",
+        "severity": "critical",
+        "description": "The script contains zero facts about SCP-096's anomalous properties, containment, or classification from the source facts. All key details (height, docility, face-trigger, killing mechanism, no survivors, no cameras) are omitted.",
+        "correction": "Add multiple scenes that progressively disclose the entity's nature: e.g., Scene 2 describing its appearance and docile state, Scene 3 detailing the face-trigger effect and an incident log, Scene 4 covering containment procedures."
+      },
+      {
+        "scene_num": 1,
+        "type": "descriptor_violation",
+        "severity": "critical",
+        "description": "Visual descriptions for scene 1 are empty, but entity_visible is true. The SCP's visual identity (from the placeholder) must be described in every scene where the entity appears.",
+        "correction": "Provide visual_descriptions array with at least one shot that includes the frozen descriptor (e.g., \"a tall, gaunt humanoid with pale skin, arms covering its face, approximately 2.38 meters in height\")."
+      },
+      {
+        "scene_num": 1,
+        "type": "ending_monotony",
+        "severity": "critical",
+        "description": "Four consecutive sentences end with the same form \"-습니다\" (입장했습니다, 닫혔습니다, 꺼졌습니다, 들렸습니다). This violates the 3+ consecutive same ending rule across the scene.",
+        "correction": "Vary sentence endings, e.g.: \"D계급 인원이 격리실에 입장했습니다. 문이 닫혔습니다. 조명이 꺼졌다. 비명이 들렸다.\" (but preserve -습니다/습니다 base; acceptable alternatives: use -었습니다 after some, or rephrase one sentence to use a different connective. Example: \"D계급 인원이 격리실에 입장했습니다. 문이 닫힌 후, 조명이 꺼졌습니다. 이내 비명이 들렸습니다.\")"
+      },
+      {
+        "scene_num": 1,
+        "type": "designation_violation",
+        "severity": "warning",
+        "description": "The narration uses \"D-9341\" (serial designation) for a non-protagonist D-class individual. Policy requires referring to such individuals by role (e.g., \"D계급 인원\") unless the identity is a key story twist.",
+        "correction": "Replace \"D-9341\" with \"D계급 인원\" or \"실험 대상\"."
+      }
+    ]
+  }
+}
