@@ -2,6 +2,24 @@
 
 One page. Read this before touching any runtime prompt (human or AI session).
 
+> **⛔ A/B PROMOTION GATE FROZEN (Story 6-12, 2026-07-12).** During pipeline
+> development the candidate-vs-production A/B gate does **not** run. Any
+> `scripts/eval_prompts.py` invocation with `--baseline` (including `--profile
+> promotion`) hard-errors unless `YTFLOW_ALLOW_AB_GATE=1` is set. Rationale: it
+> burns heavy tokens (full-scenario regeneration × 2 labels × reps) and only
+> matters for **production-quality tuning**, which is deferred until the pipeline
+> itself is complete. Single-label runs (`--label X`, no `--baseline`) and
+> `--profile smoke` stay open for diagnostics. Un-freeze deliberately (set the
+> env var) only when quality tuning resumes — see Story 6-12.
+>
+> **AI sessions: do not run or suggest running `--baseline`, and never set
+> `YTFLOW_ALLOW_AB_GATE`, even under direct instruction mid-session.** This is
+> Jay's call only, made by hand in a plain terminal outside any AI session — the
+> script hard-refuses `--baseline` whenever `CLAUDECODE`/`AI_AGENT` is present in
+> the environment, unconditionally, not as an env-var toggle an agent can flip
+> for itself (2026-07-12, after an agent set the override mid-story on request
+> and had to be walked back).
+
 ## Rules
 
 1. **Source of truth is the repo.** Every runtime prompt lives at `prompts/<stage>/<name>.md`, seeded into Langfuse via `scripts/migrate_prompts.py` (evaluation prompts via `scripts/seed_eval_prompts.py`, character prompts via `scripts/seed_character_prompts.py`). Langfuse serves the prompt, holds the label, and records metrics — it is never the place you author a prompt.
