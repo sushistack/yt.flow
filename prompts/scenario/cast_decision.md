@@ -86,22 +86,79 @@ reflecting the composition you'd want.
 Use `pose_hint` sparingly: no more than about 3 distinct hints in the whole
 scene, and never as a substitute for the required base `pose`.
 
+## Composition
+
+Choose `position`/`depth` deliberately — do not default every entry to
+`center`/`near`.
+
+- **Position (rule-of-thirds first):** default a lone subject to `left` or
+  `right`. Reserve `center` for a deliberate symmetry beat — head-on
+  confrontation, ritual/reveal, direct-to-camera address — never a fallback.
+- **Anti-repetition:** don't repeat the same `position` for the same
+  `card_key` across consecutive sentences unless the character hasn't moved
+  and the beat is one continuous shot. Alternate sides across the scene.
+- **Multi-cast:** two people facing each other take opposing thirds
+  (`left`+`right`), never both `center` or stacked.
+- **Three or more:** stagger across all three thirds (`left`/`center`/`right`)
+  — never leave two adjacent slots empty or stack multiple people in the
+  same slot.
+- **Depth, calibrated:**
+  - `far` = establishing/environmental presence, a small figure (roughly
+    30-50% of frame height) — use it whenever the beat is about scale or
+    environment, not only rarely.
+  - `mid` = the normal storytelling distance — default for most shots.
+  - `near` = intentional intimacy or threat only, not a default.
+  - Across a scene, expect mostly `mid`, `near` reserved for emphasis beats,
+    and `far` used whenever the beat calls for it — not near-zero.
+
 ## Output Format
 
-Output ONLY valid YAML, no markdown fences, no commentary:
+Output ONLY valid YAML, no markdown fences, no commentary. This example
+demonstrates the expected spread — vary position/depth per beat, don't copy
+these exact values:
 
 ```yaml
 shots:
   - sentence: 1
     cast:
       - card_key: "{{scp_id}}"
+        position: "left"
+        depth: "far"
+        pose: "standing"
+        motion_style: "breath"
+        motion_energy: "low"
+  - sentence: 2
+    cast:
+      - card_key: "STOCK-d-class"
+        position: "right"
+        depth: "mid"
+        pose: "sitting"
+        motion_style: "tremble"
+        motion_energy: "medium"
+  - sentence: 3
+    cast:
+      - card_key: "{{scp_id}}"
+        position: "right"
+        depth: "near"
+        pose: "standing"
+        motion_style: "sway"
+        motion_energy: "medium"
+      - card_key: "STOCK-d-class"
+        position: "left"
+        depth: "near"
+        pose: "standing"
+        motion_style: "tremble"
+        motion_energy: "high"
+  - sentence: 4
+    cast:
+      - card_key: "{{scp_id}}"
         position: "center"
         depth: "near"
         pose: "standing"
         pose_hint: "reaching toward camera"
-        motion_style: "breath"
-        motion_energy: "medium"
-  - sentence: 2
+        motion_style: "pulse"
+        motion_energy: "high"
+  - sentence: 5
     cast: []
 ```
 

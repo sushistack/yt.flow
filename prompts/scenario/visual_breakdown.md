@@ -114,6 +114,14 @@ Every non-empty `image_prompt` MUST follow this structure in order:
 **Use negative space as a storytelling tool:**
 - Large empty areas in the frame create unease. A figure small in an enormous space. An empty hallway stretching to a vanishing point. The space where something SHOULD be but isn't.
 
+**Vary framing, not just distance:**
+- Not every shot needs a central vanishing point. When this sentence's
+  Pre-Decided Cast has a `left`/`right` position, give the background a
+  matching off-center anchor on that same third — a doorway, light source,
+  or object — plus asymmetric lighting or a diagonal sightline, instead of a
+  centered corridor/room by default. At least some shots per scene should
+  read this way, not every one converging dead center.
+
 **Layer foreground-midground-background:**
 - GOOD: "FOREGROUND: out-of-focus flickering monitor casting blue light, MIDGROUND: empty containment cell with open door, BACKGROUND: a narrow band of unlit corridor beyond the threshold" — imply threat with space, light, damage, and aftermath; do not imply it with a body-shaped shadow or any person/entity silhouette
 - This creates depth and implies threat beyond what's immediately visible.
@@ -215,6 +223,21 @@ Vary between consecutive shots. Choose based on the narrative beat type:
 - over-the-shoulder: point-of-view, approaching threat
 - POV: immersion, "you are there", discovery
 
+### `camera_type` ↔ Cast Depth Consistency
+
+The cast's `depth` is already decided (see Pre-Decided Cast below) — pick
+`camera_type` so the frame agrees with it, never contradicts it:
+- Dominant depth `far`/`mid`, or an empty cast → `wide`, `high-angle`, or
+  `low-angle` establishing shots read naturally.
+- Dominant depth `near` → `close-up`, `medium`, `over-the-shoulder`, or
+  `POV` read naturally.
+- Never pair a `wide` shot with `near` cast filling the frame, and never
+  pair a `close-up`/`over-the-shoulder` shot with a lone `far` cast member —
+  the scales contradict on screen.
+- If the cast's depths are mixed with no majority (e.g. one `near` + one
+  `far`), the dominant depth is whichever cast member the shot is actually
+  framed around — pick `camera_type` for that member, not an average.
+
 ### Character Visual Anchoring
 
 Visual consistency for the entity and for D-class/researcher/security
@@ -293,6 +316,7 @@ Before producing YAML, verify EVERY non-empty `image_prompt`:
 - [ ] Total shot count == {{sentence_count}}
 - [ ] Each shot: `sentence_start == sentence_end`
 - [ ] `camera_type` varies between consecutive shots
+- [ ] `camera_type` agrees with this shot's Pre-Decided Cast dominant depth (no `wide` + `near`-filling-frame, no `close-up`/`over-the-shoulder` + lone `far`)
 - [ ] Skipped sentences (effects/transitions) have empty `image_prompt`
 
 If ANY check fails, fix before outputting.
