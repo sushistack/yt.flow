@@ -62,6 +62,10 @@ def plan_shot_clips(
     for shot in rendered:
         idxs = [i for i in shot.get("sentence_indices", []) if 0 <= i < n_sentences]
         if not idxs:
+            logger.warning(
+                "shot_timing: shot %s has no sentence_indices within [0, %d); dropped from clip plan",
+                shot.get("shot_id"), n_sentences,
+            )
             continue
         clips.append(ShotClip(shot, windows[min(idxs)][0], windows[max(idxs)][1]))
 

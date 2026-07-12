@@ -178,3 +178,20 @@ def test_plan_shot_clips_word_timings_mismatch_apportions_by_character_length():
 
 def test_shot_clip_duration_property():
     assert ShotClip(_shot("S1", [0]), 1.0, 3.5).duration == 2.5
+
+
+# ── unclaimable sentence_indices (review fix) ─────────────────────────────────
+
+
+def test_plan_shot_clips_warns_and_drops_shot_with_out_of_range_indices(caplog):
+    """A shot whose sentence_indices don't land in [0, n_sentences) must be
+    dropped with a WARNING, not silently vanish from the render."""
+    narration = "첫 문장 이다. 둘째 문장 이다."  # 2 sentences
+    wt = _timings(narration.replace(".", "").split(), duration=6.0)
+    shots = [_shot("S1", [0]), _shot("S2", [5])]  # S2's index is out of range
+
+    with caplog.at_level(logging.WARNING):
+        plan = plan_shot_clips(shots, wt, narration, audio_duration=6.0, min_shot_clip_sec=0.0)
+
+    assert [c.shot["shot_id"] for c in plan] == ["S1"]
+    assert any("S2" in r.message and "dropped from clip plan" in r.message for r in caplog.records)

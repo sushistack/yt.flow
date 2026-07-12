@@ -90,6 +90,12 @@ _DIRECTION_POOL = [
     "pan-up-right", "pan-up-left", "pan-down-right", "pan-down-left",
 ]
 
+# Story 8.11's multi-clip path composes a per-scene effect index as
+# `scene_index * _EFFECT_INDEX_STRIDE + local_i`. Prime, so it can never share
+# a factor with len(_DIRECTION_POOL) and cancel scene_index out of the
+# rotation (a plain 100 did, since the pool has 10 entries).
+_EFFECT_INDEX_STRIDE = 97
+
 # Boundary grammar (Story 5.16): dip-to-black fade + concat replaces xfade —
 # narration is never trimmed/overlapped, and the dip marks the act break (the
 # chapter card where one exists, otherwise a plain black hold). 7.4's
@@ -696,23 +702,14 @@ def _record_trace(
 
 
 def _validate_scene_assets(
-    scenes: list[SceneState], *, sound_design_enabled: bool = False,
+    scenes: list[SceneState], *, sound_design_enabled: bool = False, min_shot_clip_sec: float = 2.0,
 ) -> None:
     """Raise before FFmpeg if required per-scene assets are missing. [AC:2]"""
     for scene in scenes:
         n = scene["scene_num"]
-        # Story 8.11: every image-bearing shot gets its own clip now (not just
-        # the first), so every one of them must exist on disk.
         rendered_shots = [s for s in (scene.get("shots") or []) if s.get("image_path")]
         if not rendered_shots:
             raise ValueError(f"scene {n}: no shot has a valid image_path")
-        for shot in rendered_shots:
-            img = shot["image_path"]
-            assert img is not None  # selected because image_path is truthy
-            if not Path(img).exists():
-                raise FileNotFoundError(
-                    f"scene {n} shot {shot['shot_id']}: image_path not found: {img!r}"
-                )
         audio = scene.get("audio_path")
         if not audio or not Path(audio).exists():
             raise FileNotFoundError(f"scene {n}: audio_path missing or not found: {audio!r}")
@@ -727,6 +724,22 @@ def _validate_scene_assets(
         dur = scene.get("audio_duration")
         if not isinstance(dur, (int, float)) or dur <= 0:
             raise ValueError(f"scene {n}: audio_duration must be a positive number, got {dur!r}")
+        # Story 8.11 [review fix]: validate only the shots that will actually get
+        # their own clip — shot_timing.plan_shot_clips may merge a short or
+        # sentence-unclaimed shot's window away, and an unused shot's missing
+        # image must not abort the run (the pre-8.11 rule, now scoped to every
+        # kept shot instead of just the first).
+        plan = shot_timing.plan_shot_clips(
+            rendered_shots, scene.get("word_timings") or [], scene.get("narration") or "",
+            dur, min_shot_clip_sec=min_shot_clip_sec,
+        )
+        for clip in plan:
+            img = clip.shot["image_path"]
+            assert img is not None  # selected because image_path is truthy
+            if not Path(img).exists():
+                raise FileNotFoundError(
+                    f"scene {n} shot {clip.shot['shot_id']}: image_path not found: {img!r}"
+                )
         # Sound design (Story 7.1): fail fast if the resolved mood's assets are missing,
         # same up-front posture as the image/audio/subtitle checks above. [AC:5]
         if sound_design_enabled:
@@ -770,10 +783,10 @@ def _build_card_chain(
 
     Shared by the single-pass scene render (`_render_scene_fast`) and Story
     8.11's per-shot silent-clip pass (`_compose_shot_clip`) — one
-    implementation of the overlay chain so the two can never drift. Returns
-    (chain_parts, final_label); final_label == "bg" when ordered_cards is
-    empty (caller decides whether the ";".join'd chain needs a -filter_complex
-    at all in that case).
+    implementation of the overlay chain so the two can never drift. Both
+    callers only invoke this when `ordered_cards` is non-empty; the
+    background-only case renders through a separate, simpler `-vf` path with
+    no `-filter_complex` at all. Returns (chain_parts, final_label).
     """
     # Composite harmonization (Story 8.7): lazy import behind the tier check
     # so tier=0 never touches this module (AC:13 — ponytail, don't import
@@ -1090,6 +1103,7 @@ async def _assemble_scene_from_clips(
             "-y", *inputs,
             "-filter_complex", video_chain,
             "-map", "[vout]", "-map", narration_map,
+            "-t", str(duration),
             *_OUTPUT_ARGS, str(seg_path),
         ]
 
@@ -1172,13 +1186,24 @@ async def _compose_scene(
 
     shots_dir = out_dir / "shots"
     shots_dir.mkdir(parents=True, exist_ok=True)
+    # Story 8.11 [review fix]: a retry whose plan drops a shot_id a prior
+    # attempt rendered (merge threshold or timings changed) must not leave
+    # that stale clip on disk forever (AC:8 — "overwrites... cleanly").
+    for stale in shots_dir.glob(f"scene_{n:03d}_*.mp4"):
+        stale.unlink()
     clip_paths: list[Path] = []
     specs: list[EffectSpec] = []
     any_cards = False
     for local_i, clip in enumerate(plan):
         cards = cards_by_shot.get(clip.shot["shot_id"], [])
         any_cards = any_cards or bool(cards)
-        spec = select_effect(clip.shot, scene_index * 100 + local_i)
+        # [review fix] `scene_index * 100 + local_i` cancelled scene_index out of
+        # the rotation whenever scene_index*100 % len(_DIRECTION_POOL) == 0 — true
+        # for every scene since the pool has 10 entries, so every scene's Nth shot
+        # always got the same fixed direction. _EFFECT_INDEX_STRIDE is prime (and
+        # comfortably larger than any real per-scene shot count), so it can't
+        # divide the pool size and cancel scene_index regardless of pool length.
+        spec = select_effect(clip.shot, scene_index * _EFFECT_INDEX_STRIDE + local_i)
         specs.append(spec)
         clip_path = shots_dir / f"scene_{n:03d}_{clip.shot['shot_id']}.mp4"
         await _compose_shot_clip(
@@ -1478,7 +1503,9 @@ async def video_node(state: PipelineState) -> dict:
             raise ValueError("no scenes to render")
         s = _settings()
         scp_id = state.get("scp_id", "")
-        _validate_scene_assets(scenes, sound_design_enabled=s.sound_design_enabled)
+        _validate_scene_assets(
+            scenes, sound_design_enabled=s.sound_design_enabled, min_shot_clip_sec=s.min_shot_clip_sec,
+        )
 
         # ── Story 8.3: cast card resolution (replaces 1.13's angle override) ─
         cast_cards: dict[str, list[dict]] = {}
@@ -1544,6 +1571,8 @@ async def video_node(state: PipelineState) -> dict:
         segs_with_specs: list[tuple[Path, float, EffectSpec, bool]] = []
         card_counts: list[int] = []
         rendered_cards: list[dict] = []
+        total_shots_rendered = 0
+        total_clips_kept = 0
         for i, scene in enumerate(scenes):
             # Story 8.11: every rendered shot gets its own clip now, so cards
             # are resolved per shot (not just for one representative shot).
@@ -1589,11 +1618,34 @@ async def video_node(state: PipelineState) -> dict:
                 include_stinger=not (chapter_cards_enabled and i > 0),
                 min_shot_clip_sec=s.min_shot_clip_sec,
             )
-            scene_cards = [card for shot_cards in cards_by_shot.values() for card in shot_cards]
+            duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
+            # [review fix] Scope card/motion metrics to the shots that actually
+            # survived the clip plan — shot_timing.plan_shot_clips may merge a
+            # shot's window away, and its cards are never composited. Recomputes
+            # the same pure plan `_compose_scene` already built internally (no
+            # I/O, can't drift from it) rather than reporting every image-bearing
+            # shot's cards regardless of whether that shot rendered.
+            plan = shot_timing.plan_shot_clips(
+                rendered_shots_for_scene, scene.get("word_timings") or [], scene.get("narration") or "",
+                duration, min_shot_clip_sec=s.min_shot_clip_sec,
+            )
+            kept_shot_ids = {clip.shot["shot_id"] for clip in plan}
+            scene_cards = [
+                card for shot_id, shot_cards in cards_by_shot.items()
+                if shot_id in kept_shot_ids for card in shot_cards
+            ]
             card_counts.append(len(scene_cards))
             rendered_cards.extend(scene_cards)
-            duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
+            total_shots_rendered += len(rendered_shots_for_scene)
+            total_clips_kept += len(plan)
             segs_with_specs.append((seg_path, duration, spec, has_char))
+
+        # AC:10 — run-level rollup of the per-scene "shots -> clips (merged)"
+        # log lines, for live-verification without hand-summing scene entries.
+        logger.info(
+            "video_node: %d shots rendered / %d merged / %d scenes",
+            total_shots_rendered, max(0, total_shots_rendered - total_clips_kept), len(scenes),
+        )
 
         output = run_dir / "video.mp4"
         segs = [p for p, _, _, _ in segs_with_specs]
@@ -1689,9 +1741,10 @@ async def video_node(state: PipelineState) -> dict:
             for i, (_, _, spec, has_char) in enumerate(segs_with_specs)
         ]
 
-        # Scoped to `rendered_cards` (one shot per scene, the same set `_compose_scene`
-        # actually drew), not every shot key in `cast_cards` — matches `card_counts`'s
-        # scoping so the metric never reports a style that never appeared on screen.
+        # Scoped to `rendered_cards` (the shots that survived each scene's clip
+        # plan, the same set `_compose_scene` actually drew), not every shot key
+        # in `cast_cards` — matches `card_counts`'s scoping so the metric never
+        # reports a style that never appeared on screen.
         motion_style_counts = dict(Counter(
             card.get("motion_style", "breath") for card in rendered_cards
         ))

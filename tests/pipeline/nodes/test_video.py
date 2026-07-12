@@ -532,12 +532,32 @@ def test_validate_rejects_nonpositive_audio_duration(assets, bad):
 
 
 def test_validate_fails_on_later_shot_missing_image(assets):
-    """[Story 8.11] Every image-bearing shot gets its own clip now (not just
-    the first), so a later shot's missing image must fail validation too."""
-    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    """[Story 8.11][review fix] A later shot's missing image fails validation
+    when that shot is actually part of the render plan (its own sentence
+    window) — not just because it happens to have an image_path."""
+    words = ["첫", "문장", "이다", "둘째", "문장", "이다"]
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        narration="첫 문장 이다. 둘째 문장 이다.",
+        word_timings=[
+            {"word": w, "start_sec": i * 1.5, "end_sec": (i + 1) * 1.5} for i, w in enumerate(words)
+        ],
+        audio_duration=9.0,
+    )
     scene["shots"].append(_shot("/does/not/exist.png", shot_id="S002"))
+    scene["shots"][1]["sentence_indices"] = [1]
     with pytest.raises(FileNotFoundError, match="shot S002: image_path not found"):
         _validate_scene_assets([scene])
+
+
+def test_validate_ignores_unused_later_shot_missing_image_in_degrade_path(assets):
+    """[Story 8.11][review fix] With no usable word_timings, plan_shot_clips
+    degrades to a single full-duration clip using only the first rendered
+    shot — a later shot's missing image is never rendered, so it must not
+    abort the run (restores the pre-8.11 rule for the degrade path)."""
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    scene["shots"].append(_shot("/does/not/exist.png", shot_id="S002"))
+    _validate_scene_assets([scene])  # should not raise
 
 
 # ── video_node: happy path ────────────────────────────────────────────────────
