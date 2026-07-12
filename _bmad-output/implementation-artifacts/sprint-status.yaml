@@ -75,7 +75,7 @@ development_status:
   2-3-gate-mechanism: done
   2-4-stage-control-retry-artifact-edit: done
   2-5-data-access-scp-stage-artifacts: done
-  2-6-gate-reject-nullify-fix: ready-for-dev  # iteration-1 조사 중 발견: gate reject가 retry_stage의 _nullify 없이 그래프 재진입 → image_node 5-14 재개 캐시가 무조건 스킵, reject가 무동작이 됨
+  2-6-gate-reject-nullify-fix: done  # 2026-07-12 코드리뷰(3-레이어) 완료: findings 5 patch 수정(scenario reject 과다-nullify 가드, _delete_image_artifacts OSError/KeyError 방어, retry_stage 경로 직접 테스트 추가, docstring, AC4 체크포인트 검증 강화) + 7건 deferred-work.md 이관. 1330 passed/1 skip, ruff clean
   epic-2-retrospective: optional
 
   # ── Epic 3: React SPA — Pipeline Control UI ─────────────────────────────────

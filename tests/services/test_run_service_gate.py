@@ -145,6 +145,62 @@ async def test_reject_image_loops_back_to_pending(env):
     assert _stages(reg, "gate_pending") == ["image"]
 
 
+def _shot(**over) -> dict:
+    base = {"shot_id": "S1", "sentence_indices": [0], "image_prompt": "p", "negative_prompt": "n",
+            "camera_angle": None, "camera_movement": None, "image_path": None, "cast": []}
+    base.update(over)
+    return base
+
+
+async def _seed_shot_with_image_path(run_id: str, path: str) -> None:
+    """Plant a scene+shot with a pre-existing image_path, as if a prior attempt completed it.
+
+    stub_stage_nodes' scenario stub never populates ``scenes`` (default: []) — build
+    the scene wholesale rather than assuming one already exists.
+    """
+    config = run_service._configs[run_id]
+    scene = {"scene_num": 1, "narration": "n", "audio_path": None, "audio_duration": None,
+              "word_timings": [], "subtitle_path": None, "shots": [_shot(image_path=path)]}
+    # as_node="image": the graph is paused at gate_image's interrupt — attributing the
+    # update to "image" keeps gate_image the next task (mirrors edit_artifact's pattern).
+    await run_service._graph.aupdate_state(config, {"scenes": [scene]}, as_node="image")
+
+
+async def test_reject_image_nullifies_shot_image_path_before_reentry(env):
+    # Story 2.6 AC1/2/4: reject must clear image_path — a stub image node never
+    # rewrites it, so this proves resume_run's own nullify branch, decoupled from
+    # image_node's real disk-cache behaviour (covered separately by the stub-profile
+    # e2e regression test).
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    await run_service.resume_run(run_id, "scenario", "approve", reg)  # pause at image
+    await _seed_shot_with_image_path(run_id, "old.png")
+
+    await run_service.resume_run(run_id, "image", "reject", reg)
+
+    config = run_service._configs[run_id]
+    snap = await run_service._graph.aget_state(config)
+    assert snap.values["scenes"][0]["shots"][0]["image_path"] is None
+
+
+async def test_approve_leaves_scenes_untouched(env):
+    # Story 2.6 AC5: approve moves forward, never nullifies.
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    await run_service.resume_run(run_id, "scenario", "approve", reg)  # pause at image
+    await _seed_shot_with_image_path(run_id, "old.png")
+
+    await run_service.resume_run(run_id, "image", "approve", reg)
+
+    config = run_service._configs[run_id]
+    snap = await run_service._graph.aget_state(config)
+    assert snap.values["scenes"][0]["shots"][0]["image_path"] == "old.png"
+
+
 async def test_full_approval_completes(env):
     run_id = str(uuid.uuid4())
     _seed(run_id)

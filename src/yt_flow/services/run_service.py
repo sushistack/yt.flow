@@ -28,6 +28,7 @@ from yt_flow.config import Settings
 from yt_flow.db.models import Run
 from yt_flow.domain.state import PipelineState
 from yt_flow.pipeline.graph import build_graph
+from yt_flow.pipeline.nodes import image as image_node
 from yt_flow.services import comfyui_client, eval_service
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
@@ -638,8 +639,14 @@ async def create_ab_run(source_run_id: str, sse_registry: "SSEQueueRegistry | No
 async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
     """Resume a gated run with an approve/reject decision. [AD-3, AD-4]
 
-    ``stage`` identifies which gate the client acted on; LangGraph resumes the single
-    pending interrupt on this run's thread, so it is carried for traceability only.
+    ``stage`` identifies which gate the client acted on. A reject on any stage but
+    ``scenario`` also drives the same ``_nullify``/``_reset_gates`` sequence
+    ``retry_stage`` uses (plus ``_delete_image_artifacts`` for the image stage's
+    disk-only resume cache), written to the checkpoint before the resume is
+    streamed, so the stage the graph reject-routes into sees clean state instead
+    of quietly replaying its prior output (AD-9). A scenario reject routes to END
+    (terminate, not a redo — see ``_REJECT_TARGET``), so nothing is nullified;
+    doing so would only destroy the rejected draft for no functional benefit.
     """
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     decision = _ACTION_TO_DECISION.get(action, action)
@@ -649,6 +656,18 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
         values = snap.values or {}
         await _ensure_special_pose_cards(values.get("scp_id", ""), values.get("scenes") or [])
         await _ensure_derived_entity_cards(values.get("scp_id", ""), values.get("scenes") or [])
+    if decision == "rejected" and stage != _STAGES[0]:
+        snap = await _graph.aget_state(config)
+        values = snap.values or {}
+        scenes = values.get("scenes") or []
+        update = _nullify(stage, scenes)
+        update["gate_states"] = _reset_gates(values.get("gate_states") or {}, stage)
+        if stage == "image":  # disk-only resume cache — nullifying state alone can't defeat it
+            _delete_image_artifacts(run_id, scenes)
+        # Attribute the update to the stage itself so its "ok" edge to gate_{stage}
+        # stays the next task — the graph is still paused at that gate's interrupt,
+        # not idle like retry_stage's target (see _RETRY_ENTRY there vs here).
+        await _graph.aupdate_state(config, update, as_node=stage)
     await _run(run_id, _graph.astream(Command(resume=decision), config, stream_mode="updates"), sse_registry)
 
 
@@ -700,6 +719,29 @@ async def full_restart_run(run_id: str, sse_registry: "SSEQueueRegistry | None" 
 
 
 # ── Stage control: retry & inline artifact edit (Story 2.4) ────────────────────
+
+
+def _delete_image_artifacts(run_id: str, scenes: list) -> None:
+    """Delete every shot's on-disk image + sidecar (AD-9).
+
+    ``image_node._existing_complete_shot`` is a disk-only resume cache — it never
+    reads ``image_path`` from state, so nulling that field alone (``_nullify``) does
+    not stop it from resurrecting the prior file. An explicit redo (reject/retry)
+    must also clear the files it would otherwise treat as already complete.
+
+    Best-effort per shot: a malformed scene/shot or an unremovable file (permissions,
+    concurrent writer) must not abort the run's reject/retry action over one file —
+    mirrors ``_existing_complete_shot``'s own "filesystem hiccup = not fatal" stance.
+    """
+    out_dir = Path(_settings().workspace_path) / run_id / "images"
+    for scene in scenes:
+        for shot in scene.get("shots", []):
+            try:
+                base = image_node._shot_base(scene["scene_num"], shot)
+                (out_dir / f"{base}.png").unlink(missing_ok=True)
+                image_node._sidecar_path(out_dir, scene["scene_num"], shot).unlink(missing_ok=True)
+            except (OSError, KeyError):
+                logger.warning("failed to delete image artifacts for run %s", run_id, exc_info=True)
 
 
 def _nullify(stage: str, scenes: list) -> dict:
@@ -756,8 +798,11 @@ async def retry_stage(run_id: str, stage: str, sse_registry: "SSEQueueRegistry |
     config = _configs.get(run_id, {"configurable": {"thread_id": run_id}})
     snap = await _graph.aget_state(config)
     values = snap.values or {}
-    update = _nullify(stage, values.get("scenes") or [])
+    scenes = values.get("scenes") or []
+    update = _nullify(stage, scenes)
     update["gate_states"] = _reset_gates(values.get("gate_states") or {}, stage)
+    if stage == "image":  # disk-only resume cache — nullifying state alone can't defeat it
+        _delete_image_artifacts(run_id, scenes)
     # Attribute the update to the stage's predecessor so astream(None) re-runs the stage
     # node itself, not just its gate (AD-9). See _RETRY_ENTRY.
     await _graph.aupdate_state(config, update, as_node=_RETRY_ENTRY[stage])
