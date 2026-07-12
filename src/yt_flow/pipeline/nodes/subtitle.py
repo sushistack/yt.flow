@@ -199,6 +199,13 @@ def _sentence_to_cues(sentence: str, start: float, end: float) -> list[Alignment
     ]
 
 
+def _word_timings_mismatch(timings: list[WordTiming], spoken_sentences: list[str]) -> bool:
+    """True when the word_timings count doesn't match the spoken word count —
+    the single condition `sentence_windows`/`sentence_cues` both degrade on,
+    factored out so the two can't drift apart. [AC:7]"""
+    return sum(len(s.split()) for s in spoken_sentences) != len(timings)
+
+
 def sentence_windows(timings: list[WordTiming], spoken_text: str) -> list[tuple[float, float]]:
     """Per-sentence (start, end) windows from the spoken track's word timings.
 
@@ -212,19 +219,19 @@ def sentence_windows(timings: list[WordTiming], spoken_text: str) -> list[tuple[
     if not spoken_sentences or not timings:
         return []
 
-    spoken_word_counts = [len(s.split()) for s in spoken_sentences]
-    if sum(spoken_word_counts) != len(timings):
+    if _word_timings_mismatch(timings, spoken_sentences):
         logger.warning(
             "sentence_cues: word_timings count (%d) != spoken word count (%d); "
             "apportioning sentence windows by character length, falling back to spoken text",
-            len(timings), sum(spoken_word_counts),
+            len(timings), sum(len(s.split()) for s in spoken_sentences),
         )
         start, end = timings[0]["start_sec"], timings[-1]["end_sec"]
         return _apportion([len(s) for s in spoken_sentences], start, end)
 
     windows: list[tuple[float, float]] = []
     idx = 0
-    for wc in spoken_word_counts:
+    for sentence in spoken_sentences:
+        wc = len(sentence.split())
         group = timings[idx: idx + wc]
         windows.append((group[0]["start_sec"], group[-1]["end_sec"]))
         idx += wc
@@ -255,8 +262,7 @@ def sentence_cues(
             )
         display_sentences = spoken_sentences
 
-    spoken_word_counts = [len(s.split()) for s in spoken_sentences]
-    if sum(spoken_word_counts) != len(timings):
+    if _word_timings_mismatch(timings, spoken_sentences):
         # AC:7 — a word_timings/text mismatch is exactly the "degrade to spoken track"
         # case, not just a re-apportioning case; display_sentences must fall back too.
         display_sentences = spoken_sentences
