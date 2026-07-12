@@ -861,58 +861,87 @@ async def test_call_stage_with_retry_handles_fenced_yaml_output(monkeypatch):
     assert result == {"key": "value"}
 
 
-# ── _blockify_freetext_scalars (Story 6.11: deterministic YAML free-text repair) ──
+# ── deterministic free-text repair (Story 6.11) ──────────────────────────────
 
 
-def test_blockify_repairs_top_level_freetext_colon():
+def _repair(broken):
+    """Drive the repair exactly as ``_call_stage_with_retry`` does: parse, and on
+    YAMLError re-parse with the flagged free-text line(s) block-ified."""
+    try:
+        return chain._parse_yaml(broken)
+    except yaml.YAMLError as exc:
+        return chain._reparse_repairing_freetext(broken, chain._parse_yaml, exc)
+
+
+def test_repair_top_level_freetext_colon():
     broken = "frozen_descriptor: SCP-049 is: a plague doctor"
     with pytest.raises(yaml.YAMLError):
         yaml.safe_load(broken)
-    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
-    assert data == {"frozen_descriptor": "SCP-049 is: a plague doctor"}  # byte-identical value
+    assert _repair(broken) == {"frozen_descriptor": "SCP-049 is: a plague doctor"}  # byte-identical
 
 
-def test_blockify_repairs_scene_list_narration_colon():
+def test_repair_scene_list_narration_colon():
     broken = "scenes:\n  - scene_num: 1\n    narration: 박사가 말했다: 위험해\n    mood: dread"
     with pytest.raises(yaml.YAMLError):
         yaml.safe_load(broken)
-    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    data = _repair(broken)
     assert data["scenes"][0]["narration"] == "박사가 말했다: 위험해"
     assert data["scenes"][0]["scene_num"] == 1  # sibling keys untouched
     assert data["scenes"][0]["mood"] == "dread"
 
 
-def test_blockify_repairs_dash_narration_colon():
+def test_repair_dash_narration_colon():
     broken = "scenes:\n  - narration: he said: run"
     with pytest.raises(yaml.YAMLError):
         yaml.safe_load(broken)
-    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
-    assert data["scenes"][0] == {"narration": "he said: run"}
+    assert _repair(broken)["scenes"][0] == {"narration": "he said: run"}
 
 
-def test_blockify_repairs_shot_image_and_negative_prompt_colon():
+def test_repair_multiple_broken_freetext_lines_in_one_doc():
+    # two broken free-text lines → the bounded loop repairs each flagged line in turn
     broken = "shots:\n  - image_prompt: dark hall, style: cinematic\n    negative_prompt: blurry: bad"
     with pytest.raises(yaml.YAMLError):
         yaml.safe_load(broken)
-    data = yaml.safe_load(chain._blockify_freetext_scalars(broken))
+    data = _repair(broken)
     assert data["shots"][0]["image_prompt"] == "dark hall, style: cinematic"
     assert data["shots"][0]["negative_prompt"] == "blurry: bad"
 
 
-def test_blockify_leaves_valid_output_unchanged():
-    ok = "scenes:\n  - scene_num: 1\n    mood: dread"  # no free-text inline scalar
-    assert chain._blockify_freetext_scalars(ok) == ok
+def test_repair_does_not_corrupt_valid_siblings():
+    # F1 regression (mark-targeted): only the flagged line is rewritten. A valid
+    # quoted value keeps no literal quotes, a trailing comment is NOT absorbed,
+    # and an empty scalar stays empty — none of these are the flagged line.
+    broken = (
+        'frozen_descriptor: "SCP-049: plague doctor"\n'
+        "story_logline: a lab goes dark  # ominous\n"
+        'image_prompt: ""\n'
+        "narration: he said: run"
+    )
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(broken)
+    data = _repair(broken)
+    assert data["frozen_descriptor"] == "SCP-049: plague doctor"  # quotes NOT literal
+    assert data["story_logline"] == "a lab goes dark"             # comment NOT absorbed
+    assert data["image_prompt"] == ""                             # empty stays empty
+    assert data["narration"] == "he said: run"                   # the flagged line, fixed
 
 
-def test_blockify_skips_existing_block_literal():
-    already = "narration: |-\n  he said: run"
-    assert chain._blockify_freetext_scalars(already) == already
+def test_repair_leaves_valid_output_untouched():
+    ok = "scenes:\n  - scene_num: 1\n    narration: a quiet room"  # parses first try
+    assert _repair(ok) == {"scenes": [{"scene_num": 1, "narration": "a quiet room"}]}
 
 
-def test_blockify_does_not_touch_non_freetext_keys():
-    # a colon in a non-free-text value is out of scope — left broken, not rewritten
-    src = "mood: dread: extra"
-    assert chain._blockify_freetext_scalars(src) == src
+def test_repair_non_freetext_colon_propagates():
+    # a colon in a non-free-text value is out of scope — not repaired, propagates
+    with pytest.raises(yaml.YAMLError):
+        _repair("mood: dread: extra")
+
+
+def test_blockify_line_skips_block_literal_and_quoted_values():
+    assert chain._blockify_line("narration: |-", 0) is None       # already a block scalar
+    assert chain._blockify_line('narration: "x: y"', 0) is None   # quoted — parses or is ambiguous
+    assert chain._blockify_line("mood: dread: extra", 0) is None  # not a free-text key
+    assert chain._blockify_line("narration: he said: run", 9) is None  # line_no out of range
 
 
 # ── usage_sink plumbing (Story 6.3: token/cache observability) ─────────────

@@ -18,7 +18,7 @@ evidence: "2026-07-12 live promotion gate (--profile promotion --reps 3): SCP-04
 
 # Story 6.11: Deterministic YAML free-text normalization (replace LLM syntax-repair)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -40,12 +40,14 @@ The insight this story acts on: **the fix must be deterministic, not another LLM
 
 1. **Given** `_call_stage_with_retry` in `scenario_chain.py`, **Then** the `except yaml.YAMLError` branch no longer calls `scenario/yaml_syntax_repair`; it instead calls a new deterministic `_blockify_freetext_scalars(raw)` and re-parses the result. If the re-parse still raises, the exception propagates unchanged (bounded, no third attempt, no LLM). The `except ValueError` (semantic-validation) branch is UNCHANGED — it still feeds the error back into the same stage prompt for exactly one retry.
 
-2. **Given** `_blockify_freetext_scalars(raw: str) -> str`, **Then** for each line matching a known free-text key (`narration`, `image_prompt`, `negative_prompt`, `core_identity`, `frozen_descriptor`, `entity_sheet`, `story_logline`, `feedback`) as `{indent}{'- '?}{key}: {non-empty inline value}`, it rewrites the value as a block literal:
+2. **Given** the deterministic repair, **Then** for a line matching a known free-text key (`narration`, `image_prompt`, `negative_prompt`, `core_identity`, `frozen_descriptor`, `entity_sheet`, `story_logline`, `feedback`) as `{indent}{'- '?}{key}: {non-empty inline value}`, it rewrites the value as a block literal:
    ```
    {indent}{'- '?}{key}: |-
    {content-indent}{value}
    ```
-   where `content-indent` is greater than the key's own indentation (accounting for a leading `- ` list-item marker). Lines whose value is already a block scalar (`|`, `|-`, `>`, `>-`) or is empty are left unchanged. The transform preserves the value's bytes exactly.
+   where `content-indent` is greater than the key's own indentation (accounting for a leading `- ` list-item marker). Lines whose value is already a block scalar (`|`, `|-`, `>`, `>-`), is quoted, or is empty are left unchanged. The transform preserves the value's bytes exactly.
+
+   **Review amendment (2026-07-12, Jay-approved):** the original spec transformed *every* free-text line in the document, which silently corrupted **valid** sibling lines (quoted values gained literal quotes, trailing `# comments` were absorbed, empty `""` became non-empty). The implementation is **mark-targeted** instead: `_blockify_line(text, line_no)` rewrites ONLY the single line PyYAML's `problem_mark` flagged, and `_reparse_repairing_freetext` loops (bounded by line count) re-parsing after each repair so multiple broken lines are still handled. A valid sibling is never touched.
 
 3. **Given** the removal of the LLM repair, **Then** the `scenario/yaml_syntax_repair` prompt fetch, its `prompt_service.PromptFetchError` production/candidate fallback branch, and the associated `label`-dependent logic in `_call_stage_with_retry` are deleted. (The prompt file `prompts/scenario/yaml_syntax_repair.md` may remain on disk unused, or be deleted — Dev Notes records which and why.)
 
@@ -68,8 +70,18 @@ The insight this story acts on: **the fix must be deterministic, not another LLM
 - **Bounded contract preserved.** The `except ValueError` semantic-retry path is unchanged — this story only replaces the *syntax* repair. There is still exactly one deterministic attempt on the YAMLError path; a second failure propagates, matching 6.4's bounded precedent (just LLM-free now).
 - **Scope — this class only.** `hooks` list-item colons (`- hook text: with colon`) parse as a valid-but-wrong-shape list-of-dicts → surface as `ValueError` in validation, NOT `yaml.YAMLError`. That is a distinct class (valid-JSON/YAML-wrong-shape, per 6.4 class 3) and is out of scope. Unquoted quotes/`#` inside a free-text scalar ARE covered incidentally, since block-literal conversion is agnostic to which structural character broke the line.
 - **Why not always-normalize / why not keep the LLM as a last-resort fallback.** Always-normalizing touches currently-working output (regression risk); keeping the LLM as a further fallback re-introduces the probabilistic layer this story exists to delete. Deterministic-only, on-failure-only, is the minimal correct design (Jay-approved 2026-07-12).
-- **Files:** `src/yt_flow/pipeline/nodes/scenario_chain.py` (normalizer + `_call_stage_with_retry`), its test module, and the `prompts/scenario/yaml_syntax_repair.md` disposition.
+- **Prompt-file disposition (AC3):** `prompts/scenario/yaml_syntax_repair.md` is **kept on disk, unused** — the code that fetched it is deleted, but removing the file and its Langfuse seed is a separate prompt-hygiene chore deferred to a cleanup pass (no runtime path references it, so it is inert).
+- **Review fix (2026-07-12): mark-targeted repair.** Code review found the whole-document normalizer corrupted valid sibling free-text lines on any parse failure (quotes/comment/empty). Reworked to `_blockify_line` (single flagged line) + `_reparse_repairing_freetext` (bounded loop keyed on `YAMLError.problem_mark.line`); `_yaml_text` now shares the fence-strip preprocessing with `_parse_yaml` so mark line indices align. Added `test_repair_does_not_corrupt_valid_siblings` (the regression) and `test_repair_multiple_broken_freetext_lines_in_one_doc` (the loop). See AC2 amendment.
+- **Files:** `src/yt_flow/pipeline/nodes/scenario_chain.py` (`_yaml_text`/`_blockify_line`/`_reparse_repairing_freetext` + `_call_stage_with_retry`) and its test module.
 - [Source: this-session root-cause analysis; 6-4 story Run 2 YAMLError note; 6-10 Review Follow-up #1; 6-3-6-4-review-metrics-report.md '2026-07-12 Story 6.10']
+
+### Review Findings
+
+_Code review 2026-07-12 (Blind Hunter + Edge Case Hunter + Acceptance Auditor). All 3 layers ran._
+
+- [x] [Review][Decision→Fixed] `_blockify_freetext_scalars` rewrites ALL matching free-text lines, corrupting previously-valid siblings — RESOLVED via mark-targeted repair (Jay chose option a). See AC2 amendment + Dev Notes "Review fix". [src/yt_flow/pipeline/nodes/scenario_chain.py] — On any parse failure the normalizer loops the whole document and unconditionally blockifies every `FREETEXT_KEYS` line, not just the line PyYAML choked on. Empirically confirmed: in a doc broken on one line, a valid quoted sibling gains literal quotes (`"SCP-049: plague doctor"` → value `'"SCP-049: plague doctor"'`), a trailing `# comment` is swallowed into the value, and an empty `image_prompt: ""` becomes `'""'` — flipping a transition marker into a rendered shot with a garbage prompt. Silent, passes validation, flows to video. The docstring claims "byte-preserving" and "a value that parsed fine is never rewritten" — both false (AC2 invariant violated). **Decision needed:** (a) minimal — skip already-quoted values (`val[:1] in ('"', "'", "|", ">")`); kills the quote/escape/empty-`""` class, stays within AC2's line-by-line algorithm, leaves the rarer `#`-comment class; or (b) mark-targeted — repair ONLY the failing line via `MarkedYAMLError.problem_mark.line`; kills every class but deviates from AC2 (needs AC2 amendment). Either way add a test with a valid quoted/comment/empty sibling asserting it is untouched (current tests only feed already-broken lines, so this passed unnoticed).
+- [x] [Review][Patch→Fixed] AC3 prompt-file disposition not recorded in Dev Notes — RESOLVED: Dev Notes now states `yaml_syntax_repair.md` is kept on disk, unused, with seed cleanup deferred.
+- [x] [Review][Note] Out-of-scope Story 6-12 (A/B gate freeze) changes mixed into the working tree — `scripts/eval_prompts.py`, `tests/test_eval_prompts.py`, `docs/PROMPT_POLICY.md`, `epics.md`, `sprint-status.yaml`. Not a defect (internally consistent, tested); commit separately from 6.11.
 
 ## Change Log
 

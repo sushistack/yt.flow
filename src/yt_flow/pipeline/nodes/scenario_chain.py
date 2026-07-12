@@ -303,11 +303,16 @@ def _parse_yaml(raw: str) -> Any:
     ``yaml.YAMLError`` unchanged on malformed input, same as
     ``json.JSONDecodeError`` did before.
     """
+    return yaml.safe_load(_yaml_text(raw))
+
+
+def _yaml_text(raw: str) -> str:
+    """The exact string handed to ``yaml.safe_load`` — stripped and de-fenced.
+    Shared with the free-text repair path so a ``YAMLError``'s ``problem_mark``
+    line index aligns with the text the repair rewrites (Story 6.11)."""
     text = raw.strip()
     match = _YAML_FENCE_RE.match(text)
-    if match:
-        text = match.group(1)
-    return yaml.safe_load(text)
+    return match.group(1) if match else text
 
 
 def _normalize_freetext(text: str) -> str:
@@ -342,28 +347,57 @@ _FREETEXT_INLINE_RE = re.compile(
 )
 
 
-def _blockify_freetext_scalars(raw: str) -> str:
-    """Rewrite each inline free-text value as a YAML block literal (``|-``) so an
-    embedded colon/quote/``#`` can't break parsing. Deterministic replacement for
-    the LLM ``yaml_syntax_repair`` path (Story 6.11).
+def _blockify_line(text: str, line_no: int) -> str | None:
+    """Rewrite ONLY line ``line_no`` (0-based, into the de-fenced YAML ``text``)
+    as a block literal (``|-``) if it's a ``FREETEXT_KEYS`` inline scalar whose
+    embedded colon/``#`` broke parsing — this is the single line PyYAML's
+    ``problem_mark`` flagged, so a valid sibling line is never touched
+    (Story 6.11). Returns the rewritten text, or ``None`` if that line isn't a
+    repairable free-text inline value (already a ``|``/``>``/quoted scalar, or a
+    different key entirely → out of scope, propagate).
 
-    Only ``FREETEXT_KEYS`` lines with a non-empty inline value are touched; a
-    value already written as a ``|``/``>`` block scalar is left alone. Block
-    content is indented deeper than the key (accounting for a ``- `` list-item
-    marker) and preserved verbatim. Intended to run ONLY on output that already
-    failed ``yaml.safe_load`` — a value that parsed fine is never rewritten.
+    The block literal takes its indented content verbatim (colons, ``#``, all
+    safe) and content is indented deeper than the key, accounting for a ``- ``
+    list-item marker. A quoted value is left alone: it either already parses
+    (so it isn't the flagged line) or is malformed in a way this class can't
+    safely disambiguate.
     """
-    out: list[str] = []
-    for line in raw.splitlines():
-        m = _FREETEXT_INLINE_RE.match(line)
-        if m is None or m.group("val")[:1] in ("|", ">"):
-            out.append(line)
-            continue
-        indent, dash = m.group("indent"), m.group("dash") or ""
-        content_indent = indent + " " * (len(dash) + 2)  # deeper than the key column
-        out.append(f"{indent}{dash}{m.group('key')}: |-")
-        out.append(f"{content_indent}{m.group('val')}")
-    return "\n".join(out)
+    lines = text.splitlines()
+    if not 0 <= line_no < len(lines):
+        return None
+    m = _FREETEXT_INLINE_RE.match(lines[line_no])
+    if m is None or m.group("val")[:1] in ("|", ">", '"', "'"):
+        return None
+    indent, dash = m.group("indent"), m.group("dash") or ""
+    content_indent = indent + " " * (len(dash) + 2)  # deeper than the key column
+    lines[line_no:line_no + 1] = [
+        f"{indent}{dash}{m.group('key')}: |-",
+        f"{content_indent}{m.group('val')}",
+    ]
+    return "\n".join(lines)
+
+
+def _reparse_repairing_freetext(raw: str, parse, exc: yaml.YAMLError):
+    """Re-parse ``raw`` after rewriting each free-text line PyYAML flags as a
+    block literal (Story 6.11). ``exc`` is the ``YAMLError`` the first parse
+    already raised. Bounded by the line count; touches ONLY the single flagged
+    line each pass, never a valid sibling. Returns the parsed value, or re-raises
+    the last ``YAMLError`` when a flagged line isn't a repairable free-text scalar
+    (a class this deliberately does not cover → propagate). A non-``YAMLError``
+    (e.g. a semantic ``ValueError`` from ``parse``) propagates unchanged.
+    """
+    text = _yaml_text(raw)
+    for _ in range(text.count("\n") + 1):  # ponytail: <= one repair per line, can't loop forever
+        mark = getattr(exc, "problem_mark", None)
+        fixed = _blockify_line(text, mark.line) if mark is not None else None
+        if fixed is None:
+            raise exc
+        text = fixed
+        try:
+            return parse(text)
+        except yaml.YAMLError as exc2:
+            exc = exc2
+    raise exc
 
 
 def _dump_bad_output(kind: str, prompt_name: str, raw: str) -> Path:
@@ -390,11 +424,12 @@ async def _call_stage_with_retry(
     usage_sink: list[dict] | None = None,
 ):
     """Bounded self-correcting retry for a stage's parse+validate step. A YAML
-    *syntax* failure is repaired deterministically — inline free-text scalars are
-    rewritten as block literals and re-parsed once (Story 6.11, no LLM call);
-    a *semantic* validation failure feeds the error back into the original stage
-    prompt for exactly one retry. A second failure propagates unchanged — never
-    an unbounded retry loop.
+    *syntax* failure is repaired deterministically — the single free-text line
+    PyYAML flagged is rewritten as a block literal and re-parsed, bounded by the
+    line count (Story 6.11, no LLM call); a *semantic* validation failure feeds
+    the error back into the original stage prompt for exactly one retry. A
+    failure the repair can't fix propagates unchanged — never an LLM fallback,
+    never an unbounded retry loop.
 
     ``usage_sink``, when given, collects each underlying DeepSeek call's raw
     ``usage`` dict (one entry normally, two if the semantic retry fires) —
@@ -407,14 +442,15 @@ async def _call_stage_with_retry(
         usage_sink.append(usage)
     try:
         return parse(raw)
-    except yaml.YAMLError:
-        # Deterministic repair (Story 6.11): rewrite inline free-text scalars as
-        # block literals and re-parse once. No LLM, no third attempt. A second
-        # failure propagates; we dump the still-broken raw so a class the
-        # normalizer does NOT cover (not free-text-colon) can be characterized.
+    except yaml.YAMLError as exc:
+        # Deterministic repair (Story 6.11): the model emitted a free-text scalar
+        # inline and an embedded ':'/'#' broke parsing. Rewrite ONLY the flagged
+        # line (never a valid sibling) as a block literal and re-parse. No LLM.
         try:
-            return parse(_blockify_freetext_scalars(raw))
+            return _reparse_repairing_freetext(raw, parse, exc)
         except yaml.YAMLError as exc2:
+            # The flagged line isn't the free-text-colon class this repairs. Dump
+            # the raw so the novel class can be characterized, then propagate.
             try:
                 dump = _dump_bad_output("unfixed", prompt_name, raw)
                 logger.warning(
