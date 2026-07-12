@@ -269,7 +269,7 @@ async def _repair_and_review(
 
     merged_scenes = list(writing["scenes"])
     for idx, scene in zip(indexes, repaired, strict=True):
-        merged_scenes[idx] = scene
+        merged_scenes[idx] = {**merged_scenes[idx], **scene}
     merged_writing = {**writing, "scenes": merged_scenes}
 
     t0 = time.perf_counter()

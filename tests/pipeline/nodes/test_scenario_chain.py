@@ -754,31 +754,33 @@ class _CapturingPrompt:
         return "rendered"
 
 
-async def test_call_stage_with_retry_routes_yaml_error_to_syntax_repair(monkeypatch):
+async def test_call_stage_with_retry_repairs_unquoted_colon_without_semantic_change(monkeypatch):
     stage_prompt = _CapturingPrompt()
     repair_prompt = _CapturingPrompt()
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt",
-        lambda name: repair_prompt if name == "scenario/yaml_syntax_repair" else stage_prompt,
+        lambda name, **kwargs: repair_prompt if name == "scenario/yaml_syntax_repair" else stage_prompt,
     )
 
-    responses = iter(["key: [unterminated", "key: value"])
+    broken = "content: SCP-049 says: remain calm"
+    repaired = 'content: "SCP-049 says: remain calm"'
+    responses = iter([broken, repaired])
 
     async def call(rendered, s):
         return next(responses), {}, "stop"
 
     def parse(raw):
         data = chain._parse_yaml(raw)
-        if not isinstance(data, dict) or "key" not in data:
-            raise ValueError("missing key")
+        if not isinstance(data, dict) or "content" not in data:
+            raise ValueError("missing content")
         return data
 
     result = await chain._call_stage_with_retry("scenario/research", {"a": "b"}, None, call, parse)
 
-    assert result == {"key": "value"}
+    assert result == {"content": "SCP-049 says: remain calm"}
     assert stage_prompt.calls == [{"a": "b", "parse_error": ""}]
-    assert repair_prompt.calls[0]["broken_yaml"] == "key: [unterminated"
-    assert "while parsing" in repair_prompt.calls[0]["yaml_error"]
+    assert repair_prompt.calls[0]["broken_yaml"] == broken
+    assert "mapping values are not allowed" in repair_prompt.calls[0]["yaml_error"]
     assert set(repair_prompt.calls[0]) == {"broken_yaml", "yaml_error"}
 
 

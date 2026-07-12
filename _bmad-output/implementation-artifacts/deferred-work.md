@@ -288,3 +288,6 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 ## Deferred from: code review of 6-9-scene-repair-truncation-axis-regression (2026-07-11)
 
 - New truncation-fallback `rejected` dict shape `{"reason","completion_tokens","flagged_scene_count"}` (scenario.py:390-392) diverges from every other producer's shape (`_retry_scope`'s `{"source","scene_num","reason"}` and the `no-valid-scene` `{"reason","rejected"}`). It lands verbatim in trace `rejected_scene_identifiers`. No `src/` consumer indexes `scene_num`/`source` on these records today (grep-verified), so impact is latent — normalize the shape when a consumer actually needs it.
+## Deferred from: quick-dev review of 6.3/6.4 baseline + corrected gate (2026-07-12)
+
+- Concurrent Story 6.11 diagnostics in `src/yt_flow/pipeline/nodes/scenario_chain.py` persist full truncation/YAML-failure outputs synchronously under `tmp/` without redaction, restrictive permissions, size/count retention bounds, or dedicated tests. This is real but was not introduced or authorized by the 6.3/6.4 baseline/gate spec; resolve within Story 6.11 rather than mixing it into this change.

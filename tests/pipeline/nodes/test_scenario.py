@@ -154,6 +154,32 @@ async def test_retries_once_when_review_fails(monkeypatch):
     assert out.get("error") is None
 
 
+async def test_scoped_repair_preserves_metadata_and_repaired_fields_win(monkeypatch):
+    _stub_chain(monkeypatch, review=REVIEW_FAIL)
+    cast_scenes = []
+
+    async def minimal_repair(*args, **kwargs):
+        return [{"scene_num": 1, "narration": "수정된 문장.", "location": "repaired-location"}]
+
+    async def capture_cast(_scp_id, scene, *args, **kwargs):
+        cast_scenes.append(scene)
+        return {}
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", minimal_repair)
+    monkeypatch.setattr(sc, "cast_decision_step", capture_cast)
+
+    out = await sc.scenario_node(_state())
+
+    assert out.get("error") is None
+    scene = out["scenes"][0]
+    assert scene["narration"] == "수정된 문장."
+    repaired_scene = cast_scenes[-1]
+    assert repaired_scene["location"] == "repaired-location"
+    assert repaired_scene["characters_present"] == WRITING["scenes"][0]["characters_present"]
+    assert repaired_scene["color_palette"] == WRITING["scenes"][0]["color_palette"]
+    assert repaired_scene["atmosphere"] == WRITING["scenes"][0]["atmosphere"]
+
+
 async def test_accepts_second_pass_result_even_if_still_failing(monkeypatch):
     # Bounded retry: even if the second pass ALSO comes back "retry", accept it —
     # never loop a third time.

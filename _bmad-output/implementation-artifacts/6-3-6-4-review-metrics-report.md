@@ -162,3 +162,22 @@ Ran the new Story 6.10 statistical gate: `uv run python scripts/eval_prompts.py 
 Neither is the `scene coverage mismatch` (AC3's target) nor a truncation — AC3's reorder/`SceneCoverageError` fallback is in place but these are **different, production-side** failure classes, so this run did not exercise it. This is a **new baseline-robustness follow-up** (production-label prompt output intermittently emits YAML-invalid `content:` and a `location`-key path fails) — distinct from Story 6.10's scope (candidate gate mechanism + SCP-049 *scoped-repair* robustness). Note `scenario/yaml_syntax_repair` is still unpromoted, so production fell back to a full-stage retry that also failed on SCP-049 twice.
 
 **Net for 6-3/6-4:** the blocker is no longer "the gate can't pass" (6.10 fixed that). With a working median gate, the candidate set now demonstrably regresses SCP-096 on the median of 3 trials. Either the candidate genuinely under-performs on SCP-096, or N=3 medians remain noisy at 0.33-point judge granularity — a further-N rerun (`--reps 5`) is the cheapest disambiguator and is a Jay cost/authorization decision. Until then 6-3/6-4 stay un-promoted.
+
+### 2026-07-12 corrected paired-delta authority gate after baseline repair (Jay-authorized)
+
+Baseline repairs completed before spending the authority-gate budget:
+
+- Scoped `writing_scene_repair` now overlays repaired fields onto the original scene instead of replacing the complete mapping, preserving `location`, `color_palette`, `atmosphere`, and other downstream metadata.
+- Existing Langfuse `scenario/yaml_syntax_repair` version 1 received the `production` label without a content edit; `candidate` and `production` were verified to resolve to the same version.
+- Local verification: **1266 passed, 1 skipped**, Ruff clean.
+- SCP-049 smoke command: `YTFLOW_DEEPSEEK_MAX_TOKENS=16000 uv run python scripts/eval_prompts.py --profile smoke --baseline production` → **PASS** (atmosphere +0.33, narrative_coherence +0.67, article_fidelity +0.00, total +1.00). Artifact: `tmp/eval-prompts/20260712-104225-1783820545768754809-candidate-production/`.
+
+Authoritative command: `YTFLOW_DEEPSEEK_MAX_TOKENS=16000 uv run python scripts/eval_prompts.py --profile promotion --reps 3`. Artifact: `tmp/eval-prompts/20260712-105849-1783821529137928646-candidate-production/`. Exit code: **1**.
+
+| item | atmosphere | narrative_coherence | article_fidelity | total | run failures |
+|---|---:|---:|---:|---:|---|
+| SCP-049 | **−0.50** | **−0.33** | **−0.17** | **−1.00** | production 1/3: YAML syntax repair re-failed on an unquoted colon |
+| SCP-173 | +1.00 | +0.00 | **−0.33** | +0.67 | none |
+| SCP-096 | +0.33 | **−0.83** | **−0.33** | **−0.83** | candidate 1/3: `yaml_syntax_repair` truncated at 16k |
+
+**Verdict: FAIL.** This is the first live result from the corrected median-of-paired-repetition implementation. Neither side had a majority hard failure, so the verdict is quality-delta-driven rather than baseline unscoreability. The nine 6.3/6.4 `production` labels were **not moved**. Stories 6.3 and 6.4 remain `in-progress`. Further prompt-content iteration, a tolerance change, or `--reps > 3` requires a new Jay decision; no result was forced or reinterpreted.

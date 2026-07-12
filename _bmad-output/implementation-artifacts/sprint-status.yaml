@@ -1,5 +1,5 @@
 # generated: 2026-06-30
-# last_updated: 2026-07-12  # Story 6.10 코드리뷰 완료(done): paired-delta median/누락 coverage/repair count mismatch findings 3건 수정. 6-3/6-4는 미승격 in-progress 유지
+# last_updated: 2026-07-12  # 6-3/6-4 corrected paired-delta authority gate FAIL: baseline scoreable 복구 완료, 품질 delta 음수로 미승격/in-progress 유지
 # project: yt.flow
 # project_key: NOKEY
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-12  # Story 6.10 → done: 코드리뷰 findings 3건 수정, 1265 passed/1 skip, ruff clean. 라이브 FAIL은 SCP-049 production 2/3 hard-fail로 유효; 6-3/6-4 in-progress 유지
+last_updated: 2026-07-12  # baseline repair+corrected gate 실행 완료. smoke PASS, authority FAIL(SCP-049 total -1.00, SCP-173 art -0.33, SCP-096 total -0.83); label 미이동, 6-3/6-4 in-progress 유지
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -128,14 +128,15 @@ development_status:
   epic-6: in-progress
   6-1-prompt-policy-variant-label-wiring: done  # 5-4/5-5보다 선행 — variant B가 production을 읽는 배선 갭 수정 포함
   6-2-golden-set-offline-eval: done  # depends on 6-1
-  6-3-prompt-cache-hit-optimization: in-progress  # 코드 완료. 블로커 확정(6.9 AC3/AC4, 2026-07-11): 축 회귀는 VARIANCE(실질 회귀 아님)로 판명 — 후보 품질 문제 아님. 미승격 이유는 zero-tolerance 게이트가 생성 노이즈로 매 런 어딘가 음수 → 사실상 통과불가(정책/통계게이트 별도 결정 필요). 크래시성 원인(타임아웃/YAML/judge/truncation)은 6.6~6.9로 전부 제거됨.
-  6-4-scenario-yaml-output-bounded-retry: in-progress  # 코드 완료. 6-3과 동일 블로커(6.9 AC3/AC4 확정): 축 회귀=VARIANCE, 미승격은 zero-tolerance 게이트 vs 생성노이즈 → 별도 정책/통계게이트 결정 필요.
+  6-3-prompt-cache-hit-optimization: in-progress  # 코드 완료. 2026-07-12 baseline repair 후 corrected paired-delta authority gate FAIL: SCP-049 total -1.00, SCP-173 article_fidelity -0.33, SCP-096 total -0.83. majority hard-fail 없음 → 품질 delta blocker. production label 미이동.
+  6-4-scenario-yaml-output-bounded-retry: in-progress  # 코드 완료. 6-3과 동일 corrected gate FAIL. production baseline은 scoreable 복구됐으나 paired quality delta 음수로 미승격. prompt iteration/tolerance/reps>3는 Jay 추가 결정 필요.
   6-5-scenario-scoped-repair-retry: done  # Replace full scenario rewrite with flagged-scene repair; fallback remains bounded. 코드리뷰 완료(5건 패치: scene_num-position mismatch guard, _format_scene_feedback None-fallback, AC9 테스트 3건 추가), 3건 보류. 1232 passed/1 skipped, ruff clean. 2026-07-11 post-hoc: writing_scene_repair가 production 라벨 누락으로 실제 production 런에서도 404 나는 갭 발견+수정(라벨만 추가, 컨텐츠 변경 없음)
   6-6-tiered-prompt-evaluation-gates: done  # 1-item smoke for iteration; 3-item comparison remains promotion authority. 코드리뷰 완료(2건 패치: max-tokens preflight 임계값 버그, PROMOTION_GATE_AUTHORITY 상수+테스트), 3건 보류. 1232 passed/1 skipped, ruff clean
   6-7-yaml-syntax-only-repair-path: done  # 통합 코드리뷰 1건 패치; 1243 passed/1 skipped, ruff clean; smoke 완료, promotion FAIL(writing_scene_repair 16k truncation + 축 회귀), production 미승격
   6-8-golden-set-judge-multi-sample: done  # 통합 코드리뷰 3건 패치; direct EvalJudgeError/비유한 점수/실동시성+평균 검증 강화; live gate에서 malformed judge item failure 재발 없음
   6-9-scene-repair-truncation-axis-regression: done  # 2026-07-11 CLOSED: truncation→full-rewrite fallback 구현+코드리뷰(narrow-recovery 수정, 01ae6cc). AC3 라이브 3회 멀티트라이얼 → 축 회귀는 VARIANCE 확정(6.8 선례, out of scope). AC4 게이트 3회 전부 FAIL(매번 다른 노이즈 셀) → production 미승격. 신규 out-of-scope 블로커 2건: (1)zero-tolerance 게이트가 생성 노이즈로 사실상 통과불가 → 6-3/6-4 언블록엔 정책/통계게이트 별도 결정 필요, (2)SCP-049 scoped-repair 간헐 취약(truncation+coverage mismatch)
   6-10-statistical-promotion-gate-repair-robustness: done  # 2026-07-12 코드리뷰 완료: paired per-rep delta median, 누락/중복 item hard-fail 집계, missing/extra scene SceneCoverageError 복구 등 findings 3건 수정. 1265 passed/1 skip, ruff clean. 기존 live Verdict=FAIL은 SCP-049 production 2/3 hard-fail로 여전히 유효; production 미승격, 6-3/6-4 in-progress 유지. paired-delta 축 라이브 증거는 추후 재런 필요
+  6-11-deterministic-yaml-freetext-normalization: backlog  # 2026-07-12 발의: SCP-049 live unquoted-colon hard-fail(6.7 LLM repair가 같은 결함 재생산). free-text 콜론 class를 결정론적 block-literal 정규화로 대체(6.7 LLM yaml_syntax_repair 제거). happy path/의미검증 ValueError 경로 불변, on-failure-only. Jay 승인(설계)
 
   # ── Epic 7: 영상 프로덕션 밸류 II — 사운드/후처리/패럴랙스/트랜지션/자막 ────
   epic-7: in-progress
