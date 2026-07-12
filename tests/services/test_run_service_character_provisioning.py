@@ -596,6 +596,31 @@ async def test_derived_entity_provisioning_generation_failure_swallowed(monkeypa
     await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))  # must not raise
 
 
+async def test_derived_entity_provisioning_swallowed_failure_rolls_back_stub_row(monkeypatch, tmp_path):
+    """Regression for the review finding: a generation call that returns normally
+    but produces no front card (e.g. every angle failed inside ComfyUI) must not
+    leave a permanent stub `Character` row behind — the next call should still
+    treat this derived key as ungenerated and retry it."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate_no_front(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+        calls.append(card_key)
+        self._ensure_character(card_key)  # mimics the real generator creating the row up front
+        return []  # every angle failed — no front card ever gets set
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate_no_front)
+
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+    with Session(db._engine) as session:
+        assert CharacterService(session, settings=settings).check_existing_character("SCP-049-2") is None
+
+    # Retried on the next call — the stub was rolled back, not treated as done.
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+    assert calls == ["SCP-049-2", "SCP-049-2"]
+
 
 async def test_resume_run_invokes_derived_entity_provisioning(monkeypatch):
     """One-line production wiring: resume_run's scenario-approve path must call

@@ -558,7 +558,12 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
             base = svc.check_existing_character(scp_id)
             anchor_path: str | None = None
             if base is not None and base.angle_front_path:
-                anchor_path = str(Path(settings.assets_path) / base.angle_front_path)
+                anchor_path = svc._abs_asset_path(base.angle_front_path)
+            elif base is None:
+                logger.warning(
+                    "derived entity provisioning for %s: base entity has no Character row, "
+                    "generating without a family-resemblance anchor", scp_id,
+                )
             else:
                 logger.warning(
                     "derived entity provisioning for %s: base entity has no front card, "
@@ -574,10 +579,18 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
                     await svc.generate_cards_from_descriptor(
                         card_key, descriptor, pose="standing", anchor_path=anchor_path,
                     )
+                    character = svc.check_existing_character(card_key)
+                    if character is None or not character.angle_front_path:
+                        raise LookupError(f"generation produced no front card for {card_key}")
                 except Exception:  # noqa: BLE001 — one derived entity must not block a run
                     logger.warning(
                         "derived entity card generation failed for %s", card_key, exc_info=True,
                     )
+                    # Roll back a partial/empty stub row so a future run retries
+                    # instead of skipping forever (mirrors _ensure_character_reference).
+                    stub = svc.check_existing_character(card_key)
+                    if stub is not None and not stub.angle_front_path:
+                        svc.delete_character(stub.id)
     except Exception:  # noqa: BLE001 — auxiliary provisioning must never fail the run
         logger.warning("derived entity provisioning failed for %s", scp_id, exc_info=True)
 
