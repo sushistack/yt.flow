@@ -1,5 +1,75 @@
 {
   "assets": {
+    "SCP-049-2/standing_back": {
+      "angle": "back",
+      "approved_at": "2026-07-12T05:58:19.849183+00:00",
+      "card_key": "SCP-049-2",
+      "created_at": "2026-07-12T05:58:19.848541+00:00",
+      "path": "characters/SCP-049-2/epoch_1/back_candidate_1.png",
+      "pose": "standing",
+      "sha256": "ea084f20c310acf825f26d3aa9578701578d6cd03da7fc0630b64874b8f06710",
+      "source": {
+        "ipadapter_weight": 0.35,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049-2/standing_front": {
+      "angle": "front",
+      "approved_at": "2026-07-12T05:57:54.182902+00:00",
+      "card_key": "SCP-049-2",
+      "created_at": "2026-07-12T05:57:54.182038+00:00",
+      "path": "characters/SCP-049-2/epoch_1/front_candidate_1.png",
+      "pose": "standing",
+      "sha256": "237498fcd06bfc68600112805c9c80f1a25f7f0dba5ac7668adca906de0e756c",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049-2/standing_side": {
+      "angle": "side",
+      "approved_at": "2026-07-12T05:58:44.521459+00:00",
+      "card_key": "SCP-049-2",
+      "created_at": "2026-07-12T05:58:44.520820+00:00",
+      "path": "characters/SCP-049-2/epoch_1/side_candidate_1.png",
+      "pose": "standing",
+      "sha256": "1a93cf78a895fdfe588313c9a3b8f5c73dcc6d48227081e76ad4ec344d4744a7",
+      "source": {
+        "ipadapter_weight": 0.45,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049-2/standing_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-07-12T05:59:09.204237+00:00",
+      "card_key": "SCP-049-2",
+      "created_at": "2026-07-12T05:59:09.203583+00:00",
+      "path": "characters/SCP-049-2/epoch_1/three_quarter_candidate_1.png",
+      "pose": "standing",
+      "sha256": "f6421a1a927d858c2ec4438fa04fcab07ec90d506f0e1a3e68e4fffb5c3b503b",
+      "source": {
+        "ipadapter_weight": 0.5,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/hint:7031f483b8_front": {
+      "angle": "front",
+      "approved_at": "2026-07-12T09:42:40.898621+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-07-12T09:42:40.897931+00:00",
+      "path": "characters/SCP-049/epoch_1/hint_7031f483b8_front.png",
+      "pose": "hint:7031f483b8",
+      "sha256": "16b5b421e05071ccc3bca3bea704caad8f9795c049f815e93a16def17a7c836e",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
     "SCP-049/hint:b36d4021a2_front": {
       "angle": "front",
       "approved_at": "2026-07-08T16:18:44.521393+00:00",
@@ -286,6 +356,34 @@
       "path": "characters/STOCK-d-class/epoch_1/hint_6525d3c087_front.png",
       "pose": "hint:6525d3c087",
       "sha256": "c14d69283a7c85043f94e003515eeaa50a4d7aad3ff95870b18c213a93869046",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/hint:821f983459_front": {
+      "angle": "front",
+      "approved_at": "2026-07-12T09:42:16.213542+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-12T09:42:16.212839+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/hint_821f983459_front.png",
+      "pose": "hint:821f983459",
+      "sha256": "bcfa8c2255b784143de1b78aa1cf61039604a06cf196c319c0e8ed8cd2aa8bb1",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/hint:aabd2f03df_front": {
+      "angle": "front",
+      "approved_at": "2026-07-12T09:41:53.425542+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-07-12T09:41:53.424517+00:00",
+      "path": "characters/STOCK-d-class/epoch_1/hint_aabd2f03df_front.png",
+      "pose": "hint:aabd2f03df",
+      "sha256": "7689f6e1bec1b45c3c3d45ecde6ffdaac8f0b9177c00c018c473e60c15e19ad9",
       "source": {
         "ipadapter_weight": 0.2,
         "type": "comfyui_generation"
