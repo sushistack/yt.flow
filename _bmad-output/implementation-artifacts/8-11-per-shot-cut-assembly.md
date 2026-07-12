@@ -1,4 +1,5 @@
 ---
+baseline_commit: abd936100ac7bf082e4e9321c887f40f94f17516
 created: 2026-07-09
 story_key: 8-11-per-shot-cut-assembly
 story_id: "8.11"
@@ -17,7 +18,7 @@ evidence: "Iteration 1 run d55a265b (e2e-iteration1-2026-07-09.md), Jay viewing 
 
 # Story 8.11: Per-Shot Cut Assembly in video_node
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -69,16 +70,32 @@ This keeps the blast radius inside `video.py`: gates, SSE, artifacts API, chapte
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Extract `sentence_windows()` from `sentence_cues()` in `subtitle.py`; keep `sentence_cues` behavior byte-identical (AC:1, AC:7)
-- [ ] Task 2: Shot-window derivation helper in `video.py` (or a small `shot_timing.py`): sentence_indices → merged, gap-attached, min-duration-filtered clip plan per scene (AC:1,2,3)
-  - [ ] Unit tests for the clip plan (AC:9)
-- [ ] Task 3: Split `_compose_scene` into `_compose_shot_clip` (pass 1: zoompan + cards + motion/parallax/harmonization, silent) and scene assembly (pass 2: concat + audio + subtitles + sound design + post-fx) (AC:4,5,6)
-  - [ ] Move per-card chain construction (current lines ~770-855) into pass 1 unchanged in behavior
-  - [ ] Wire per-shot resolver keys + per-shot alpha validation (AC:4)
-- [ ] Task 4: `min_shot_clip_sec` Settings field + config wiring (AC:3)
-- [ ] Task 5: Degrade paths + logging (AC:7) — WARNING for single-shot fallback, INFO summary `scene N: K shots → M clips (merged J)`
-- [ ] Task 6: Integration test with solid-color shot fixtures (AC:9)
-- [ ] Task 7: Live verification + Dev Agent Record evidence (AC:10)
+- [x] Task 1: Extract `sentence_windows()` from `sentence_cues()` in `subtitle.py`; keep `sentence_cues` behavior byte-identical (AC:1, AC:7)
+- [x] Task 2: Shot-window derivation helper in `video.py` (or a small `shot_timing.py`): sentence_indices → merged, gap-attached, min-duration-filtered clip plan per scene (AC:1,2,3)
+  - [x] Unit tests for the clip plan (AC:9)
+- [x] Task 3: Split `_compose_scene` into `_compose_shot_clip` (pass 1: zoompan + cards + motion/parallax/harmonization, silent) and scene assembly (pass 2: concat + audio + subtitles + sound design + post-fx) (AC:4,5,6)
+  - [x] Move per-card chain construction (current lines ~770-855) into pass 1 unchanged in behavior
+  - [x] Wire per-shot resolver keys + per-shot alpha validation (AC:4)
+- [x] Task 4: `min_shot_clip_sec` Settings field + config wiring (AC:3)
+- [x] Task 5: Degrade paths + logging (AC:7) — WARNING for single-shot fallback, INFO summary `scene N: K shots → M clips (merged J)`
+- [x] Task 6: Integration test with solid-color shot fixtures (AC:9)
+- [x] Task 7: Live verification + Dev Agent Record evidence (AC:10)
+
+### Review Findings
+
+Adversarial code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor), 2026-07-12. All `patch` findings applied; `defer` findings are pre-existing-class data-integrity assumptions, not blocking.
+
+- [x] [Review][Patch] `_validate_scene_assets` hard-failed on shots merged out of the render plan, reintroducing the exact "don't abort over an unused shot's missing image" failure mode the pre-8.11 code guarded against [video.py:_validate_scene_assets] — fixed: now validates only the shots `shot_timing.plan_shot_clips` actually keeps.
+- [x] [Review][Patch] `video_node`'s `card_counts`/`rendered_cards`/motion-style metrics summed cards from every image-bearing shot, including ones `shot_timing` merged away and never composited [video.py:video_node] — fixed: scoped to the shot IDs that survive the clip plan.
+- [x] [Review][Patch] `_assemble_scene_from_clips`'s sound-design-disabled branch had no `-t <duration>` clamp (the sound-design branch had one) — accumulated per-clip frame rounding could leave the concatenated video track shorter than the narration audio [video.py:_assemble_scene_from_clips] — fixed: added the same clamp to both branches.
+- [x] [Review][Patch] Multi-clip effect selection used `select_effect(clip.shot, scene_index * 100 + local_i)`; since `_DIRECTION_POOL` has exactly 10 entries, `100 % 10 == 0` cancels `scene_index` out of the rotation entirely — every scene's Nth shot always got the same fixed direction [video.py:_compose_scene] — fixed: multiplier changed to a prime (`_EFFECT_INDEX_STRIDE = 97`) that can't divide the pool size.
+- [x] [Review][Patch] A retry whose clip plan drops a shot_id a prior attempt rendered left that stale `shots/scene_NNN_<old_shot_id>.mp4` file on disk forever (AC:8 wants clean overwrite) [video.py:_compose_scene] — fixed: stale `scene_{n:03d}_*.mp4` files are removed before writing the new plan's clips.
+- [x] [Review][Patch] A rendered shot whose `sentence_indices` don't land in `[0, n_sentences)` silently vanished from the clip plan with zero log signal [shot_timing.py:plan_shot_clips] — fixed: logs a WARNING naming the dropped shot_id.
+- [x] [Review][Patch] AC:10 requires a log line reporting aggregate "shots rendered / merged / scenes" counts; only a per-scene `scene N: K shots -> M clips (merged J)` line existed, no run-level rollup [video.py:video_node] — fixed: added a summary log after the scene loop.
+- [x] [Review][Patch] `sentence_cues` and `sentence_windows` each independently recomputed and checked the same word-timings-mismatch condition — two hand-synchronized copies of one boolean [subtitle.py] — simplified: extracted `_word_timings_mismatch()`, both call sites use it.
+- [x] [Review][Patch] `_build_card_chain`'s docstring described an empty-`ordered_cards` branch neither caller (`_render_scene_fast`, `_compose_shot_clip`) ever exercises (both branch around calling it entirely when there are no cards) [video.py:_build_card_chain] — corrected the docstring.
+- [x] [Review][Defer] No validation/logging when two shots' `sentence_indices` overlap — the gap-attachment sort would silently let one window clobber another [shot_timing.py:plan_shot_clips] — deferred, pre-existing data-integrity assumption (AD-5 promises non-overlapping sentence coverage from upstream); revisit if ever observed live.
+- [x] [Review][Defer] `clips[-1].end = audio_duration` is applied unconditionally; if alignment slop ever put the last sentence window's start at/after the TTS-reported `audio_duration`, the final clip would get zero/negative duration with no clamp [shot_timing.py:plan_shot_clips] — deferred, cross-source (STT vs TTS) timing mismatch judged very low probability; revisit if ever observed live.
 
 ## Dev Notes
 
@@ -106,8 +123,39 @@ This keeps the blast radius inside `video.py`: gates, SSE, artifacts API, chapte
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Full regression suite: `python -m pytest -q` → 1298 passed, 1 skipped.
+- New/updated suites in isolation: `pytest tests/pipeline/nodes/test_subtitle.py tests/pipeline/nodes/test_shot_timing.py tests/pipeline/nodes/test_video.py tests/pipeline/nodes/test_video_harmonization.py -q` → all green (219 in the video files alone, incl. the new real-ffmpeg `test_per_shot_cut_assembly_integration`).
+- Live re-render (AC:10): resumed real checkpoint `d55a265b-6f24-4159-b94f-bb30736142e8` (SCP-049, iteration-1 evidence run — 8 scenes / 87 shots) through `video_node` with the real `CharacterService.resolve_cast_cards` injected, output redirected to an isolated scratch `workspace_path` (never touched the original run's files — read-only against `yt_flow.db`/source images/audio). Result: `error=None`, log lines matched the required `scene N: K shots -> M clips (merged J)` format for all 8 scenes (13→10, 12→9, 9→7, 10→7, 11→6, 12→5, 12→4, 8→6; 87 shots → 54 clips, 33 merged), 67/87 shots got cast cards, `seg_001.mp4` duration 37.057s matched the checkpoint's `audio_duration` (37.057125s) exactly (no A/V desync), and per-shot clip durations were non-uniform (2.44s/4.24s/6.68s for the first three kept clips) confirming real sentence-timed cuts rather than equal division. Total `video.mp4` duration 237.87s, consistent with the story's own "87 shots / 238s" reference figure.
 
 ### Completion Notes List
 
+- Extracted `sentence_windows()` out of `subtitle.py`'s `sentence_cues()` (Task 1) — `sentence_cues` now calls it, byte-identical behavior confirmed by the full existing subtitle test suite passing unchanged.
+- New `shot_timing.py` (`plan_shot_clips`/`ShotClip`) derives each scene's per-shot clip plan from `sentence_windows()` + `ShotData.sentence_indices`: gap-attachment to the preceding shot, first/last-clip stretch to the full `audio_duration`, and a `min_shot_clip_sec` merge pass (first clip merges forward). Degrades to a single full-duration clip with a WARNING when no usable sentence windows exist (empty timings/narration) — AC:7.
+- `video.py`'s `_compose_scene` now: builds the shot-clip plan, logs an INFO summary (`scene N: K shots -> M clips (merged J)`), and dispatches to one of two paths:
+  - **Fast path** (plan has exactly 1 clip — the common single-shot-per-scene case, or everything merged down to one): renders through `_render_scene_fast`, a straight extraction of the pre-8.11 single-pass `_compose_scene` body (byte-identical ffmpeg args) — deliberate ponytail call: nothing to concat, so no two-pass overhead, and it kept ~all pre-existing single-shot-scene tests passing unchanged.
+  - **Multi-clip path**: pass 1 renders each shot's own silent clip (`_compose_shot_clip`, no audio/subtitle/post-fx) into `shots/scene_NNN_SHOTID.mp4`; pass 2 (`_assemble_scene_from_clips`) concats them (hard cuts, no crossfade) and applies subtitle burn + narration audio + sound design + post-fx exactly once, at scene level.
+  - The per-card overlay-chain construction (zoompan + N stacked cards + harmonization) is factored into a shared `_build_card_chain()` helper used by both the fast path and pass 1 — one implementation, so the two render paths can't drift (mirrors the story's "one sentence_windows()" principle for the composition side).
+- `video_node`'s composition loop now resolves cast cards **per rendered shot** (`cards_by_shot: dict[shot_id, cards]`) instead of only the scene's first shot; Tier-3 relit-sprite substitution (Story 8.7) now runs per shot using each shot's own `location_key`.
+- `_validate_scene_assets` now checks **every** image-bearing shot's file existence (not just the first) — a real behavior change from pre-8.11 (a later shot's missing image used to be silently ignored since it was never rendered; now every image-bearing shot gets its own clip, so it must exist). Updated the one existing test that encoded the old behavior (`test_validate_ignores_unused_later_shot_missing_image` → `test_validate_fails_on_later_shot_missing_image`).
+- Added `Settings.min_shot_clip_sec` (`YTFLOW_MIN_SHOT_CLIP_SEC`, default 2.0, `0.0` disables merging).
+- Test fallout from the `_compose_scene(cards=...)` → `cards_by_shot=...` signature change was minimal: only 3 direct call sites (2 in `test_video_harmonization.py`, 1 sound-design integration test in `test_video.py`) needed updating, plus both files' fake-`Settings` helpers needed the new `min_shot_clip_sec` field. Every other `video_node`-level test (the overwhelming majority) uses single-shot-per-scene fixtures and kept passing unchanged through the fast path — confirmed by grepping for multi-shot scene fixtures before making the change (found exactly one, the validate test above).
+- New integration test `test_per_shot_cut_assembly_integration` (real ffmpeg): a 3-shot scene with distinct solid-color (red/green/blue) backgrounds renders 3 kept clips (no merge), and the assembled segment shows the correct color at each shot's window midpoint (1.0s/3.0s/5.0s) — a direct regression guard for the bug this story fixes.
+
 ### File List
+
+- `src/yt_flow/pipeline/nodes/subtitle.py` (modified — extracted `sentence_windows()`)
+- `src/yt_flow/pipeline/nodes/shot_timing.py` (new — `plan_shot_clips()`/`ShotClip`)
+- `src/yt_flow/pipeline/nodes/video.py` (modified — `_validate_scene_assets` per-shot check, `_build_card_chain`/`_render_scene_fast`/`_compose_shot_clip`/`_assemble_scene_from_clips`/`_compose_scene` split, `video_node` per-shot `cards_by_shot` + per-shot Tier-3 relight)
+- `src/yt_flow/config.py` (modified — `min_shot_clip_sec` field)
+- `tests/pipeline/nodes/test_shot_timing.py` (new)
+- `tests/pipeline/nodes/test_video.py` (modified — `_settings_ns` gains `min_shot_clip_sec`, `_compose_scene` call site updated to `cards_by_shot`, the unused-later-shot test rewritten for the new validation behavior, new `test_per_shot_cut_assembly_integration`)
+- `tests/pipeline/nodes/test_video_harmonization.py` (modified — `_settings_ns` gains `min_shot_clip_sec`, 2 direct `_compose_scene` call sites updated to `cards_by_shot`)
+
+## Change Log
+
+- 2026-07-12: Story 8.11 implemented — per-shot cut assembly in `video_node` (shot-level subclips timed to narration sentences, replacing the frozen first-shot-for-the-whole-scene Ken Burns render). Fixes the iteration-1 bug where 87 generated shot backgrounds rendered as only 8 (one per scene).
+- 2026-07-12: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) — 9 patch findings fixed, 2 deferred (see Review Findings above / `deferred-work.md`). Full regression: `python -m pytest -q` → 1300 passed, 1 skipped. Closed done.
