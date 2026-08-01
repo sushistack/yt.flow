@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-07-12  # 2026-07-12 두 번째 갱신: 실 E2E 런(c6be1954, SCP-049) 완주 후 Jay 시청 피드백 파티모드 리뷰 발의 — 8-15~8-20(backlog) + Epic 10(10-1, backlog) 신설. 우선순위: 8-15→8-17→8-16→8-18→8-19→8-20, Epic 10은 병렬. 이전 결정(6-3/6-4 done, 8-11 최우선)은 유효, 다음 착수는 8-15.
+last_updated: 2026-08-01  # 2026-08-01 갱신: 품질 우선 리서치(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) 완료 — Epic 11(11-1~11-6, backlog) 신설: Epic 8이 안 다루는 모션/생성 파라미터 갭. 갱신된 우선순위: 11-1(8-16 착수 전 필수) → 8-15 → 8-17 → 8-16 → 11-2/11-3 → 8-18 → 8-19 → 11-4 → 11-5 → 8-20 → 11-6(조건부). 리서치 판정: 8-20은 IPAdapter FaceID 대신 Qwen-Image-Edit-2511 파생(양식화/비인간 얼굴에서 FaceID류 실패) + OpenPose는 인간형 한정으로 기법 수정 필요. 이전(2026-07-12): 8-15~8-20 + Epic 10 신설.
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -165,11 +165,11 @@ development_status:
   8-12-cast-placement-scale-calibration: done  # cast_decision/visual_breakdown 프롬프트 수정 완료(rule-of-thirds+depth 캘리브레이션+camera_type 정합), 분포 측정(center 78%→16.8%, far 2%→13.6%, 모순 0/136). AC5 골든셋 게이트는 6-12 freeze로 Jay가 명시적으로 생략 지시, production 직승격 완료. 부수적으로 이미 커밋된 6개 프롬프트도 함께 승격됨(Jay 승인, repo=production 정합). 6-12 freeze 우회 시도 후 Jay 지시로 eval_prompts.py에 CLAUDECODE/AI_AGENT 무조건 차단 가드 추가+테스트. 코드리뷰(Blind+Edge+Auditor) 완료: 패치 5건 적용(env var presence-check로 CLAUDECODE="" 우회 차단+테스트, few-shot 위치교대 시연 수정, 3인 이상 배치 규칙 추가, mixed-depth tie-break 규칙 추가, AC6 "0 contradictions" 과잉주장 완화), defer 2건(migrate_prompts.py production 경로 무가드는 6-12 소관, stock-plate 샷 off-center 가이드 무력은 프롬프트 전용 범위 밖)
   8-13-derived-entity-card-on-demand: done  # <scp_id>-<n> 파생 개체(예 SCP-049-2) 카드 부재로 10샷 스킵된 iteration-1 갭; 8.4 온디맨드 인프라 재사용, Jay 선택(어휘 제한 대신 생성); resume_run 배선(스토리 문서의 start_run 가정은 틀림, 실코드로 확인); d55a265b 실 체크포인트+ComfyUI 라이브 검증 완료(10/10 샷 카드 복구). 코드리뷰(Blind+Edge+Auditor)에서 스왈로우된 생성실패가 영구 미재시도 스텁 Character row를 남기는 버그 발견+수정(_ensure_character_reference 선례 따라 롤백), 로그 메시지/헬퍼 재사용 패치 2건 추가 적용, defer 4건(8.4/5.8 공유 선례 패턴)
   8-15-stock-face-mask-bias-fix: backlog  # 2026-07-12 Jay E2E 런(c6be1954) 스크린샷 리뷰 발의 — STOCK-d-class/researcher 카드가 SCP-049와 동일한 해골마스크로 렌더링됨(스크린샷 확인). STOCK_DESCRIPTORS에 얼굴 지침 부재가 원인 추정. STOCK-security 포함 3종 재검토.
-  8-16-depth-aware-placement-ic-light: backlog  # 2026-07-12 Jay E2E 런 스크린샷 리뷰 발의 — 카드 배치/스케일이 배경 원근과 안 맞는 문제(8.7 harmonization으로 해결 안 됨). 파티모드 검토(Winston/Amelia/Murat/Mary) + 업계 선례 조사(arXiv 2512.16954, IC-Light) 거쳐 "카드 아키텍처 유지 + depth 추정 배치 + IC-Light 재조명"으로 스코프 확정. services/compositing_service.py 신설 예정.
+  8-16-depth-aware-placement-ic-light: backlog  # 2026-07-12 Jay E2E 런 스크린샷 리뷰 발의 — 카드 배치/스케일이 배경 원근과 안 맞는 문제(8.7 harmonization으로 해결 안 됨). 파티모드 검토(Winston/Amelia/Murat/Mary) + 업계 선례 조사(arXiv 2512.16954, IC-Light) 거쳐 "카드 아키텍처 유지 + depth 추정 배치 + IC-Light 재조명"으로 스코프 확정. services/compositing_service.py 신설 예정. 2026-08-01 리서치 보강: ③마스크드 저-denoise 융합패스 + ④libcom 그림자/합성QA 게이트 AC 추가, IC-Light v1 한정(v2 비상업), 알파 페더는 11-1 소관, 착수는 11-1 이후.
   8-17-location-plate-data-generation: backlog  # 2026-07-12 확인 — 8-5는 done이나 location_plates DB 0행, assets/locations/ 빈 디렉토리(시드 스크립트 미실행). seed_location_plates.py 실행 + Qwen-VL 자동 1차 라벨링(5-13 인프라 재사용) + Jay 최종 승인. 파이프라인 코드 변경 없음(순수 오프라인 배치).
   8-18-cast-decision-diversity-validator: backlog  # 2026-07-12 Jay 지적("AI 배치가 확률적/제어불가") 발의 — 8-12는 프롬프트 캘리브레이션뿐이라 코드 강제가 없음. 6-7/6-11 결정론적 repair 패턴 재사용, scenario_chain.py 내부 순수 함수(서비스 분리 안 함).
-  8-19-embedding-asset-retrieval-layer: backlog  # 2026-07-12 Jay 지적("나레이션-이미지 불일치 지속") 발의 — STOCK 재사용 판단이 LLM 판단에만 의존하는 게 근본원인 추정. 업계 선례(arXiv 2307.06940 Animate-A-Story) 기반 임베딩 유사도 검색 계층. services/asset_retrieval_service.py 신설 예정.
-  8-20-openpose-conditioned-action-poses: backlog  # 2026-07-12 Jay 지적("캐릭터 카드 획일적") 발의 — 실측(151 cast 중 pose 2종뿐, pose_hint 10건 중 3건만 생성 가능)으로 확인. OpenPose ControlNet+IPAdapter FaceID 표준기법 적용 검토, ComfyUI_VNCCS 기존 도구 우선 평가. services/pose_service.py 신설 예정. 즉시완화: special_pose_max_per_run 캡 상향(스토리 아님).
+  8-19-embedding-asset-retrieval-layer: backlog  # 2026-07-12 Jay 지적("나레이션-이미지 불일치 지속") 발의 — STOCK 재사용 판단이 LLM 판단에만 의존하는 게 근본원인 추정(미확정). 2026-07-15 재검토: 임베딩은 신규 의존성(현재 프로젝트 미보유)이라 최후 수단으로 재배치 — 0단계 진단 확인 → 1단계 LLM 구조화 선택/stdlib 텍스트 유사도(신규 의존성 없음) → 1단계로도 실측 부족 확인 시에만 2단계 임베딩(arXiv 2307.06940 Animate-A-Story 선례) + services/asset_retrieval_service.py. 상세는 epics.md 8.19 참고.
+  8-20-openpose-conditioned-action-poses: backlog  # 2026-07-12 Jay 지적("캐릭터 카드 획일적") 발의 — 실측(151 cast 중 pose 2종뿐, pose_hint 10건 중 3건만 생성 가능)으로 확인. 2026-08-01 리서치로 기법 재판정: IPAdapter FaceID/InstantID/PuLID는 실사 얼굴 임베딩 기반이라 양식화/비인간(049 마스크, 682/096)에서 원천 실패 → 주기법 Qwen-Image-Edit-2511 파생(기존 카드 참조, Apache-2.0, GGUF ~14GB) + 골격 제어는 인간형만 OpenPose/비인간형 depth-lineart. ComfyUI_VNCCS 우선 평가 유지(FaceID 의존 여부 먼저 확인). services/pose_service.py 신설 예정. 즉시완화: special_pose_max_per_run 캡 상향(스토리 아님).
   epic-8-retrospective: optional
 
   # ── Epic 9: Localization Config — 콘텐츠 언어 스위치 ────────────────────────
@@ -180,3 +180,15 @@ development_status:
   # ── Epic 10: 서사 구조 다양화 ────────────────────────────────────────────────
   epic-10: in-progress
   10-1-story-archetype-diversification: backlog  # 2026-07-12 Jay E2E 시청 피드백 발의 — structure.md가 INCIDENT-FIRST 4막 구조 하나만 전 SCP에 강제함을 확인, 서사 다양성이 지금까지 스코프 밖이었음. 다큐/크리피파스타 페이싱 기법 반영한 아키타입 2-3종 추가 + golden-set(6.2) 연동.
+
+  # ── Epic 11: 시네마틱 모션 & 프레임 품질 하드닝 ─────────────────────────────
+  # 2026-08-01 품질 리서치 발의(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) — Epic 8이 안 다루는 "조잡함"의 나머지 절반(모션+생성 파라미터).
+  # 착수 순서: 11-1은 8-16 착수 전 필수(베이스라인 오염 방지), 11-2/11-3은 8-16과 병렬 가능(video.py 동시편집 주의), 11-5는 8-17+11-3 이후, 11-6은 조건부.
+  epic-11: in-progress
+  11-1-image-gen-param-hardening: done  # 2026-08-01 구현 완료(전체 스위트 1345 green, ComfyUI 1344×768 스팟 렌더 + ffmpeg 페더 라이브 검증). 퀵윈 묶음(반나절): 배경 155장 전부 seed 0 고정 → per-shot seed 주입+사이드카 seed 포함, latent 1216×832→1344×768(세로 18% 크롭 제거, zoompan 상수 동기수정), harmonization_tier 기본 0→1, 카드 알파 하드스냅 제거+2-5px 페더. 자동 코드리뷰 Approve(CRITICAL/HIGH 0, MEDIUM 1+LOW 2 수정, LOW 1 기록: KSamplerAdvanced 미커버는 YAGNI)
+  11-2-camera-motion-archetype-wiring: backlog  # camera_movement 하드코딩 None 제거 → 닫힌 아키타입 enum(push_in/pull_back/drift/locked/shake) + 무드→아키타입 결정론 매핑(Epic7 택소노미 재사용) + 연속샷 동일모션 금지 validator(8.18 패턴). 인덱스 라운드로빈은 폴백 강등
+  11-3-fractal-noise-camera-paths: backlog  # "eyeball-tuned" 단일주파수 사인 → 2-3옥타브 fBm(x/y/rot/micro-zoom 동시), 저주파 sway 0.5-2Hz + tremor 8-12Hz 2대역(Gavant IEEE/AE wiggle 근거), trauma 스칼라로 7.1 스팅어 연동 이벤트 셰이크. 순수 파이썬 ~30줄, 신규 의존성 없음
+  11-4-whisperx-always-on-beat-cuts: backlog  # WhisperX 사실상 비활성(균등분할 provisional timings가 empty-체크 통과 차단) → 상시 실행+provisional은 폴백 강등, 8.11 샷컷/자막큐를 실제 발화 경계에 정렬, 컷-정렬 오차 rule metric 추가
+  11-5-depthflow-25d-parallax: backlog  # zoompan(줌+팬만, 양자화 지터) → DepthFlow(OpenGL=ROCm무관, ComfyUI 노드팩 존재) 배경 플레이트 2.5D 패럴랙스, Depth-Anything V2 depth map(8-17 시딩 시 저장분 공유), 캐릭터 레이어 60-80% 변위 레이어드 패럴랙스. 의존: 11-3, 8-17
+  11-6-hero-shot-selective-i2v: backlog  # 조건부(11-1~11-5 후 필요성 실측 시만) — Wan 2.2 GGUF Q5(peak 12-14GB, ROCm 공식지원, 예상 5-15분/클립) 에피소드당 1-3 히어로샷, Wan2.2-Fun 카메라컨트롤, 입력은 합성완료 프레임. 호스티드(Kling ~$0.10/s) 폴백
+  epic-11-retrospective: optional

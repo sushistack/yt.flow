@@ -83,6 +83,16 @@ COMP_H = 1080
 ZOOM_IN_MAX = 1.15   # Story 5.3: raised from 1.08 — review found it read as still-image drift
 ZOOM_SAFE_MARGIN = 0.10  # 10% inset before crop so zoom/pan never clips subject
 
+# Card edge feather (Story 11.1 AC6): the existing card assets carry a binary
+# alpha edge (pre-11.1 hard snap), so the shared card chain softens it at
+# composite time — 2-5px per research §3.4. lr/cr zero → alpha plane only,
+# color untouched; inline stage, so no split/label-reuse hazard. ar=2 with the
+# default double pass gives a ~4px ramp (live-verified). The min() clamp keeps
+# boxblur's "radius ≤ min(w,h)/2" constraint satisfiable on degenerate tiny
+# cards (a bare ar=2 hard-fails the whole filtergraph on a 1x1 test sprite;
+# gblur=planes=8 heap-crashed this ffmpeg build there — don't swap it in).
+CARD_EDGE_FEATHER = "boxblur=lr=0:cr=0:ar='min(2,floor(min(w,h)/2))'"
+
 # Direction pool: round-robin by scene_index to avoid identical consecutive directions.
 # Story 5.3 added the diagonal directions for more visible fallback variety.
 _DIRECTION_POOL = [
@@ -820,7 +830,9 @@ def _build_card_chain(
         movement_scale = _movement_scale_filter(
             movement_mode, movement_direction, movement_pace, position, depth, duration,
         )
-        char_chain = _character_scale_filter(depth)
+        # Feather first (Story 11.1 AC6): before any scale stage, so downstream
+        # scaling preserves/shrinks the soft edge instead of re-hardening it.
+        char_chain = f"{CARD_EDGE_FEATHER},{_character_scale_filter(depth)}"
         if movement_scale:
             char_chain += f",{movement_scale}"
         # Parallax (Story 7.3/8.3 AC:7): couple each card's zoom/pan to the

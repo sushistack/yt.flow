@@ -1495,6 +1495,9 @@ async def test_video_node_two_cards_different_styles_decorrelate(monkeypatch, tm
     assert f"sin(t*{cm.TREMBLE_FREQ}+" in fc  # the tremble card's shake is present
     # far/hold is card index 0 (stable depth sort) → input [1:v], char_chain up to [c0]
     hold_chain = fc.split("[1:v]", 1)[1].split("[c0]", 1)[0]
+    # Story 11.1: drop the motion-agnostic feather stage first — its radius
+    # clamp contains floor(), which this no-motion-terms proxy would trip on.
+    hold_chain = hold_chain.removeprefix(f"{video.CARD_EDGE_FEATHER},")
     assert "sin(" not in hold_chain and "floor(" not in hold_chain
 
 
@@ -1972,6 +1975,51 @@ async def test_character_overlay_filtergraph_renders(tmp_path):
         str(out),
     )
     assert rc == 0, f"layered filtergraph rejected by ffmpeg: {stderr[-500:]}"
+    assert out.exists()
+
+
+def test_build_card_chain_feathers_card_alpha_first():
+    """Story 11.1 AC6: the 41 existing card assets keep their binary cutout edge,
+    so the shared card chain (fast-path + 8.11 per-shot both route here) feathers
+    the alpha at composite time. Must be the FIRST stage of the card chain so
+    every later scale stage preserves/shrinks the soft edge instead of re-hardening it."""
+    spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    chain_parts, _ = video._build_card_chain(
+        "null", [{"depth": "mid"}], spec, 2.0, None,
+        parallax_enabled=False, composite_harmonization_tier=0,
+    )
+    card_stage = next(p for p in chain_parts if p.startswith("[1:v]"))
+    assert card_stage.startswith(f"[1:v]{video.CARD_EDGE_FEATHER},")
+    # alpha-only: color planes untouched (lr/cr zero)
+    assert "lr=0" in video.CARD_EDGE_FEATHER and "cr=0" in video.CARD_EDGE_FEATHER
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+async def test_card_feather_filtergraph_renders(tmp_path):
+    """Real FFmpeg: the feather stage prepended to the card chain is accepted and
+    renders rc=0 (Story 11.1 AC6 live check — boxblur inline, no split needed,
+    so the 'label consumed twice' hazard never arises)."""
+    from yt_flow.pipeline.nodes.video import _run_ffmpeg, _zoompan_filter
+
+    spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
+    zp = _zoompan_filter(spec, duration=1.0)
+    fc = (
+        f"[0:v]{zp}[bg];"
+        f"[1:v]{video.CARD_EDGE_FEATHER},{_character_scale_filter()}[char];"
+        f"[bg][char]{_overlay_filter()}[out]"
+    )
+
+    out = tmp_path / "feather.mp4"
+    rc, stderr = await _run_ffmpeg(
+        "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25:d=1",
+        "-f", "lavfi", "-i", "color=c=red@0.5:s=64x64:r=25:d=1,format=rgba",
+        "-filter_complex", fc,
+        "-map", "[out]",
+        "-frames:v", "25", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(out),
+    )
+    assert rc == 0, f"feathered filtergraph rejected by ffmpeg: {stderr[-500:]}"
     assert out.exists()
 
 

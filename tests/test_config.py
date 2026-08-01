@@ -87,7 +87,9 @@ def test_composite_harmonization_defaults(monkeypatch):
         monkeypatch.delenv(key, raising=False)
     from yt_flow.config import Settings
     s = Settings(_env_file=None)
-    assert s.composite_harmonization_tier == 0
+    # Story 11.1 AC4: tier 1 (mood tint + contact shadow) is the default now —
+    # research-confirmed quick win; tier 0 remains reachable via env for A/B.
+    assert s.composite_harmonization_tier == 1
     assert s.iclight_comfyui_workflow_path == "data/workflows/comfyui_iclight_relight_api.json"
 
 

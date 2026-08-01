@@ -66,10 +66,13 @@ def _clean_alpha_noise(png_bytes: bytes) -> bytes:
         if float(size) >= largest_size * 0.02
     }
     keep_mask = np.isin(labeled, list(keep_labels))
-    # Snap to fully opaque/transparent — the mask already decided foreground vs
-    # not, so keeping the original dithered alpha here would just re-draw the
-    # noise band we closed over.
-    arr[:, :, 3] = np.where(keep_mask, 255, 0).astype(np.uint8)
+    # Interior (2px erode) snaps to 255 — the dither band lives in flat regions
+    # inside the component, so snapping there still removes it. The edge band
+    # (keep_mask minus interior) keeps the ORIGINAL alpha so anti-aliased edges
+    # survive compositing instead of a binary cutout (Story 11.1 AC5). Outside
+    # the mask stays 0.
+    interior = ndimage.binary_erosion(keep_mask, structure=np.ones((5, 5)))
+    arr[:, :, 3] = np.where(interior, 255, np.where(keep_mask, alpha, 0)).astype(np.uint8)
     out = io.BytesIO()
     Image.fromarray(arr, "RGBA").save(out, format="PNG")
     return out.getvalue()

@@ -150,9 +150,11 @@ class Settings(BaseSettings):
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
     # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,
-    # 2=+light wrap, 3=+IC-Light re-lighting. Default stays off until a real
-    # tier-0 vs tier-1 A/B run confirms the visual win.
-    composite_harmonization_tier: int = Field(0, ge=0, le=3)
+    # 2=+light wrap, 3=+IC-Light re-lighting. Default 1 since Story 11.1: the
+    # 2026-08-01 quality research (§Phase 1 quick-win 3) identified tier 0 as a
+    # confirmed "cheap collage" cause; tier 1 stays the fallback once 8-16's
+    # IC-Light (tier 3) lands.
+    composite_harmonization_tier: int = Field(1, ge=0, le=3)
     iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
 
     # Per-shot cut assembly (Story 8.11): a shot's clip window shorter than this

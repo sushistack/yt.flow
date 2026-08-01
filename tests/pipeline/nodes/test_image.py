@@ -101,7 +101,8 @@ def _no_health_check(monkeypatch):
 # ── Prompt injection (AC1, AC2) — pure, no ComfyUI ──────────────────────────
 
 def test_inject_prompts_targets_nodes_6_and_7():
-    out = img._inject_prompts(GOOD_WF, "positive text", "negative text")
+    # Story 11.1: _inject_prompts grew a required seed arg (single call site).
+    out = img._inject_prompts(GOOD_WF, "positive text", "negative text", 1)
     assert out["6"]["inputs"]["text"] == "positive text"
     # template is untouched — one loaded workflow is safely reused per shot
     assert GOOD_WF["6"]["inputs"]["text"] == "placeholder"
@@ -109,10 +110,47 @@ def test_inject_prompts_targets_nodes_6_and_7():
 
 def test_inject_prompts_appends_negative_suffix():
     """AC2: code-side entity exclusion belt, on top of the prompt-side (8.1) suspenders."""
-    out = img._inject_prompts(GOOD_WF, "a corridor", "watermark")
+    out = img._inject_prompts(GOOD_WF, "a corridor", "watermark", 1)
     assert out["7"]["inputs"]["text"] == "watermark" + img.BG_NEGATIVE_SUFFIX
     for term in ("person", "human", "character", "silhouette"):
         assert term in out["7"]["inputs"]["text"]
+
+
+# ── Per-shot deterministic seed (Story 11.1 AC1) ────────────────────────────
+
+def test_shot_seed_deterministic_and_distinct():
+    a = img._shot_seed("run-1", 1, "S001")
+    assert a == img._shot_seed("run-1", 1, "S001")  # same shot → same seed
+    assert a != img._shot_seed("run-1", 1, "S002")  # different shot → different seed
+    assert a != img._shot_seed("run-2", 1, "S001")  # different run → different seed
+    assert 0 <= a < 2**32
+
+
+def test_shot_seed_is_sha256_not_builtin_hash():
+    """Builtin hash() is salted per process (PYTHONHASHSEED) — a resumed run is a
+    new process, so the seed must come from sha256 to survive restarts."""
+    import hashlib
+    expected = int(hashlib.sha256(b"run-1:1:S001").hexdigest(), 16) % 2**32
+    assert img._shot_seed("run-1", 1, "S001") == expected
+
+
+def test_inject_prompts_seeds_every_ksampler_by_class_type():
+    """AC1: all KSampler nodes matched by class_type, never by node ID."""
+    wf = {
+        **GOOD_WF,
+        "3": {"class_type": "KSampler", "inputs": {"seed": 0}},
+        "42": {"class_type": "KSampler", "inputs": {"seed": 0}},
+    }
+    out = img._inject_prompts(wf, "p", "n", 1234)
+    assert out["3"]["inputs"]["seed"] == 1234
+    assert out["42"]["inputs"]["seed"] == 1234
+    # template purity holds for the seed too
+    assert wf["3"]["inputs"]["seed"] == 0
+
+
+def test_inject_prompts_harmless_without_ksampler():
+    out = img._inject_prompts(GOOD_WF, "p", "n", 99)  # GOOD_WF has no KSampler
+    assert out["6"]["inputs"]["text"] == "p"
 
 
 def test_load_workflow_rejects_missing_prompt_nodes(tmp_path):
@@ -261,10 +299,21 @@ def _resume_settings(tmp_path):
     return FakeSettings(mock=False, workflow_path=_wf_file(tmp_path))
 
 
-def _write_complete_shot(d, base, image_prompt, negative_prompt):
+def _shot_seed_for(base, run_id="run-img-1"):
+    """Seed the node itself would compute for a `scene_NNN_SHOTID` base name."""
+    _, scene, shot_id = base.split("_")
+    return img._shot_seed(run_id, int(scene), shot_id)
+
+
+def _write_complete_shot(d, base, image_prompt, negative_prompt, *, seed=None):
     (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
     (d / f"{base}_done.json").write_text(
-        json.dumps({"image_prompt": image_prompt, "negative_prompt": img._effective_negative_prompt(negative_prompt)})
+        json.dumps({
+            "image_prompt": image_prompt,
+            "negative_prompt": img._effective_negative_prompt(negative_prompt),
+            # Story 11.1 AC2: sidecars pin the deterministic per-shot seed
+            "seed": _shot_seed_for(base) if seed is None else seed,
+        })
     )
 
 
@@ -339,6 +388,82 @@ async def test_resume_regenerates_legacy_sidecar_without_bg_suffix(monkeypatch, 
     assert call_count == 3
 
 
+async def test_resume_regenerates_on_seed_mismatch(monkeypatch, tmp_path):
+    """Story 11.1 AC2: matching prompts but a different pinned seed → regenerate."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_shot(d, "scene_001_S001", "a dark room", "blurry", seed=12345)
+
+    call_count = 0
+
+    async def fake_fetch(url, workflow):
+        nonlocal call_count
+        call_count += 1
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3  # seed mismatch rejected — all shots regenerate
+
+
+async def test_resume_regenerates_legacy_sidecar_without_seed(monkeypatch, tmp_path):
+    """Story 11.1 AC2: pre-11.1 sidecars have no seed key → mismatch → regenerate
+    (intended one-time cache invalidation; the AR change made old images stale anyway)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    base = "scene_001_S001"
+    (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / f"{base}_done.json").write_text(json.dumps({
+        "image_prompt": "a dark room",
+        "negative_prompt": img._effective_negative_prompt("blurry"),
+    }))
+
+    call_count = 0
+
+    async def fake_fetch(url, workflow):
+        nonlocal call_count
+        call_count += 1
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert call_count == 3
+
+
+async def test_generated_sidecar_records_shot_seed(monkeypatch, tmp_path):
+    """Story 11.1 AC1+AC2: the submitted workflow carries the deterministic seed
+    and the sidecar written afterwards pins the same value (real generation path;
+    the mock path shares the same sidecar write at the loop bottom)."""
+    monkeypatch.chdir(tmp_path)
+    wf = {**GOOD_WF, "3": {"class_type": "KSampler", "inputs": {"seed": 0}}}
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path, wf)))
+
+    submitted_seeds = []
+
+    async def fake_fetch(url, workflow):
+        submitted_seeds.append(workflow["3"]["inputs"]["seed"])
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert submitted_seeds == [
+        img._shot_seed("run-img-1", 1, "S001"),
+        img._shot_seed("run-img-1", 1, "S002"),
+        img._shot_seed("run-img-1", 2, "S003"),
+    ]
+    assert len(set(submitted_seeds)) == 3  # per-shot, not shared
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    sidecar = json.loads((d / "scene_001_S001_done.json").read_text())
+    assert sidecar["seed"] == img._shot_seed("run-img-1", 1, "S001")
+
+
 async def test_resume_regenerates_on_missing_sidecar(monkeypatch, tmp_path):
     """AC3: a .png on disk without a matching sidecar regenerates (no false resume)."""
     monkeypatch.chdir(tmp_path)
@@ -368,7 +493,11 @@ async def test_resume_regenerates_undersized_files(monkeypatch, tmp_path):
     d.mkdir(parents=True)
     base = "scene_001_S001"
     (d / f"{base}.png").write_bytes(RGB_PNG)  # under the 1KB floor
-    (d / f"{base}_done.json").write_text(json.dumps({"image_prompt": "a dark room", "negative_prompt": "blurry"}))
+    (d / f"{base}_done.json").write_text(json.dumps({
+        "image_prompt": "a dark room",
+        "negative_prompt": img._effective_negative_prompt("blurry"),
+        "seed": _shot_seed_for(base),
+    }))
 
     call_count = 0
 

@@ -692,6 +692,33 @@ class TestReferenceImageInjectionAndFallback:
         assert cleaned[85, 85, 3] == 255  # large detached component survives
         assert cleaned[7, 7, 3] == 0  # disconnected speck removed
 
+    def test_clean_alpha_noise_preserves_antialiased_edge_band(self):
+        """Story 11.1 AC5: the component interior still snaps to 255 (dither-band
+        removal lives there), but the 2px edge band keeps the original alpha so
+        anti-aliased edges survive into compositing instead of a binary cutout."""
+        from yt_flow.services.character_image_provider import _clean_alpha_noise
+
+        size = 100
+        arr = np.zeros((size, size, 4), dtype=np.uint8)
+        arr[20:80, 20:80, :3] = 255
+        arr[20:80, 20:80, 3] = 255  # solid blob
+        arr[50, 22, 3] = 180  # dither-band pixel deep inside the blob
+        # AA ring: soften the blob's outermost pixel column/rows to 140 (>100
+        # threshold so it stays in the mask, ≠255 so preservation is observable)
+        arr[20:80, 20, 3] = 140
+        arr[20:80, 79, 3] = 140
+        arr[20, 20:80, 3] = 140
+        arr[79, 20:80, 3] = 140
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        cleaned = np.array(Image.open(io.BytesIO(_clean_alpha_noise(buf.getvalue()))).convert("RGBA"))
+
+        assert cleaned[50, 50, 3] == 255  # interior stays fully opaque
+        assert cleaned[50, 22, 3] == 255  # interior dither pixel still snapped away
+        assert cleaned[50, 20, 3] == 140  # edge-band AA alpha preserved, not snapped
+        assert cleaned[50, 10, 3] == 0  # outside the mask stays transparent
+
     def test_clean_alpha_noise_rejects_rgb_input(self):
         from yt_flow.services.character_image_provider import _clean_alpha_noise
 

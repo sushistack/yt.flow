@@ -108,8 +108,21 @@ def _effective_negative_prompt(negative_prompt: str) -> str:
     return negative_prompt + BG_NEGATIVE_SUFFIX
 
 
-def _inject_prompts(template: dict, image_prompt: str, negative_prompt: str) -> dict:
-    """Return a deep copy of the workflow with prompts injected into nodes 6/7.
+def _shot_seed(run_id: str, scene_num: int, shot_id: str) -> int:
+    """Deterministic per-shot KSampler seed (Story 11.1 AC1).
+
+    Uses sha256, not the builtin ``hash()`` — CPython salts str hashing per
+    process (PYTHONHASHSEED), so ``hash()`` would compute a different seed for
+    the same shot after a process restart (e.g. a resumed run), breaking the
+    sidecar seed comparison. Same rationale as ``_plate_variant_index``.
+    """
+    digest = hashlib.sha256(f"{run_id}:{scene_num}:{shot_id}".encode()).hexdigest()
+    return int(digest, 16) % 2**32
+
+
+def _inject_prompts(template: dict, image_prompt: str, negative_prompt: str, seed: int) -> dict:
+    """Return a deep copy of the workflow with prompts injected into nodes 6/7
+    and ``seed`` into every KSampler node (class_type match, Story 11.1 AC1).
 
     Pure: never mutates ``template`` so one loaded workflow can be reused per shot.
     Appends ``BG_NEGATIVE_SUFFIX`` to the negative prompt (AC2) unconditionally —
@@ -118,6 +131,9 @@ def _inject_prompts(template: dict, image_prompt: str, negative_prompt: str) -> 
     workflow = copy.deepcopy(template)
     workflow[POSITIVE_NODE]["inputs"]["text"] = image_prompt
     workflow[NEGATIVE_NODE]["inputs"]["text"] = _effective_negative_prompt(negative_prompt)
+    for node in workflow.values():
+        if isinstance(node, dict) and node.get("class_type") == "KSampler":
+            node["inputs"]["seed"] = seed
     return workflow
 
 
@@ -138,22 +154,27 @@ def _sidecar_path(out_dir: Path, scene_num: int, shot: ShotData) -> Path:
     return out_dir / f"{_shot_base(scene_num, shot)}_done.json"
 
 
-def _write_sidecar(out_dir: Path, scene_num: int, shot: ShotData) -> None:
+def _write_sidecar(out_dir: Path, scene_num: int, shot: ShotData, seed: int) -> None:
     """Completion sentinel, written last after the shot's image file.
 
-    Records the prompts so a later retry can tell a stale (post-prompt-edit)
-    output from a genuinely complete one. [AC1, AC2]
+    Records the prompts + deterministic seed so a later retry can tell a stale
+    (post-prompt-edit or pre-11.1) output from a genuinely complete one. The
+    seed is a pure function of (run_id, scene_num, shot_id), so all three
+    writer paths (stock plate / mock / generation) record the identical value —
+    the resume check runs before path selection and must compare uniformly.
+    [AC1, AC2] [Story 11.1 AC2]
     """
     _sidecar_path(out_dir, scene_num, shot).write_text(
         json.dumps({
             "image_prompt": shot["image_prompt"],
             "negative_prompt": _effective_negative_prompt(shot["negative_prompt"]),
+            "seed": seed,
         }),
         encoding="utf-8",
     )
 
 
-def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData) -> str | None:
+def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seed: int) -> str | None:
     """Return the existing image path iff a prior attempt fully completed this shot.
 
     Pure file/sidecar check only (retry re-enters with state paths nulled, so
@@ -161,12 +182,16 @@ def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData) -> st
     malformed sidecar) is treated as incomplete rather than raised — this check
     runs inside image_node's AD-10 boundary and must never fail a whole run
     over one shot's resume check. [AC1-3]
+
+    A legacy sidecar without a ``seed`` key mismatches and regenerates —
+    intended one-time cache invalidation (Story 11.1 AC2).
     """
     try:
         sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
         if not isinstance(sidecar, dict) \
                 or sidecar.get("image_prompt") != shot["image_prompt"] \
-                or sidecar.get("negative_prompt") != _effective_negative_prompt(shot["negative_prompt"]):
+                or sidecar.get("negative_prompt") != _effective_negative_prompt(shot["negative_prompt"]) \
+                or sidecar.get("seed") != seed:
             return None
 
         img_dest = out_dir / f"{_shot_base(scene_num, shot)}.png"
@@ -281,7 +306,10 @@ async def image_node(state: PipelineState) -> dict:
         for scene in state.get("scenes", []):
             new_shots: list[ShotData] = []
             for shot in scene["shots"]:
-                existing = _existing_complete_shot(out_dir, scene["scene_num"], shot)
+                # Story 11.1: one deterministic seed per shot, shared by the
+                # resume check, all sidecar writers, and the KSampler injection.
+                seed = _shot_seed(run_id, scene["scene_num"], shot["shot_id"])
+                existing = _existing_complete_shot(out_dir, scene["scene_num"], shot, seed)
                 if existing is not None:
                     skipped_count += 1
                     image_count += 1
@@ -298,7 +326,7 @@ async def image_node(state: PipelineState) -> dict:
                             plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
                             dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                             shutil.copyfile(plate["path"], dest)
-                            _write_sidecar(out_dir, scene["scene_num"], shot)
+                            _write_sidecar(out_dir, scene["scene_num"], shot, seed)
                             image_count += 1
                             stock_plate_count += 1
                             logger.info(
@@ -331,7 +359,7 @@ async def image_node(state: PipelineState) -> dict:
                 else:
                     if template is None:
                         raise ValueError("workflow must be loaded in real mode")
-                    workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"])
+                    workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"], seed)
                     try:
                         image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
                     except ComfyUIError:  # AC4: a submit-time crash reuses the same recovery loop
@@ -341,7 +369,7 @@ async def image_node(state: PipelineState) -> dict:
                     request_count += 1
                 generated_count += 1
                 image_count += 1
-                _write_sidecar(out_dir, scene["scene_num"], shot)
+                _write_sidecar(out_dir, scene["scene_num"], shot, seed)
                 # Copy the shot; set only image_path — never mutate the input state. [AD-4]
                 new_shots.append({**shot, "image_path": str(dest)})
             new_scenes.append({**scene, "shots": new_shots})
