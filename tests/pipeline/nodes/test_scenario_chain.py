@@ -1873,13 +1873,33 @@ def test_camera_preferences_first_alternate_renders_distinct(mood):
     # after _enforce_camera_variety, so those two must render as *different*
     # EffectSpecs or the archetype-level variety is visually void (e.g. the
     # shake placeholder and push_in both map to an in-center push).
-    from yt_flow.pipeline.nodes.video import select_effect
+    # Story 11.3 (AC:4): comparison widened to (EffectSpec, camera-shake
+    # filter) — the shake archetype's EffectSpec legitimately equals push_in's
+    # (same in-center base push), but its noise profile makes the final render
+    # chain distinct, and that render-level distinctness is what this guard
+    # must pin so archetype monotony can't silently come back.
+    from yt_flow.pipeline.nodes.video import _camera_shake_filter, select_effect
 
     prefs = chain.CAMERA_PREFERENCES[mood]
     for scene_index in range(3):
-        default_spec = select_effect({"camera_movement": prefs[0]}, scene_index)
-        alternate_spec = select_effect({"camera_movement": prefs[1]}, scene_index)
-        assert default_spec != alternate_spec
+        default_render = (
+            select_effect({"camera_movement": prefs[0]}, scene_index),
+            _camera_shake_filter(prefs[0], 4.0, k=scene_index),
+        )
+        alternate_render = (
+            select_effect({"camera_movement": prefs[1]}, scene_index),
+            _camera_shake_filter(prefs[1], 4.0, k=scene_index),
+        )
+        assert default_render != alternate_render
+
+
+def test_shake_and_push_in_render_distinct_chains():
+    # Story 11.3 AC:4: the 11.2 LOW — shake's placeholder rendered identically
+    # to push_in. Same base EffectSpec is fine; the camera stage must differ.
+    from yt_flow.pipeline.nodes.video import _camera_shake_filter
+
+    for k in range(3):
+        assert _camera_shake_filter("shake", 4.0, k=k) != _camera_shake_filter("push_in", 4.0, k=k)
 
 
 def _one_shot_visual(**shot_extra):

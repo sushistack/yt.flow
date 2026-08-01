@@ -26,7 +26,7 @@ from yt_flow.observability import get_client, observe
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
-from yt_flow.pipeline.nodes import character_motion, character_movement, shot_timing
+from yt_flow.pipeline.nodes import camera_path, character_motion, character_movement, shot_timing
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
     AMBIENT_VOLUME,
@@ -223,8 +223,9 @@ _HINT_MAP: dict[str, str] = {
     "pan_up": "pan-up",
     "pan down": "pan-down",
     "pan_down": "pan-down",
-    # ponytail: Story 11.2 "shake" archetype placeholder — plain in-center
-    # push until Story 11.3 replaces it with a real fBm/trauma shake.
+    # Story 11.3: "shake"'s in-center push is the base move UNDER the real
+    # handheld shake — _camera_shake_filter supplies the shake-profile fBm
+    # noise on top, so shake and push_in now render distinct final chains.
     "shake": "in-center",
     # "static"/"locked" → near-zero drift; "drift" → pan rotation; handled below
 }
@@ -467,6 +468,48 @@ def _motion_scale_filter(motion_style: str = "sway", motion_energy: str = "mediu
     return f"scale=w='iw*(1+({expr}))':h='ih*(1+({expr}))':eval=frame"
 
 
+def _camera_shake_filter(hint: str | None, duration: float, *, k: int, trauma: float = 0.0) -> str:
+    """Handheld camera stage applied to the fully composited frame (Story 11.3
+    AC:2) — the camera shakes bg and cards *together*, so no per-layer math
+    changes. Chain: overscan scale (margin M derived by construction from
+    camera_path's analytic excursion bound, plus the micro-zoom noise) →
+    ``rotate`` on the fBm rotation band → ``crop`` back to COMP_W x COMP_H with
+    the x/y noise offsetting the window.
+
+    Empty string when every channel is silent (locked/"static" profile with no
+    trauma, or the config kill switch upstream) — the caller then attaches no
+    stage at all, keeping the chain byte-identical to pre-11.3
+    (``_motion_scale_filter``'s "" idiom). ``k`` is the shot's effect index
+    (fast path: scene_index; multi-clip: scene_index*stride+local_i), reused as
+    a lattice offset so adjacent shots never ride the same curve.
+
+    ``duration`` is unused today (the trauma envelope decays in absolute t) —
+    kept so a future duration-scaled band doesn't ripple every call site.
+
+    ``eval=frame`` on the scale stage is REQUIRED (the eval=init default
+    collapses ``t`` to NAN — the trap ``_overlay_filter`` documents); the
+    even-dimension floor keeps yuv420p happy mid-chain, its ≤1px/side loss
+    already folded into the margin. clip() on crop x/y is belt-and-suspenders
+    on top of the analytic margin.
+    """
+    exprs = camera_path.camera_noise_exprs(hint, k, trauma=trauma)
+    if exprs is None:
+        return ""
+    scale_factor = f"{1.0 + exprs.margin:.6g}"
+    if exprs.zoom_expr:
+        scale_factor = f"({scale_factor}+{exprs.zoom_expr})"
+    parts = [
+        f"scale=w='2*floor(iw*{scale_factor}/2)':h='2*floor(ih*{scale_factor}/2)':eval=frame",
+    ]
+    if exprs.rot_expr:
+        parts.append(f"rotate=a='{exprs.rot_expr}'")
+    x = f"clip((iw-{COMP_W})/2+({exprs.x_expr or '0'})*{COMP_W},0,iw-{COMP_W})"
+    # y noise amplitude is a frame-WIDTH fraction too (profile unit), hence *COMP_W
+    y = f"clip((ih-{COMP_H})/2+({exprs.y_expr or '0'})*{COMP_W},0,ih-{COMP_H})"
+    parts.append(f"crop={COMP_W}:{COMP_H}:x='{x}':y='{y}'")
+    return ",".join(parts)
+
+
 def _movement_scale_filter(
     mode: str, direction: str, pace: str, position: str, depth: str, duration: float,
 ) -> str:
@@ -670,6 +713,7 @@ def _record_trace(
     composite_harmonization_tier: int = 0,
     relit_pairs_computed: int = 0,
     relit_pairs_failed: int = 0,
+    camera_noise_enabled: bool = False,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -708,6 +752,13 @@ def _record_trace(
                 "table_version": character_movement.MOVEMENT_TABLE_VERSION,
                 "mode_counts": movement_mode_counts or {},
                 "pace_counts": movement_pace_counts or {},
+            },
+            # Story 11.3: fBm camera-noise version + kill-switch state — the
+            # 8.8 table_version idiom, for "why does this render look
+            # different" questions.
+            "camera_path": {
+                "version": camera_path.CAMERA_PATH_VERSION,
+                "enabled": camera_noise_enabled,
             },
             "ending_credit": ending_credit,
             "ending_credit_error": ending_credit_error,
@@ -912,6 +963,7 @@ async def _render_scene_fast(
     parallax_enabled: bool,
     include_stinger: bool,
     composite_harmonization_tier: int,
+    camera_shake: str = "",
 ) -> None:
     """Render a scene segment in a single ffmpeg pass: Ken Burns zoompan +
     burned SRT, optionally with N cast cards + mood-driven sound design/post-fx.
@@ -920,9 +972,16 @@ async def _render_scene_fast(
     The pre-8.11 code path — used by `_compose_scene` whenever a scene's
     shot-clip plan is a single clip (nothing to cut, the common case).
     [Story 8.11 — ponytail: no concat overhead when there's nothing to concat]
+
+    `camera_shake` (Story 11.3 AC:2): a prebuilt `_camera_shake_filter` chain,
+    inserted after composition and BEFORE post-fx/subtitles — subtitles are
+    screen-space UI and must not shake; vignette/grain are lens-space and must
+    ride the shaken frame. "" attaches nothing (pre-11.3 byte-identical).
     """
     bg_path = shot["image_path"]
     zp_chain = _zoompan_filter(spec, duration)
+    shake_head = f"{camera_shake}," if camera_shake else ""   # card branch: before post_label
+    shake_tail = f",{camera_shake}" if camera_shake else ""   # bg-only: after zp_chain
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
     fontsdir = _escape_subtitles_path(_subtitle_fontsdir().resolve())
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
@@ -950,7 +1009,7 @@ async def _render_scene_fast(
             parallax_enabled=parallax_enabled,
             composite_harmonization_tier=composite_harmonization_tier,
         )
-        chain_parts.append(f"[{prev_label}]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
+        chain_parts.append(f"[{prev_label}]{shake_head}{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
         video_chain = ";".join(chain_parts)
         video_map = "[out]"
         narration_label = f"[{num_cards + 1}:a]"
@@ -962,7 +1021,7 @@ async def _render_scene_fast(
             "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
             "-i", audio_path,
         ]
-        video_chain = f"[0:v]{zp_chain}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
+        video_chain = f"[0:v]{zp_chain}{shake_tail}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
         video_map = "[vout]"
         narration_label = "[1:a]"
         input_offset = 2
@@ -999,7 +1058,7 @@ async def _render_scene_fast(
     else:
         # Sound design disabled (AC:8): keep the pre-existing -vf path, still
         # carrying post_frag (empty string when post_fx_enabled=False too).
-        vf = f"{zp_chain}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'"
+        vf = f"{zp_chain}{shake_tail}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'"
         ffmpeg_args = [
             "-y", *inputs,
             "-vf", vf,
@@ -1026,12 +1085,17 @@ async def _compose_shot_clip(
     mood: str | None,
     parallax_enabled: bool,
     composite_harmonization_tier: int,
+    camera_shake: str = "",
 ) -> None:
     """Render one shot's silent background+cards clip — pass 1 of Story 8.11's
     per-shot cut assembly. No audio, no subtitle burn, no post-fx: those apply
     once at scene level in pass 2 (`_assemble_scene_from_clips`). `duration`
     is the shot's own clip span (its sentence window), not the scene's
     audio_duration — 8.9's movement curves key off this.
+
+    `camera_shake` (Story 11.3 AC:2) attaches after composition; pass 2 then
+    adds post-fx/subtitles, so the shake→post→subtitles order holds by
+    construction on this path.
     """
     bg_path = shot["image_path"]
     zp_chain = _zoompan_filter(spec, duration)
@@ -1046,6 +1110,9 @@ async def _compose_shot_clip(
             parallax_enabled=parallax_enabled,
             composite_harmonization_tier=composite_harmonization_tier,
         )
+        if camera_shake:
+            chain_parts.append(f"[{prev_label}]{camera_shake}[shk]")
+            prev_label = "shk"
         ffmpeg_args = [
             "-y", *inputs,
             "-filter_complex", ";".join(chain_parts),
@@ -1057,7 +1124,7 @@ async def _compose_shot_clip(
         inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
         ffmpeg_args = [
             "-y", *inputs,
-            "-vf", zp_chain,
+            "-vf", f"{zp_chain},{camera_shake}" if camera_shake else zp_chain,
             "-t", str(duration),
             *_SHOT_CLIP_OUTPUT_ARGS, str(out_path),
         ]
@@ -1148,12 +1215,25 @@ async def _compose_scene(
     include_stinger: bool = True,
     composite_harmonization_tier: int = 0,
     min_shot_clip_sec: float = 2.0,
+    camera_noise_enabled: bool = False,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment. [AC:1,3] [Story 7.1] [Story 7.2] [Story 8.3] [Story 8.11]
 
     `include_stinger=False` (Story 5.17 AC:7) omits this scene's own baked
     scene-entry stinger — set by the caller for a scene immediately preceded
     by a chapter card, since the card now carries that boundary's stinger hit.
+
+    Camera noise (Story 11.3): `camera_noise_enabled` attaches the fBm
+    handheld stage per clip. The trauma event shake (AC:3) rides ONLY the
+    scene's first clip, and only when `sound_design_enabled and
+    include_stinger` — the stinger one-shot plays at scene-segment t=0
+    (sound_design.build_sound_design_args feeds it as a plain input), so the
+    first clip's t=0 decay start IS the hit sync, by construction.
+    `include_stinger=False` (a chapter card took this boundary's stinger,
+    Story 5.17 AC:7) skips trauma entirely: the hit sounds during the card, so
+    a scene-side shake would be exactly the desynced thump this rule avoids.
+    The chapter card itself is never shaken (`_compose_chapter_card` untouched
+    — it's a text card).
 
     `cards_by_shot` (Story 8.3/8.11): resolved cast cards keyed by shot_id,
     covering every rendered shot in the scene (not just one representative
@@ -1193,6 +1273,19 @@ async def _compose_scene(
         n, len(rendered_shots), len(plan), max(0, len(rendered_shots) - len(plan)),
     )
 
+    # Story 11.3 AC:3: trauma only when the stinger hit actually plays at this
+    # segment's t=0 (see docstring); applied to the first clip alone below.
+    scene_trauma = (
+        camera_path.TRAUMA_BY_MOOD[resolve_mood(mood)]
+        if camera_noise_enabled and sound_design_enabled and include_stinger
+        else 0.0
+    )
+
+    def _shake(shot: ShotData, clip_duration: float, k: int, trauma: float) -> str:
+        if not camera_noise_enabled:
+            return ""
+        return _camera_shake_filter(shot.get("camera_movement"), clip_duration, k=k, trauma=trauma)
+
     if len(plan) == 1:
         clip = plan[0]
         cards = cards_by_shot.get(clip.shot["shot_id"], [])
@@ -1203,6 +1296,7 @@ async def _compose_scene(
             sound_design_enabled=sound_design_enabled, post_fx_enabled=post_fx_enabled,
             parallax_enabled=parallax_enabled, include_stinger=include_stinger,
             composite_harmonization_tier=composite_harmonization_tier,
+            camera_shake=_shake(clip.shot, duration, scene_index, scene_trauma),
         )
         return seg_path, spec, bool(cards)
 
@@ -1225,13 +1319,16 @@ async def _compose_scene(
         # always got the same fixed direction. _EFFECT_INDEX_STRIDE is prime (and
         # comfortably larger than any real per-scene shot count), so it can't
         # divide the pool size and cancel scene_index regardless of pool length.
-        spec = select_effect(clip.shot, scene_index * _EFFECT_INDEX_STRIDE + local_i)
+        k = scene_index * _EFFECT_INDEX_STRIDE + local_i
+        spec = select_effect(clip.shot, k)
         specs.append(spec)
         clip_path = shots_dir / f"scene_{n:03d}_{clip.shot['shot_id']}.mp4"
         await _compose_shot_clip(
             clip.shot, spec, clip.duration, clip_path,
             cards=cards, mood=mood, parallax_enabled=parallax_enabled,
             composite_harmonization_tier=composite_harmonization_tier,
+            # first clip only: its local t=0 IS scene t=0, the stinger hit (AC:3)
+            camera_shake=_shake(clip.shot, clip.duration, k, scene_trauma if local_i == 0 else 0.0),
         )
         clip_paths.append(clip_path)
 
@@ -1639,6 +1736,7 @@ async def video_node(state: PipelineState) -> dict:
                 composite_harmonization_tier=s.composite_harmonization_tier,
                 include_stinger=not (chapter_cards_enabled and i > 0),
                 min_shot_clip_sec=s.min_shot_clip_sec,
+                camera_noise_enabled=s.camera_noise_enabled,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             # [review fix] Scope card/motion metrics to the shots that actually
@@ -1794,6 +1892,7 @@ async def video_node(state: PipelineState) -> dict:
             composite_harmonization_tier=s.composite_harmonization_tier,
             relit_pairs_computed=relight_stats["computed"],
             relit_pairs_failed=relight_stats["failed"],
+            camera_noise_enabled=s.camera_noise_enabled,
         )
         result = {"current_stage": "video", "video_path": str(output), "error": None}
         if cc_attribution:

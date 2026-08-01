@@ -45,6 +45,7 @@ def _settings_ns(
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
     parallax_enabled: bool = False, cc_attribution: bool = False,
     composite_harmonization_tier: int = 0, min_shot_clip_sec: float = 2.0,
+    camera_noise_enabled: bool = False,
 ):
     # ponytail: fake settings default cards/sound-design/post-fx/parallax/
     # cc_attribution/composite_harmonization_tier OFF so pre-existing tests
@@ -64,6 +65,7 @@ def _settings_ns(
         cc_attribution=cc_attribution,
         composite_harmonization_tier=composite_harmonization_tier,
         min_shot_clip_sec=min_shot_clip_sec,
+        camera_noise_enabled=camera_noise_enabled,
     )
 
 
@@ -1198,10 +1200,16 @@ def test_overlay_filter_breath_has_single_y_sine():
 
 
 def test_overlay_filter_tremble_adds_shake_on_top_of_breath():
-    """tremble = breath's bob + its own x/y shake — 1 x-term, 2 y-terms. [AC:6]"""
+    """tremble = breath's bob + its own x/y shake — 1 x-term, 2 y-terms. [AC:6]
+
+    Updated for Story 11.3 AC:5: the shake terms are 2-octave fBm strings now
+    (smoothstep-interpolated lattice hash), so the old "three plain sines /
+    sin(t*TREMBLE_FREQ)" assertions no longer describe the table.
+    """
     f = _overlay_filter(motion_style="tremble", motion_energy="medium")
-    assert f.count("sin(t*") == 3
-    assert f"sin(t*{cm.TREMBLE_FREQ}+0.0)" in f
+    assert f.count("sin(t*") == 1          # breath's bob sine, unchanged
+    assert f"sin(t*{cm.BOB_FREQ}+0.0)" in f
+    assert "3-2*" in f                      # the fBm tremor band (smoothstep marker)
 
 
 def test_overlay_filter_pulse_has_no_position_motion():
@@ -1545,7 +1553,9 @@ async def test_video_node_two_cards_different_styles_decorrelate(monkeypatch, tm
 
     assert out.get("error") is None
     fc = captured[0]
-    assert f"sin(t*{cm.TREMBLE_FREQ}+" in fc  # the tremble card's shake is present
+    # [Story 11.3 AC:5] tremble's shake is fBm now — smoothstep marker instead
+    # of the retired sin(t*TREMBLE_FREQ) sine.
+    assert "3-2*" in fc  # the tremble card's shake is present
     # far/hold is card index 0 (stable depth sort) → input [1:v], char_chain up to [c0]
     hold_chain = fc.split("[1:v]", 1)[1].split("[c0]", 1)[0]
     # Story 11.1: drop the motion-agnostic feather stage first — its radius
@@ -3185,3 +3195,267 @@ async def test_trace_metadata_credit_off(monkeypatch, tmp_path, assets):
     await video_node(_state([scene]))
 
     assert captured.get("ending_credit") is False
+
+
+# ── Camera noise stage (Story 11.3) ──────────────────────────────────────────
+
+
+def _capture_args(monkeypatch):
+    """Patch video._run_ffmpeg to record each call's full argument list."""
+    calls: list[list[str]] = []
+
+    async def _capture(*args):
+        calls.append(list(args))
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _capture)
+    return calls
+
+
+def _video_filter_of(args: list[str]) -> str:
+    """The call's video filter string, whichever of -vf/-filter_complex it used."""
+    for flag in ("-vf", "-filter_complex"):
+        if flag in args:
+            return args[args.index(flag) + 1]
+    raise AssertionError(f"no video filter flag in {args}")
+
+
+def test_camera_shake_filter_locked_or_static_is_empty():
+    """[AC:2] all-zero profile → "" → stage not attached, chain byte-identical."""
+    assert video._camera_shake_filter("locked", 4.0, k=0) == ""
+    assert video._camera_shake_filter("static", 4.0, k=3) == ""
+
+
+def test_camera_shake_filter_chain_shape():
+    """[AC:2] overscan scale → rotate → crop back to COMP, all t-driven."""
+    f = video._camera_shake_filter("shake", 4.0, k=1)
+    assert f.index("scale=") < f.index("rotate=") < f.index("crop=")
+    assert "eval=frame" in f
+    assert f"crop={video.COMP_W}:{video.COMP_H}" in f
+    assert "random" not in f
+
+
+def test_camera_shake_filter_k_decorrelates():
+    """[AC:2] adjacent shots must not ride the same noise curve."""
+    assert video._camera_shake_filter("shake", 4.0, k=0) != video._camera_shake_filter("shake", 4.0, k=1)
+
+
+def test_camera_shake_filter_trauma_adds_decay_event():
+    """[AC:3] trauma>0 adds the decaying event term; 0 leaves the idle band only."""
+    calm = video._camera_shake_filter("shake", 4.0, k=0)
+    hit = video._camera_shake_filter("shake", 4.0, k=0, trauma=0.8)
+    assert calm != hit
+    assert "max(0,1-" in hit and "max(0,1-" not in calm
+
+
+def test_camera_shake_filter_margin_covers_crop():
+    """[AC:2] the overscan scale factor must exceed 1 so crop never underruns."""
+    from yt_flow.pipeline.nodes import camera_path as cp
+    f = video._camera_shake_filter("shake", 4.0, k=0, trauma=0.8)
+    assert f"{1.0 + cp.overscan_margin('shake', trauma=0.8):.6g}" in f
+    assert "clip(" in f  # belt-and-suspenders clamp on crop x/y
+
+
+async def test_render_fast_bg_only_shake_before_postfx_before_subtitles(monkeypatch, tmp_path, assets):
+    """[AC:2] order invariant: shake → post-fx (lens space) → subtitles (screen space)."""
+    calls = _capture_args(monkeypatch)
+    shake = video._camera_shake_filter("shake", 2.0, k=0)
+    await video._render_scene_fast(
+        _shot(assets.image, "shake"), EffectSpec("in-center", 1.0, 1.15), 2.0,
+        tmp_path / "seg.mp4", 1,
+        cards=[], mood="dread", audio_path=assets.audio, subtitle_path=assets.subtitle,
+        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
+        include_stinger=True, composite_harmonization_tier=0, camera_shake=shake,
+    )
+    vf = _video_filter_of(calls[0])
+    assert vf.index("rotate=") < vf.index("vignette") < vf.index("subtitles=")
+
+
+async def test_render_fast_card_branch_shake_before_postfx_before_subtitles(monkeypatch, tmp_path, assets):
+    calls = _capture_args(monkeypatch)
+    shake = video._camera_shake_filter("shake", 2.0, k=0)
+    await video._render_scene_fast(
+        _shot(assets.image, "shake"), EffectSpec("in-center", 1.0, 1.15), 2.0,
+        tmp_path / "seg.mp4", 1,
+        cards=[_card(assets.character)], mood="dread", audio_path=assets.audio,
+        subtitle_path=assets.subtitle,
+        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
+        include_stinger=True, composite_harmonization_tier=0, camera_shake=shake,
+    )
+    fc = _video_filter_of(calls[0])
+    assert fc.index("overlay") < fc.index("rotate=") < fc.index("vignette") < fc.index("subtitles=")
+
+
+async def test_render_fast_empty_shake_leaves_chain_unchanged(monkeypatch, tmp_path, assets):
+    """[AC:2,6] "" → stage not attached: identical args to a call without the feature."""
+    calls = _capture_args(monkeypatch)
+    common = dict(
+        cards=[], mood="dread", audio_path=assets.audio, subtitle_path=assets.subtitle,
+        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
+        include_stinger=True, composite_harmonization_tier=0,
+    )
+    shot = _shot(assets.image, "shake")
+    spec = EffectSpec("in-center", 1.0, 1.15)
+    await video._render_scene_fast(shot, spec, 2.0, tmp_path / "a.mp4", 1, **common, camera_shake="")
+    await video._render_scene_fast(shot, spec, 2.0, tmp_path / "a.mp4", 1, **common)
+    assert calls[0] == calls[1]
+    assert "rotate=" not in _video_filter_of(calls[0])
+
+
+async def test_compose_shot_clip_attaches_shake_both_branches(monkeypatch, tmp_path, assets):
+    calls = _capture_args(monkeypatch)
+    shake = video._camera_shake_filter("shake", 2.0, k=0)
+    shot = _shot(assets.image, "shake")
+    spec = EffectSpec("in-center", 1.0, 1.15)
+    await video._compose_shot_clip(
+        shot, spec, 2.0, tmp_path / "bg.mp4",
+        cards=[], mood=None, parallax_enabled=False, composite_harmonization_tier=0,
+        camera_shake=shake,
+    )
+    await video._compose_shot_clip(
+        shot, spec, 2.0, tmp_path / "card.mp4",
+        cards=[_card(assets.character)], mood=None, parallax_enabled=False,
+        composite_harmonization_tier=0, camera_shake=shake,
+    )
+    bg_vf = _video_filter_of(calls[0])
+    assert "rotate=" in bg_vf and bg_vf.index("zoompan") < bg_vf.index("rotate=")
+    card_fc = _video_filter_of(calls[1])
+    assert "rotate=" in card_fc and card_fc.index("overlay") < card_fc.index("rotate=")
+    # the shake stage output is what gets mapped
+    assert calls[1][calls[1].index("-map") + 1] == "[shk]"
+
+
+async def test_compose_scene_camera_off_attaches_no_stage(monkeypatch, tmp_path, assets):
+    """[AC:6] kill switch: camera_noise_enabled=False → pre-11.3 chain."""
+    calls = _capture_args(monkeypatch)
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+                   camera_movement="shake")
+    await video._compose_scene(scene, 0, tmp_path, camera_noise_enabled=False)
+    assert "rotate=" not in _video_filter_of(calls[0])
+
+
+async def test_compose_scene_locked_attaches_no_stage(monkeypatch, tmp_path, assets):
+    """[AC:2] locked profile is all-zero → no stage even with the feature on."""
+    calls = _capture_args(monkeypatch)
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+                   camera_movement="locked")
+    await video._compose_scene(scene, 0, tmp_path, camera_noise_enabled=True)
+    assert "rotate=" not in _video_filter_of(calls[0])
+
+
+async def test_compose_scene_camera_on_attaches_stage(monkeypatch, tmp_path, assets):
+    calls = _capture_args(monkeypatch)
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+                   camera_movement="shake")
+    await video._compose_scene(scene, 0, tmp_path, camera_noise_enabled=True)
+    assert "rotate=" in _video_filter_of(calls[0])
+
+
+# ── trauma wiring (Story 11.3 AC:3) ──────────────────────────────────────────
+
+
+def _two_clip_scene(assets, tmp_path):
+    """A scene whose plan_shot_clips yields two clips (two sentences, two shots)."""
+    words = ["첫", "문장", "이다", "둘째", "문장", "이다"]
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        camera_movement="shake", mood="escalation",
+        narration="첫 문장 이다. 둘째 문장 이다.",
+        word_timings=[
+            {"word": w, "start_sec": i * 1.5, "end_sec": (i + 1) * 1.5} for i, w in enumerate(words)
+        ],
+        audio_duration=9.0,
+    )
+    second = _shot(assets.image, "shake", shot_id="S002")
+    second["sentence_indices"] = [1]
+    scene["shots"].append(second)
+    return scene
+
+
+@pytest.mark.parametrize("sound,stinger,expect_trauma", [
+    (True, True, True),    # stinger plays at scene t=0 → synced by construction
+    (True, False, False),  # chapter card carries the hit → scene shake would desync
+    (False, True, False),  # no sound design → no hit to sync to
+    (False, False, False),
+])
+async def test_compose_scene_trauma_conditions(monkeypatch, tmp_path, assets, sound, stinger, expect_trauma):
+    calls = _capture_args(monkeypatch)
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+                   camera_movement="shake", mood="escalation")
+    await video._compose_scene(
+        scene, 0, tmp_path, camera_noise_enabled=True,
+        sound_design_enabled=sound, include_stinger=stinger,
+    )
+    assert ("max(0,1-" in _video_filter_of(calls[0])) is expect_trauma
+
+
+async def test_compose_scene_trauma_first_clip_only(monkeypatch, tmp_path, assets):
+    """[AC:3] multi-clip scene: the decaying event term rides only clip 0 (scene t=0)."""
+    calls = _capture_args(monkeypatch)
+    scene = _two_clip_scene(assets, tmp_path)
+    await video._compose_scene(
+        scene, 0, tmp_path, camera_noise_enabled=True,
+        sound_design_enabled=True, include_stinger=True, min_shot_clip_sec=0.0,
+    )
+    # calls: clip S001, clip S002, assembly — clips carry the camera stage
+    assert "max(0,1-" in _video_filter_of(calls[0])
+    assert "max(0,1-" not in _video_filter_of(calls[1])
+    assert "rotate=" in _video_filter_of(calls[1])  # idle band still present
+
+
+async def test_compose_scene_multi_clip_k_decorrelates_shots(monkeypatch, tmp_path, assets):
+    """[AC:2] per-shot k offset: adjacent clips get different noise curves."""
+    calls = _capture_args(monkeypatch)
+    scene = _two_clip_scene(assets, tmp_path)
+    await video._compose_scene(
+        scene, 0, tmp_path, camera_noise_enabled=True, min_shot_clip_sec=0.0,
+    )
+    first = _video_filter_of(calls[0])
+    second = _video_filter_of(calls[1])
+    assert first[first.index("rotate=") :] != second[second.index("rotate=") :]
+
+
+# ── trace metadata (Story 11.3 AC:7) ─────────────────────────────────────────
+
+
+async def test_trace_metadata_includes_camera_path_block(monkeypatch, tmp_path, assets):
+    captured: dict = {}
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: captured.update(kw))
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    await video_node(_state([scene]))
+
+    assert captured.get("camera_noise_enabled") is False  # _settings_ns default
+
+
+def test_record_trace_emits_camera_path_block(monkeypatch):
+    """The real _record_trace forwards version+enabled under 'camera_path' (8.8 idiom)."""
+    from yt_flow.pipeline.nodes import camera_path as cp
+    seen: dict = {}
+
+    class _Client:
+        def update_current_span(self, metadata):
+            seen.update(metadata)
+
+    monkeypatch.setattr(video, "get_client", lambda: _Client())
+    _REAL_RECORD_TRACE(run_id="r", scene_count=1, latency_ms=1, camera_noise_enabled=True)
+    assert seen["camera_path"] == {"version": cp.CAMERA_PATH_VERSION, "enabled": True}
+
+
+def test_config_camera_noise_enabled_default_true():
+    """Settings.camera_noise_enabled defaults true (Story 11.3 AC:6); the fake
+    _settings_ns defaults False so pre-11.3 tests stay untouched."""
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["camera_noise_enabled"].default is True
+
+
+def test_char_max_box_numerically_unchanged_by_tremble_rework():
+    """[Story 11.3 AC:5] tremble's fBm rework keeps total amplitude 3.0px, so
+    the motion-safe box (7.3/8.8 regression invariant) must not move."""
+    assert cm.max_excursion() == (18.0, 16.5, 1.075)
+    assert video.CHAR_MAX_W == (1920 - 2 * (18.0 + video.CHAR_PAN_AMPLITUDE_PX)) / video.CHAR_MAX_ZOOM / 1.075
+    assert video.CHAR_MAX_H == (1080 - 2 * (16.5 + video.CHAR_PAN_AMPLITUDE_PX)) / video.CHAR_MAX_ZOOM / 1.075

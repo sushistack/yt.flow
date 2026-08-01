@@ -63,14 +63,17 @@ _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
 # order. CAMERA_ prefix keeps this apart from _VALID_MOVEMENT_MODES — that
 # "drift" is a cast movement_mode (8.9), this one is a camera archetype.
 # ponytail: tuned starting point (research §4.4 motion-mood grammar), expect
-# live iteration; Story 11.3 merges per-mood noise profiles into this table.
+# live iteration. Story 11.3's per-archetype noise profiles live in
+# camera_path.CAMERA_NOISE_PROFILES (video can't import this module — LLM
+# stack), keyed by the archetypes this table selects — the mood→noise link
+# runs through the archetype, not through this dict.
 CAMERA_PREFERENCES: dict[str, tuple[str, ...]] = {
     "dread": ("push_in", "drift", "locked"),
     "clinical": ("locked", "drift", "pull_back"),
-    # escalation's first alternate must be drift, not push_in: the 11.2 shake
-    # placeholder renders as the same in-center push as push_in (video._HINT_MAP),
-    # so a shake/push_in alternation would render every shot identically — the
-    # exact monotony this story removes. Revisit when 11.3 ships a real shake.
+    # Story 11.3 shipped the real fBm shake, so shake and push_in now render
+    # distinct final chains (shake-profile noise on top of the same in-center
+    # base push) — drift-before-push_in is kept as-is; reordering is a live-
+    # tuning call, not a correctness need anymore.
     "escalation": ("shake", "drift", "push_in"),
     "revelation": ("push_in", "pull_back", "drift"),
 }

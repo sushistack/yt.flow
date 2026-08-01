@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     # multiplane depth cue. When false, character reverts to fixed-size sway/bob only.
     parallax_enabled: bool = True
 
+    # Camera noise (Story 11.3): fBm handheld camera stage (sway/tremor/rot/
+    # micro-zoom + stinger-synced trauma shake) on every composited shot.
+    # When false, no stage is attached — the pre-11.3 filter chain, byte-identical.
+    camera_noise_enabled: bool = True
+
     # Content language (Story 9.1): single seam for a future language pivot. The
     # pipeline is Korean-only today — changing this to anything else makes
     # scenario_node fail fast rather than silently mixing languages. Touchpoints

@@ -12,18 +12,22 @@ Layer rule: domain only, no service/db/api imports. [AD-1]
 from typing import NamedTuple
 
 from yt_flow.domain.state import CharacterMotionEnergy, CharacterMotionStyle
+from yt_flow.pipeline.nodes.camera_path import fbm_expr
 
 # Bump when any amplitude/frequency constant below changes — recorded in
 # Langfuse trace metadata (AC:10) so a live render's "why did this look
 # different" question can be answered without redeploying.
-MOTION_TABLE_VERSION = "1"
+# "2": Story 11.3 — tremble's tremor sines became 2-octave fBm at the
+# physiological 8-12Hz band (freq unit changed rad/s → steps/s there).
+MOTION_TABLE_VERSION = "2"
 
 
 class MotionTerm(NamedTuple):
     axis: str            # "x" | "y" | "scale"
     amp: float           # px (x/y) or fractional scale delta (scale)
-    freq: float           # rad/s (or discrete-steps/s when quantized)
+    freq: float           # rad/s — EXCEPT lattice steps/s when quantized or octaves>0
     quantized: bool = False  # glitch: deterministic staircase, not a smooth sine
+    octaves: int = 0     # >0: interpolated value-noise fBm (Story 11.3), 0: legacy sine
 
 
 _ENERGY_MULT: dict[CharacterMotionEnergy, float] = {"low": 0.6, "medium": 1.0, "high": 1.5}
@@ -40,7 +44,14 @@ BOB_FREQ = 1.2         # rad/s
 BREATH_SCALE_AMP = 0.015    # ~1.5% squash/stretch — barely-perceptible "alive" cue
 BREATH_SCALE_FREQ = BOB_FREQ  # rides the same breathing rhythm as the bob sine
 TREMBLE_AMP = 3.0            # px — small on purpose (AC:6 caps so subtitles never occlude)
-TREMBLE_FREQ = 6.0           # rad/s — high-frequency tension shake
+# Story 11.3: tremble's shake is 2-octave fBm in the 8-12Hz physiological
+# tremor band (Gavant IEEE) — freq is lattice steps/s (GLITCH_STEP_FREQ's
+# unit), no longer rad/s; the pre-11.3 value was a 6.0 rad/s (~0.95Hz) sine,
+# spectrally wrong for tremor. Total amplitude stays 3.0px: fbm_expr is
+# bounded to ±amp exactly like a sine, so max_excursion() and video.py's
+# CHAR_MAX_W/H are numerically unchanged.
+TREMBLE_FREQ = 10.0          # lattice steps/s
+TREMBLE_OCTAVES = 2
 PULSE_SCALE_AMP = 0.05       # 5% scale pulse — noticeable, not a "breathing balloon" (AC:6)
 PULSE_SCALE_FREQ = 0.6       # rad/s — low frequency (AC:6)
 GLITCH_JITTER_PX = 5.0       # quantized jitter amplitude
@@ -64,8 +75,8 @@ _STYLE_TERMS: dict[CharacterMotionStyle, tuple[MotionTerm, ...]] = {
     "tremble": (
         MotionTerm("y", BOB_AMPLITUDE, BOB_FREQ),
         MotionTerm("scale", BREATH_SCALE_AMP, BREATH_SCALE_FREQ),
-        MotionTerm("x", TREMBLE_AMP, TREMBLE_FREQ),
-        MotionTerm("y", TREMBLE_AMP, TREMBLE_FREQ),
+        MotionTerm("x", TREMBLE_AMP, TREMBLE_FREQ, octaves=TREMBLE_OCTAVES),
+        MotionTerm("y", TREMBLE_AMP, TREMBLE_FREQ, octaves=TREMBLE_OCTAVES),
     ),
     "pulse": (
         MotionTerm("scale", PULSE_SCALE_AMP, PULSE_SCALE_FREQ),
@@ -79,6 +90,13 @@ _STYLE_TERMS: dict[CharacterMotionStyle, tuple[MotionTerm, ...]] = {
 
 def _term_expr(term: MotionTerm, mult: float, phase: float, t_var: str) -> str:
     amp = term.amp * mult
+    if term.octaves:
+        # Story 11.3: interpolated value-noise fBm (camera_path owns the
+        # primitive); phase doubles as the lattice offset, and the same
+        # 12.9898/78.233 axis split as the quantized branch below keeps x/y
+        # decorrelated. Bounded to ±amp, like the sine it replaced.
+        hash_mult = 12.9898 if term.axis == "x" else 78.233
+        return fbm_expr(amp, term.freq, term.octaves, phase, t_var=t_var, hash_mult=hash_mult)
     if term.quantized:
         # Deterministic "random-looking" hash: a classic shader hash constant
         # (sin(x*12.9898) decorrelates a step index into [-1,1]) applied to a

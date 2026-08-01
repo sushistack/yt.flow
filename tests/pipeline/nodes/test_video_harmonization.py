@@ -73,6 +73,7 @@ def _settings_ns(tmp_path, *, composite_harmonization_tier=0):
         cc_attribution=False,
         composite_harmonization_tier=composite_harmonization_tier,
         min_shot_clip_sec=2.0,
+        camera_noise_enabled=False,  # Story 11.3: off, same as the other feature flags above
     )
 
 
