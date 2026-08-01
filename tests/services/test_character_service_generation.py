@@ -124,6 +124,24 @@ class TestVisionLLMEnrichment:
         assert "base64" in content[1]["image_url"]["url"]
 
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+    def test_max_tokens_is_vision_specific(self, mock_post, service, temp_ref_image):
+        """Borrowing deepseek_max_tokens made qwen-vl-plus 400 ("Range of max_tokens
+        should be [1, 8192]") for every call once the text budget went to 16384."""
+        service._settings.character_vision_api_key = "test-key"
+        service._settings.deepseek_max_tokens = 16384
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"choices": [{"message": {"content": "desc"}}]}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+
+        asyncio_run(service.enrich_descriptor_from_references("SCP-096", [temp_ref_image]))
+
+        sent = mock_post.call_args[1]["json"]["max_tokens"]
+        assert sent == service._settings.character_vision_max_tokens
+        assert sent <= 8192
+
+    @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
     def test_vision_llm_failure_returns_none(self, mock_post, service, temp_ref_image):
         """AC2: Vision LLM HTTP error → returns None."""
         service._settings.character_vision_api_key = "test-key"
@@ -521,6 +539,100 @@ class TestMultiAngleGeneration:
         assert paths == []
         assert mock_provider.generate.call_count == 1
 
+    def test_generate_candidates_passes_negative_suffix_to_provider(self, service, temp_ref_image, tmp_path):
+        """Story 8.15: STOCK-scoped mask suppression must reach the provider per call."""
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("STOCK-d-class", "D-class")
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            asyncio_run(
+                service.generate_candidates_from_reference(
+                    "STOCK-d-class", temp_ref_image, angles=["front"], negative_suffix="skull mask",
+                )
+            )
+
+        assert mock_provider.generate.call_args.kwargs["negative_suffix"] == "skull mask"
+
+    def test_generate_cards_stage_writes_files_but_nothing_live(self, service, tmp_path):
+        """Story 8.15: staging is filesystem-only — a manifest entry, an approval or an
+        ``angle_*_path`` repoint would each make the staged set live immediately."""
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        character = service.create_character("STOCK-d-class", "D-class")
+        service.update_character(character.id, angle_front_path="characters/STOCK-d-class/epoch_1/front_candidate_1.png")
+
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            paths = asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="bare head, no mask, orange jumpsuit",
+                    angles=["front", "side"],
+                    stage=True,
+                )
+            )
+
+        assert [Path(p).parent.name for p in paths] == ["epoch_2", "epoch_2"]
+        assert all((tmp_path / p).exists() for p in paths)
+        assert not (tmp_path / "manifest.json").exists()
+        reloaded = service.check_existing_character("STOCK-d-class")
+        assert reloaded.angle_front_path == "characters/STOCK-d-class/epoch_1/front_candidate_1.png"
+        assert reloaded.angle_side_path is None
+        assert reloaded.selected_image_path is None
+
+    def test_generate_cards_enrich_false_keeps_the_callers_descriptor(self, service, tmp_path):
+        """Story 8.15: the enrichment prompt says "an SCP Foundation character", so
+        re-enriching a STOCK card writes that mask-attractor token straight back into
+        ``visual_descriptor`` — which is exactly what angles 2-4 are prompted from."""
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+        enrich = AsyncMock(return_value="This SCP Foundation character wears a white skull mask")
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider), \
+             patch.object(service, "enrich_descriptor_from_references", enrich):
+            asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "STOCK-d-class",
+                    descriptor="ordinary human face, orange jumpsuit",
+                    angles=["front", "side"],
+                    enrich=False,
+                )
+            )
+
+        enrich.assert_not_awaited()
+        character = service.check_existing_character("STOCK-d-class")
+        assert character.visual_descriptor == "ordinary human face, orange jumpsuit"
+
+    def test_generate_cards_enriches_by_default(self, service, tmp_path):
+        """Derived keys keep enrichment — it is what buys the family resemblance."""
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+        enrich = AsyncMock(return_value="reanimated humanoid, sutured grey skin")
+
+        with patch.object(service, "_get_image_provider", return_value=mock_provider), \
+             patch.object(service, "enrich_descriptor_from_references", enrich):
+            asyncio_run(
+                service.generate_cards_from_descriptor(
+                    "SCP-049-2",
+                    descriptor="reanimated human",
+                    angles=["front", "side"],
+                )
+            )
+
+        enrich.assert_awaited_once()
+        character = service.check_existing_character("SCP-049-2")
+        assert character.visual_descriptor == "reanimated humanoid, sutured grey skin"
+
     def test_generate_candidates_rejects_provider_without_alpha_sprites(
         self, service, temp_ref_image, tmp_path
     ):
@@ -669,6 +781,25 @@ class TestReferenceImageInjectionAndFallback:
         assert len(ipadapter_nodes) == 1
         assert ipadapter_nodes[0]["inputs"]["weight"] == 0.4
         assert updated["7"]["inputs"]["text"]
+
+    def test_inject_negative_suffix_appends_to_existing_negative_text(self, workflow):
+        """Story 8.15: the shared workflow's negative text is kept (SCP-049 needs its
+        mask) and the STOCK suppression is appended to it, positive node untouched."""
+        original_negative = workflow["7"]["inputs"]["text"]
+        original_positive = workflow["6"]["inputs"]["text"]
+
+        updated = ComfyUICharacterProvider._inject_negative_suffix(workflow, "skull mask, glowing eyes")
+
+        assert updated["7"]["inputs"]["text"] == f"{original_negative}, skull mask, glowing eyes"
+        assert updated["6"]["inputs"]["text"] == original_positive
+
+    def test_inject_prompt_still_leaves_the_negative_node_alone(self, workflow):
+        original_negative = workflow["7"]["inputs"]["text"]
+
+        updated = ComfyUICharacterProvider(Settings())._inject_prompt(workflow, "a bare-faced guard")
+
+        assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
+        assert updated["7"]["inputs"]["text"] == original_negative
 
     def test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob(self):
         """Story 8.2 follow-up: InSPyReNet leaves dithered alpha noise as small

@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # enrich_descriptor_from_references guards for a missing key at call time.
     character_vision_model: str = "qwen-vl-plus"
     character_vision_api_key: str = ""
+    # Own knob, not deepseek_max_tokens: qwen-vl-plus rejects max_tokens > 8192 with a
+    # 400, so borrowing the text model's budget silently killed every enrichment call
+    # once YTFLOW_DEEPSEEK_MAX_TOKENS went to 16384. An enriched descriptor is a
+    # paragraph, so 2000 is already generous.
+    character_vision_max_tokens: int = Field(2000, gt=0, le=8192)
 
     # Chapter-card transitions (Story 5.1). Cards insert between scenes when true;
     # video_node clamps duration to the accepted 1.5-2.0s range.

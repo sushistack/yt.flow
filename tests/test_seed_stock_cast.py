@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import re
 
 from yt_flow import db
 from yt_flow.config import Settings
@@ -63,7 +64,7 @@ async def test_seed_key_regenerates_when_completed_paths_are_missing(tmp_path, m
             angle_three_quarter_path=str(tmp_path / "missing-three.png"),
         )
 
-        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None):
+        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None, **kwargs):
             return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
@@ -81,11 +82,15 @@ async def test_seed_key_generates_derived_descriptor(tmp_path, monkeypatch):
     with Session(_engine) as session:
         service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
 
-        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None):
+        async def fake_generate(
+            key, *, descriptor, pose="standing", anchor_path=None, negative_suffix=None, enrich=True, **kwargs
+        ):
             assert key == "SCP-049-2"
             assert descriptor == "reanimated human"
             assert pose == "standing"
             assert anchor_path is None
+            assert negative_suffix is None  # STOCK-only suppression, not derived keys
+            assert enrich is True  # derived keys need the family resemblance enrichment buys
             return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
@@ -103,7 +108,7 @@ async def test_seed_key_rejects_incomplete_generation(tmp_path, monkeypatch):
     with Session(_engine) as session:
         service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
 
-        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None):
+        async def fake_generate(key, *, descriptor, pose="standing", anchor_path=None, **kwargs):
             return ["/tmp/front.png"]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
@@ -153,6 +158,102 @@ async def test_anchor_search_skips_malformed_results(tmp_path, monkeypatch):
     monkeypatch.setattr(seed, "DuckDuckGoImageSearch", FakeSearch)
 
     assert await seed._anchor_search(service, "STOCK-d-class", "descriptor", settings) == 0
+
+
+async def test_seed_key_stage_bypasses_guard_and_threads_stage_and_negative(tmp_path, monkeypatch):
+    """Story 8.15: --stage always regenerates (into a parallel epoch) and carries
+    the STOCK negative suffix, even when the live standing library is complete."""
+    seed = _load_script()
+    db.init("sqlite://")
+    from sqlmodel import Session
+    from yt_flow.db import _engine
+
+    with Session(_engine) as session:
+        service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
+        character = service.create_character("STOCK-d-class", "D-class")
+        live = {}
+        for angle in ("front", "back", "side", "three_quarter"):
+            path = tmp_path / f"{angle}.png"
+            path.write_bytes(TINY_PNG)
+            live[f"angle_{angle}_path"] = str(path)
+        service.update_character(character.id, **live)
+        calls = []
+
+        async def fake_generate(key, **kwargs):
+            calls.append(kwargs)
+            return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
+
+        monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
+        paths = await seed.seed_key(
+            service, "STOCK-d-class", seed.STOCK_DESCRIPTORS["STOCK-d-class"], stage=True
+        )
+
+    assert len(paths) == 4
+    assert calls[0]["stage"] is True
+    assert calls[0]["negative_suffix"] == seed.STOCK_NEGATIVE
+    # Vision enrichment would overwrite visual_descriptor with text from a prompt that
+    # says "an SCP Foundation character" — the token these descriptors exist to avoid.
+    assert calls[0]["enrich"] is False
+
+
+def test_stock_descriptors_pin_a_bare_human_face():
+    """The descriptor is the only face constraint reaching ComfyUI, so it states the
+    head/face affirmatively and names no prohibition — text encoders do not negate,
+    so "no mask" in the positive prompt summons masks. Prohibitions belong in
+    STOCK_NEGATIVE. "SCP Foundation" is banned outright: live probing showed that
+    token alone collapses these extras into masked, hazmat-suited figures."""
+    seed = _load_script()
+    required = ("short dark hair", "ordinary unremarkable human face", "visible eyes, nose and mouth")
+    forbidden = (
+        "mask", "helmet", "skull", "glowing", "undead", "monster", "plague",
+        "hazmat", "scp foundation", "doctor",
+    )
+
+    assert set(seed.STOCK_DESCRIPTORS) == {"STOCK-d-class", "STOCK-researcher", "STOCK-security"}
+    for key, descriptor in seed.STOCK_DESCRIPTORS.items():
+        text = descriptor.lower()
+        for phrase in required:
+            assert phrase in text, f"{key} descriptor is missing {phrase!r}"
+        for term in forbidden:
+            assert term not in text, f"{key} descriptor names {term!r}"
+        assert not re.search(r"\bno\b", text), f"{key} descriptor negates; move it to STOCK_NEGATIVE"
+
+
+def test_stock_negative_carries_the_prohibitions():
+    """Every head-covering the descriptor no longer mentions has to be suppressed here
+    instead — as concrete nouns only, and sparingly."""
+    seed = _load_script()
+    text = seed.STOCK_NEGATIVE.lower()
+    for term in (
+        "skull mask", "plague doctor mask", "gas mask", "respirator",
+        "helmet", "visor", "hazmat suit", "glowing eyes", "undead", "monster",
+    ):
+        assert term in text, f"STOCK_NEGATIVE is missing {term!r}"
+    for term in ("faceless", "no face"):
+        assert term not in text, f"STOCK_NEGATIVE names {term!r}, which blanks the head"
+    # CLIP negative conditioning is a token bag, not a set of phrases: an earlier list
+    # spread "face" over full-face mask / face shield / hood covering face / monster
+    # face / horror creature face and suppressed the word itself — the staged fronts
+    # came back as a blank white face and a black void with eye slits.
+    assert text.count("face") <= 1, "STOCK_NEGATIVE repeats 'face'; it will erase faces"
+
+
+def test_stage_rejects_targets_the_approve_script_cannot_promote():
+    """approve_stock_cast.py only ever looks for ``{angle}_candidate_1.png`` under a
+    stock key, so staging a non-standing pose (``{pose}_{angle}.png``) or a derived key
+    would produce files that can be neither promoted nor rejected."""
+    seed = _load_script()
+    for argv in (
+        ["--stage", "--pose", "sitting"],
+        ["--stage", "--key", "SCP-049-2", "--descriptor", "reanimated human"],
+    ):
+        args = seed.build_parser().parse_args(argv)
+        try:
+            asyncio.run(seed.run(args))
+        except SystemExit as exc:
+            assert "--stage supports" in str(exc)
+        else:
+            raise AssertionError(f"expected SystemExit for {argv}")
 
 
 def test_parser_rejects_unknown_pose():

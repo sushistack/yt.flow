@@ -39,7 +39,9 @@ class _FakeProvider:
         self._ok = generate_ok
         self.calls = 0
 
-    async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
+    async def generate(
+        self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None, negative_suffix=None,
+    ):
         self.calls += 1
         if not self._ok:
             raise RuntimeError("provider unavailable")
@@ -170,7 +172,9 @@ async def test_partial_generation_failure_keeps_only_successful_angles(monkeypat
         def __init__(self):
             self.calls = 0
 
-        async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
+        async def generate(
+            self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None, negative_suffix=None,
+        ):
             self.calls += 1
             if self.calls == 1:  # first angle ("front") succeeds, the rest fail
                 return TINY_PNG
@@ -235,7 +239,9 @@ async def test_enrichment_success_persists_descriptor_before_generation(monkeypa
         def __init__(self):
             self.prompts: list[str] = []
 
-        async def generate(self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None):
+        async def generate(
+            self, prompt, ref_image_path, *, width=832, height=1216, ipadapter_weight=None, negative_suffix=None,
+        ):
             self.prompts.append(prompt)
             return TINY_PNG
 

@@ -618,7 +618,7 @@ class CharacterService:
                     json={
                         "model": s.character_vision_model,
                         "messages": [{"role": "user", "content": content_parts}],
-                        "max_tokens": s.deepseek_max_tokens,
+                        "max_tokens": s.character_vision_max_tokens,
                     },
                 )
             resp.raise_for_status()
@@ -684,6 +684,8 @@ class CharacterService:
         ref_image_path: str | None,
         angles: list[str] | None = None,
         pose: str = "standing",
+        negative_suffix: str | None = None,
+        stage: bool = False,
     ) -> list[str]:
         """Generate character images for each angle using the configured provider.
 
@@ -696,6 +698,10 @@ class CharacterService:
             scp_id: The SCP identifier (e.g. "SCP-096").
             ref_image_path: Path to the reference image for i2i base.
             angles: List of angle names; defaults to all 4 canonical angles.
+            negative_suffix: Optional per-call negative-prompt terms (Story 8.15).
+            stage: Write files into the *next* style epoch only — no manifest
+                entry, no approval, no card row. Nothing runtime reads is touched,
+                so a staged set is invisible until ``approve_stock_cast.py`` runs.
 
         Returns:
             List of saved image file paths, relative to ``assets_path``.
@@ -710,7 +716,7 @@ class CharacterService:
         assets_root = Path(s.assets_path)
         safe_scp = _sanitize_scp_id(scp_id)
         asset_service = self._asset_service
-        epoch = asset_service.style_epoch
+        epoch = asset_service.style_epoch + (1 if stage else 0)
         chars_dir = assets_root / "characters" / safe_scp / f"epoch_{epoch}"
         chars_dir.mkdir(parents=True, exist_ok=True)
 
@@ -744,21 +750,23 @@ class CharacterService:
                     width=s.character_image_width,
                     height=s.character_image_height,
                     ipadapter_weight=_ANGLE_IPADAPTER_WEIGHTS.get(angle),
+                    negative_suffix=negative_suffix,
                 )
                 if not has_alpha(img_bytes):
                     raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
                 out_path.write_bytes(img_bytes)
                 rel_path = str(out_path.relative_to(assets_root))
-                # Manifest write before the DB row so a mid-write failure never
-                # leaves an "approved" CharacterCard with no manifest provenance.
-                asset_service.add_asset(
-                    f"{safe_scp}/{pose}_{angle}", rel_path,
-                    source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS.get(angle)},
-                    card_key=safe_scp, pose=pose, angle=angle,
-                )
-                asset_service.approve_asset(f"{safe_scp}/{pose}_{angle}")
-                if pose != "standing":
-                    self.save_card(scp_id, pose, angle, rel_path)
+                if not stage:
+                    # Manifest write before the DB row so a mid-write failure never
+                    # leaves an "approved" CharacterCard with no manifest provenance.
+                    asset_service.add_asset(
+                        f"{safe_scp}/{pose}_{angle}", rel_path,
+                        source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS.get(angle)},
+                        card_key=safe_scp, pose=pose, angle=angle,
+                    )
+                    asset_service.approve_asset(f"{safe_scp}/{pose}_{angle}")
+                    if pose != "standing":
+                        self.save_card(scp_id, pose, angle, rel_path)
                 saved_paths.append(rel_path)
                 logger.info(
                     "Generated %s candidate for %s → %s (%d bytes, i2i=%s)",
@@ -784,12 +792,25 @@ class CharacterService:
         pose: str = "standing",
         anchor_path: str | None = None,
         angles: list[str] | None = None,
+        negative_suffix: str | None = None,
+        enrich: bool = True,
+        stage: bool = False,
     ) -> list[str]:
         """Generate and persist a card library from a descriptor.
 
         Front is generated t2i by default, then non-front angles self-reference the
         front card for identity consistency. An explicit anchor can condition the
         front angle instead.
+
+        ``enrich=False`` keeps ``visual_descriptor`` at the caller's ``descriptor``
+        instead of the vision model's read-back of the generated front. The
+        enrichment prompt says "an SCP Foundation character", so for the STOCK
+        extras it reinjects the exact token their descriptors were purged of — the
+        mask attractor (Story 8.15). Enrichment stays on everywhere else.
+
+        With ``stage=True`` the cards land in the next style epoch and the live
+        ``angle_*_path`` columns are left alone — ``_resolve_card_path`` reads those
+        columns with no status or epoch filter, so repointing them *is* going live.
         """
         _validate_card_pose(pose)
         if angles is None:
@@ -821,6 +842,8 @@ class CharacterService:
                 ref_image_path=ref_path,
                 angles=[angle],
                 pose=pose,
+                negative_suffix=negative_suffix,
+                stage=stage,
             )
             if not generated:
                 continue
@@ -828,7 +851,7 @@ class CharacterService:
             saved.append(path)
             if angle == "front":
                 front_path = path
-            if angle == "front" and anchor_path is None:
+            if angle == "front" and anchor_path is None and enrich:
                 # Describe the just-generated face/mask/insignia in text so the
                 # self-referencing angles below stay the same person, not just
                 # the same outfit — IPAdapter alone doesn't lock facial identity.
@@ -838,7 +861,7 @@ class CharacterService:
             if pose == "standing":
                 angle_paths[angle] = path
 
-        if pose == "standing" and angle_paths:
+        if pose == "standing" and angle_paths and not stage:
             updates: dict[str, str] = {f"angle_{angle}_path": path for angle, path in angle_paths.items()}
             if "front" in angle_paths:
                 updates["selected_image_path"] = angle_paths["front"]

@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+_NEGATIVE_NODE_IDS = {"7", "37_neg"}  # ponytail: well-known negative prompt node IDs
+_NEGATIVE_TITLE_KEYWORDS = ("negative", "neg ", "bad")
+
+
+def _is_negative_node(node_id: str, node: dict) -> bool:
+    title = node.get("_meta", {}).get("title", "").lower()
+    return node_id in _NEGATIVE_NODE_IDS or any(kw in title for kw in _NEGATIVE_TITLE_KEYWORDS)
+
 
 def _drop_reference_only_nodes(workflow: dict) -> None:
     """Remove disconnected i2i-only nodes after t2i fallback rewiring."""
@@ -97,6 +105,7 @@ class CharacterImageProvider(ABC):
         width: int = 832,
         height: int = 1216,
         ipadapter_weight: float | None = None,
+        negative_suffix: str | None = None,
     ) -> bytes:
         """Generate a character image. Returns raw PNG bytes.
 
@@ -106,6 +115,7 @@ class CharacterImageProvider(ABC):
             width: Target image width.
             height: Target image height.
             ipadapter_weight: Optional IPAdapter conditioning weight.
+            negative_suffix: Optional per-call terms appended to the negative prompt.
 
         Returns:
             Raw image bytes (PNG format).
@@ -154,6 +164,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         width: int = 832,
         height: int = 1216,
         ipadapter_weight: float | None = None,
+        negative_suffix: str | None = None,
     ) -> bytes:
         from yt_flow.services.comfyui_client import submit_and_fetch, upload_image
 
@@ -161,6 +172,8 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         workflow = self._inject_prompt(workflow, prompt)
         workflow = self._inject_dimensions(workflow, width, height)
         workflow = self._inject_seed(workflow)
+        if negative_suffix:
+            workflow = self._inject_negative_suffix(workflow, negative_suffix)
         if ipadapter_weight is not None:
             workflow = self._inject_ipadapter_weight(workflow, ipadapter_weight)
 
@@ -209,17 +222,45 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         Only modifies the positive prompt node (typically node "6" in SDXL).
         Never touches the negative prompt node (typically node "7").
         """
-        negative_node_ids = {"7", "37_neg"}  # ponytail: well-known negative prompt node IDs
         for node_id, node in workflow.items():
-            if node_id in negative_node_ids:
-                continue
             if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode":
-                meta_title = node.get("_meta", {}).get("title", "").lower()
-                is_negative = any(kw in meta_title for kw in ("negative", "neg ", "bad"))
-                if not is_negative:
-                    if "text" in node.get("inputs", {}):
-                        node["inputs"]["text"] = prompt
-                        break
+                if not _is_negative_node(node_id, node) and "text" in node.get("inputs", {}):
+                    node["inputs"]["text"] = prompt
+                    break
+        return workflow
+
+    @staticmethod
+    def _inject_negative_suffix(workflow: dict, suffix: str) -> dict:
+        """Append per-call suppression terms to the negative CLIP text encoder node.
+
+        ``_inject_prompt`` deliberately never writes negatives, and the authored
+        workflow's negative text is shared with entity cards (SCP-049 legitimately
+        needs a mask) — so caller-scoped suppression is appended here per call
+        instead of edited into the workflow JSON (Story 8.15).
+
+        Every matching node gets the suffix, matching ``_inject_dimensions``/
+        ``_inject_seed`` — a workflow with two negative encoders would otherwise
+        suppress on one branch only.
+        """
+        injected = False
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict) or node.get("class_type") != "CLIPTextEncode":
+                continue
+            if not _is_negative_node(node_id, node):
+                continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict) or "text" not in inputs:
+                continue
+            existing = inputs["text"]
+            if not isinstance(existing, str):
+                # A graph link like ["12", 0] — f-stringing it would both sever the
+                # edge and paste the link into the prompt text.
+                logger.warning("Negative node %s text is a graph link (%r); suffix not injected", node_id, existing)
+                continue
+            inputs["text"] = f"{existing}, {suffix}" if existing else suffix
+            injected = True
+        if not injected:
+            logger.warning("No negative CLIPTextEncode node matched; dropped negative suffix %r", suffix)
         return workflow
 
     @staticmethod
@@ -396,7 +437,14 @@ class QwenCharacterProvider(CharacterImageProvider):
         width: int = 832,
         height: int = 1216,
         ipadapter_weight: float | None = None,
+        negative_suffix: str | None = None,
     ) -> bytes:
+        # ponytail: negative_suffix is accepted for signature parity and ignored —
+        # card generation refuses this provider outright (produces_alpha is False),
+        # so it can never receive one. Logged rather than dropped in silence in case
+        # some other caller ever does.
+        if negative_suffix:
+            logger.warning("QwenCharacterProvider ignores negative_suffix %r (API takes no negative prompt)", negative_suffix)
         if not self._api_key:
             raise RuntimeError("Qwen API key not configured (YTFLOW_CHARACTER_QWEN_API_KEY)")
 
