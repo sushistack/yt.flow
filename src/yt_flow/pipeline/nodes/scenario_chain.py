@@ -19,6 +19,7 @@ from typing import Any, cast
 import yaml
 
 from yt_flow.domain.state import (
+    CAMERA_ARCHETYPES,
     CastDepth,
     CastMember,
     CastPose,
@@ -56,6 +57,27 @@ _VALID_MOVEMENT_MODES = {"anchored", "drift", "enter", "exit", "cross", "approac
 _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
+
+# Story 11.2: mood → camera-archetype preference order. First entry is the
+# scene's per-shot default; the rest is _enforce_camera_variety's reassignment
+# order. CAMERA_ prefix keeps this apart from _VALID_MOVEMENT_MODES — that
+# "drift" is a cast movement_mode (8.9), this one is a camera archetype.
+# ponytail: tuned starting point (research §4.4 motion-mood grammar), expect
+# live iteration; Story 11.3 merges per-mood noise profiles into this table.
+CAMERA_PREFERENCES: dict[str, tuple[str, ...]] = {
+    "dread": ("push_in", "drift", "locked"),
+    "clinical": ("locked", "drift", "pull_back"),
+    # escalation's first alternate must be drift, not push_in: the 11.2 shake
+    # placeholder renders as the same in-center push as push_in (video._HINT_MAP),
+    # so a shake/push_in alternation would render every shot identically — the
+    # exact monotony this story removes. Revisit when 11.3 ships a real shake.
+    "escalation": ("shake", "drift", "push_in"),
+    "revelation": ("push_in", "pull_back", "drift"),
+}
+# resolve_mood only guarantees a MOOD_VALUES member; keep keys in lockstep or a
+# taxonomy change silently turns into a runtime KeyError here (7.2 invariant).
+assert set(CAMERA_PREFERENCES) == set(MOOD_VALUES)
+assert {a for prefs in CAMERA_PREFERENCES.values() for a in prefs} == set(CAMERA_ARCHETYPES)
 
 
 def _normalize_card_key(card_key: str) -> str:
@@ -122,6 +144,50 @@ def _repair_movement(mode: str, direction: str, position: str) -> str:
     if mode in ("enter", "exit"):
         return "right" if position == "right" else "left"
     return direction
+
+
+def _resolve_camera_movement(raw: object, mood: str) -> str:
+    """Story 11.2: a valid LLM archetype override wins; absent falls back to
+    the mood default silently, present-but-invalid falls back with a warning
+    (resolve_mood philosophy — no violation ever fails the scenario stage)."""
+    if isinstance(raw, str):
+        value = raw.strip().lower()
+        if value in CAMERA_ARCHETYPES:
+            return value
+    if raw is not None:
+        logger.warning(
+            "scenario: camera_movement %r not in %s; using mood default", raw, CAMERA_ARCHETYPES
+        )
+    return CAMERA_PREFERENCES[mood][0]
+
+
+def _enforce_camera_variety(shots: list, mood: str) -> None:
+    """Story 11.2 AC4: within a scene, no two adjacent shots may share a
+    ``camera_movement`` value — the later shot is deterministically reassigned
+    to the first entry of the mood's preference order that differs from its
+    predecessor. No LLM re-call (8.9 ``_repair_movement`` repair lineage), and
+    LLM overrides are reassigned the same way — the ban is absolute.
+
+    Archetype-level enforcement satisfies the epics' "archetype+direction"
+    ban: drift is the only direction-bearing archetype and drift-drift
+    adjacency is itself banned, so "same archetype + same direction" can
+    never arise.
+
+    Scene boundaries are deliberately not checked: 5.16's dip-to-black act
+    break severs visual continuity between scenes, so within-scene variety
+    is sufficient.
+
+    Mutates only the shot dicts build_scenes just created — never an input
+    state object [AD-4].
+    """
+    for prev, cur in zip(shots, shots[1:]):
+        if cur["camera_movement"] == prev["camera_movement"]:
+            replacement = next(a for a in CAMERA_PREFERENCES[mood] if a != prev["camera_movement"])
+            logger.info(
+                "scenario: shot %s camera %r duplicates predecessor; reassigned to %r",
+                cur["shot_id"], cur["camera_movement"], replacement,
+            )
+            cur["camera_movement"] = replacement
 
 
 def _parse_movement_fields(entry: dict, position: str) -> tuple[str, str, str] | None:
@@ -1076,7 +1142,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     image_prompt=image_prompt,
                     negative_prompt=str(raw_shot.get("negative_prompt") or ""),
                     camera_angle=raw_shot.get("camera_type") if isinstance(raw_shot.get("camera_type"), str) else None,
-                    camera_movement=None,  # yt.pipe's visual_breakdown has no equivalent field
+                    camera_movement=_resolve_camera_movement(raw_shot.get("camera_movement"), mood),
                     image_path=None,
                     cast=parse_cast(raw_shot.get("cast")),
                     location_key=parse_location_key(raw_shot.get("location_key")),
@@ -1085,6 +1151,8 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
 
         if not shots:
             raise ValueError(f"scene[{scene_num}]: no shots produced after merge")
+
+        _enforce_camera_variety(shots, mood)
 
         scenes.append(
             SceneState(

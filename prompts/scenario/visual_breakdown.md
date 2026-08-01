@@ -238,6 +238,25 @@ The cast's `depth` is already decided (see Pre-Decided Cast below) — pick
   `far`), the dominant depth is whichever cast member the shot is actually
   framed around — pick `camera_type` for that member, not an average.
 
+### `camera_movement` (Optional — Camera Motion Archetype)
+
+Each shot's camera motion defaults to the scene's mood automatically — you do
+not need to emit this field. Emit `camera_movement` ONLY for a beat that
+demands a motion the mood default would not give, from this closed vocabulary:
+
+`push_in`, `pull_back`, `drift`, `locked`, `shake`
+
+- `push_in`: slow move toward the subject — dread, mounting tension, revelation
+- `pull_back`: retreat from the subject — isolation, aftermath, scale reveal
+- `drift`: slow lateral glide — calm exposition, observation
+- `locked`: motionless clinical framing — procedure, containment, oppression
+- `shake`: unstable handheld energy — panic, breach, impact
+- Omit the key entirely (do not emit `null` or `""`) when the mood default fits.
+- Never invent a value outside the closed vocabulary — an unrecognized value
+  is discarded and the shot falls back to the mood default.
+- Two consecutive shots are never allowed the same motion; a duplicate is
+  reassigned automatically, so don't rely on repetition for effect.
+
 ### Character Visual Anchoring
 
 Visual consistency for the entity and for D-class/researcher/security
@@ -292,10 +311,11 @@ visual_descriptions:
     sentence_start: 1
     sentence_end: 1
     camera_type: "wide"
+    camera_movement: "push_in"
     location_key: "containment-chamber"
 ```
 
-`location_key` is optional — omit the key entirely (do not emit `null` or `""`) for entity-specific environments where no standard room applies.
+`location_key` is optional — omit the key entirely (do not emit `null` or `""`) for entity-specific environments where no standard room applies. `camera_movement` is likewise optional — omit it wherever the scene's mood default fits (see its section above).
 
 No `cast` field — cast is Pre-Decided (see above) and attached automatically; do not include it in your output.
 

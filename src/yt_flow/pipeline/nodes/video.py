@@ -223,25 +223,35 @@ _HINT_MAP: dict[str, str] = {
     "pan_up": "pan-up",
     "pan down": "pan-down",
     "pan_down": "pan-down",
-    # "static" → near-zero drift; handled below
+    # ponytail: Story 11.2 "shake" archetype placeholder — plain in-center
+    # push until Story 11.3 replaces it with a real fBm/trauma shake.
+    "shake": "in-center",
+    # "static"/"locked" → near-zero drift; "drift" → pan rotation; handled below
 }
+
+# Story 11.2 "drift" archetype: lateral moves only.
+_PAN_POOL = [d for d in _DIRECTION_POOL if d.startswith("pan-")]
 
 
 def select_effect(shot: ShotData, scene_index: int) -> EffectSpec:
     """Pure effect dispatcher. Returns EffectSpec for zoompan. [AC:1,3]
 
-    - Recognizes free-text camera_movement hints.
+    - Recognizes camera archetypes (Story 11.2) and free-text camera_movement hints.
     - Unknown/None → rotates through _DIRECTION_POOL by scene_index (anti-monotony).
-    - 'static' → near-zero 1.0→1.005 drift reusing the zoompan path.
+    - 'static'/'locked' → near-zero 1.0→1.005 drift reusing the zoompan path.
+    - 'drift' → rotates the pan-* subset by scene_index (8.11 feeds per-shot indices).
     """
     # normalize internal/tab whitespace too so "pan  right" / "pan\tright" still match
     hint = " ".join((shot.get("camera_movement") or "").split()).lower()
 
-    if hint == "static":
+    if hint in ("static", "locked"):
         # ponytail: reuse zoompan path instead of a separate static branch
         return EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=1.005)
 
-    direction = _HINT_MAP.get(hint)
+    if hint == "drift":
+        direction = _PAN_POOL[scene_index % len(_PAN_POOL)]
+    else:
+        direction = _HINT_MAP.get(hint)
     if direction is None:
         # Rotate pool so consecutive scenes never share the same direction
         direction = _DIRECTION_POOL[scene_index % len(_DIRECTION_POOL)]

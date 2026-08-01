@@ -79,13 +79,20 @@ class WordTiming(TypedDict):
     end_sec: float
 
 
+# Story 11.2: closed camera-motion vocabulary for ShotData.camera_movement.
+# Lives here because scenario_chain (producer) and video (consumer) both
+# already import domain.state and never each other — same placement logic as
+# MOOD_VALUES living in sound_design.
+CAMERA_ARCHETYPES = ("push_in", "pull_back", "drift", "locked", "shake")
+
+
 class ShotData(TypedDict):
     shot_id: str
     sentence_indices: list[int]  # 0-based narration sentence indices; the image-gen unit [AD-5]
     image_prompt: str
     negative_prompt: str
     camera_angle: str | None
-    camera_movement: str | None
+    camera_movement: str | None  # one of CAMERA_ARCHETYPES (Story 11.2) | legacy free-text hint | None
     image_path: str | None       # background-only render (Story 8.3); character overlays live in `cast`
     cast: list[CastMember]       # [] == background-only shot: downstream does NO overlay work at all
     location_key: LocationKey | None  # Story 8.5: STOCK plate to copy instead of generating.

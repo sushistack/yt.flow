@@ -1821,3 +1821,175 @@ def test_build_scenes_display_narration_defaults_to_narration_when_absent():
     writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
     scenes = chain.build_scenes(writing, _ONE_SHOT_VISUAL, [{}])
     assert scenes[0]["display_narration"] == "문장."
+
+
+# ── camera archetypes (Story 11.2: mood-driven camera_movement wiring) ─────────
+
+
+def test_camera_archetypes_closed_vocabulary():
+    from yt_flow.domain.state import CAMERA_ARCHETYPES
+
+    assert CAMERA_ARCHETYPES == ("push_in", "pull_back", "drift", "locked", "shake")
+
+
+@pytest.mark.parametrize("mood", sound_design.MOOD_VALUES)
+def test_camera_preferences_cover_every_mood(mood):
+    # Lockstep invariant (7.2 pattern): every taxonomy mood has a preference order.
+    prefs = chain.CAMERA_PREFERENCES[mood]
+    assert len(prefs) >= 2
+    assert len(set(prefs)) == len(prefs)  # no duplicates — validator needs distinct alternates
+
+
+def test_camera_preferences_no_extra_keys():
+    assert set(chain.CAMERA_PREFERENCES) == set(sound_design.MOOD_VALUES)
+
+
+def test_camera_preferences_values_are_archetypes():
+    from yt_flow.domain.state import CAMERA_ARCHETYPES
+
+    for prefs in chain.CAMERA_PREFERENCES.values():
+        assert all(a in CAMERA_ARCHETYPES for a in prefs)
+
+
+def test_camera_preferences_reach_all_archetypes():
+    # AC1/AC2: all 5 archetypes reachable through some mood's preference order.
+    from yt_flow.domain.state import CAMERA_ARCHETYPES
+
+    reachable = {a for prefs in chain.CAMERA_PREFERENCES.values() for a in prefs}
+    assert reachable == set(CAMERA_ARCHETYPES)
+
+
+@pytest.mark.parametrize(
+    ("mood", "default"),
+    [("dread", "push_in"), ("clinical", "locked"), ("escalation", "shake"), ("revelation", "push_in")],
+)
+def test_camera_mood_defaults(mood, default):
+    assert chain.CAMERA_PREFERENCES[mood][0] == default
+
+
+@pytest.mark.parametrize("mood", sound_design.MOOD_VALUES)
+def test_camera_preferences_first_alternate_renders_distinct(mood):
+    # Review finding (11.2): a run of mood defaults alternates prefs[0]/prefs[1]
+    # after _enforce_camera_variety, so those two must render as *different*
+    # EffectSpecs or the archetype-level variety is visually void (e.g. the
+    # shake placeholder and push_in both map to an in-center push).
+    from yt_flow.pipeline.nodes.video import select_effect
+
+    prefs = chain.CAMERA_PREFERENCES[mood]
+    for scene_index in range(3):
+        default_spec = select_effect({"camera_movement": prefs[0]}, scene_index)
+        alternate_spec = select_effect({"camera_movement": prefs[1]}, scene_index)
+        assert default_spec != alternate_spec
+
+
+def _one_shot_visual(**shot_extra):
+    shot = {"image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}
+    shot.update(shot_extra)
+    return {0: [shot]}
+
+
+def test_build_scenes_camera_movement_defaults_from_mood():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _one_shot_visual(), [{"mood": "escalation"}])
+    assert scenes[0]["shots"][0]["camera_movement"] == "shake"  # escalation default
+
+
+def test_build_scenes_camera_movement_valid_override_adopted():
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(
+        writing, _one_shot_visual(camera_movement=" Pull_Back "), [{"mood": "dread"}]
+    )
+    assert scenes[0]["shots"][0]["camera_movement"] == "pull_back"
+
+
+def test_build_scenes_camera_movement_invalid_override_falls_back_with_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(
+            writing, _one_shot_visual(camera_movement="dolly zoom"), [{"mood": "dread"}]
+        )
+    assert scenes[0]["shots"][0]["camera_movement"] == "push_in"  # dread default
+    assert any("dolly zoom" in r.message for r in caplog.records)
+
+
+def test_build_scenes_camera_movement_absent_no_warning(caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _one_shot_visual(), [{"mood": "clinical"}])
+    assert scenes[0]["shots"][0]["camera_movement"] == "locked"  # clinical default
+    assert not caplog.records
+
+
+# ── _enforce_camera_variety (Story 11.2 AC4: adjacent-duplicate ban) ────────────
+
+
+def _shots_with_cameras(values):
+    return [
+        {"shot_id": f"S001{i:02d}", "camera_movement": v}
+        for i, v in enumerate(values)
+    ]
+
+
+def test_enforce_camera_variety_no_adjacent_duplicates_property():
+    shots = _shots_with_cameras(["push_in"] * 5)
+    chain._enforce_camera_variety(shots, "dread")
+    cams = [s["camera_movement"] for s in shots]
+    assert all(a != b for a, b in zip(cams, cams[1:]))
+    from yt_flow.domain.state import CAMERA_ARCHETYPES
+
+    assert all(c in CAMERA_ARCHETYPES for c in cams)
+
+
+def test_enforce_camera_variety_deterministic():
+    a = _shots_with_cameras(["shake", "shake", "push_in", "push_in"])
+    b = _shots_with_cameras(["shake", "shake", "push_in", "push_in"])
+    chain._enforce_camera_variety(a, "escalation")
+    chain._enforce_camera_variety(b, "escalation")
+    assert [s["camera_movement"] for s in a] == [s["camera_movement"] for s in b]
+
+
+def test_enforce_camera_variety_single_shot_harmless():
+    shots = _shots_with_cameras(["locked"])
+    chain._enforce_camera_variety(shots, "clinical")
+    assert shots[0]["camera_movement"] == "locked"
+
+
+def test_enforce_camera_variety_leaves_valid_sequences_untouched():
+    shots = _shots_with_cameras(["push_in", "drift", "push_in"])
+    chain._enforce_camera_variety(shots, "dread")
+    assert [s["camera_movement"] for s in shots] == ["push_in", "drift", "push_in"]
+
+
+def test_enforce_camera_variety_logs_reassignment(caplog):
+    shots = _shots_with_cameras(["locked", "locked"])
+    with caplog.at_level(logging.INFO):
+        chain._enforce_camera_variety(shots, "clinical")
+    assert any("S00101" in r.message for r in caplog.records)
+
+
+def test_build_scenes_applies_camera_variety_to_defaults():
+    # AC4 integration: mood default gives every shot the same archetype;
+    # the validator must scatter adjacent duplicates.
+    writing = {"scenes": [{"scene_num": 1, "narration": "하나. 둘. 셋."}]}
+    visual = {0: [
+        {"image_prompt": "a", "negative_prompt": "", "sentence_start": i, "sentence_end": i, "camera_type": "wide"}
+        for i in (1, 2, 3)
+    ]}
+    scenes = chain.build_scenes(writing, visual, [{"mood": "dread"}])
+    cams = [s["camera_movement"] for s in scenes[0]["shots"]]
+    assert all(a != b for a, b in zip(cams, cams[1:]))
+    assert cams[0] == "push_in"  # first shot keeps the mood default
+
+
+def test_build_scenes_camera_variety_overrides_llm_duplicates():
+    # AC4: the ban is absolute — LLM overrides that violate it are reassigned too.
+    writing = {"scenes": [{"scene_num": 1, "narration": "하나. 둘."}]}
+    visual = {0: [
+        {"image_prompt": "a", "negative_prompt": "", "sentence_start": i, "sentence_end": i,
+         "camera_type": "wide", "camera_movement": "shake"}
+        for i in (1, 2)
+    ]}
+    scenes = chain.build_scenes(writing, visual, [{"mood": "escalation"}])
+    cams = [s["camera_movement"] for s in scenes[0]["shots"]]
+    assert cams[0] == "shake"
+    assert cams[1] != "shake"

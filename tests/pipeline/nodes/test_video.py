@@ -283,6 +283,59 @@ def test_select_effect_normalizes_internal_whitespace(hint):
     assert select_effect(_shot(camera_movement=hint), 3).direction == "pan-right"
 
 
+
+# ── select_effect: camera archetypes (Story 11.2) ─────────────────────────────
+
+
+def test_select_effect_push_in_archetype():
+    # Pre-existing _HINT_MAP coincidence, pinned by test per AC5.
+    spec = select_effect(_shot(camera_movement="push_in"), 0)
+    assert spec.direction == "in-center"
+    assert spec.start_zoom == pytest.approx(1.0)
+    assert spec.end_zoom == pytest.approx(video.ZOOM_IN_MAX)
+
+
+def test_select_effect_pull_back_archetype():
+    spec = select_effect(_shot(camera_movement="pull_back"), 0)
+    assert spec.direction == "out-center"
+    assert spec.start_zoom == pytest.approx(video.ZOOM_IN_MAX)
+    assert spec.end_zoom == pytest.approx(1.0)
+
+
+def test_select_effect_locked_archetype_micro_drift():
+    # locked joins the "static" branch: 1.0 -> 1.005 micro drift.
+    spec = select_effect(_shot(camera_movement="locked"), 0)
+    assert spec.direction == "in-center"
+    assert spec.start_zoom == pytest.approx(1.0)
+    assert spec.end_zoom == pytest.approx(1.005)
+
+
+def test_select_effect_drift_archetype_rotates_pan_subset():
+    shot = _shot(camera_movement="drift")
+    pan_pool = [d for d in video._DIRECTION_POOL if d.startswith("pan-")]
+    for i in range(len(pan_pool) * 2):
+        spec = select_effect(shot, i)
+        assert spec.direction == pan_pool[i % len(pan_pool)]
+        assert spec.end_zoom == pytest.approx(video.ZOOM_IN_MAX)  # pan keeps the zoom-in idiom
+
+
+def test_select_effect_shake_archetype_placeholder_push():
+    # Story 11.2 placeholder: in-center push until 11.3's fBm/trauma shake.
+    # scene_index 1 so the round-robin fallback (pan-right) can't fake a pass.
+    spec = select_effect(_shot(camera_movement="shake"), 1)
+    assert spec.direction == "in-center"
+    assert spec.end_zoom == pytest.approx(video.ZOOM_IN_MAX)
+
+
+def test_select_effect_archetypes_deterministic():
+    from yt_flow.domain.state import CAMERA_ARCHETYPES
+
+    for arch in CAMERA_ARCHETYPES:
+        a = select_effect(_shot(camera_movement=arch), 7)
+        b = select_effect(_shot(camera_movement=arch), 7)
+        assert a == b
+
+
 # ── _zoompan_filter ───────────────────────────────────────────────────────────
 
 
