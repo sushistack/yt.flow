@@ -58,6 +58,17 @@ _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
 
+# Story 8.18 R2: a single repeat stays legal — the prompt allows a continuous
+# beat; only the 3rd identical (position, depth) shot in a row is repaired.
+_MAX_CONSECUTIVE_SAME_PLACEMENT = 2
+# Story 8.18 slot-reassignment preference: opposing third first (8.12's
+# opposing-thirds composition rule), then whatever remains.
+_SLOT_PREFERENCES = {
+    "left": ("right", "center"),
+    "right": ("left", "center"),
+    "center": ("left", "right"),
+}
+
 # Story 11.2: mood → camera-archetype preference order. First entry is the
 # scene's per-shot default; the rest is _enforce_camera_variety's reassignment
 # order. CAMERA_ prefix keeps this apart from _VALID_MOVEMENT_MODES — that
@@ -191,6 +202,148 @@ def _enforce_camera_variety(shots: list, mood: str) -> None:
                 cur["shot_id"], cur["camera_movement"], replacement,
             )
             cur["camera_movement"] = replacement
+
+
+def _reassign_position(member: dict, shot_id: object, rule: str, new_position: str) -> None:
+    """Move a cast member to ``new_position`` and re-derive its
+    ``movement_direction`` (Story 8.18 AC5): parse_cast computed the direction
+    against the OLD position, and a stale one can be degenerate after the move
+    (e.g. a ``cross`` whose direction now matches its start third)."""
+    logger.info(
+        "scenario: shot %s cast %s position %r %s; reassigned to %r",
+        shot_id, member.get("card_key"), member.get("position"), rule, new_position,
+    )
+    member["position"] = new_position
+    if "movement_mode" in member:
+        member["movement_direction"] = _repair_movement(
+            member.get("movement_mode", "anchored"),
+            member.get("movement_direction", "none"),
+            new_position,
+        )
+
+
+def _enforce_cast_diversity(shots: list) -> None:
+    """Story 8.18: deterministic repair of the placement-diversity rules the
+    cast_decision prompt teaches (8.12 Composition section) — code backstop,
+    no LLM re-call (8.9 ``_repair_movement`` / 11.2 ``_enforce_camera_variety``
+    repair lineage). Mark-targeted (6.11 lesson): only a violating member's
+    violating field changes; siblings, other shots, and untouched fields stay
+    byte-identical.
+
+    R1 — no two members of one shot share a ``position`` slot; later members
+    (list order) move to a free slot, opposing third first. With 4+ members
+    all 3 slots fill and the rest keep their slot (3-slot renderer limit).
+    R3 — the two explicit "never" camera↔depth pairings (visual_breakdown.md):
+    ``wide`` + strict-majority ``near`` demotes those members to ``mid``;
+    ``close-up``/``over-the-shoulder`` + a lone ``far`` member promotes it to
+    ``mid``. Depth side only — ``camera_angle`` is baked into the rendered
+    background and entity angle selection.
+    R2 — a card_key repeating an identical (position, depth) for more than
+    ``_MAX_CONSECUTIVE_SAME_PLACEMENT`` consecutive shots gets its position
+    moved to a free slot (respecting R1 occupancy). Position-only.
+    # ponytail: breaking the slot repetition suffices visually; repairing
+    # depth would fight the 8.12-calibrated "mostly mid" distribution.
+
+    Pass order per shot: R1 first so slot occupancy is settled, R3 before R2
+    so R2's run tracking sees final depths — an R3 demotion behind R2's back
+    could complete a >2 run and break idempotence (AC6). Neither R3 nor R2
+    can reintroduce stacking: R3 never touches position, R2 only moves onto
+    free slots.
+
+    Scene boundaries are deliberately not checked: 5.16's dip-to-black act
+    break severs visual continuity between scenes (same rationale as
+    ``_enforce_camera_variety``).
+
+    Mutates only the shot dicts build_scenes just created — never an input
+    state object [AD-4]. Never raises — a garbage member or shot is skipped
+    (D1 lesson, resolve_mood philosophy: violations degrade or repair, the
+    scenario stage never fails).
+    """
+    runs: dict[str, tuple[str, object, int]] = {}
+    for shot in shots:
+        if not isinstance(shot, dict):
+            continue
+        shot_id = shot.get("shot_id")
+        raw_cast = shot.get("cast")
+        members = [
+            m for m in (raw_cast if isinstance(raw_cast, list) else [])
+            if isinstance(m, dict) and m.get("position") in _VALID_POSITIONS
+        ]
+
+        # R1 — within-shot slot stacking ban.
+        occupied: set[str] = set()
+        for i, member in enumerate(members):
+            position = member["position"]
+            if position not in occupied:
+                occupied.add(position)
+                continue
+            # A slot a later member still legitimately claims is not free —
+            # repairing onto it would cascade-displace a healthy sibling
+            # (6.11 mark-targeted lesson: only violating members move).
+            reserved = {m["position"] for m in members[i + 1 :]} - occupied
+            free = [
+                slot
+                for slot in _SLOT_PREFERENCES[position]
+                if slot not in occupied and slot not in reserved
+            ]
+            if not free:
+                logger.info(
+                    "scenario: shot %s has more cast than the 3 position slots; remaining members keep their slot",
+                    shot_id,
+                )
+                break
+            _reassign_position(member, shot_id, "stacks with an earlier member (R1)", free[0])
+            occupied.add(free[0])
+
+        # R3 — the two explicit camera_angle↔depth "never" pairings, depth side only.
+        camera_angle = shot.get("camera_angle")
+        if camera_angle == "wide":
+            near = [m for m in members if m.get("depth") == "near"]
+            if 2 * len(near) > len(members):  # strict majority
+                for member in near:
+                    logger.info(
+                        "scenario: shot %s cast %s depth 'near' contradicts 'wide' camera (R3); demoted to 'mid'",
+                        shot_id, member.get("card_key"),
+                    )
+                    member["depth"] = "mid"
+        elif camera_angle in ("close-up", "over-the-shoulder"):
+            if len(members) == 1 and members[0].get("depth") == "far":
+                logger.info(
+                    "scenario: shot %s cast %s lone depth 'far' contradicts %r camera (R3); promoted to 'mid'",
+                    shot_id, members[0].get("card_key"), camera_angle,
+                )
+                members[0]["depth"] = "mid"
+
+        # R2 — consecutive-repeat cap per card_key, on final positions + depths.
+        new_runs: dict[str, tuple[str, object, int]] = {}
+        slots = {m["position"] for m in members}
+        for member in members:
+            card_key = member.get("card_key")
+            if not isinstance(card_key, str):
+                continue
+            position, depth = member["position"], member.get("depth")
+            prev = runs.get(card_key)
+            count = prev[2] + 1 if prev and (prev[0], prev[1]) == (position, depth) else 1
+            if count > _MAX_CONSECUTIVE_SAME_PLACEMENT:
+                free = [slot for slot in _SLOT_PREFERENCES[position] if slot not in slots]
+                if free:
+                    _reassign_position(
+                        member, shot_id,
+                        f"repeats ({position!r}, {depth!r}) beyond {_MAX_CONSECUTIVE_SAME_PLACEMENT} shots (R2)",
+                        free[0],
+                    )
+                    slots.discard(position)
+                    slots.add(free[0])
+                    position, count = free[0], 1
+                else:
+                    # ponytail: all 3 slots taken — R1's no-stacking beats R2's
+                    # variety; the repeat persists and stays logged.
+                    logger.info(
+                        "scenario: shot %s cast %s placement repeat not repairable, all slots occupied (R2)",
+                        shot_id, card_key,
+                    )
+            new_runs[card_key] = (position, depth, count)
+        runs = new_runs
 
 
 def _parse_movement_fields(entry: dict, position: str) -> tuple[str, str, str] | None:
@@ -1156,6 +1309,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
             raise ValueError(f"scene[{scene_num}]: no shots produced after merge")
 
         _enforce_camera_variety(shots, mood)
+        _enforce_cast_diversity(shots)
 
         scenes.append(
             SceneState(

@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from pathlib import Path
@@ -1728,7 +1729,8 @@ def test_build_scenes_attaches_cast_to_shot():
     writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
     visual_by_scene = {0: [{
         "image_prompt": "a", "negative_prompt": "b", "sentence_start": 1, "sentence_end": 1,
-        "camera_type": "wide", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}],
+        # "medium" not "wide": wide + lone near would now trip Story 8.18's R3 repair.
+        "camera_type": "medium", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}],
     }]}
     scenes = chain.build_scenes(writing, visual_by_scene, [{}])
     assert scenes[0]["shots"][0]["cast"] == [
@@ -1746,8 +1748,9 @@ def test_build_scenes_merged_shot_contributes_no_cast_of_its_own():
     writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. (정적) 셋째 문장."}]}
     visual_by_scene = {
         0: [
+            # "medium" not "wide": wide + lone near would now trip Story 8.18's R3 repair.
             {"image_prompt": "shot one", "negative_prompt": "n", "sentence_start": 1, "sentence_end": 1,
-             "camera_type": "wide", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]},
+             "camera_type": "medium", "cast": [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}]},
             {"image_prompt": "", "negative_prompt": "", "sentence_start": 2, "sentence_end": 2, "camera_type": "wide",
              "cast": [{"card_key": "STOCK-researcher", "position": "right", "depth": "far", "pose": "standing"}]},
             {"image_prompt": "shot three", "negative_prompt": "n", "sentence_start": 3, "sentence_end": 3, "camera_type": "close-up"},
@@ -2013,3 +2016,269 @@ def test_build_scenes_camera_variety_overrides_llm_duplicates():
     cams = [s["camera_movement"] for s in scenes[0]["shots"]]
     assert cams[0] == "shake"
     assert cams[1] != "shake"
+
+
+# ── _enforce_cast_diversity (Story 8.18: placement-diversity repair) ────────────
+
+
+def _cast_member(card="SCP-049", position="center", depth="mid", **extra):
+    member = {"card_key": card, "position": position, "depth": depth, "pose": "standing"}
+    member.update(extra)
+    return member
+
+
+def _cast_shots(casts, camera_angle=None):
+    return [
+        {"shot_id": f"S001{i:02d}", "camera_angle": camera_angle, "cast": cast}
+        for i, cast in enumerate(casts)
+    ]
+
+
+def _assert_no_diversity_violations(shots):
+    # R1: no two members of one shot share a position.
+    for shot in shots:
+        positions = [m["position"] for m in shot["cast"]]
+        assert len(positions) == len(set(positions)), shot
+    # R2: no card holds an identical (position, depth) for >2 consecutive shots.
+    runs: dict = {}
+    for shot in shots:
+        new_runs: dict = {}
+        for m in shot["cast"]:
+            key = (m["position"], m["depth"])
+            prev = runs.get(m["card_key"])
+            count = prev[1] + 1 if prev and prev[0] == key else 1
+            assert count <= chain._MAX_CONSECUTIVE_SAME_PLACEMENT, shot
+            new_runs[m["card_key"]] = (key, count)
+        runs = new_runs
+
+
+def test_enforce_cast_diversity_all_identical_fake_case():
+    # epics.md mandated regression: LLM emitted every shot, every member center/mid.
+    shots = _cast_shots(
+        [[_cast_member("SCP-049"), _cast_member("STOCK-researcher")] for _ in range(6)]
+    )
+    chain._enforce_cast_diversity(shots)
+    _assert_no_diversity_violations(shots)
+
+
+def test_enforce_cast_diversity_r1_stacking_repaired_in_isolation():
+    shots = _cast_shots([[_cast_member("SCP-049", "left"), _cast_member("STOCK-researcher", "left")]])
+    chain._enforce_cast_diversity(shots)
+    # Later member moves to the opposing third first.
+    assert shots[0]["cast"][0]["position"] == "left"
+    assert shots[0]["cast"][1]["position"] == "right"
+
+
+def test_enforce_cast_diversity_r1_does_not_displace_later_sibling():
+    # B stacks on A's left; its preferred opposing third (right) is C's slot.
+    # B must go to center — C never moves (mark-targeted, 6.11 lesson).
+    shots = _cast_shots(
+        [[_cast_member("A", "left"), _cast_member("B", "left"), _cast_member("C", "right")]]
+    )
+    chain._enforce_cast_diversity(shots)
+    assert [m["position"] for m in shots[0]["cast"]] == ["left", "center", "right"]
+
+
+def test_enforce_cast_diversity_r1_center_stack_fills_left_then_right():
+    shots = _cast_shots(
+        [[_cast_member("A", "center"), _cast_member("B", "center"), _cast_member("C", "center")]]
+    )
+    chain._enforce_cast_diversity(shots)
+    assert [m["position"] for m in shots[0]["cast"]] == ["center", "left", "right"]
+
+
+def test_enforce_cast_diversity_r1_four_members_keep_slot_beyond_three(caplog):
+    shots = _cast_shots(
+        [[_cast_member(k, "center") for k in ("A", "B", "C", "D")]]
+    )
+    with caplog.at_level(logging.INFO):
+        chain._enforce_cast_diversity(shots)
+    # 3-slot renderer limit: the 4th member keeps its slot, INFO-logged.
+    assert [m["position"] for m in shots[0]["cast"]] == ["center", "left", "right", "center"]
+    assert any("3" in r.message and "slot" in r.message for r in caplog.records)
+
+
+def test_enforce_cast_diversity_r2_third_consecutive_repeat_reassigned():
+    shots = _cast_shots([[_cast_member(position="left", depth="mid")] for _ in range(3)])
+    chain._enforce_cast_diversity(shots)
+    assert [s["cast"][0]["position"] for s in shots] == ["left", "left", "right"]
+    assert [s["cast"][0]["depth"] for s in shots] == ["mid", "mid", "mid"]  # position-only repair
+
+
+def test_enforce_cast_diversity_r2_two_repeats_stay_legal():
+    shots = _cast_shots([[_cast_member(position="left", depth="near")] for _ in range(2)])
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before
+
+
+def test_enforce_cast_diversity_r2_depth_change_breaks_run():
+    casts = [
+        [_cast_member(position="left", depth="near")],
+        [_cast_member(position="left", depth="mid")],
+        [_cast_member(position="left", depth="near")],
+    ]
+    shots = _cast_shots(casts)
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before
+
+
+def test_enforce_cast_diversity_r2_respects_r1_occupancy():
+    # The repeating card cannot move onto another member's slot.
+    casts = [
+        [_cast_member("A", "left", "mid")],
+        [_cast_member("A", "left", "mid")],
+        [_cast_member("A", "left", "mid"), _cast_member("B", "right", "mid")],
+    ]
+    shots = _cast_shots(casts)
+    chain._enforce_cast_diversity(shots)
+    # A prefers the opposing third (right) but B holds it -> center.
+    assert shots[2]["cast"][0]["position"] == "center"
+    assert shots[2]["cast"][1]["position"] == "right"
+    _assert_no_diversity_violations(shots)
+
+
+def test_enforce_cast_diversity_r3_wide_near_majority_demoted():
+    cast = [
+        _cast_member("A", "left", "near"),
+        _cast_member("B", "center", "near"),
+        _cast_member("C", "right", "far"),
+    ]
+    shots = _cast_shots([cast], camera_angle="wide")
+    chain._enforce_cast_diversity(shots)
+    assert [m["depth"] for m in shots[0]["cast"]] == ["mid", "mid", "far"]
+    assert [m["position"] for m in shots[0]["cast"]] == ["left", "center", "right"]
+
+
+def test_enforce_cast_diversity_r3_wide_near_minority_untouched():
+    cast = [_cast_member("A", "left", "near"), _cast_member("B", "right", "mid")]
+    shots = _cast_shots([cast], camera_angle="wide")
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before  # 1 of 2 is not a strict majority
+
+
+def test_enforce_cast_diversity_r3_closeup_lone_far_promoted():
+    for angle in ("close-up", "over-the-shoulder"):
+        shots = _cast_shots([[_cast_member("A", "left", "far")]], camera_angle=angle)
+        chain._enforce_cast_diversity(shots)
+        assert shots[0]["cast"][0]["depth"] == "mid"
+
+
+def test_enforce_cast_diversity_r3_closeup_far_with_company_untouched():
+    cast = [_cast_member("A", "left", "far"), _cast_member("B", "right", "near")]
+    shots = _cast_shots([cast], camera_angle="close-up")
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before  # lone-far rule only
+
+
+def test_enforce_cast_diversity_r3_unknown_or_missing_camera_untouched():
+    for angle in (None, "POV", "medium", "dutch tilt"):
+        shots = _cast_shots([[_cast_member("A", "left", "near")]], camera_angle=angle)
+        before = copy.deepcopy(shots)
+        chain._enforce_cast_diversity(shots)
+        assert shots == before
+
+
+def test_enforce_cast_diversity_movement_rederived_on_reassignment():
+    # B stacks on left and moves to right; its old cross direction "right"
+    # becomes degenerate there (start/end thirds coincide) -> re-derived "left".
+    cast = [
+        _cast_member("A", "left"),
+        _cast_member(
+            "B", "left",
+            movement_mode="cross", movement_direction="right", movement_pace="slow",
+        ),
+    ]
+    shots = _cast_shots([cast])
+    chain._enforce_cast_diversity(shots)
+    moved = shots[0]["cast"][1]
+    assert moved["position"] == "right"
+    assert moved["movement_direction"] == "left"
+    assert moved["movement_mode"] == "cross"
+    assert moved["movement_pace"] == "slow"
+
+
+def test_enforce_cast_diversity_deterministic():
+    casts = [[_cast_member("A"), _cast_member("B")] for _ in range(5)]
+    a = _cast_shots(copy.deepcopy(casts))
+    b = _cast_shots(copy.deepcopy(casts))
+    chain._enforce_cast_diversity(a)
+    chain._enforce_cast_diversity(b)
+    assert a == b
+
+
+def test_enforce_cast_diversity_idempotent():
+    shots = _cast_shots(
+        [[_cast_member("A"), _cast_member("B", "center", "near")] for _ in range(6)],
+        camera_angle="wide",
+    )
+    chain._enforce_cast_diversity(shots)
+    once = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == once
+
+
+def test_enforce_cast_diversity_valid_sequence_byte_identical():
+    casts = [
+        [_cast_member("A", "left", "near"), _cast_member("B", "right", "mid")],
+        [_cast_member("A", "center", "near")],
+        [_cast_member("A", "left", "near"), _cast_member("B", "center", "far")],
+    ]
+    shots = _cast_shots(casts, camera_angle="medium")
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before
+
+
+def test_enforce_cast_diversity_single_shot_and_empty_cast_harmless():
+    shots = _cast_shots([[_cast_member()]])
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before
+
+    shots = _cast_shots([[], [_cast_member()], []])
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before
+
+
+def test_enforce_cast_diversity_absence_resets_run():
+    casts = [
+        [_cast_member("A", "left", "mid")],
+        [_cast_member("A", "left", "mid")],
+        [],
+        [_cast_member("A", "left", "mid")],
+    ]
+    shots = _cast_shots(casts)
+    before = copy.deepcopy(shots)
+    chain._enforce_cast_diversity(shots)
+    assert shots == before  # the gap restarts the consecutive count
+
+
+def test_enforce_cast_diversity_logs_reassignment(caplog):
+    shots = _cast_shots([[_cast_member("SCP-049", "left"), _cast_member("STOCK-d-class", "left")]])
+    with caplog.at_level(logging.INFO):
+        chain._enforce_cast_diversity(shots)
+    assert any(
+        "S00100" in r.message and "STOCK-d-class" in r.message for r in caplog.records
+    )
+
+
+def test_build_scenes_applies_cast_diversity():
+    # Integration: violations planted in raw visual_breakdown payloads come out
+    # repaired in the returned scenes (post parse_cast, post empty-prompt merge).
+    writing = {"scenes": [{"scene_num": 1, "narration": "하나. 둘. 셋. 넷."}]}
+    raw_cast = [
+        {"card_key": "scp-049", "position": "center", "depth": "mid"},
+        {"card_key": "STOCK-researcher", "position": "center", "depth": "mid"},
+    ]
+    visual = {0: [
+        {"image_prompt": "a", "negative_prompt": "", "sentence_start": i, "sentence_end": i,
+         "camera_type": "medium", "cast": raw_cast}
+        for i in (1, 2, 3, 4)
+    ]}
+    scenes = chain.build_scenes(writing, visual, [{"mood": "dread"}])
+    _assert_no_diversity_violations(scenes[0]["shots"])
