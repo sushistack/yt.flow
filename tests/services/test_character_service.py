@@ -538,10 +538,14 @@ class TestSelectEntityAnglesTracing:
 
 def test_services_does_not_import_api_or_pipeline():
     """AD-1: services/ must not import api/ or pipeline/.
-    Excludes run_service.py (the sole graph.astream() caller, per AD-3, AD-4)."""
+    Excludes run_service.py (the sole graph.astream() caller, per AD-3, AD-4).
+    eval_service.py may import PURE pipeline node functions only (shot_timing's
+    plan_shot_clips for the Story 11.4 cut_alignment_error metric — same
+    services→pipeline direction as run_service; never api/)."""
     import ast
     from pathlib import Path
 
+    _pure_node_imports = {"eval_service.py": {"yt_flow.pipeline.nodes.shot_timing"}}
     svc_dir = Path(__file__).resolve().parents[2] / "src" / "yt_flow" / "services"
     for py in svc_dir.glob("*.py"):
         if py.name in ("__init__.py", "run_service.py"):
@@ -551,6 +555,8 @@ def test_services_does_not_import_api_or_pipeline():
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 assert not module.startswith("yt_flow.api"), f"{py.name}: imports {module}"
+                if module in _pure_node_imports.get(py.name, set()):
+                    continue
                 assert not module.startswith("yt_flow.pipeline"), f"{py.name}: imports {module}"
             elif isinstance(node, ast.Import):
                 for alias in node.names:

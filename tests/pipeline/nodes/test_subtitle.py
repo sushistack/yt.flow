@@ -1,21 +1,24 @@
-"""Unit tests for src/yt_flow/pipeline/nodes/subtitle.py (Story 1.8, rewritten Story 5.18).
+"""Unit tests for src/yt_flow/pipeline/nodes/subtitle.py (Story 1.8, rewritten
+Story 5.18, always-on WhisperX alignment Story 11.4).
 
 No live WhisperX / Langfuse: settings and the aligner are monkeypatched.
 Tests cover the dual-track sentence-cue renderer (sentence_cues, wrap_cue_text,
-format_ass), the aligner-fallback path, subtitle_node happy path + guards, error
-handling, and purity. No GPU, no network, no model downloads required.
+format_ass), reconcile_word_timings, the always-align + provisional-fallback
+node flow, word_timings write-back, error handling, and purity. No GPU, no
+network, no model downloads required.
 """
 
 import json
 import logging
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import yt_flow.pipeline.nodes.subtitle as subtitle
+from yt_flow.pipeline.nodes.scenario_chain import split_sentences
 from yt_flow.pipeline.nodes.subtitle import (
-    AlignmentSegment,
     PLAY_RES_X,
     PLAY_RES_Y,
     SUBTITLE_FONT_FAMILY,
@@ -24,6 +27,7 @@ from yt_flow.pipeline.nodes.subtitle import (
     SUBTITLE_OUTLINE_WIDTH,
     _get_aligner,
     format_ass,
+    reconcile_word_timings,
     sentence_cues,
     subtitle_node,
     wrap_cue_text,
@@ -33,25 +37,33 @@ from yt_flow.pipeline.nodes.subtitle import (
 # ── Fakes / helpers ───────────────────────────────────────────────────────────
 
 
-def _settings_ns(tmp_path, aligner="whisperx", content_language="ko"):
+def _settings_ns(tmp_path, aligner="whisperx", content_language="ko", qwen_tts_mock=False):
     return SimpleNamespace(
         aligner=aligner,
-        aligner_model="base",
         aligner_device="cpu",
-        aligner_compute_type="int8",
         workspace_path=str(tmp_path),
         content_language=content_language,
+        qwen_tts_mock=qwen_tts_mock,
     )
 
 
 class _FakeAligner:
-    def __init__(self, segments: list[AlignmentSegment] | None = None):
-        self._segs = segments if segments is not None else [{"start_sec": 0.0, "end_sec": 1.5, "text": "hello world"}]
+    """Returns raw whisperx-style word_segments (Story 11.4 aligner contract).
+
+    Default (no explicit word_segments): synthesizes a 1:1 mapping from the
+    transcript at 0.5s per word, so reconcile succeeds like real whisperx would.
+    """
+
+    def __init__(self, word_segments: list[dict] | None = None):
+        self._segs = word_segments
         self.calls: list[tuple[str, str]] = []
 
-    async def align(self, audio_path: str, transcript: str) -> list[AlignmentSegment]:
+    async def align(self, audio_path: str, transcript: str) -> list[dict]:
         self.calls.append((audio_path, transcript))
-        return self._segs
+        if self._segs is not None:
+            return self._segs
+        return [{"word": w, "start": i * 0.5, "end": (i + 1) * 0.5}
+                for i, w in enumerate(transcript.split())]
 
 
 def _timings(words: list[str], duration: float = 2.0) -> list[dict]:
@@ -300,53 +312,143 @@ def test_format_ass_multiple_cues_in_order():
     assert out.index("첫 번째") < out.index("두 번째")
 
 
-# ── _words_or_segments (WhisperX word/segment fallback) ───────────────────────
+# ── reconcile_word_timings (Story 11.4 AC:3) ──────────────────────────────────
 
 
-def test_words_or_segments_prefers_usable_words():
-    aligned = {
-        "word_segments": [{"start": 0.0, "end": 0.5, "word": "hi"}],
-        "segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}],
-    }
-    out = subtitle._words_or_segments(aligned)
-    assert out == [{"start_sec": 0.0, "end_sec": 0.5, "text": "hi"}]
+def test_reconcile_happy_one_to_one():
+    segs = [{"word": "격리", "start": 0.1, "end": 0.4},
+            {"word": "절차", "start": 0.5, "end": 0.9}]
+    out = reconcile_word_timings(segs, "격리 절차", 2.0)
+    assert out == [
+        {"word": "격리", "start_sec": 0.1, "end_sec": 0.4},
+        {"word": "절차", "start_sec": 0.5, "end_sec": 0.9},
+    ]
 
 
-def test_words_or_segments_falls_back_when_words_lack_start_end():
-    aligned = {
-        "word_segments": [{"word": "hi"}, {"word": "there"}],
-        "segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}],
-    }
-    out = subtitle._words_or_segments(aligned)
-    assert out == [{"start_sec": 0.0, "end_sec": 1.0, "text": "hi there"}]
+def test_reconcile_count_mismatch_returns_none():
+    segs = [{"word": "격리", "start": 0.1, "end": 0.4}]
+    assert reconcile_word_timings(segs, "격리 절차", 2.0) is None
 
 
-def test_words_or_segments_falls_back_when_no_words_at_all():
-    aligned = {"segments": [{"start": 0.0, "end": 1.0, "text": "hi there"}]}
-    out = subtitle._words_or_segments(aligned)
-    assert out == [{"start_sec": 0.0, "end_sec": 1.0, "text": "hi there"}]
+def test_reconcile_empty_narration_returns_none():
+    assert reconcile_word_timings([], "", 2.0) is None
 
 
-def test_words_or_segments_empty_when_nothing_usable():
-    assert subtitle._words_or_segments({}) == []
+def test_reconcile_zero_duration_returns_none():
+    segs = [{"word": "격리", "start": 0.1, "end": 0.4}]
+    assert reconcile_word_timings(segs, "격리", 0.0) is None
+
+
+def test_reconcile_missing_middle_word_interpolates_between_neighbors():
+    segs = [{"word": "하나", "start": 0.0, "end": 1.0},
+            {"word": "둘"},  # whole-sentence-unalignable rare case
+            {"word": "셋", "start": 2.0, "end": 3.0}]
+    out = reconcile_word_timings(segs, "하나 둘 셋", 3.0)
+    assert out[1]["start_sec"] == 1.0
+    assert out[1]["end_sec"] == 2.0
+
+
+def test_reconcile_missing_head_clamps_to_zero():
+    segs = [{"word": "하나"}, {"word": "둘", "start": 1.0, "end": 2.0}]
+    out = reconcile_word_timings(segs, "하나 둘", 2.0)
+    assert out[0]["start_sec"] == 0.0
+    assert out[0]["end_sec"] == 1.0
+
+
+def test_reconcile_missing_tail_clamps_to_audio_duration():
+    segs = [{"word": "하나", "start": 0.0, "end": 1.0}, {"word": "둘"}]
+    out = reconcile_word_timings(segs, "하나 둘", 3.0)
+    assert out[1] == {"word": "둘", "start_sec": 1.0, "end_sec": 3.0}
+
+
+def test_reconcile_sanitizes_overlapping_input_to_monotonic():
+    segs = [{"word": "하나", "start": 0.0, "end": 1.0},
+            {"word": "둘", "start": 0.5, "end": 1.5}]  # overlaps previous
+    out = reconcile_word_timings(segs, "하나 둘", 2.0)
+    assert out[1]["start_sec"] >= out[0]["end_sec"]
+    assert out[1]["end_sec"] > out[1]["start_sec"]
+
+
+def test_reconcile_clamps_negative_start():
+    segs = [{"word": "하나", "start": -0.3, "end": 0.5},
+            {"word": "둘", "start": 0.5, "end": 1.0}]
+    out = reconcile_word_timings(segs, "하나 둘", 2.0)
+    assert out[0]["start_sec"] == 0.0
+
+
+def test_reconcile_clamps_last_end_to_audio_duration():
+    segs = [{"word": "하나", "start": 0.0, "end": 1.0},
+            {"word": "둘", "start": 1.0, "end": 5.0}]
+    out = reconcile_word_timings(segs, "하나 둘", 2.0)
+    assert out[1]["end_sec"] == 2.0
+
+
+def test_reconcile_degenerate_beyond_duration_returns_none():
+    segs = [{"word": "하나", "start": 5.0, "end": 6.0},
+            {"word": "둘", "start": 6.0, "end": 7.0}]
+    assert reconcile_word_timings(segs, "하나 둘", 2.0) is None
+
+
+def test_reconcile_output_never_triggers_apportion_degrade():
+    """[AC:3] The whole point of the 1:1 invariant: reconciled output must NEVER
+    trip sentence_windows/sentence_cues' count-mismatch degrade (apportion ≈
+    uniform split), or Story 11.4 silently un-does itself."""
+    narration = "첫 문장 이다. 둘째 문장 이다."
+    segs = [{"word": w, "start": i * 0.4, "end": i * 0.4 + 0.3}
+            for i, w in enumerate(narration.split())]
+    out = reconcile_word_timings(segs, narration, 5.0)
+    assert out is not None
+    assert not subtitle._word_timings_mismatch(out, split_sentences(narration))
+
+
+# ── WhisperXAligner (align-only, model cached — Story 11.4 AC:4) ──────────────
+
+
+def test_whisperx_aligner_loads_align_model_once_and_skips_asr(monkeypatch):
+    """Two _align_sync calls -> one load_align_model. The fake module has NO
+    load_model/transcribe at all — the deleted ASR pass would AttributeError."""
+    loads: list[str] = []
+    align_calls: list[list[dict]] = []
+
+    def load_align_model(language_code, device):
+        loads.append(language_code)
+        return "MODEL", "META"
+
+    def align(segments, model, meta, audio, device):
+        align_calls.append(segments)
+        return {"word_segments": [{"word": "hi", "start": 0.0, "end": 0.5}]}
+
+    fake_whisperx = SimpleNamespace(
+        load_align_model=load_align_model,
+        load_audio=lambda p: [0.0] * 32000,  # 2s @ 16kHz
+        align=align,
+    )
+    monkeypatch.setitem(sys.modules, "whisperx", fake_whisperx)
+
+    aligner = subtitle.WhisperXAligner("cpu", "ko")
+    out1 = aligner._align_sync("x.wav", "hi")
+    out2 = aligner._align_sync("x.wav", "hi")
+
+    assert loads == ["ko"]  # loaded once, reused across scenes
+    assert out1 == out2 == [{"word": "hi", "start": 0.0, "end": 0.5}]
+    # alignment span ends at the real audio duration (len/16000), no ASR estimate
+    assert align_calls[0][0]["end"] == 2.0
 
 
 # ── _get_aligner ─────────────────────────────────────────────────────────────
 
 
 def test_get_aligner_whisperx_returns_instance():
-    s = SimpleNamespace(aligner="whisperx", aligner_model="base",
-                        aligner_device="cpu", aligner_compute_type="int8",
-                        content_language="ko")
+    s = SimpleNamespace(aligner="whisperx", aligner_device="cpu", content_language="ko")
     from yt_flow.pipeline.nodes.subtitle import WhisperXAligner
     aligner = _get_aligner(s)
     assert isinstance(aligner, WhisperXAligner)
     assert aligner._language == "ko"
+    assert aligner._device == "cpu"
 
 
 def test_get_aligner_unknown_raises_value_error():
-    s = SimpleNamespace(aligner="fake_unknown", aligner_model="x",
-                        aligner_device="cpu", aligner_compute_type="int8")
+    s = SimpleNamespace(aligner="fake_unknown", aligner_device="cpu")
     with pytest.raises(ValueError, match="Unsupported YTFLOW_ALIGNER"):
         _get_aligner(s)
 
@@ -374,7 +476,10 @@ async def test_subtitle_node_always_writes_ass(monkeypatch, tmp_path, audio_file
     assert "\\k" not in text
 
 
-async def test_subtitle_node_uses_word_timings_not_aligner(monkeypatch, tmp_path, audio_file):
+async def test_subtitle_node_always_calls_aligner_even_with_timings(monkeypatch, tmp_path, audio_file):
+    """Story 11.4 reversal of the old test_subtitle_node_uses_word_timings_not_aligner:
+    the `if timings:` gate meant tts's always-present provisional timings suppressed
+    WhisperX forever. New spec: ALWAYS align; provisional is only the fallback."""
     fake = _FakeAligner()
     monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
     monkeypatch.setattr(subtitle, "_get_aligner", lambda s: fake)
@@ -386,7 +491,8 @@ async def test_subtitle_node_uses_word_timings_not_aligner(monkeypatch, tmp_path
 
     assert out["current_stage"] == "subtitle"
     assert out.get("error") is None
-    assert len(fake.calls) == 0
+    assert len(fake.calls) == 1
+    assert fake.calls[0] == (audio_file, "격리 절차 시작")
     assert out["scenes"][0]["subtitle_path"]
 
 
@@ -404,23 +510,105 @@ async def test_subtitle_node_calls_aligner_when_no_timings(monkeypatch, tmp_path
     assert fake.calls[0] == (audio_file, "격리 절차")
 
 
-async def test_subtitle_node_aligner_fallback_emits_static_ass(monkeypatch, tmp_path, audio_file):
-    """No word_timings -> whisperx segments, still static .ass (no \\k). [AC:7]"""
+async def test_subtitle_node_writes_back_aligned_timings(monkeypatch, tmp_path, audio_file):
+    """[AC:2] The aligned timings must land in the returned scene state — that's
+    what video_node's 8.11 per-shot cuts and eval metrics consume."""
+    fake = _FakeAligner(word_segments=[
+        {"word": "격리", "start": 0.1, "end": 0.4},
+        {"word": "절차", "start": 0.6, "end": 0.9},
+        {"word": "시작", "start": 1.2, "end": 1.8},
+    ])
     monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(
-        subtitle, "_get_aligner",
-        lambda s: _FakeAligner(segments=[{"start_sec": 0.0, "end_sec": 1.5, "text": "격리 절차 시작"}]),
-    )
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: fake)
 
-    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=[])]
+    provisional = _timings(["격리", "절차", "시작"])  # uniform split from tts
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=provisional)]
     out = await subtitle_node(_state(scenes))
 
     assert out.get("error") is None
-    path = Path(out["scenes"][0]["subtitle_path"])
-    text = path.read_text(encoding="utf-8")
-    assert path.suffix == ".ass"
-    assert "\\k" not in text
-    assert "격리 절차 시작" in text.replace("\\N", " ")
+    got = out["scenes"][0]["word_timings"]
+    assert [t["start_sec"] for t in got] == [0.1, 0.6, 1.2]
+    assert [t["end_sec"] for t in got] == [0.4, 0.9, 1.8]
+
+
+async def test_subtitle_node_aligner_exception_falls_back_to_provisional(monkeypatch, tmp_path, audio_file, caplog):
+    """[AC:1] Alignment failure must NEVER fail the stage — WARNING + provisional."""
+    class _BoomAligner:
+        async def align(self, audio_path, transcript):
+            raise RuntimeError("aligner crashed")
+
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _BoomAligner())
+
+    provisional = _timings(["격리", "절차", "시작"])
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=provisional)]
+    with caplog.at_level(logging.WARNING):
+        out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert out["scenes"][0]["word_timings"] == provisional  # write-back on fallback too
+    assert out["scenes"][0]["subtitle_path"]
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("scene 1" in m and "aligner crashed" in m for m in warnings)
+
+
+async def test_subtitle_node_reconcile_mismatch_falls_back_with_warning(monkeypatch, tmp_path, audio_file, caplog):
+    """[AC:1] reconcile None (count mismatch) is the same silent-degrade risk —
+    must fall back with a WARNING naming the scene."""
+    fake = _FakeAligner(word_segments=[{"word": "hi", "start": 0.0, "end": 0.5}])  # 1 seg vs 3 words
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: fake)
+
+    provisional = _timings(["격리", "절차", "시작"])
+    scenes = [_scene(1, "격리 절차 시작", audio_path=audio_file, word_timings=provisional)]
+    with caplog.at_level(logging.WARNING):
+        out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert out["scenes"][0]["word_timings"] == provisional
+    assert any("scene 1" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+
+
+async def test_subtitle_node_fallback_still_renders_display_text(monkeypatch, tmp_path, audio_file):
+    """[AC:1] The old segment-level fallback (spoken transcript, no display mapping)
+    is gone: even the fallback goes through sentence_cues with display text."""
+    class _BoomAligner:
+        async def align(self, audio_path, transcript):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _BoomAligner())
+
+    wt = _timings(["에스시피", "공사", "구는", "개체입니다."], duration=4.0)
+    scenes = [_scene(1, "에스시피 공사 구는 개체입니다.", audio_path=audio_file,
+                      word_timings=wt, audio_duration=4.0,
+                      display_narration="SCP-049는 개체입니다.")]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    text = Path(out["scenes"][0]["subtitle_path"]).read_text(encoding="utf-8")
+    assert "SCP-049" in text
+    assert "에스시피" not in text
+
+
+async def test_subtitle_node_mock_tts_skips_alignment(monkeypatch, tmp_path, audio_file, caplog):
+    """[AC:8] qwen_tts_mock WAVs are silent — alignment is meaningless and must not
+    trigger a 1.2GB model download in mock e2e runs. INFO once, provisional path."""
+    fake = _FakeAligner()
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, qwen_tts_mock=True))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: fake)
+
+    wt1, wt2 = _timings(["하나", "둘"]), _timings(["셋", "넷"])
+    scenes = [_scene(1, "하나 둘", audio_path=audio_file, word_timings=wt1),
+              _scene(2, "셋 넷", audio_path=audio_file, word_timings=wt2)]
+    with caplog.at_level(logging.INFO):
+        out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert len(fake.calls) == 0
+    assert out["scenes"][0]["word_timings"] == wt1
+    infos = [r for r in caplog.records if "qwen_tts_mock" in r.getMessage()]
+    assert len(infos) == 1  # logged once, not per scene
 
 
 async def test_subtitle_node_old_checkpoint_without_display_narration_renders_spoken(monkeypatch, tmp_path, audio_file):
@@ -552,8 +740,10 @@ async def test_subtitle_node_non_ko_content_language_fails_fast(monkeypatch, tmp
 
 
 async def test_subtitle_node_aligner_returns_no_segments(monkeypatch, tmp_path, audio_file):
+    """Alignment yields nothing AND no provisional timings exist -> the one
+    pre-existing permitted failure: zero cues."""
     monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
-    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner(segments=[]))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner(word_segments=[]))
 
     scenes = [_scene(1, "test narration", audio_path=audio_file, word_timings=[])]
     out = await subtitle_node(_state(scenes))
@@ -562,7 +752,9 @@ async def test_subtitle_node_aligner_returns_no_segments(monkeypatch, tmp_path, 
     assert "no subtitle cues" in out["error"]
 
 
-async def test_subtitle_node_aligner_exception(monkeypatch, tmp_path, audio_file):
+async def test_subtitle_node_aligner_exception_without_provisional_fails_on_empty_cues(monkeypatch, tmp_path, audio_file):
+    """Story 11.4: an aligner crash no longer propagates — but with no provisional
+    timings either, the stage still fails on the pre-existing zero-cues guard."""
     class _BoomAligner:
         async def align(self, audio_path, transcript):
             raise RuntimeError("aligner crashed")
@@ -574,7 +766,7 @@ async def test_subtitle_node_aligner_exception(monkeypatch, tmp_path, audio_file
     out = await subtitle_node(_state(scenes))
 
     assert out["error"] and "stage=subtitle" in out["error"]
-    assert "aligner crashed" in out["error"]
+    assert "no subtitle cues" in out["error"]
 
 
 # ── observability ─────────────────────────────────────────────────────────────
@@ -591,7 +783,30 @@ async def test_trace_receives_metrics(monkeypatch, tmp_path, audio_file):
     assert captured["run_id"] == "run-001"
     assert captured["scene_count"] == 1
     assert isinstance(captured["latency_ms"], int)
+    assert captured["alignment"] == {"whisperx": 1, "fallback": 0}  # [AC:8, §21]
     assert captured.get("error") is None
+
+
+async def test_trace_alignment_counts_mixed_aligned_and_fallback(monkeypatch, tmp_path, audio_file):
+    """[AC:8] The trace alignment block must count BOTH outcomes — degradation
+    to provisional timings has to be visible at the gate, not silent (§21)."""
+    class _FlakyAligner(_FakeAligner):
+        async def align(self, audio_path, transcript):
+            if "폭발" in transcript:
+                raise RuntimeError("boom")
+            return await super().align(audio_path, transcript)
+
+    captured = {}
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FlakyAligner())
+    monkeypatch.setattr(subtitle, "_record_trace", lambda **kw: captured.update(kw))
+
+    scenes = [_scene(1, "격리 절차", audio_path=audio_file),
+              _scene(2, "폭발 발생", audio_path=audio_file, word_timings=_timings(["폭발", "발생"]))]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert captured["alignment"] == {"whisperx": 1, "fallback": 1}
 
 
 async def test_trace_captures_error_on_failure(monkeypatch, tmp_path):

@@ -29,6 +29,7 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.state import PipelineState, SceneState
+from yt_flow.pipeline.nodes.shot_timing import plan_shot_clips  # services→nodes: run_service precedent
 from yt_flow.services.prompt_service import get_prompt
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class RuleBasedMetrics:
     scene_count_match_rate: float       # 0.0–1.0 (symmetric across the pair)
     avg_subtitle_sync_error: float      # seconds between consecutive words
     audio_duration_variance_pct: float  # stddev/mean across scenes, %
+    cut_alignment_error: float          # seconds, cut boundary vs nearest word boundary (Story 11.4)
 
 
 @dataclass
@@ -224,6 +226,14 @@ def _avg_subtitle_sync_error(scenes: list[SceneState]) -> float:
     is absent rather than re-parsing SRT files off disk — a rule metric stays pure
     (no I/O); wire the subtitle-entry-vs-word-count fallback here if a run ever
     ships without word timings and the metric matters.
+
+    MEANING INVERTED by Story 11.4: tts's provisional timings are gap-free uniform
+    splits, so this was always ~0. Real WhisperX timings have inter-word silence —
+    a NONZERO value is now normal, not a regression. Known distortion: tiebreak 3b
+    (determine_winner, lower=better) now weakly prefers a run that FELL BACK to
+    provisional (=degraded) timings over a properly aligned one. Accepted — that
+    path needs both LLM pairwise orders tied AND a scene-count tie, which is rare;
+    redesign lands with the eval-gate unfreeze (research §20).
     """
     gaps: list[float] = []
     for sc in scenes:
@@ -240,16 +250,47 @@ def _audio_duration_variance_pct(scenes: list[SceneState]) -> float:
     return 0.0 if mean == 0 else statistics.pstdev(durations) / mean * 100.0
 
 
+def _cut_alignment_error(scenes: list[SceneState], min_shot_clip_sec: float) -> float:
+    """Mean |deviation| (seconds) between each internal shot-cut boundary and the
+    nearest word boundary (any word's start/end), across all scenes. [Story 11.4 AC:6]
+
+    Recomputes ``plan_shot_clips`` (pure — shots/word_timings/narration/
+    audio_duration all live in state). Internal boundaries only: the first clip's
+    start and last clip's end are pinned to 0/audio_duration, not cut decisions.
+    ~0 when cuts derive from a clean 1:1 word-timing mapping; > 0 exactly when
+    sentence_windows' count-mismatch apportion degrade fired — i.e. the
+    uniform-split regression this story eliminates. Scenes with < 2 clips
+    contribute nothing; 0.0 with no data (existing metric fallback convention).
+    Regression-detection record ONLY — never a determine_winner tiebreak input.
+    """
+    deviations: list[float] = []
+    for sc in scenes:
+        timings = sc.get("word_timings") or []
+        narration = sc.get("narration") or ""
+        duration = sc.get("audio_duration")
+        if not timings or not narration or duration is None:
+            continue
+        clips = plan_shot_clips(sc.get("shots") or [], timings, narration, duration,
+                                min_shot_clip_sec=min_shot_clip_sec)
+        if len(clips) < 2:
+            continue
+        bounds = sorted({t["start_sec"] for t in timings} | {t["end_sec"] for t in timings})
+        deviations.extend(min(abs(clip.start - b) for b in bounds) for clip in clips[1:])
+    return statistics.fmean(deviations) if deviations else 0.0
+
+
 def _compute_rule_metrics(
-    state_a: PipelineState, state_b: PipelineState
+    state_a: PipelineState, state_b: PipelineState, min_shot_clip_sec: float = 2.0
 ) -> tuple[RuleBasedMetrics, RuleBasedMetrics]:
     scenes_a, scenes_b = state_a["scenes"], state_b["scenes"]
     match_rate = _scene_count_match_rate(len(scenes_a), len(scenes_b))  # symmetric across the pair
     return (
         RuleBasedMetrics(len(scenes_a), match_rate,
-                         _avg_subtitle_sync_error(scenes_a), _audio_duration_variance_pct(scenes_a)),
+                         _avg_subtitle_sync_error(scenes_a), _audio_duration_variance_pct(scenes_a),
+                         _cut_alignment_error(scenes_a, min_shot_clip_sec)),
         RuleBasedMetrics(len(scenes_b), match_rate,
-                         _avg_subtitle_sync_error(scenes_b), _audio_duration_variance_pct(scenes_b)),
+                         _avg_subtitle_sync_error(scenes_b), _audio_duration_variance_pct(scenes_b),
+                         _cut_alignment_error(scenes_b, min_shot_clip_sec)),
     )
 
 
@@ -429,7 +470,7 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
 
     span = _enter_trace(ab_pair_id)
     try:
-        metrics_a, metrics_b = _compute_rule_metrics(state_a, state_b)
+        metrics_a, metrics_b = _compute_rule_metrics(state_a, state_b, s.min_shot_clip_sec)
         scores_a, scores_b = await asyncio.gather(
             _score_run(state_a["scp_text"], text_a, s),
             _score_run(state_b["scp_text"], text_b, s),
@@ -625,7 +666,8 @@ async def store_evaluation_results(
         # Rule-based metrics as NUMERIC scores
         for variant in ("A", "B"):
             variant_run_id = run_a_id if variant == "A" else run_b_id
-            for metric in ("scene_count_match_rate", "subtitle_sync_error", "audio_duration_variance"):
+            for metric in ("scene_count_match_rate", "subtitle_sync_error", "audio_duration_variance",
+                           "cut_alignment_error"):
                 value = float(rule_based_scores[variant].get(metric, 0))
                 langfuse.create_score(
                     name=f"{metric}_{variant}",
@@ -657,6 +699,7 @@ def _rule_metrics_to_dict(metrics: RuleBasedMetrics) -> dict:
         "subtitle_sync_error": metrics.avg_subtitle_sync_error,
         # pct → proportion (0–1) to match the ab_result schema (spec 4.3)
         "audio_duration_variance": metrics.audio_duration_variance_pct / 100.0,
+        "cut_alignment_error": metrics.cut_alignment_error,
     }
 
 

@@ -9,8 +9,9 @@ writes and no ``interrupt()``. [AD-1, AD-2, AD-4]
 
 Qwen TTS returns an audio URL, not word-level timestamps (per the DashScope
 docs), so timings here are *provisional*: derived from the measured audio
-duration and whitespace tokenization. Story 1.8 owns forced alignment and must
-not treat these as alignment-quality.
+duration and whitespace tokenization. Since Story 11.4, subtitle_node always
+runs WhisperX forced alignment and uses these only as the fallback when
+alignment fails — never treat them as alignment-quality.
 """
 
 import asyncio

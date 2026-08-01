@@ -1,10 +1,14 @@
-"""subtitle_node — static sentence-cue subtitle stage (Story 1.8, typography-first Story 5.18).
+"""subtitle_node — static sentence-cue subtitle stage (Story 1.8, typography-first
+Story 5.18, always-on WhisperX alignment Story 11.4).
 
 Generates one UTF-8 .ass file per scene from known narration text and per-scene audio.
-Reuses SceneState.word_timings when populated by tts_node; falls back to YTFLOW_ALIGNER
-otherwise. Cues render the scene's display_narration (original writing text) timed
-against the spoken narration track — see sentence_cues(). Layer rule: imports domain
-and config only; no db/, api/, services/. [AD-1]
+Always attempts WhisperX forced alignment against the scene audio; tts_node's
+provisional word_timings (uniform whitespace split) are only the fallback when
+alignment fails or can't be reconciled. Whichever timings win are written back to the
+returned scenes' ``word_timings`` so Story 8.11's per-shot cuts and eval metrics
+consume real speech boundaries. Cues render the scene's display_narration (original
+writing text) timed against the spoken narration track — see sentence_cues().
+Layer rule: imports domain and config only; no db/, api/, services/. [AD-1]
 """
 
 import asyncio
@@ -32,59 +36,111 @@ class AlignmentSegment(TypedDict):
 
 
 class SubtitleAligner(Protocol):
-    async def align(self, audio_path: str, transcript: str) -> list[AlignmentSegment]: ...
+    async def align(self, audio_path: str, transcript: str) -> list[dict]: ...
 
 
 class WhisperXAligner:
-    """WhisperX forced-alignment backend.
+    """WhisperX forced-alignment backend (align-only since Story 11.4).
 
-    whisperx is not in pyproject.toml; install it separately.
-    Lazy import keeps this module loadable without whisperx present.
+    The transcript is already known, so no ASR pass — just ``load_align_model``
+    + ``align``. whisperx>=3.8.6 ships in pyproject.toml; the lazy import keeps
+    this module loadable without pulling torch at import time. Returns raw
+    whisperx ``word_segments`` (some may lack start/end) — 1:1 reconciliation
+    into WordTiming is ``reconcile_word_timings``'s job.
     """
 
-    def __init__(self, model: str, device: str, compute_type: str, language: str) -> None:
-        self._model, self._device, self._compute_type = model, device, compute_type
-        self._language = language
+    def __init__(self, device: str, language: str) -> None:
+        self._device, self._language = device, language
+        # ponytail: instance-level model cache — subtitle_node builds one aligner
+        # per run and awaits scenes sequentially, so no lock needed. [AC:4]
+        self._align_model = None
+        self._align_meta = None
 
-    async def align(self, audio_path: str, transcript: str) -> list[AlignmentSegment]:
+    async def align(self, audio_path: str, transcript: str) -> list[dict]:
         # ponytail: get_running_loop() is safe inside a coroutine; get_event_loop() is deprecated in 3.10+
         return await asyncio.get_running_loop().run_in_executor(
             None, self._align_sync, audio_path, transcript
         )
 
-    def _align_sync(self, audio_path: str, transcript: str) -> list[AlignmentSegment]:
+    def _align_sync(self, audio_path: str, transcript: str) -> list[dict]:
         try:
             import whisperx
         except ImportError as exc:
             raise ImportError(
                 "whisperx not installed; pip install whisperx to use YTFLOW_ALIGNER=whisperx"
             ) from exc
-        model = whisperx.load_model(self._model, self._device, compute_type=self._compute_type)
+        if self._align_model is None:
+            self._align_model, self._align_meta = whisperx.load_align_model(
+                language_code=self._language, device=self._device
+            )
         audio = whisperx.load_audio(audio_path)
-        result = model.transcribe(audio)
-        align_model, meta = whisperx.load_align_model(language_code=self._language, device=self._device)
         # ponytail: len(audio)/16000 gives actual duration; 999.0 sentinel caused garbage alignment on short clips
-        last_end = result["segments"][-1]["end"] if result.get("segments") else len(audio) / 16000
         aligned = whisperx.align(
-            [{"text": transcript, "start": 0.0, "end": last_end}],
-            align_model, meta, audio, self._device,
+            [{"text": transcript, "start": 0.0, "end": len(audio) / 16000}],
+            self._align_model, self._align_meta, audio, self._device,
         )
-        return _words_or_segments(aligned)
+        return aligned.get("word_segments", [])
 
 
-def _words_or_segments(aligned: dict) -> list[AlignmentSegment]:
-    """Prefer word-level timing; fall back to segment-level if no word has usable start/end."""
-    usable = [{"start_sec": w["start"], "end_sec": w["end"], "text": w["word"]}
-              for w in aligned.get("word_segments", []) if "start" in w and "end" in w]
-    if usable:
-        return usable
-    return [{"start_sec": s["start"], "end_sec": s["end"], "text": s["text"]}
-            for s in aligned.get("segments", [])]
+def reconcile_word_timings(
+    word_segments: list[dict], narration: str, audio_duration: float
+) -> list[WordTiming] | None:
+    """whisperx word_segments → WordTiming list, strictly 1:1 with
+    ``narration.split()`` tokens; ``None`` when an honest mapping is impossible
+    (caller falls back to tts_node's provisional timings). [Story 11.4 AC:3]
+
+    - Count mismatch → None, so sentence_windows/sentence_cues never hit their
+      apportion degrade (≈ uniform split) on the aligned route. whisperx splits
+      on single spaces, we split on any whitespace — a run of whitespace in the
+      narration lands here and correctly falls back.
+    - Words whisperx couldn't time at all (whole sentence unalignable — it
+      interpolates within sentences itself) get neighbor interpolation, clamped
+      to 0.0 / audio_duration at the extremes.
+    - Output satisfies the provisional-timings invariants BY CONSTRUCTION
+      (start ≥ 0, end > start, monotonic non-overlapping, last end ≤
+      audio_duration) so _validate_segments can't raise downstream; degenerate
+      input that can't be sanitized → None. Pure function, no I/O.
+    """
+    words = narration.split()
+    if not words or len(word_segments) != len(words) or audio_duration <= 0:
+        return None
+    starts = [seg.get("start") for seg in word_segments]
+    ends = [seg.get("end") for seg in word_segments]
+
+    # Fill missing runs by linear interpolation between known neighbors.
+    i, n = 0, len(words)
+    while i < n:
+        if starts[i] is None or ends[i] is None:
+            j = i
+            while j < n and (starts[j] is None or ends[j] is None):
+                j += 1
+            lo = ends[i - 1] if i > 0 else 0.0
+            hi = starts[j] if j < n else audio_duration
+            step = max(hi - lo, 0.0) / (j - i)
+            for k in range(i, j):
+                starts[k] = lo + step * (k - i)
+                ends[k] = lo + step * (k - i + 1)
+            i = j
+        else:
+            i += 1
+
+    out: list[WordTiming] = []
+    prev_end = 0.0
+    for word, st, en in zip(words, starts, ends):
+        st = max(float(st), prev_end)          # non-negative + monotonic (prev_end starts at 0.0)
+        en = min(float(en), audio_duration)    # never exceed the audio
+        if en <= st:
+            en = min(st + 1e-3, audio_duration)
+        if en <= st:  # start at/past audio_duration — unrepairable
+            return None
+        out.append(WordTiming(word=word, start_sec=st, end_sec=en))
+        prev_end = en
+    return out
 
 
 def _get_aligner(s: Settings) -> SubtitleAligner:
     if s.aligner == "whisperx":
-        return WhisperXAligner(s.aligner_model, s.aligner_device, s.aligner_compute_type, s.content_language)
+        return WhisperXAligner(s.aligner_device, s.content_language)
     raise ValueError(f"Unsupported YTFLOW_ALIGNER: {s.aligner!r}; supported: ['whisperx']")
 
 
@@ -325,14 +381,20 @@ def _ms(t0: float) -> int:
     return int((time.perf_counter() - t0) * 1000)
 
 
-def _record_trace(*, run_id: str, scene_count: int, latency_ms: int, error=None) -> None:
-    """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
+def _record_trace(*, run_id: str, scene_count: int, latency_ms: int,
+                  alignment: dict | None = None, error=None) -> None:
+    """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]
+
+    ``alignment`` = {"whisperx": n, "fallback": m} — makes provisional-timing
+    degradation visible at the gate instead of silent. [Story 11.4 AC:8, §21]
+    """
     try:
         get_client().update_current_span(
             metadata={
                 "run_id": run_id,
                 "scene_count": scene_count,
                 "latency_ms": latency_ms,
+                **({"alignment": alignment} if alignment is not None else {}),
                 **({"error": repr(error)} if error is not None else {}),
             }
         )
@@ -359,6 +421,8 @@ async def subtitle_node(state: PipelineState) -> dict:
         subtitle_dir.mkdir(parents=True, exist_ok=True)
 
         new_scenes: list[SceneState] = []
+        aligned_count = fallback_count = 0
+        mock_skip_logged = False
         for scene in sorted(state["scenes"], key=lambda sc: sc["scene_num"]):
             n = scene["scene_num"]
             narration = scene.get("narration")
@@ -368,32 +432,51 @@ async def subtitle_node(state: PipelineState) -> dict:
             if not audio or not Path(audio).exists():
                 raise FileNotFoundError(f"scene {n}: audio_path missing or not found: {audio!r}")
 
-            # Reuse word_timings from tts_node when populated; display_narration
+            # Story 11.4: ALWAYS attempt WhisperX forced alignment — tts_node's
+            # uniform-split provisional timings are only the fallback. Alignment
+            # failure must never fail the stage (5.7 lesson); display_narration
             # absent (old checkpoints) falls back to the spoken track. [AC:1,7]
             timings: list[WordTiming] = scene.get("word_timings") or []
             display = scene.get("display_narration") or narration
-            cues: list[AlignmentSegment]
-            if timings:
-                cues = sentence_cues(timings, narration, display)
+            if s.qwen_tts_mock:
+                # Mock WAVs are silent — alignment is meaningless and would pull
+                # a ~1.2GB align model into mock e2e runs. [AC:8]
+                if not mock_skip_logged:
+                    logger.info("subtitle: qwen_tts_mock=True — skipping WhisperX "
+                                "alignment; using provisional word timings")
+                    mock_skip_logged = True
+                fallback_count += 1
             else:
-                # Aligner-fallback: segment-level only, so display mapping has no
-                # sentence anchor here — cues carry the spoken transcript. [AC:7, Saved Questions]
-                segments = await aligner.align(audio, narration)
-                cues = [
-                    {"start_sec": seg["start_sec"], "end_sec": seg["end_sec"],
-                     "text": wrap_cue_text(_escape_ass_text(seg["text"]))}
-                    for seg in segments
-                ]
+                cause: object = ("reconcile failed (word-count mismatch, missing "
+                                 "audio_duration, or degenerate timings)")
+                try:
+                    word_segments = await aligner.align(audio, narration)
+                    aligned = reconcile_word_timings(
+                        word_segments, narration, scene.get("audio_duration") or 0.0)
+                except Exception as exc:  # noqa: BLE001 — alignment is best-effort [AC:1]
+                    aligned, cause = None, exc
+                if aligned is not None:
+                    timings = aligned
+                    aligned_count += 1
+                else:
+                    logger.warning(
+                        "subtitle: scene %d: WhisperX alignment degraded to "
+                        "provisional word timings (%s)", n, cause)
+                    fallback_count += 1
 
+            cues = sentence_cues(timings, narration, display)
             if not cues:
                 raise ValueError(f"scene {n}: no subtitle cues produced for non-empty narration")
             _validate_segments(cues, scene.get("audio_duration"), n)
 
             path = subtitle_dir / f"scene_{n:03d}.ass"
             path.write_text(format_ass(cues), encoding="utf-8")
-            new_scenes.append({**scene, "subtitle_path": str(path)})
+            # Write-back: video_node's 8.11 per-shot cuts and eval metrics read
+            # scene["word_timings"] — without this, cuts stay uniform. [AC:2]
+            new_scenes.append({**scene, "word_timings": timings, "subtitle_path": str(path)})
 
-        _record_trace(run_id=run_id, scene_count=len(new_scenes), latency_ms=_ms(t0))
+        _record_trace(run_id=run_id, scene_count=len(new_scenes), latency_ms=_ms(t0),
+                      alignment={"whisperx": aligned_count, "fallback": fallback_count})
         return {"scenes": new_scenes, "current_stage": "subtitle", "error": None}
     except Exception as exc:  # noqa: BLE001
         _record_trace(run_id=run_id, scene_count=len(state.get("scenes", [])),

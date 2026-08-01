@@ -71,13 +71,12 @@ class Settings(BaseSettings):
     qwen_tts_speed: float = Field(1.2, ge=0.5, le=2.0)
     qwen_tts_mock: bool = False
 
-    # Forced alignment for subtitle generation (Story 1.8). Strategy is config-driven;
-    # swap the aligner name without touching subtitle_node. whisperx is not in
-    # pyproject.toml — install separately before using the real aligner.
+    # Forced alignment for subtitles + shot cuts (Story 1.8; always-on Story 11.4).
+    # Strategy is config-driven; swap the aligner name without touching
+    # subtitle_node. whisperx>=3.8.6 ships in pyproject.toml. Align-only (no ASR
+    # pass), so no model/compute_type knobs — just the device.
     aligner: str = "whisperx"
-    aligner_model: str = "base"
     aligner_device: str = "cpu"
-    aligner_compute_type: str = "int8"
 
     # Image search provider (Story 1.11). DuckDuckGo is the default; no API key needed.
     image_search_provider: str = "duckduckgo"

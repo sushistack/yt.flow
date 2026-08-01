@@ -31,6 +31,7 @@ class FakeSettings:
     deepseek_judge_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
     db_path = "unused-mocked.db"
+    min_shot_clip_sec = 2.0
 
 
 class _Tmpl:
@@ -77,6 +78,8 @@ def test_compute_rule_metrics_exact():
     assert mb.avg_subtitle_sync_error == pytest.approx(0.1)
     assert ma.audio_duration_variance_pct == pytest.approx(25.0)  # pstdev(3,5)/4*100
     assert mb.audio_duration_variance_pct == pytest.approx(0.0)   # all equal
+    # fixture scenes carry no shots -> no clips -> metric falls back to 0.0
+    assert ma.cut_alignment_error == 0.0 and mb.cut_alignment_error == 0.0
 
 
 def test_scene_count_match_rate_edges():
@@ -90,6 +93,63 @@ def test_subtitle_sync_zero_without_timings():
     for sc in s["scenes"]:
         sc["word_timings"] = []
     assert es._avg_subtitle_sync_error(s["scenes"]) == 0.0
+
+
+# ── cut_alignment_error (Story 11.4 AC:6) ───────────────────────────────────
+
+
+def _cut_shot(shot_id: str, indices: list[int]) -> dict:
+    return {"shot_id": shot_id, "sentence_indices": indices, "image_prompt": "p",
+            "negative_prompt": "n", "camera_angle": None, "camera_movement": None,
+            "image_path": f"{shot_id}.png"}
+
+
+def _cut_scene(narration: str, timings: list, shots: list, audio_duration: float) -> dict:
+    return {"scene_num": 1, "narration": narration, "shots": shots,
+            "audio_path": "s.wav", "audio_duration": audio_duration,
+            "word_timings": timings, "subtitle_path": None}
+
+
+def test_cut_alignment_error_zero_on_clean_one_to_one_timings():
+    """Aligned route: 1:1 word timings -> sentence windows snap to word
+    boundaries -> every internal cut boundary IS a word boundary -> ~0."""
+    narration = "하나 둘. 셋 넷."
+    timings = [fx._word("하나", 0.0, 1.0), fx._word("둘.", 1.0, 4.0),
+               fx._word("셋", 4.0, 6.0), fx._word("넷.", 6.0, 10.0)]
+    shots = [_cut_shot("S1", [0]), _cut_shot("S2", [1])]
+    scene = _cut_scene(narration, timings, shots, 10.0)
+    assert es._cut_alignment_error([scene], 2.0) == pytest.approx(0.0)
+
+
+def test_cut_alignment_error_positive_on_apportion_degrade():
+    """The uniform-split regression's cut-level symptom: a word-count mismatch
+    makes sentence_windows degrade to char-length apportion, so the cut boundary
+    lands OFF every word boundary -> metric > 0. This is exactly the regression
+    signal Story 11.4 adds the metric for."""
+    narration = "하나 둘. 셋 넷."  # 4 words, 2 sentences (chars 5 + 4)
+    timings = [fx._word("a", 0.0, 3.0), fx._word("b", 3.0, 6.0), fx._word("c", 6.0, 9.0)]  # 3 ≠ 4
+    shots = [_cut_shot("S1", [0]), _cut_shot("S2", [1])]
+    scene = _cut_scene(narration, timings, shots, 9.0)
+    # apportioned boundary at 9*(5/9)=5.0; nearest word boundary {0,3,6,9} -> |5-6|=1.0
+    assert es._cut_alignment_error([scene], 2.0) == pytest.approx(1.0)
+
+
+def test_cut_alignment_error_zero_when_fewer_than_two_clips():
+    narration = "하나 둘."
+    timings = [fx._word("하나", 0.0, 1.0), fx._word("둘.", 1.0, 2.0)]
+    scene = _cut_scene(narration, timings, [_cut_shot("S1", [0])], 2.0)
+    assert es._cut_alignment_error([scene], 2.0) == 0.0
+
+
+def test_cut_alignment_error_zero_without_data():
+    no_timings = _cut_scene("하나 둘.", [], [_cut_shot("S1", [0]), _cut_shot("S2", [0])], 2.0)
+    no_shots = _cut_scene("하나 둘.", [fx._word("하나", 0.0, 1.0), fx._word("둘.", 1.0, 2.0)], [], 2.0)
+    assert es._cut_alignment_error([no_timings, no_shots], 2.0) == 0.0
+
+
+def test_cut_alignment_error_in_rule_metrics_dict():
+    ma, _ = es._compute_rule_metrics(fx.state_a(), fx.state_b())
+    assert "cut_alignment_error" in es._rule_metrics_to_dict(ma)
 
 
 # ── Score parsing (AC1) ─────────────────────────────────────────────────────
@@ -757,8 +817,9 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
     asyncio.run(es.store_evaluation_results("run-a", "run-b", llm, rule, _PAIR_A))
     second_count = len(created)
 
-    # Same number of scores (6 axis + 1 pairwise + 6 rule-based = 13)
-    assert first_count == second_count == 13
+    # Same number of scores (6 axis + 1 pairwise + 8 rule-based = 15; Story 11.4
+    # added cut_alignment_error)
+    assert first_count == second_count == 15
 
     # Verify score_ids use the idempotency pattern
     expected_ids = {
@@ -769,6 +830,7 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
         "run-a-scene_count_match_rate_A", "run-b-scene_count_match_rate_B",
         "run-a-subtitle_sync_error_A", "run-b-subtitle_sync_error_B",
         "run-a-audio_duration_variance_A", "run-b-audio_duration_variance_B",
+        "run-a-cut_alignment_error_A", "run-b-cut_alignment_error_B",
     }
     assert set(created) == expected_ids
 
