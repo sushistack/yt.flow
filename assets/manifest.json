@@ -634,7 +634,7 @@
       "variant": "c"
     },
     "cafeteria/a": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.910148+00:00",
       "created_at": "2026-08-02T07:14:52.032773+00:00",
       "location_key": "cafeteria",
       "path": "locations/cafeteria/a.png",
@@ -655,11 +655,11 @@
         "seed": 1944009359,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "a"
     },
     "cafeteria/b": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.922594+00:00",
       "created_at": "2026-08-02T07:15:12.779875+00:00",
       "location_key": "cafeteria",
       "path": "locations/cafeteria/b.png",
@@ -680,11 +680,11 @@
         "seed": 1581403083,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "b"
     },
     "cafeteria/c": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.926962+00:00",
       "created_at": "2026-08-02T07:15:33.535133+00:00",
       "location_key": "cafeteria",
       "path": "locations/cafeteria/c.png",
@@ -705,7 +705,7 @@
         "seed": 2024496314,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "c"
     },
     "containment-chamber/a": {
@@ -934,7 +934,7 @@
       "variant": "c"
     },
     "entrance-checkpoint/a": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.931985+00:00",
       "created_at": "2026-08-02T07:17:58.919741+00:00",
       "location_key": "entrance-checkpoint",
       "path": "locations/entrance-checkpoint/a.png",
@@ -955,11 +955,11 @@
         "seed": 1138637302,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "a"
     },
     "entrance-checkpoint/b": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.936622+00:00",
       "created_at": "2026-08-02T07:18:19.680594+00:00",
       "location_key": "entrance-checkpoint",
       "path": "locations/entrance-checkpoint/b.png",
@@ -980,11 +980,11 @@
         "seed": 1544671887,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "b"
     },
     "entrance-checkpoint/c": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.940813+00:00",
       "created_at": "2026-08-02T07:18:40.454221+00:00",
       "location_key": "entrance-checkpoint",
       "path": "locations/entrance-checkpoint/c.png",
@@ -1005,11 +1005,11 @@
         "seed": 76387511,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "c"
     },
     "facility-exterior/a": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.944840+00:00",
       "created_at": "2026-08-02T07:10:42.161912+00:00",
       "location_key": "facility-exterior",
       "path": "locations/facility-exterior/a.png",
@@ -1030,7 +1030,7 @@
         "seed": 601192761,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "a"
     },
     "facility-exterior/b": {
@@ -1084,7 +1084,7 @@
       "variant": "c"
     },
     "interview-room/a": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.949058+00:00",
       "created_at": "2026-08-02T07:07:39.958425+00:00",
       "location_key": "interview-room",
       "path": "locations/interview-room/a.png",
@@ -1105,11 +1105,11 @@
         "seed": 50933912,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "a"
     },
     "interview-room/b": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.953180+00:00",
       "created_at": "2026-08-02T07:08:00.780880+00:00",
       "location_key": "interview-room",
       "path": "locations/interview-room/b.png",
@@ -1130,11 +1130,11 @@
         "seed": 298432063,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "b"
     },
     "interview-room/c": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.957604+00:00",
       "created_at": "2026-08-02T07:08:21.574645+00:00",
       "location_key": "interview-room",
       "path": "locations/interview-room/c.png",
@@ -1155,7 +1155,7 @@
         "seed": 145321075,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "c"
     },
     "maintenance-tunnel/a": {
@@ -1209,7 +1209,7 @@
       "variant": "b"
     },
     "maintenance-tunnel/c": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.962394+00:00",
       "created_at": "2026-08-02T07:17:38.037274+00:00",
       "location_key": "maintenance-tunnel",
       "path": "locations/maintenance-tunnel/c.png",
@@ -1230,11 +1230,11 @@
         "seed": 506554809,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "c"
     },
     "medical-bay/a": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.966970+00:00",
       "created_at": "2026-08-02T07:13:48.663859+00:00",
       "location_key": "medical-bay",
       "path": "locations/medical-bay/a.png",
@@ -1255,7 +1255,7 @@
         "seed": 1637263363,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "a"
     },
     "medical-bay/b": {
@@ -1284,7 +1284,7 @@
       "variant": "b"
     },
     "medical-bay/c": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.971858+00:00",
       "created_at": "2026-08-02T07:14:30.225245+00:00",
       "location_key": "medical-bay",
       "path": "locations/medical-bay/c.png",
@@ -1305,7 +1305,7 @@
         "seed": 815637156,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "c"
     },
     "observation-room/a": {
@@ -1334,7 +1334,7 @@
       "variant": "a"
     },
     "observation-room/b": {
-      "approved_at": null,
+      "approved_at": "2026-08-02T12:57:02.975917+00:00",
       "created_at": "2026-08-02T07:05:55.366981+00:00",
       "location_key": "observation-room",
       "path": "locations/observation-room/b.png",
@@ -1355,7 +1355,7 @@
         "seed": 1998847903,
         "type": "comfyui_generation"
       },
-      "status": "draft",
+      "status": "approved",
       "variant": "b"
     },
     "observation-room/c": {
