@@ -26,10 +26,29 @@ from yt_flow.services.image_search import DuckDuckGoImageSearch  # noqa: E402
 # Prose alone did not hold — a run without them came back as a four-up character sheet,
 # and because the four figures touched each other they were a single alpha component,
 # so the largest-component cut in _clean_alpha_noise could not rescue it either.
+# Hair and eye colour are pinned concretely, not as "dark": the non-front angles are
+# prompted from this text, and vague colour let the front's black hair come back brown
+# on one angle and teal on another. The enrichment read-back cannot cover for it — its
+# prompt has no hair/eye/face dimension at all, only silhouette, texture, outfit
+# palette, anomalous traits, lighting and art style.
 _BARE_FACE = (
-    "solo, 1boy, adult, ordinary unremarkable human face, short dark hair, visible "
-    "eyes, nose and mouth, plain forgettable features, natural skin"
+    "solo, 1boy, adult, ordinary human face, short straight black hair, brown "
+    "eyes, visible nose and mouth, natural skin"
 )
+# One concrete, reproducible feature per key. "plain forgettable features" was actively
+# fighting cross-angle identity: with nothing to hold onto the model drew a different
+# person for every angle. The one key that held up on its own was security, whose front
+# happened to grow a moustache and a peaked cap — strong tokens the other angles could
+# reproduce. So each key now gets its own cheap hook, and hair *shape* is pinned too,
+# because colour alone still drifted between curly, straight and cropped (Story 8.15).
+_KEY_FEATURES = {
+    # Not "buzz cut" — from behind it read as fully bald.
+    "STOCK-d-class": "very short cropped black hair, light stubble, gaunt hollow cheeks",
+    "STOCK-researcher": "thin wire-rimmed glasses, neatly combed hair",
+    # Not "peaked cap" — with "dark uniform" it pulled the whole card into a military
+    # dress uniform: epaulettes, gold braid and rank insignia on every angle but the front.
+    "STOCK-security": "short moustache, plain black baseball cap",
+}
 BANNED_STOCK_TOKEN = "SCP Foundation"
 # The token above is deliberately absent below: probing the live checkpoint showed that
 # token alone is what collapsed these extras into a masked, hazmat-suited figure —
@@ -37,17 +56,19 @@ BANNED_STOCK_TOKEN = "SCP Foundation"
 # person, every other lever held constant. The wardrobe carries the setting instead.
 STOCK_DESCRIPTORS = {
     "STOCK-d-class": (
-        f"{_BARE_FACE}, a gaunt man in his thirties, orange prison jumpsuit with a "
-        "stenciled number, long sleeves and long trousers, worn work boots, anxious posture"
+        f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-d-class']}, a gaunt man in his thirties, "
+        "orange prison jumpsuit with a stenciled number, long sleeves and long trousers, "
+        "worn work boots, anxious posture"
     ),
     "STOCK-researcher": (
-        f"{_BARE_FACE}, a laboratory researcher in his thirties, white lab coat over "
-        "shirt and tie, long dark trousers, ID badge, practical shoes, clinical "
-        "professional posture"
+        f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-researcher']}, a laboratory researcher in "
+        "his thirties, white lab coat over shirt and tie, long dark trousers, ID badge, "
+        "practical shoes, clinical professional posture"
     ),
     "STOCK-security": (
-        f"{_BARE_FACE}, a security guard in his thirties, black tactical vest over a "
-        "dark uniform, long dark trousers, black cap, alert disciplined posture"
+        f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-security']}, a security guard in his "
+        "thirties, black tactical vest over a dark uniform, long dark trousers, "
+        "alert disciplined posture"
     ),
 }
 # Suppression stays per-call and STOCK-scoped: the shared workflow's own negative
@@ -63,7 +84,12 @@ STOCK_NEGATIVE = (
     "skull mask, plague doctor mask, gas mask, respirator, helmet, visor, "
     "hazmat suit, glowing eyes, undead, monster, "
     "multiple views, character sheet, reference sheet, turnaround, 2boys, "
-    "multiple boys, duplicate"
+    "multiple boys, duplicate, "
+    # Hair length has to be suppressed as well as pinned: the researcher's side view
+    # grew hair down to the waist while its other three angles stayed cropped.
+    "long hair, ponytail, bald, "
+    # Facility security, not an army officer — see the STOCK-security note above.
+    "military uniform, dress uniform, epaulettes, gold braid, medals, rank insignia"
 )
 VALID_POSES = ("standing", "sitting")
 

@@ -207,11 +207,15 @@ def test_stock_descriptors_pin_a_bare_human_face():
     # "solo, 1boy" leads: AnimagineXL is Danbooru-tagged, and prose alone let the
     # model compose a four-up character sheet whose figures touched — one alpha
     # component, so the largest-component cut could not remove them either.
+    # Colours are pinned concretely, not as "dark": the non-front angles are prompted
+    # from this text and vague colour let the front's black hair return brown on one
+    # angle and teal on another. The enrichment read-back cannot cover for it — its
+    # prompt has no hair/eye/face dimension.
     required = (
         "solo, 1boy",
-        "short dark hair",
-        "ordinary unremarkable human face",
-        "visible eyes, nose and mouth",
+        "short straight black hair",
+        "brown eyes",
+        "ordinary human face",
     )
     forbidden = (
         "mask", "helmet", "skull", "glowing", "undead", "monster", "plague",

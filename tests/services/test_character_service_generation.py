@@ -611,7 +611,12 @@ class TestMultiAngleGeneration:
 
         enrich.assert_awaited_once()
         character = service.check_existing_character("STOCK-d-class")
-        assert character.visual_descriptor == "This character has a plain face"
+        # Appended, not replaced: the read-back is merged onto the caller's descriptor so
+        # the hair/eye/face pins survive into the non-front angles, which is what the
+        # enrichment prompt itself cannot supply.
+        assert character.visual_descriptor == (
+            "ordinary human face, orange jumpsuit\nThis character has a plain face"
+        )
 
     def test_generate_cards_enriches_by_default(self, service, tmp_path):
         """Derived keys keep enrichment — it is what buys the family resemblance."""
@@ -633,7 +638,9 @@ class TestMultiAngleGeneration:
 
         enrich.assert_awaited_once()
         character = service.check_existing_character("SCP-049-2")
-        assert character.visual_descriptor == "reanimated humanoid, sutured grey skin"
+        assert character.visual_descriptor == (
+            "reanimated human\nreanimated humanoid, sutured grey skin"
+        )
 
     def test_generate_candidates_rejects_provider_without_alpha_sprites(
         self, service, temp_ref_image, tmp_path

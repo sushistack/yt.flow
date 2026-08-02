@@ -81,11 +81,16 @@ _ANGLE_FIELD_NAMES: dict[str, str] = {
 # enrichment started failing silently on 07-12 (qwen-vl max_tokens 400, fixed in
 # this story), so the weights had been carrying identity alone — and failing at
 # it. With enrichment restored, text locks the face and these can pull less.
+# Nudged back up 2026-08-02: 0.30/0.35 did restore the angle turn (side finally renders
+# a real profile) but lost identity — hair colour and face changed per angle. Text now
+# carries identity properly (the read-back is appended to the authored descriptor rather
+# than replacing it, and colours are pinned concretely), so a little more reference pull
+# is affordable. Below the 07-07 values that killed the turn.
 _ANGLE_IPADAPTER_WEIGHTS: dict[str, float] = {
     "front": 0.2,
-    "three_quarter": 0.35,
-    "side": 0.3,
-    "back": 0.3,
+    "three_quarter": 0.4,
+    "side": 0.35,
+    "back": 0.35,
 }
 def _scrub_phrase(text: str, phrase: str) -> str:
     """Drop every case-insensitive occurrence of ``phrase``, tidying the seams.
@@ -876,7 +881,17 @@ class CharacterService:
                 if enriched and enrich_ban:
                     enriched = _scrub_phrase(enriched, enrich_ban)
                 if enriched:
-                    character = self.update_character(character.id, visual_descriptor=enriched)
+                    # Append, never replace. The enrichment prompt has dimensions for
+                    # silhouette, texture, outfit palette, anomalous traits, lighting
+                    # and art style — but none for hair, eyes or face, so its read-back
+                    # cannot carry a human's identity. Replacing the caller's descriptor
+                    # with it dropped exactly the attributes the non-front angles need:
+                    # STOCK cards came back with the front's black hair turning brown or
+                    # teal and the face changing person between angles. Keeping the
+                    # authored text as the spine fixes that; the read-back still adds
+                    # the outfit and material specifics it is good at (Story 8.15).
+                    merged = f"{descriptor}\n{enriched}" if descriptor else enriched
+                    character = self.update_character(character.id, visual_descriptor=merged)
             if pose == "standing":
                 angle_paths[angle] = path
 
