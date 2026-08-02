@@ -195,9 +195,28 @@ def ground_line(depth_map: Any, position: str, depth: str) -> float:
     low, high = float(profile.min()), float(profile.max())
     if high - low < 1e-6:
         return fallback
-    monotone = np.maximum.accumulate(profile)
+    # Accumulate upward from the bottom row, not downward from the top. A floor is the
+    # nearest surface at the bottom of the frame and recedes as it goes up, so scanning
+    # up is the direction that describes it. Accumulating downward instead let anything
+    # bright high in the band — a ceiling pipe, a foreground railing, a desk crossing the
+    # frame — saturate the running max for every row beneath it: measured, a near-depth
+    # object wider than half the band collapsed far/mid/near to one identical clamped
+    # value, which is exactly the depth-independent anchor this story removed.
+    # Scan upward from the bottom row, taking a running MINIMUM. The floor is the nearest
+    # surface at the bottom of frame and recedes (gets darker) as it rises, so "the
+    # nearest the floor has been at or below this row" is non-increasing going up, and
+    # the row where it first drops to the target is that depth's ground line.
+    #
+    # The previous version accumulated a running maximum downward from the top, which let
+    # anything bright high in the band — a ceiling pipe, a foreground railing, a desk
+    # crossing frame — saturate every row beneath it. Measured: a near-depth object wider
+    # than half the band collapsed far/mid/near to one identical clamped value, i.e. the
+    # depth-independent anchor this story exists to remove.
+    monotone = np.minimum.accumulate(profile[::-1])
     target = low + (high - low) * _DEPTH_TARGET.get(depth, _DEPTH_TARGET["mid"])
-    row = min(int(np.searchsorted(monotone, target)), h - 1)
+    hits = np.nonzero(monotone <= target)[0]
+    idx = int(hits[0]) if hits.size else h - 1
+    row = (h - 1) - idx
     return min(max(row / (h - 1), _GROUND_BAND[0]), _GROUND_BAND[1])
 
 

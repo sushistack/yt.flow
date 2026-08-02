@@ -930,10 +930,45 @@ def _merge_placements(
             merged[shot_key] = cards
             continue
         merged[shot_key] = [
-            {**card, **placement} if isinstance(placement, dict) and isinstance(card, dict) else card
+            _apply_placement(card, placement) if isinstance(card, dict) else card
             for card, placement in zip(cards, shot_placements)
         ]
     return merged
+
+
+# A card is bottom-anchored at ground_y, so the frame below it has to hold the whole
+# downward motion excursion — idle bob plus parallax pan. CHAR_MAX_H was derived for a
+# centre anchor with that margin on both sides; bottom-anchoring spends it all at the
+# bottom, and a measured near ground line of 0.94 leaves 65px for a 28.5px requirement
+# only by luck. Clamping here rather than in compositing_service keeps the motion
+# constants in the module that owns them (services must not import pipeline, AD-1).
+_GROUND_Y_MAX = 1.0 - (_MAX_MOTION_Y_PX + CHAR_PAN_AMPLITUDE_PX) / COMP_H
+
+
+def _apply_placement(card: dict, placement: object) -> dict:
+    """Merge one placement dict, dropping values the filtergraph cannot take.
+
+    ``ground_y`` reaches an f-string format spec, so a string or None there raises out of
+    the chain builder long after the resolver's own try/except has returned — a bad
+    annotation would fail the whole video stage instead of degrading to the old anchor.
+    """
+    if not isinstance(placement, dict):
+        return card
+    clean = dict(placement)
+    ground_y = clean.get("ground_y")
+    if ground_y is not None:
+        if isinstance(ground_y, bool) or not isinstance(ground_y, (int, float)):
+            logger.warning("Dropping non-numeric ground_y %r; keeping the centre anchor", ground_y)
+            clean.pop("ground_y")
+        else:
+            clamped = min(max(float(ground_y), 0.0), _GROUND_Y_MAX)
+            if clamped != float(ground_y):
+                logger.warning(
+                    "Clamped ground_y %.3f to %.3f so the card's motion stays in frame",
+                    float(ground_y), clamped,
+                )
+            clean["ground_y"] = clamped
+    return {**card, **clean}
 
 
 def _build_card_chain(

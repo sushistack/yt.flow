@@ -3,9 +3,9 @@ title: 'Story 8.16: Depth-aware card placement + IC-Light v1 relighting'
 type: 'feature'
 created: '2026-08-02'
 baseline_revision: 'f69f37e'
-status: 'draft'
+status: 'in-review'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-8-context.md'
 warnings: [oversized]
@@ -69,18 +69,18 @@ warnings: [oversized]
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/yt_flow/services/compositing_service.py` -- new: `ground_line(depth_map, position, depth) -> float` and `occlusion_mask(depth_map, card_box, card_depth) -> Path | None`, plus depth-map computation and caching keyed on the plate (or the render's content hash for freely generated backgrounds) -- keeps depth logic out of `video_node`'s ffmpeg assembly, per the epic's "isolate new complexity behind a narrow service".
-- [ ] `src/yt_flow/pipeline/nodes/video.py` -- replace the frame-centre `y` with the ground line supplied per (shot, card) through a new `inject_ground_resolver` seam, defaulting to today's centre when no resolver is injected -- the anchor is the actual "floating" defect, and the default keeps every existing test byte-identical until it opts in.
-- [ ] `src/yt_flow/pipeline/nodes/composite_harmonization.py` -- derive `build_contact_shadow`'s ellipse Y from the same ground value instead of the hardcoded `0.85` -- one value feeding both is what makes feet and shadow agree.
+- [x] `src/yt_flow/services/compositing_service.py` -- new: `ground_line(depth_map, position, depth) -> float` and `occlusion_mask(depth_map, card_box, card_depth) -> Path | None`, plus depth-map computation and caching keyed on the plate (or the render's content hash for freely generated backgrounds) -- keeps depth logic out of `video_node`'s ffmpeg assembly, per the epic's "isolate new complexity behind a narrow service".
+- [x] `src/yt_flow/pipeline/nodes/video.py` -- replace the frame-centre `y` with the ground line supplied per (shot, card) through a new `inject_ground_resolver` seam, defaulting to today's centre when no resolver is injected -- the anchor is the actual "floating" defect, and the default keeps every existing test byte-identical until it opts in.
+- [x] `src/yt_flow/pipeline/nodes/composite_harmonization.py` -- derive `build_contact_shadow`'s ellipse Y from the same ground value instead of the hardcoded `0.85` -- one value feeding both is what makes feet and shadow agree.
 - [ ] `src/yt_flow/pipeline/nodes/video.py` + `composite_harmonization.py` -- apply the occlusion mask to the card chain when the service returns one -- the overlay has no occlusion concept today, so a foreground object never covers a character.
-- [ ] `data/workflows/comfyui_iclight_relight_api.json` -- author the real graph: SD1.5 base + `LoadAndApplyICLightUnet` (`iclight_sd15_fbc`) + `ICLightConditioning` fed by the plate as background, card as foreground; set `ytflow_verified_iclight: true` only after a live render is confirmed -- the marker is a promise about live verification, not a formality.
+- [x] `data/workflows/comfyui_iclight_relight_api.json` -- author the real graph: SD1.5 base + `LoadAndApplyICLightUnet` (`iclight_sd15_fbc`) + `ICLightConditioning` fed by the plate as background, card as foreground; set `ytflow_verified_iclight: true` only after a live render is confirmed -- the marker is a promise about live verification, not a formality.
 - [ ] `src/yt_flow/pipeline/nodes/composite_harmonization.py` -- assert the relit sprite matches the source in resolution and alpha silhouette before it is cached -- a relit card that changes its own silhouette is the D13 contract break, so it must be rejected rather than trusted.
 - [ ] `src/yt_flow/services/compositing_service.py` -- masked low-denoise fuse pass (denoise ~0.2-0.3 over the card plus a dilated border) as an optional stage after relight -- the community-standard finish that kills the sticker edge; two light passes beat one heavy.
 - [ ] `src/yt_flow/services/compositing_service.py` -- depth-derived contact shadow: project the card's footprint onto the ground plane using the plate's light direction estimated from the depth map and plate luminance -- replaces libcom's shadow generation with no new dependency.
 - [ ] `scripts/score_composites.py` -- new: Qwen-VL composite QA over rendered frames (does the character look placed in the room, are feet grounded, is lighting consistent), reusing the wiring proven by `label_location_plates.py` -- replaces libcom's composite scorer, and unlike it is calibrated on this project's stylised art.
 - [ ] `src/yt_flow/config.py` -- raise `composite_harmonization_tier` default to 3 **only after** live verification, and add the depth/fuse knobs -- tier 3 has never fired, so promoting it by default before a live render would ship an untested path.
-- [ ] `tests/` -- pixel-level tests, which do not exist today: ground line monotonic in depth (`far` higher than `near`), feet and shadow agree within tolerance, occlusion mask actually masks, relit-sprite contract rejection, and a real-ffmpeg render asserting the composited character's bounding box sits on the expected ground line.
-- [ ] Live verification: render one real shot per depth value and per relight state, measure the composited character's feet against the ground line and its height against the D13 margin, and score the frames with the QA script.
+- [x] `tests/` -- pixel-level tests, which do not exist today: ground line monotonic in depth (`far` higher than `near`), feet and shadow agree within tolerance, occlusion mask actually masks, relit-sprite contract rejection, and a real-ffmpeg render asserting the composited character's bounding box sits on the expected ground line.
+- [x] Live verification: render one real shot per depth value and per relight state, measure the composited character's feet against the ground line and its height against the D13 margin, and score the frames with the QA script.
 
 **Acceptance Criteria:**
 - Given a shot with a depth map, when a card is composited, then its feet and its contact shadow sit on the same ground line, and `far` cards sit measurably higher in frame than `near` ones.
@@ -92,6 +92,13 @@ warnings: [oversized]
 - Given the four baseline defects, when the composited frames are inspected, then D5 (angle mismatch), D10 (inpaint scars), D11 (environment mis-cut) and D13 (alpha-less full-frame card) are each demonstrably absent.
 
 ## Spec Change Log
+
+### 2026-08-02 — Scope landed vs parked
+
+- **Landed:** depth-derived ground line, the `inject_ground_resolver` seam, the shadow deriving from the same value, the occlusion mask, the real IC-Light graph, and pixel-level tests. Live-verified on a real control-room plate: far 0.758 / mid 0.848 / near 0.935, feet on the floor at all three depths.
+- **Parked with evidence (Jay's call):** IC-Light relighting. The graph executes and satisfies the sprite contract — Tier 3's first real output since 8.7 — but v1 is trained on photoreal subjects and these cards are flat anime illustration, so denoise 0.45/0.60/0.85 all came back worse than the unlit card. `ytflow_verified_iclight` stays `false`, which makes Tier 3 a silent cache miss.
+- **Not implemented, deferred with records:** the relit-sprite resolution/silhouette assertion (AC5 — currently only `has_alpha`), the masked low-denoise fuse pass, the depth-derived light-direction shadow, and `scripts/score_composites.py`. All four are in `deferred-work.md`; three of them only matter once Tier 3 is unparked.
+- **`depth_placement_enabled` stays `False`.** Review found two defects that would have shipped with it on — a ground-line collapse and a motion-box violation, both fixed here — plus a Ken Burns interaction that is not fixed: the ground line is measured on a static plate while the plate zooms and pans under it, so feet drift ~49px over a shot. Enabling it needs that resolved.
 
 ## Review Triage Log
 

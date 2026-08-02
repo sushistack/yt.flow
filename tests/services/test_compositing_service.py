@@ -366,3 +366,26 @@ async def test_resolve_placements_computes_one_depth_map_per_background(tmp_path
     out = await cs.resolve_placements(scenes, cast, _settings(tmp_path), comfyui_client=client)
     assert set(out) == {"1:S001", "1:S002"}
     assert len(client.submits) == 1  # two shots, one plate, one estimation
+
+
+def test_ground_line_survives_a_wide_near_object_high_in_the_band():
+    """The running max used to accumulate downward from the top, so anything bright high
+    in the column band — a ceiling pipe, a foreground railing, a desk crossing frame —
+    saturated every row beneath it. Measured, a near-depth object wider than half the
+    band collapsed far/mid/near to one identical clamped value: the depth-independent
+    anchor this story exists to remove."""
+    import numpy as np
+
+    from yt_flow.services import compositing_service as cs
+
+    h, w = 400, 600
+    plate = np.zeros((h, w))
+    plate[:200, :] = 40                                    # wall
+    plate[200:, :] = np.linspace(60, 240, 200)[:, None]    # floor receding upward
+    clean = [cs.ground_line(plate, "center", d) for d in ("far", "mid", "near")]
+    assert clean[0] < clean[1] < clean[2]
+
+    blocked = plate.copy()
+    blocked[10:50, :] = 250  # a near object spanning the whole band, high in frame
+    got = [cs.ground_line(blocked, "center", d) for d in ("far", "mid", "near")]
+    assert got[0] < got[1] < got[2], f"collapsed to {got}"

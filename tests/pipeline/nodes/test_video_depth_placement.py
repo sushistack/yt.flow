@@ -447,3 +447,28 @@ async def test_occlusion_mask_actually_masks_real_ffmpeg(tmp_path):
     # half survives: the masked half is background.
     assert abs(bottom - (ground_y * 1080 - 200)) <= 8, (top, bottom)
     assert frame[int(ground_y * 1080) - 20, 960, 1] < 60
+
+
+def test_ground_y_is_clamped_to_keep_the_cards_motion_in_frame():
+    """A bottom-anchored card spends its whole vertical margin below itself, but
+    CHAR_MAX_H was derived for a centre anchor with that margin on both sides. Without a
+    clamp a measured ground line near the band's old 0.98 ceiling left 21px for a 28.5px
+    idle-bob-plus-parallax excursion, so the character walked off the bottom of frame."""
+    from yt_flow.pipeline.nodes import video
+
+    needed = (video._MAX_MOTION_Y_PX + video.CHAR_PAN_AMPLITUDE_PX) / video.COMP_H
+    assert video._GROUND_Y_MAX <= 1.0 - needed + 1e-9
+
+    out = video._apply_placement({"card_key": "X"}, {"ground_y": 0.99})
+    assert out["ground_y"] <= video._GROUND_Y_MAX
+
+
+def test_a_non_numeric_ground_y_is_dropped_rather_than_reaching_the_filtergraph():
+    """ground_y lands in an f-string format spec, so a string there raises out of the
+    chain builder long after the resolver's own try/except returned — failing the whole
+    video stage on a bad annotation instead of degrading to the pre-8.16 anchor."""
+    from yt_flow.pipeline.nodes import video
+
+    assert "ground_y" not in video._apply_placement({"card_key": "X"}, {"ground_y": "0.8"})
+    assert "ground_y" not in video._apply_placement({"card_key": "X"}, {"ground_y": True})
+    assert video._apply_placement({"card_key": "X"}, {"ground_y": 0.8})["ground_y"] == 0.8
