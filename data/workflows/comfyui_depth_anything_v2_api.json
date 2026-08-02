@@ -1,0 +1,29 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Background plate (filename injected per call by compositing_service)"
+    },
+    "inputs": {
+      "image": "placeholder.png"
+    }
+  },
+  "2": {
+    "class_type": "DepthAnythingV2Preprocessor",
+    "_meta": {
+      "title": "Monocular relative depth (brighter = nearer)"
+    },
+    "inputs": {
+      "image": ["1", 0],
+      "ckpt_name": "depth_anything_v2_vitl.pth",
+      "resolution": 1024
+    }
+  },
+  "3": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["2", 0],
+      "filename_prefix": "ytflow_depth"
+    }
+  }
+}

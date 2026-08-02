@@ -171,6 +171,15 @@ class Settings(BaseSettings):
     composite_harmonization_tier: int = Field(1, ge=0, le=3)
     iclight_comfyui_workflow_path: str = "data/workflows/comfyui_iclight_relight_api.json"
 
+    # Depth-aware card placement (Story 8.16): stand a card's feet on a ground
+    # plane estimated from the plate's monocular depth map instead of frame
+    # centre, with the contact shadow derived from the same value, and mask the
+    # card where the plate is nearer than it. Off until the live-verification
+    # gate (same posture as tier 3): with no resolver injected video.py's
+    # filtergraph is byte-identical to pre-8.16.
+    depth_placement_enabled: bool = False
+    depth_comfyui_workflow_path: str = "data/workflows/comfyui_depth_anything_v2_api.json"
+
     # Per-shot cut assembly (Story 8.11): a shot's clip window shorter than this
     # merges into the previous shot's clip (first shot merges forward). 0.0
     # disables merging entirely.

@@ -13,8 +13,12 @@ from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.image import inject_location_service
-from yt_flow.pipeline.nodes.video import inject_cast_resolver, inject_relight_resolver
-from yt_flow.services import run_service
+from yt_flow.pipeline.nodes.video import (
+    inject_cast_resolver,
+    inject_ground_resolver,
+    inject_relight_resolver,
+)
+from yt_flow.services import compositing_service, run_service
 from yt_flow.services.character_service import CharacterService
 from yt_flow.services.location_service import LocationService
 
@@ -52,6 +56,14 @@ async def lifespan(app: FastAPI):
             return await run_service.precompute_relights_for_run(scenes, cast_cards, session, settings)
 
     inject_relight_resolver(_precompute_relights)
+
+    # Story 8.16: inject depth-aware ground-plane placement into video_node.
+    # Gated: off, video.py keeps its pre-8.16 frame-centre anchor byte-for-byte.
+    if settings.depth_placement_enabled:
+        async def _resolve_grounds(scenes: list, cast_cards: dict) -> dict[str, list[dict]]:
+            return await compositing_service.resolve_placements(scenes, cast_cards, settings)
+
+        inject_ground_resolver(_resolve_grounds)
 
     scps_path = Path(__file__).parents[3] / "data" / "scps.json"
     app.state.scps = [ScpEntry(**s) for s in json.loads(scps_path.read_text())]

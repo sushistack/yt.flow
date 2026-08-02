@@ -1,78 +1,241 @@
 {
+    "ytflow_verified_iclight": false,
+    "_ytflow_note": "PARKED, not broken. This graph executes correctly on the installed IC-Light v1 fbc nodes and satisfies the sprite contract (832x1216 in, 832x1216 RGBA out, alpha preserved to within 1/255 of the source silhouette) \u2014 the first time Tier 3 has ever produced an image since Story 8.7 built the plumbing. It is left unverified because the OUTPUT is not good enough, not because the wiring is wrong: IC-Light v1 is trained on photoreal subjects and these cards are flat anime illustration, so the relight drags the art toward photoreal shading and loses skin tone and contrast. Probed denoise 0.45 / 0.60 / 0.85 (2026-08-02): washed grey, near-black, and blue-monochrome respectively \u2014 non-monotonic, all worse than the unlit card. Jay's call was to ship the ground-plane fix with Tier 1/2 harmonization instead, which approximates without re-rendering the art. Keeping ytflow_verified_iclight=false means _load_iclight_workflow treats this as a cache miss and Tier 3 never fires.",
     "1": {
         "class_type": "LoadImage",
-        "_meta": {"title": "Card Image (character sprite to relight) — uploaded per pair"},
+        "_meta": {
+            "title": "Foreground \u2014 the character card (RGBA sprite), uploaded per pair"
+        },
         "inputs": {
             "image": "placeholder.png"
         }
     },
     "2": {
         "class_type": "LoadImage",
-        "_meta": {"title": "Background Image (location plate, lighting reference) — uploaded per pair"},
+        "_meta": {
+            "title": "Background \u2014 the location plate whose light the card should take, uploaded per pair"
+        },
         "inputs": {
             "image": "placeholder.png"
         }
     },
     "4": {
         "class_type": "CheckpointLoaderSimple",
-        "_meta": {"title": "UNVERIFIED — IC-Light unet patch normally loads over an SD1.5 checkpoint, not this project's SDXL anime checkpoint. Swap once IC-Light is actually installed."},
+        "_meta": {
+            "title": "SD1.5 base \u2014 IC-Light v1 patches an SD1.5 unet; the project's SDXL checkpoint cannot carry it"
+        },
         "inputs": {
-            "ckpt_name": "AnimagineXL_v31.safetensors"
+            "ckpt_name": "cyberrealistic_v90.safetensors"
+        }
+    },
+    "10": {
+        "class_type": "LoadAndApplyICLightUnet",
+        "_meta": {
+            "title": "IC-Light v1 fbc. v2/Flux is non-commercial \u2014 never swap this for a monetised channel."
+        },
+        "inputs": {
+            "model": [
+                "4",
+                0
+            ],
+            "model_path": "iclight_sd15_fbc.safetensors"
+        }
+    },
+    "11": {
+        "class_type": "ImageScale",
+        "_meta": {
+            "title": "Plate resized to the card canvas \u2014 fbc needs both latents the same shape"
+        },
+        "inputs": {
+            "image": [
+                "2",
+                0
+            ],
+            "upscale_method": "lanczos",
+            "width": 832,
+            "height": 1216,
+            "crop": "center"
+        }
+    },
+    "12": {
+        "class_type": "VAEEncode",
+        "_meta": {
+            "title": "Foreground latent"
+        },
+        "inputs": {
+            "pixels": [
+                "1",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
+        }
+    },
+    "13": {
+        "class_type": "VAEEncode",
+        "_meta": {
+            "title": "Background latent \u2014 the 'bc' in fbc"
+        },
+        "inputs": {
+            "pixels": [
+                "11",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
         }
     },
     "6": {
         "class_type": "CLIPTextEncode",
-        "_meta": {"title": "Lighting direction hint (conditioning prompt, not subject/scene description)"},
+        "_meta": {
+            "title": "Positive \u2014 relight only; identity and pose come from the foreground latent"
+        },
         "inputs": {
-            "text": "warm key light from top-right matching the background",
-            "clip": ["4", 1]
+            "text": "the same character lit by the light of the room behind them, consistent light direction and colour temperature, natural shading",
+            "clip": [
+                "4",
+                1
+            ]
         }
     },
     "7": {
         "class_type": "CLIPTextEncode",
-        "_meta": {"title": "Negative"},
+        "_meta": {
+            "title": "Negative \u2014 guards the identity and pose the sprite contract depends on"
+        },
         "inputs": {
-            "text": "lowres, bad anatomy, worst quality, flat lighting",
-            "clip": ["4", 1]
+            "text": "different person, changed clothing, changed pose, flat lighting, blown highlights, lowres, worst quality",
+            "clip": [
+                "4",
+                1
+            ]
+        }
+    },
+    "14": {
+        "class_type": "ICLightConditioning",
+        "_meta": {
+            "title": "fbc conditioning \u2014 opt_background is what makes this background-conditioned rather than plain relight"
+        },
+        "inputs": {
+            "positive": [
+                "6",
+                0
+            ],
+            "negative": [
+                "7",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ],
+            "foreground": [
+                "12",
+                0
+            ],
+            "opt_background": [
+                "13",
+                0
+            ],
+            "multiplier": 0.18
         }
     },
     "3": {
         "class_type": "KSampler",
-        "_meta": {"title": "UNVERIFIED placeholder — the real graph conditions this sampler through IC-Light's unet patch + background-derived latent, not a plain EmptyLatentImage. Node left as a structural placeholder pending a real IC-Light custom-node install to wire correctly."},
+        "_meta": {
+            "title": "cfg 2.0 is the IC-Light norm; denoise below 1 keeps the drawing and moves only the light"
+        },
         "inputs": {
             "seed": 0,
             "steps": 25,
             "cfg": 2.0,
             "sampler_name": "dpmpp_2m",
             "scheduler": "karras",
-            "denoise": 1.0,
-            "model": ["4", 0],
-            "positive": ["6", 0],
-            "negative": ["7", 0],
-            "latent_image": ["5", 0]
-        }
-    },
-    "5": {
-        "class_type": "EmptyLatentImage",
-        "inputs": {
-            "width": 832,
-            "height": 1216,
-            "batch_size": 1
+            "denoise": 0.85,
+            "model": [
+                "10",
+                0
+            ],
+            "positive": [
+                "14",
+                0
+            ],
+            "negative": [
+                "14",
+                1
+            ],
+            "latent_image": [
+                "14",
+                2
+            ]
         }
     },
     "8": {
         "class_type": "VAEDecode",
+        "_meta": {
+            "title": "Relit RGB \u2014 no alpha yet"
+        },
         "inputs": {
-            "samples": ["3", 0],
-            "vae": ["4", 2]
+            "samples": [
+                "3",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
+        }
+    },
+    "15": {
+        "class_type": "DetailTransfer",
+        "_meta": {
+            "title": "Put the card's own line detail back over the relit values"
+        },
+        "inputs": {
+            "target": [
+                "8",
+                0
+            ],
+            "source": [
+                "1",
+                0
+            ],
+            "mode": "add",
+            "blur_sigma": 1.0,
+            "blend_factor": 1.0
+        }
+    },
+    "17": {
+        "class_type": "JoinImageWithAlpha",
+        "_meta": {
+            "title": "Re-attach the ORIGINAL alpha straight from LoadImage's MASK output. This build emits it already the right way round \u2014 an InvertMask here produced a perfectly inverted silhouette (correlation -1.0). A relit card that changes its own silhouette is the D13 contract break."
+        },
+        "inputs": {
+            "image": [
+                "15",
+                0
+            ],
+            "alpha": [
+                "1",
+                1
+            ]
         }
     },
     "9": {
         "class_type": "SaveImage",
-        "_meta": {"title": "Relit Sprite Output (RGBA, same resolution as the input card)"},
+        "_meta": {
+            "title": "Relit sprite \u2014 same resolution and same alpha as the input card"
+        },
         "inputs": {
             "filename_prefix": "ytflow_iclight_relight",
-            "images": ["8", 0]
+            "images": [
+                "17",
+                0
+            ]
         }
     }
 }

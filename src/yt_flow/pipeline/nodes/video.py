@@ -75,6 +75,31 @@ def inject_relight_resolver(fn: Any) -> None:
     global _relight_resolver
     _relight_resolver = fn
 
+
+# ── Depth-aware ground plane injection (Story 8.16) ───────────────────────────
+# Same AD-1-avoidance pattern as the two resolvers above: the depth map lives in
+# services/compositing_service.py (ComfyUI + PIL/numpy), never imported here.
+_ground_resolver: Any = None
+
+
+def inject_ground_resolver(fn: Any) -> None:
+    """Inject the depth-aware placement resolver. [Story 8.16]
+
+    ``fn`` signature:
+    ``async fn(scenes: list, cast_cards: dict[str, list[dict]]) -> dict[str, list[dict]]``
+    Returns, per ``shot_key``, one placement dict per card **in the order the
+    cards were given** — ``{"ground_y": float}`` plus an optional
+    ``"occlusion_mask"`` path. video_node merges those keys into its own card
+    dicts (`_merge_placements`), so a resolver can never add, drop or reorder
+    cards.
+
+    Not injected (the default) → no card carries ``ground_y`` → `_overlay_filter`
+    and `build_contact_shadow` keep their pre-8.16 expressions byte-for-byte.
+    """
+    global _ground_resolver
+    _ground_resolver = fn
+
+
 # ── Ken Burns constants ───────────────────────────────────────────────────────
 
 FPS = 25
@@ -400,6 +425,7 @@ def _overlay_filter(
     motion_style: str = "sway", motion_energy: str = "medium",
     movement_mode: str = "anchored", movement_direction: str = "none",
     movement_pace: str = "slow",
+    ground_y: float | None = None,
 ) -> str:
     """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
     [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8] [Story 8.9 AC:5,7]
@@ -422,6 +448,13 @@ def _overlay_filter(
     term rides *on top of* movement, its amplitude scaled by
     ``_DEPTH_PARALLAX[depth]``. ``spec=None`` reverts to the fixed-size
     idle-motion-only string (parallax off).
+
+    ``ground_y`` (Story 8.16) is the fraction of frame height the card's feet
+    stand on, from the plate's depth map via ``inject_ground_resolver``. The
+    card's *bottom edge* lands there — cards are bottom-gutter sprites, so the
+    bottom edge is the feet — and ``build_contact_shadow`` draws its ellipse at
+    the same fraction, which is what makes feet and shadow agree. ``None`` (no
+    resolver injected) keeps the pre-8.16 frame-centre anchor exactly.
     """
     x_frac = _POSITION_X_FRAC.get(position, _POSITION_X_FRAC["center"])
     phase = k * PHASE_STEP
@@ -432,7 +465,7 @@ def _overlay_filter(
     x = f"main_w*{x_frac}-overlay_w/2"
     if movement.x_terms:
         x += " + " + " + ".join(movement.x_terms)
-    y = "(main_h-overlay_h)/2"
+    y = "(main_h-overlay_h)/2" if ground_y is None else f"main_h*{ground_y:g}-overlay_h"
     if movement.y_terms:
         y += " + " + " + ".join(movement.y_terms)
     if spec is not None and duration:
@@ -526,6 +559,44 @@ def _movement_scale_filter(
         return ""
     expr = " + ".join(terms)
     return f"scale=w='iw*(1+({expr}))':h='ih*(1+({expr}))':eval=frame"
+
+
+def _occlusion_fragment(k: int, mask_path: str) -> tuple[list[str], str]:
+    """Multiply a depth-derived occlusion mask into card ``k``'s alpha, so the
+    plate's foreground objects cover the character. [Story 8.16]
+
+    Returns (chain parts, the label carrying the masked sprite). Applied at the
+    *head* of the card's chain, where the sprite is still at its native pixel
+    size: compositing_service authors the mask at exactly that size, so a plain
+    ``alphamerge`` suffices and no ``scale2ref`` dimension matching is needed
+    (the later scale stages then shrink card and mask together — by that point
+    they are one image).
+
+    The mask arrives through ``movie=`` rather than a new ``-i`` input: both
+    render paths derive their narration/audio stream indices from the card count
+    (``[{num_cards + 1}:a]``), so an extra input would shift every index.
+
+    ``split`` before use is mandatory — ffmpeg rejects a labeled pad consumed by
+    two filters (the same hazard ``build_light_wrap`` documents), and the sprite
+    feeds both ``alphaextract`` and ``alphamerge`` here.
+
+    ponytail: the mask rides the card, so the few px of idle sway/bob move the
+    occluder edge with it. The alternative — repainting the occluder in frame
+    space over the composited card — needs the plate's alpha-cut copy carried
+    through zoompan, whose alpha handling ``_character_zoom_filter`` already
+    warns about; not worth it for a sub-5px error on a soft mask edge.
+    """
+    escaped = _escape_subtitles_path(Path(mask_path).resolve())
+    return (
+        [
+            f"[{k + 1}:v]split=2[om{k}a][om{k}b]",
+            f"[om{k}a]alphaextract[om{k}alpha]",
+            f"movie='{escaped}',format=gray[om{k}mask]",
+            f"[om{k}alpha][om{k}mask]blend=all_mode=multiply[om{k}alpha2]",
+            f"[om{k}b][om{k}alpha2]alphamerge[om{k}]",
+        ],
+        f"om{k}",
+    )
 
 
 def _character_scale_filter(depth: str = "near") -> str:
@@ -839,6 +910,32 @@ _OUTPUT_ARGS = (
 )
 
 
+def _merge_placements(
+    cast_cards: dict[str, list[dict]], placements: dict[str, list[dict]],
+) -> dict[str, list[dict]]:
+    """Fold the ground resolver's per-card placement dicts into the cast cards.
+    [Story 8.16]
+
+    Positional merge against the exact card list the resolver was handed. A shot
+    whose placement list is missing, the wrong length, or not a list of dicts
+    keeps its pre-8.16 cards untouched — the resolver's job is to annotate, and
+    a shape mismatch means it did something else.
+    """
+    merged: dict[str, list[dict]] = {}
+    for shot_key, cards in cast_cards.items():
+        shot_placements = placements.get(shot_key)
+        if not isinstance(shot_placements, list) or len(shot_placements) != len(cards):
+            if shot_placements is not None:
+                logger.warning("Ignoring mismatched placements for shot %s", shot_key)
+            merged[shot_key] = cards
+            continue
+        merged[shot_key] = [
+            {**card, **placement} if isinstance(placement, dict) and isinstance(card, dict) else card
+            for card, placement in zip(cards, shot_placements)
+        ]
+    return merged
+
+
 def _build_card_chain(
     zp_chain: str,
     ordered_cards: list[dict],
@@ -885,6 +982,10 @@ def _build_card_chain(
         movement_mode = card.get("movement_mode", "anchored")
         movement_direction = card.get("movement_direction", "none")
         movement_pace = card.get("movement_pace", "slow")
+        # Story 8.16: both None unless the ground resolver ran — the pre-8.16
+        # anchor and shadow expressions are then reproduced byte-for-byte.
+        ground_y = card.get("ground_y")
+        occlusion_mask = card.get("occlusion_mask")
         # Movement (Story 8.9 AC:5): chained right after the depth-cap anchor,
         # before parallax/idle-motion scale stages. "" for anchored — the
         # pre-8.9 chain is unchanged.
@@ -905,7 +1006,7 @@ def _build_card_chain(
             char_spec = None
         overlay = _overlay_filter(
             position, k, char_spec, duration, depth, motion_style, motion_energy,
-            movement_mode, movement_direction, movement_pace,
+            movement_mode, movement_direction, movement_pace, ground_y,
         )
         # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
         # stage for breath/sway/tremble/pulse so it composes with either branch above.
@@ -916,7 +1017,11 @@ def _build_card_chain(
         if harmonize:
             char_chain += f",{tint}"
         out_label = f"o{k}"
-        chain_parts.append(f"[{k + 1}:v]{char_chain}[c{k}]")
+        card_source = f"{k + 1}:v"
+        if occlusion_mask:
+            occlusion_parts, card_source = _occlusion_fragment(k, occlusion_mask)
+            chain_parts.extend(occlusion_parts)
+        chain_parts.append(f"[{card_source}]{char_chain}[c{k}]")
 
         # Tier 1 (AC:2): contact shadow, composited between bg and the card.
         base_label = prev_label
@@ -1666,6 +1771,17 @@ async def video_node(state: PipelineState) -> dict:
                     f"card {card['card_key']!r} angle {card['angle']!r} at {path} is opaque "
                     "(not an RGBA sprite) — regenerate via Story 8.2's sprite pipeline"
                 )
+
+        # ── Story 8.16: depth-aware ground plane per (shot, card) ──────────
+        # After alpha validation (the cards are known-good sprites by here) and
+        # before Tier 3, whose relit sprites inherit the same placement keys.
+        if _ground_resolver is not None and cast_cards:
+            try:
+                cast_cards = _merge_placements(
+                    cast_cards, await _ground_resolver(scenes, cast_cards) or {},
+                )
+            except Exception as exc:  # noqa: BLE001 — AD-10: degrades to the frame-centre anchor
+                logger.warning("Depth-aware placement failed, keeping centre anchor: %s", exc)
 
         # ── Story 8.7 Tier 3: IC-Light relight precomputation ─────────────
         relit_map: dict[tuple[str, str], Path] = {}

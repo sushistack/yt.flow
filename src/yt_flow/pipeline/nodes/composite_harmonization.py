@@ -61,6 +61,10 @@ _SHADOW_BLUR_RADII: dict[CastDepth, int] = {"near": 12, "mid": 9, "far": 6}
 # Horizontal offset (fraction of frame width) matching video.py's
 # _POSITION_X_FRAC rule-of-thirds anchors, re-expressed as an offset from center.
 _SHADOW_POSITION_OFFSETS: dict[str, float] = {"left": -1 / 6, "center": 0.0, "right": 1 / 6}
+# Ground line when a card carries none (no depth resolver injected — Story 8.16).
+# This is the pre-8.16 hardcoded ellipse Y, kept as the fallback so an
+# un-grounded card's shadow lands exactly where it always did.
+_DEFAULT_GROUND_Y = 0.85
 
 
 def build_sprite_tint(mood: str | None) -> str:
@@ -82,7 +86,15 @@ def build_contact_shadow(cast_member: CastMember) -> str:
     an alpha channel (e.g. a ``color=...,format=rgba`` source) — the caller
     (video.py) overlays the result onto the background before compositing
     the card itself, so the shadow sits underneath.
+
+    The ellipse's Y is the card's own ``ground_y`` (Story 8.16) — the same
+    fraction of frame height video.py anchors the card's bottom edge to, so the
+    shadow is under the feet by construction rather than at an independent
+    constant that happened to disagree. Absent (no ground resolver injected) it
+    falls back to :data:`_DEFAULT_GROUND_Y`, the pre-8.16 value.
     """
+    ground_y = cast_member.get("ground_y")
+    y_frac = _DEFAULT_GROUND_Y if ground_y is None else float(ground_y)
     depth = cast_member.get("depth", "mid")
     scale = _SHADOW_DEPTH_SCALES.get(depth, _SHADOW_DEPTH_SCALES["mid"])
     blur = _SHADOW_BLUR_RADII.get(depth, _SHADOW_BLUR_RADII["mid"])
@@ -99,7 +111,7 @@ def build_contact_shadow(cast_member: CastMember) -> str:
     return (
         f"geq=r=0:g=0:b=0:a='if(lt("
         f"(X/W-0.5-({h_offset}))*(X/W-0.5-({h_offset}))/({rx:.4f}*{rx:.4f})"
-        f"+(Y/H-0.85)*(Y/H-0.85)/({ry:.4f}*{ry:.4f}),1),64,0)'"
+        f"+(Y/H-{y_frac:g})*(Y/H-{y_frac:g})/({ry:.4f}*{ry:.4f}),1),64,0)'"
         f",boxblur={blur}:1"
     )
 
