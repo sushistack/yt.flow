@@ -145,13 +145,31 @@ ROOM_SHAPES = {
 }
 
 
+CORRIDOR_LIKE_KEYS = ("corridor", "maintenance-tunnel")
+
+
+def _blockout_shot(location_key: str, variant: str) -> str:
+    """Which camera the fallback blockout uses for this plate.
+
+    `wide-room-from-doorway` and `corridor` are both dead-centre, zero-yaw cameras, so
+    their line art is pixel-exactly left-right symmetric — a centred one-point
+    perspective, i.e. the composition this story exists to stop producing. Variant `a`
+    therefore uses the corner camera on the fallback path; the doorway shot is only
+    reached through a reference photo, where the photo's own geometry dominates.
+    """
+    if location_key in CORRIDOR_LIKE_KEYS:
+        return CORRIDOR_SHOT
+    shot = VARIANT_SHOTS[variant]
+    return "corner-three-quarter" if shot == "wide-room-from-doorway" else shot
+
+
 async def _upload_blockout(settings, location_key: str, variant: str) -> str:
     """Render this shot's room blockout and upload it as the ControlNet image."""
     from yt_flow.services import comfyui_client
 
     from room_blockout import render_blockout
 
-    shot = CORRIDOR_SHOT if location_key in ("corridor", "maintenance-tunnel") else VARIANT_SHOTS[variant]
+    shot = _blockout_shot(location_key, variant)
     png = render_blockout(
         shot,
         LOCATION_DEPTH.get(location_key, DEFAULT_DEPTH),
@@ -212,7 +230,7 @@ def _bypass_scribble(workflow: dict) -> dict:
     return workflow
 
 
-async def _upload_structure_hint(settings, workflow: dict, location_key: str, variant: str) -> str:
+async def _upload_structure_hint(settings, workflow: dict, location_key: str, variant: str) -> tuple[str, dict]:
     """Wire this plate's ControlNet hint: the curated photo if there is one, else the blockout.
 
     COPYRIGHT: the reference is uploaded to node 31 and nowhere else, and node 31 feeds
@@ -223,10 +241,16 @@ async def _upload_structure_hint(settings, workflow: dict, location_key: str, va
     reference = _reference_path(settings, location_key, variant)
     if reference is None:
         _bypass_scribble(workflow)
-        return await _upload_blockout(settings, location_key, variant)
-    return await comfyui_client.upload_image(
+        name = await _upload_blockout(settings, location_key, variant)
+        shot = _blockout_shot(location_key, variant)
+        return name, {"kind": "blockout", "shot": shot, "strength": BLOCKOUT_STRENGTH}
+    name = await comfyui_client.upload_image(
         settings.comfyui_url, reference.read_bytes(), f"locref_{location_key}_{variant}.png"
     )
+    # Record which photo, because a borrowed sibling or cross-key reference is why two
+    # plates can share a composition — the seed alone cannot explain that.
+    return name, {"kind": "reference", "ref": str(reference.relative_to(Path(settings.location_refs_dir))),
+                  "strength": workflow[CONTROLNET_APPLY_NODE]["inputs"]["strength"]}
 
 
 def _plate_prompt(location_key: str, variant: str) -> str:
@@ -454,10 +478,8 @@ async def seed_plate(
         if not force and not salt and _valid_plate(dest, mock=settings.comfyui_mock):
             print(f"skipped (already generated): {location_key} {variant}")
             return True
-        session.delete(existing)
-        session.commit()
-
     seed = _plate_seed(location_key, variant, salt)
+    hint_provenance: dict = {"kind": "mock"}
 
     try:
         if settings.comfyui_mock:
@@ -469,9 +491,10 @@ async def seed_plate(
                 _inject(template, _plate_prompt(location_key, variant), seed, settings.location_ipadapter_weight),
                 anchor_names,
             )
-            workflow[BLOCKOUT_NODE]["inputs"]["image"] = await _upload_structure_hint(
+            hint_name, hint_provenance = await _upload_structure_hint(
                 settings, workflow, location_key, variant
             )
+            workflow[BLOCKOUT_NODE]["inputs"]["image"] = hint_name
             image_bytes = await _submit_with_recovery(settings, workflow, done=done, total=total)
             dest.write_bytes(_upscale_to_contract(image_bytes))
 
@@ -480,11 +503,22 @@ async def seed_plate(
             return False
 
         rel_path = str(dest.relative_to(Path(settings.assets_path)))
-        # Seed + salt in the manifest source: enough to re-render this exact plate, which
-        # is the only way a re-rolled keeper can be reproduced.
+        # Delete the superseded row here, not before the render. Deleting up front meant a
+        # failure anywhere after it (a ComfyUI 500, a validation miss) left no row while
+        # the *previous* valid PNG was still on disk — and the resume check then reported
+        # "already generated" forever, so an approved plate lost its row, its label and its
+        # approved_at permanently and could never be re-rendered.
+        if existing is not None:
+            session.delete(existing)
+            session.commit()
+        # Seed, salt and the structure hint that actually drove the composition: the seed
+        # alone does not reproduce a plate now that a reference photo or a blockout, at
+        # two different ControlNet strengths, decides its geometry.
         asset_service.add_location_plate(
             location_key, variant, rel_path,
-            source={"seed": seed, "reroll_salt": salt, "render_size": f"{PLATE_RENDER_WIDTH}x{PLATE_RENDER_HEIGHT}"},
+            source={"seed": seed, "reroll_salt": salt,
+                    "render_size": f"{PLATE_RENDER_WIDTH}x{PLATE_RENDER_HEIGHT}",
+                    "structure_hint": hint_provenance},
         )
         print(f"generated: {location_key} {variant} -> {rel_path} (seed {seed})")
         return True

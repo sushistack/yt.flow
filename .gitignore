@@ -23,7 +23,7 @@ assets/*
 # web. They are only ever preprocessed into a line-structure map for ControlNet, never
 # redistributed — so the pixels stay out of the repo and refs.json carries the source
 # URL and vision verdict as the audit trail. Re-fetch with scripts/fetch_location_refs.py.
-data/refs/*/ref_*.png
+data/refs/**/ref_*.png
 
 # node (root — e2e/)
 node_modules/

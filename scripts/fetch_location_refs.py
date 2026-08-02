@@ -270,21 +270,33 @@ async def fetch_key(
                 continue
 
             variant = VARIANTS[len(kept)]
-            _write_ref(candidate, key_dir / f"ref_{variant}.png")
+            # Into the staging dir, not key_dir: a keeper must not overwrite an existing
+            # reference until the run is known to be a net gain (see the swap below).
+            # Guarded like every other step in this loop: a truncated or animated body can
+            # pass the downloader's content-type and size checks and still blow up in PIL,
+            # and an escape here abandoned the remaining keys of a 14-key batch.
+            try:
+                _write_ref(candidate, Path(staging) / f"keep_{variant}.png")
+            except Exception as exc:  # noqa: BLE001 — one candidate must not stop the batch
+                print(f"rejected (unreadable image: {exc}): {location_key} <- {url}")
+                rejected.append({"url": url, "reason": f"unreadable image: {exc}"})
+                continue
             kept[variant] = {"url": url, "title": result.get("title", ""), "verdict": verdict}
             print(f"kept: {location_key} {variant} <- {url}")
 
-    if not kept:
-        # Keep whatever a previous run curated. Clearing the directory up front and then
-        # searching cost two keys their only reference when the re-run found nothing:
-        # a partially-curated key is not "complete", so it gets re-fetched, and a bad
-        # search then left it with nothing at all.
+        # Never end a run with fewer references than it started with. `_is_complete`
+        # demands all three variants, so 13 of 14 keys are re-searched on every plain
+        # invocation, and DuckDuckGo results are not stable — an earlier version unlinked
+        # anything absent from the new keep-set, so a re-run that curated one photo
+        # silently destroyed two others. The photos are gitignored: unrecoverable.
         existing = sorted(key_dir.glob("ref_*.png"))
-        if existing:
-            print(f"kept {len(existing)} existing ref(s): {location_key} (this search found none)")
+        if len(kept) < len(existing):
+            print(f"kept {len(existing)} existing ref(s): {location_key} "
+                  f"(this search curated only {len(kept)}, which would have been a net loss)")
             return len(existing)
-    else:
-        for stale in key_dir.glob("ref_*.png"):
+        for variant in kept:
+            _write_ref(Path(staging) / f"keep_{variant}.png", key_dir / f"ref_{variant}.png")
+        for stale in existing:
             if stale.name not in {f"ref_{v}.png" for v in kept}:
                 stale.unlink()
 

@@ -375,3 +375,30 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
   summary: The plate composition verifier's rubric mislabels any receding-wall interior as a corridor, which sent three rounds of tuning after a phantom defect.
   evidence: `scratchpad/verify_plates.py` asks the vision model to pick a composition label; corner-view rooms whose geometry demonstrably matched their blockout hint were reported as `one-point-perspective-corridor`, producing a "60% corridors" figure that a side-by-side hint/result comparison disproved. Acting on it pushed ControlNet strength to 0.9, which caused the empty-room defect. Replace the label question with observable facts (is the far wall visible, how many walls, could you walk many metres down it) before reusing this verifier as a gate.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: Several shipped reference photos are AI-generated images or Pinterest re-hosts, which contradicts the premise that the hint is "a composition the checkpoint would not have invented" and leaves the audit trail pointing at no rights holder.
+  evidence: `data/refs/locations/containment-chamber/refs.json` cites two `easy-peasy.ai` "AI Art Generator" outputs (rejected lists also contain `imgcdn.stablediffusionweb.com`, `pics.craiyon.com`); `facility-exterior` and `entrance-checkpoint` cite `i.pinimg.com/originals/<hash>.jpg`. `BLOCKED_SOURCES` covers stock agencies but no AI-image hosts and no re-hosts, and the `matches_shot_type` rule's "not a render" clause did not catch them. Also: cafeteria a/c and control-room a are furniture/console vendor marketing shots and interview-room a is a set-rental page — rights-asserted commercial imagery the blocklist's own rationale would exclude.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `REF_BORROW` cross-key borrowing is untested, unvalidated against `LOCATION_KEYS`, and applies a foreign room's geometry at full reference strength.
+  evidence: `seed_location_plates.py` `REF_BORROW = {"autopsy-room": "observation-room"}` is exercised by no test and its keys/values are never checked against the real key set, so a typo silently degrades to the blockout. With today's files, autopsy-room variants `a` and `c` both resolve to `observation-room/ref_a.png` (`VARIANTS.index("c") % 2 == 0`) at strength 0.9 — the same structure map as observation-room's own variant `a`, so two library entries land as the same room with different dressing.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: No preflight for the new ComfyUI dependencies, and the crash-recovery loop turns a missing custom node into 42 pointless double submissions.
+  evidence: `_load_workflow` validates nodes 6/7/3/5/20/23/31/33/32 but not `CONTROLNET_LOADER_NODE = "30"`, and nothing checks that `FakeScribblePreprocessor` or `controlnet-scribble-sdxl-1.0.safetensors` exist — despite `_check_lookdev_decision` being the precedent for exactly this kind of gate. On a host missing the node, `ComfyUIError` is indistinguishable from a crash, so `_submit_with_recovery` health-checks (passes instantly) and re-submits once per plate: 42 uploads and 84 failed submits with no distinct diagnosis.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: The reference-photo copyright claim is narrower than stated — the full photo also reaches DashScope and ComfyUI's input directory.
+  evidence: `fetch_location_refs.py`'s docstring says "the pixels never leave this directory", but `score_candidate` base64-encodes the whole photo to DashScope for curation, and `_upload_structure_hint` uploads the full photo bytes to ComfyUI's `input/` as `locref_<key>_<variant>.png` and never removes them (a third machine's disk if ComfyUI is remote). The guarding test proves only what the *sampler* is conditioned on, which is a different claim. Either narrow the docstring to that claim or clean up the uploads.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `fetch_location_refs.py` duplicates the labeler's decision rule instead of importing it, and drags the DB stack into an offline curation script.
+  evidence: `REQUIRED_BOOLS` / `MIN_CONFIDENCE` / `_reject_reason` are a near-verbatim fork of `label_location_plates.py`'s while the docstring claims "the same decision rule" — two copies that will drift. The module also imports `seed_location_plates` (and with it sqlmodel, `yt_flow.db`, `AssetService`) for four constants.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `room_blockout.py` drops whole edges instead of clipping them at the near plane, and its smoke check cannot detect that.
+  evidence: `_project` returns `None` for a vertex behind the camera and `render_blockout` skips the edge entirely, so a close camera silently emits a partial box; the `__main__` check only asserts `lit > 500` px, which a 3-of-12-edge drawing passes. `line: int = 5` was also tuned in a 512×288 preview but is used at 1344×768.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: Curation accepts verdicts that contradict their own notes, and module invariants rely on bare `assert`.
+  evidence: `data/refs/locations/cafeteria/refs.json` ref `c` is kept with `has_person: false` while its own notes describe "personal items like laptops and food trays", and refs `a`/`b` carry byte-identical notes that cannot describe both photos — `_reject_reason` never cross-checks `notes`. Separately the `LOCATION_PROMPTS`/`VARIANT_CAMERAS`/`REF_QUERIES` asserts vanish under `python -O`, and `ROOM_SHAPES` has no assert at all while `_plate_prompt` uses `if location_key in ROOM_SHAPES`, so a misspelled key silently drops its room-shape clause.
