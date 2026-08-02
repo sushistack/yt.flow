@@ -832,6 +832,48 @@ class TestReferenceImageInjectionAndFallback:
         assert cleaned[85, 85, 3] == 255  # large detached component survives
         assert cleaned[7, 7, 3] == 0  # disconnected speck removed
 
+    def test_normalize_subject_scale_makes_framing_consistent(self):
+        """Story 8.15: the front angle is t2i and the rest i2i from it, so the same card
+        set came back with the front figure noticeably smaller than its own side and back
+        views. Framing is not something the text encoder controls, so it is corrected on
+        the cutout: subject height is pinned to a fixed share of the canvas, feet down."""
+        from yt_flow.services.character_image_provider import (
+            _SUBJECT_HEIGHT_FRACTION,
+            _normalize_subject_scale,
+        )
+
+        def card(subject_h):
+            arr = np.zeros((400, 300, 4), dtype=np.uint8)
+            top = (400 - subject_h) // 2
+            arr[top:top + subject_h, 130:170, :3] = 255
+            arr[top:top + subject_h, 130:170, 3] = 255
+            buf = io.BytesIO()
+            Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+            return buf.getvalue()
+
+        def subject_height(png):
+            a = np.array(Image.open(io.BytesIO(png)).convert("RGBA"))[:, :, 3]
+            rows = np.flatnonzero(a.max(axis=1) > 10)
+            return int(rows[-1] - rows[0] + 1)
+
+        small, large = _normalize_subject_scale(card(120)), _normalize_subject_scale(card(300))
+        assert abs(subject_height(small) - subject_height(large)) <= 2
+        assert abs(subject_height(small) - 400 * _SUBJECT_HEIGHT_FRACTION) <= 4
+
+    def test_normalize_subject_scale_rejects_two_side_by_side_figures(self):
+        """Touching figures survive the largest-component cut, so the give-away is the
+        bounding box: nobody standing is nearly as wide as they are tall."""
+        from yt_flow.services.character_image_provider import _normalize_subject_scale
+
+        arr = np.zeros((400, 400, 4), dtype=np.uint8)
+        arr[50:350, 60:340, :3] = 255
+        arr[50:350, 60:340, 3] = 255  # 280 wide x 300 tall — ratio 0.93
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        with pytest.raises(ValueError, match="too wide for one standing figure"):
+            _normalize_subject_scale(buf.getvalue())
+
     def test_clean_alpha_noise_drops_a_flanking_second_figure(self):
         """Story 8.15: the checkpoint likes to compose a character reference sheet,
         leaving half-drawn duplicates beside the subject. They are far too big for the

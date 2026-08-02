@@ -238,8 +238,7 @@ def test_stock_negative_carries_the_prohibitions():
     seed = _load_script()
     text = seed.STOCK_NEGATIVE.lower()
     for term in (
-        "skull mask", "plague doctor mask", "gas mask", "respirator",
-        "helmet", "visor", "hazmat suit", "glowing eyes", "undead", "monster",
+        "skull mask", "gas mask", "helmet", "visor", "glowing eyes", "monster",
         # Multi-subject suppression: the checkpoint composes character sheets, and
         # touching figures form one alpha component that no cutout rule can split.
         "character sheet", "multiple views", "2boys",
@@ -252,6 +251,11 @@ def test_stock_negative_carries_the_prohibitions():
     # face / horror creature face and suppressed the word itself — the staged fronts
     # came back as a blank white face and a black void with eye slits.
     assert text.count("face") <= 1, "STOCK_NEGATIVE repeats 'face'; it will erase faces"
+    # Length is its own failure mode, independent of wording. This list rides on top of
+    # the workflow's own ~30-term negative, and a ~40-term version of it turned all four
+    # STOCK-security cards into giant abstract polygons with a thumbnail guard inside.
+    # Every defect tempts one more clause; the cap is what stops the drift.
+    assert len(text.split(",")) <= 15, "STOCK_NEGATIVE is drifting long; over-stuffing wrecks the render"
 
 
 def test_stage_rejects_targets_the_approve_script_cannot_promote():

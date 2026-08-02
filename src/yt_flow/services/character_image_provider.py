@@ -37,6 +37,59 @@ def _drop_reference_only_nodes(workflow: dict) -> None:
             workflow.pop(node_id, None)
 
 
+_SUBJECT_HEIGHT_FRACTION = 0.94
+_MAX_SUBJECT_ASPECT = 0.75
+
+
+def _normalize_subject_scale(png_bytes: bytes) -> bytes:
+    """Rescale the cut-out subject to a fixed share of the canvas, feet at the bottom.
+
+    The front angle is generated t2i and the other three i2i from it, so the checkpoint
+    frames them differently: a card set would come back with the front figure noticeably
+    smaller than its own side and back views. Prompt wording cannot fix that — framing is
+    not something the text encoder controls — but on an alpha cutout it is arithmetic.
+
+    Also rejects a card whose subject is far too wide to be one standing person: two
+    figures side by side survive the largest-component cut when they touch, and this is
+    the cheapest place to notice. Raising here reuses the existing per-angle failure
+    path (Story 8.15).
+    """
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+    alpha = np.array(im)[:, :, 3]
+    rows = np.flatnonzero(alpha.max(axis=1) > 10)
+    cols = np.flatnonzero(alpha.max(axis=0) > 10)
+    if rows.size == 0 or cols.size == 0:
+        raise ValueError("generated character sprite has an empty alpha mask")
+
+    top, bottom = int(rows[0]), int(rows[-1]) + 1
+    left, right = int(cols[0]), int(cols[-1]) + 1
+    subject_h, subject_w = bottom - top, right - left
+    if subject_w / subject_h > _MAX_SUBJECT_ASPECT:
+        raise ValueError(
+            f"generated character sprite is {subject_w}x{subject_h}; too wide for one "
+            "standing figure (likely two subjects)"
+        )
+
+    width, height = im.size
+    scale = (height * _SUBJECT_HEIGHT_FRACTION) / subject_h
+    new_w, new_h = max(1, round(subject_w * scale)), max(1, round(subject_h * scale))
+    if new_w > width:  # very wide subject: fit to width instead so nothing is clipped
+        new_h = max(1, round(new_h * width / new_w))
+        new_w = width
+    subject = im.crop((left, top, right, bottom)).resize((new_w, new_h), Image.LANCZOS)
+
+    out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    out.paste(subject, ((width - new_w) // 2, height - new_h), subject)
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _clean_alpha_noise(png_bytes: bytes) -> bytes:
     """Remove InSPyReNet's ordered-dither cutout artifacts from a generated sprite.
 
@@ -185,7 +238,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i generation succeeded (%dx%d)", width, height)
-            return _clean_alpha_noise(result)
+            return _normalize_subject_scale(_clean_alpha_noise(result))
 
         # Try i2i with reference image
         try:
@@ -194,14 +247,14 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._inject_reference_image(workflow, uploaded_name)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI i2i generation succeeded (%dx%d)", width, height)
-            return _clean_alpha_noise(result)
+            return _normalize_subject_scale(_clean_alpha_noise(result))
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
             # Fallback: bypass the reference-image conditioning and use t2i
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i fallback succeeded (%dx%d)", width, height)
-            return _clean_alpha_noise(result)
+            return _normalize_subject_scale(_clean_alpha_noise(result))
 
     def _load_workflow(self) -> dict:
         """Load ComfyUI workflow JSON template.

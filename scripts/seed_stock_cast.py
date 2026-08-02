@@ -31,9 +31,15 @@ from yt_flow.services.image_search import DuckDuckGoImageSearch  # noqa: E402
 # on one angle and teal on another. The enrichment read-back cannot cover for it — its
 # prompt has no hair/eye/face dimension at all, only silhouette, texture, outfit
 # palette, anomalous traits, lighting and art style.
+# "mature adult male" is stated three ways and the age is numeric, because one
+# adjective did not hold: four re-rolls of STOCK-d-class returned a child, a chibi and
+# a girl despite "1boy, adult, a gaunt man in his thirties" already being present. The
+# orange-jumpsuit prompt pulls this anime checkpoint hard toward young characters, so
+# the counter-pull has to be in the tags, not in one word (Story 8.15).
 _BARE_FACE = (
-    "solo, 1boy, adult, ordinary human face, short straight black hair, brown "
-    "eyes, visible nose and mouth, natural skin"
+    "solo, 1boy, mature adult man, 35 years old, adult male body proportions, "
+    "ordinary human face, short straight black hair, brown eyes, visible nose and "
+    "mouth, natural skin"
 )
 # One concrete, reproducible feature per key. "plain forgettable features" was actively
 # fighting cross-angle identity: with nothing to hold onto the model drew a different
@@ -65,10 +71,14 @@ STOCK_DESCRIPTORS = {
         "his thirties, white lab coat over shirt and tie, long dark trousers, ID badge, "
         "practical shoes, clinical professional posture"
     ),
+    # "dark uniform" kept pulling this into a military dress uniform — epaulettes, gold
+    # braid, rank insignia. Naming the actual garments instead of "uniform" holds it to
+    # a facility guard, and does so in the positive prompt rather than by growing the
+    # negative, which is what wrecked two earlier rounds.
     "STOCK-security": (
-        f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-security']}, a security guard in his "
-        "thirties, black tactical vest over a dark uniform, long dark trousers, "
-        "alert disciplined posture"
+        f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-security']}, a facility security guard in "
+        "his thirties, black tactical vest over a plain grey short-sleeve shirt, black "
+        "cargo trousers, alert disciplined posture"
     ),
 }
 # Suppression stays per-call and STOCK-scoped: the shared workflow's own negative
@@ -80,16 +90,18 @@ STOCK_DESCRIPTORS = {
 # word itself suppressed — STOCK-security rendered a blank white face with white
 # blob hands and STOCK-d-class a black void with eye slits. Body/age terms
 # (bald, child, shorts…) are steered affirmatively by the descriptor instead.
+#
+# LENGTH IS THE CONSTRAINT, not just wording. This list is appended to the workflow's
+# own ~30-term negative, and every defect met along the way tempted one more clause.
+# Twice now that ended badly: a version repeating "face" blanked the faces, and a
+# ~40-term version turned all four STOCK-security cards into giant abstract polygons
+# with a thumbnail-sized guard inside them. Keep it to the defects that actually
+# recurred, steer everything else affirmatively from the descriptor, and re-add a term
+# only when its defect comes back — never pre-emptively.
 STOCK_NEGATIVE = (
-    "skull mask, plague doctor mask, gas mask, respirator, helmet, visor, "
-    "hazmat suit, glowing eyes, undead, monster, "
-    "multiple views, character sheet, reference sheet, turnaround, 2boys, "
-    "multiple boys, duplicate, "
-    # Hair length has to be suppressed as well as pinned: the researcher's side view
-    # grew hair down to the waist while its other three angles stayed cropped.
-    "long hair, ponytail, bald, "
-    # Facility security, not an army officer — see the STOCK-security note above.
-    "military uniform, dress uniform, epaulettes, gold braid, medals, rank insignia"
+    "skull mask, gas mask, helmet, visor, glowing eyes, monster, "
+    "character sheet, multiple views, 2boys, "
+    "child, 1girl, chibi"
 )
 VALID_POSES = ("standing", "sitting")
 
