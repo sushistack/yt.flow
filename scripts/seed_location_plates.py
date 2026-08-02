@@ -6,18 +6,27 @@ For each LocationKey x variant (a/b/c, 3 per key), submits the IPAdapter
 style-anchor workflow to ComfyUI, saves the PNG under
 assets/locations/{location_key}/{variant}.png, and upserts a draft
 LocationPlate row via AssetService (manifest + DB in one call). Curation
-(scripts/approve_location_plate.py) promotes drafts to approved; only
-approved plates are used by image_node's STOCK fast path.
+(scripts/label_location_plates.py, then scripts/approve_location_plate.py)
+promotes drafts to approved; only approved plates are used by image_node's
+STOCK fast path.
+
+Story 8.17 made the batch actually survivable: renders at an SDXL-native bucket
+and upscales to the 1920x1080 on-disk contract, resumes at the first plate
+without a file after a ComfyUI abort, re-rolls a rejected plate to a different
+image with --reroll, and can render its own style-anchor candidates.
 
 Workflow node map (data/workflows/comfyui_location_plate_api.json):
   6 = positive CLIPTextEncode, 7 = negative CLIPTextEncode, 3 = KSampler (seed),
+  5 = EmptyLatentImage (render size), 11 = last LoraLoader (model chain),
   20 = IPAdapter anchor LoadImage, 23 = IPAdapterAdvanced (weight).
 """
 
 import argparse
 import asyncio
 import copy
+import hashlib
 import json
+import secrets
 import struct
 import sys
 from pathlib import Path
@@ -30,15 +39,28 @@ from yt_flow import db  # noqa: E402
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.db.models import LocationPlate  # noqa: E402
 from yt_flow.domain.state import LOCATION_KEYS  # noqa: E402
+from yt_flow.pipeline.nodes.image import _wait_for_comfyui_recovery  # noqa: E402
 from yt_flow.services import comfyui_client  # noqa: E402
 from yt_flow.services.asset_service import AssetService  # noqa: E402
+from yt_flow.services.comfyui_client import ComfyUIError  # noqa: E402
 
 VARIANTS = ("a", "b", "c")
 POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE = "6", "7", "3"
 ANCHOR_NODE, IPADAPTER_NODE = "20", "23"
+LATENT_NODE, MODEL_NODE = "5", "11"
 LOCATION_PLATE_WIDTH = 1920
 LOCATION_PLATE_HEIGHT = 1080
+# Render at an SDXL-native bucket, not at the on-disk contract: a 1920x1080 latent is
+# ~2x SDXL's training area and the sampler answers with duplicated architecture
+# (doubled doorways, mirrored corridors). 1344x768 is the bucket Story 11.1 settled on
+# for shot backgrounds; the plate is Lanczos-upscaled to 1920x1080 before validation.
+PLATE_RENDER_WIDTH = 1344
+PLATE_RENDER_HEIGHT = 768
 MIN_VALID_PLATE_BYTES = 1024
+# Prompt for --anchor-candidates. Deliberately an existing LOCATION_PROMPTS entry
+# rather than new prompt text (prompt content is out of scope for Story 8.17): a
+# corridor is the most generic facility interior in the set. Override with --key.
+ANCHOR_CANDIDATE_KEY = "corridor"
 PLATE_NEGATIVE_PROMPT = (
     "lowres, bad anatomy, worst quality, blurry, watermark, text, logo, "
     "person, people, human, character, creature, figure, silhouette"
@@ -70,7 +92,7 @@ def _load_workflow(path: str) -> dict:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
         sys.exit(f"cannot load ComfyUI workflow at {path!r}: {exc}")
-    for node_id in (POSITIVE_NODE, NEGATIVE_NODE, ANCHOR_NODE, IPADAPTER_NODE):
+    for node_id in (POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE, LATENT_NODE, ANCHOR_NODE, IPADAPTER_NODE):
         if node_id not in workflow:
             raise ValueError(f"location plate workflow at {path!r} missing node {node_id!r}")
     return workflow
@@ -120,7 +142,90 @@ def _inject(template: dict, prompt: str, seed: int, weight: float) -> dict:
     workflow[NEGATIVE_NODE]["inputs"]["text"] = PLATE_NEGATIVE_PROMPT
     workflow[IPADAPTER_NODE]["inputs"]["weight"] = weight
     workflow[SAMPLER_NODE]["inputs"]["seed"] = seed
+    workflow[LATENT_NODE]["inputs"]["width"] = PLATE_RENDER_WIDTH
+    workflow[LATENT_NODE]["inputs"]["height"] = PLATE_RENDER_HEIGHT
     return workflow
+
+
+def _strip_ipadapter(workflow: dict) -> dict:
+    """Drop the IPAdapter branch, rewiring KSampler straight to the LoRA chain.
+
+    An anchor *candidate* is the image the style will later be anchored to, so it
+    cannot itself be style-anchored — and when --anchor-candidates runs there is no
+    anchor image to load. Removal is by class_type (mirrors
+    character_image_provider._drop_reference_only_nodes) so the orphaned CLIPVision /
+    IPAdapterModelLoader loaders go with it and ComfyUI sees no dangling inputs.
+    """
+    workflow = copy.deepcopy(workflow)
+    workflow[SAMPLER_NODE]["inputs"]["model"] = [MODEL_NODE, 0]
+    for node_id, node in list(workflow.items()):
+        if node.get("class_type") in ("LoadImage", "CLIPVisionLoader", "IPAdapterModelLoader", "IPAdapterAdvanced"):
+            workflow.pop(node_id)
+    return workflow
+
+
+def _plate_seed(location_key: str, variant: str, salt: str = "") -> int:
+    """Deterministic per-plate KSampler seed; a non-empty ``salt`` re-rolls it.
+
+    sha256, not the shipped ``int.from_bytes(..., "little") % 2**31``: little-endian
+    truncation makes that value a function of the first four bytes only, so
+    "containment-chamber" and "control-room" drew the *same* seed and a salt appended
+    to the end was discarded outright. Same reasoning as image.py's
+    _plate_variant_index, which uses sha256 for the same reason.
+    """
+    return int(hashlib.sha256(f"{location_key}:{variant}:{salt}".encode()).hexdigest(), 16) % (2**31)
+
+
+def _upscale_to_contract(image_bytes: bytes) -> bytes:
+    """Lanczos-resample a native-bucket render up to the 1920x1080 on-disk contract.
+
+    ``_valid_plate`` requires exactly those dimensions and image_node copies the file
+    verbatim, so the render is upscaled to meet the contract rather than the check
+    being weakened. ``convert("RGB")`` also pins the RGB-no-alpha half of it.
+    # ponytail: PIL imported lazily, like character_image_provider._clean_alpha_noise —
+    # already installed transitively, and mock mode never pays for it. 1344x768 is
+    # 1.75:1, so this stretches width ~1.6% relative to height; cropping to 16:9 first
+    # would cost 12 rows of a room interior for no visible gain.
+    """
+    import io
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as im:
+        resized = im.convert("RGB").resize((LOCATION_PLATE_WIDTH, LOCATION_PLATE_HEIGHT), Image.LANCZOS)
+    buffer = io.BytesIO()
+    resized.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class RecoveryExhausted(RuntimeError):
+    """ComfyUI stayed down past the recovery window — abort the batch instead of
+    failing every remaining plate against a dead server."""
+
+
+async def _submit_with_recovery(settings: Settings, workflow: dict, *, done: int, total: int) -> bytes:
+    """Submit one plate, absorbing a mid-batch ComfyUI abort (Story 5.23's loop, reused).
+
+    ``hipErrorIllegalAddress`` core dumps are routine on this host, so a 42-plate batch
+    will meet one. On a submit failure, wait for the server to come back and retry once;
+    the retry's own failure is a per-plate failure (the batch continues), but a recovery
+    window that never closes is fatal to the batch.
+    """
+    try:
+        return await comfyui_client.submit_and_fetch(settings.comfyui_url, workflow)
+    except ComfyUIError as exc:
+        try:
+            # ponytail: image.py's helper verbatim — its log line says "shots", which for
+            # this batch means plates. Not worth renaming a parameter in a shared node.
+            await _wait_for_comfyui_recovery(
+                settings.comfyui_url,
+                poll_sec=settings.comfyui_crash_recovery_poll_sec,
+                timeout_sec=settings.comfyui_crash_recovery_timeout_sec,
+                shots_done=done, total_shots=total,
+            )
+        except ComfyUIError as still_down:
+            raise RecoveryExhausted(f"ComfyUI did not recover: {still_down}") from exc
+        return await comfyui_client.submit_and_fetch(settings.comfyui_url, workflow)
 
 
 def _valid_plate(path: Path, *, mock: bool) -> bool:
@@ -168,20 +273,30 @@ async def seed_plate(
     location_key: str,
     variant: str,
     force: bool,
+    salt: str = "",
+    done: int = 0,
+    total: int = 0,
 ) -> bool:
     """Generate (or mock-copy) and upsert one plate. Returns True on success."""
+    dest_dir = Path(settings.assets_path) / "locations" / location_key
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{variant}.png"
+
     existing = _existing_row(session, location_key, variant)
     if existing is not None:
         if existing.status == "approved" and not force:
             print(f"skipped (approved): {location_key} {variant}")
             return True
+        # Resume: an aborted batch must not re-render what it already produced, so a
+        # draft whose file is still on disk and valid counts as finished work. --force
+        # and --reroll are the two ways to ask for a new image for the same plate.
+        if not force and not salt and _valid_plate(dest, mock=settings.comfyui_mock):
+            print(f"skipped (already generated): {location_key} {variant}")
+            return True
         session.delete(existing)
         session.commit()
 
-    dest_dir = Path(settings.assets_path) / "locations" / location_key
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{variant}.png"
-    seed = int.from_bytes(f"{location_key}:{variant}".encode(), "little") % (2**31)
+    seed = _plate_seed(location_key, variant, salt)
 
     try:
         if settings.comfyui_mock:
@@ -193,20 +308,58 @@ async def seed_plate(
                 _inject(template, LOCATION_PROMPTS[location_key], seed, settings.location_ipadapter_weight),
                 anchor_names,
             )
-            image_bytes = await comfyui_client.submit_and_fetch(settings.comfyui_url, workflow)
-            dest.write_bytes(image_bytes)
+            image_bytes = await _submit_with_recovery(settings, workflow, done=done, total=total)
+            dest.write_bytes(_upscale_to_contract(image_bytes))
 
         if not _valid_plate(dest, mock=settings.comfyui_mock):
             print(f"failed (validation): {location_key} {variant}")
             return False
 
         rel_path = str(dest.relative_to(Path(settings.assets_path)))
-        asset_service.add_location_plate(location_key, variant, rel_path)
-        print(f"generated: {location_key} {variant} -> {rel_path}")
+        # Seed + salt in the manifest source: enough to re-render this exact plate, which
+        # is the only way a re-rolled keeper can be reproduced.
+        asset_service.add_location_plate(
+            location_key, variant, rel_path,
+            source={"seed": seed, "reroll_salt": salt, "render_size": f"{PLATE_RENDER_WIDTH}x{PLATE_RENDER_HEIGHT}"},
+        )
+        print(f"generated: {location_key} {variant} -> {rel_path} (seed {seed})")
         return True
+    except RecoveryExhausted:
+        raise  # fatal to the batch, not to one plate
     except Exception as exc:  # noqa: BLE001 — one plate's failure must not stop the batch
         print(f"failed ({exc}): {location_key} {variant}")
         return False
+
+
+async def generate_anchor_candidates(settings: Settings, template: dict, *, count: int, location_key: str) -> int:
+    """Render N unconditioned candidates into a review dir and stop — no DB, no manifest.
+
+    Satisfies the anchor gate without hand-made art: the operator picks one, copies it
+    into ``location_anchor_dir`` and records the choice in LOOKDEV_DECISION.md. Nothing
+    here is a library asset, so it goes under workspace_path (same shape as
+    seed_stock_cast.py's --anchor-search review directory).
+    """
+    review_dir = Path(settings.workspace_path) / "location-anchor-candidates"
+    review_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for index in range(1, count + 1):
+        dest = review_dir / f"candidate_{index}.png"
+        workflow = _strip_ipadapter(
+            _inject(template, LOCATION_PROMPTS[location_key], _plate_seed(location_key, f"anchor{index}"), 0.0)
+        )
+        try:
+            dest.write_bytes(await comfyui_client.submit_and_fetch(settings.comfyui_url, workflow))
+        except Exception as exc:  # noqa: BLE001 — one bad candidate must not lose the others
+            print(f"failed ({exc}): candidate {index}")
+            continue
+        written += 1
+        print(f"candidate: {dest}")
+    print(
+        f"Review {review_dir} ({written}/{count} rendered), copy the chosen candidate into "
+        f"{settings.location_anchor_dir}/ and record the choice in "
+        f"{Path(settings.location_anchor_dir) / 'LOOKDEV_DECISION.md'} before seeding plates."
+    )
+    return 0 if written else 1
 
 
 async def run(args) -> int:
@@ -214,30 +367,53 @@ async def run(args) -> int:
     db.init(f"sqlite:///{settings.db_path}")
     anchor_dir = Path(settings.location_anchor_dir)
 
+    if args.anchor_candidates and settings.comfyui_mock:
+        sys.exit("--anchor-candidates renders real images; it does nothing in YTFLOW_COMFYUI_MOCK mode")
+
     template = None
     anchor_names: list[str] = []
     if not settings.comfyui_mock:
+        template = _load_workflow(settings.location_plate_workflow_path)
+        if args.anchor_candidates:
+            # Before the gates on purpose: this mode exists to satisfy them.
+            return await generate_anchor_candidates(
+                settings, template,
+                count=args.anchor_candidates, location_key=args.key or ANCHOR_CANDIDATE_KEY,
+            )
         _check_lookdev_decision(anchor_dir)
         anchor_paths = _load_anchor_paths(anchor_dir)
-        template = _load_workflow(settings.location_plate_workflow_path)
         for p in anchor_paths:
             anchor_names.append(await comfyui_client.upload_image(settings.comfyui_url, p.read_bytes(), p.name))
 
+    salt = args.reroll or ""
+    if args.reroll == "":  # bare --reroll: a fresh salt, printed so a keeper is reproducible
+        salt = secrets.token_hex(4)
+        print(f"reroll salt: {salt} (re-run with --reroll {salt} to reproduce these plates)")
+
     keys = [args.key] if args.key else list(LOCATION_KEYS)
     variants = [args.variant] if args.variant else list(VARIANTS)
+    plates = [(key, variant) for key in keys for variant in variants]
 
     ok = failed = 0
     with Session(db._engine) as session:
         asset_service = AssetService(settings.assets_path, session)
-        for location_key in keys:
-            for variant in variants:
+        for index, (location_key, variant) in enumerate(plates):
+            try:
                 success = await seed_plate(
                     session=session, settings=settings, asset_service=asset_service,
                     template=template, anchor_names=anchor_names,
                     location_key=location_key, variant=variant, force=args.force,
+                    salt=salt, done=index, total=len(plates),
                 )
-                ok += success
-                failed += not success
+            except RecoveryExhausted as exc:
+                # Name what is left: a re-run resumes at the first plate without a file.
+                remaining = ", ".join(f"{key} {var}" for key, var in plates[index:])
+                print(f"aborted ({exc})")
+                print(f"not generated: {remaining}")
+                print(f"done: {ok} ok, {failed} failed, {len(plates) - index} not attempted")
+                return 1
+            ok += success
+            failed += not success
 
     print(f"done: {ok} ok, {failed} failed")
     return 0 if failed == 0 else 1
@@ -245,9 +421,21 @@ async def run(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Seed the stock location plate library.")
-    parser.add_argument("--key", choices=LOCATION_KEYS, help="Seed one location key instead of all 14.")
+    parser.add_argument(
+        "--key", choices=LOCATION_KEYS,
+        help=f"Seed one location key instead of all 14 (also picks the --anchor-candidates prompt, default {ANCHOR_CANDIDATE_KEY}).",
+    )
     parser.add_argument("--variant", choices=VARIANTS, help="Seed one variant instead of all 3.")
     parser.add_argument("--force", action="store_true", help="Regenerate even if a plate is already approved.")
+    parser.add_argument(
+        "--reroll", nargs="?", const="", metavar="SALT",
+        help="Re-render targeted plates with a salted seed. Bare flag = a fresh random salt "
+             "(printed, and recorded in the manifest source); pass a recorded salt to reproduce it.",
+    )
+    parser.add_argument(
+        "--anchor-candidates", type=int, metavar="N",
+        help="Render N unconditioned style-anchor candidates into workspace/ for review, then exit.",
+    )
     return parser
 
 

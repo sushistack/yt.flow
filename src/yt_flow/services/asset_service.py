@@ -127,8 +127,15 @@ class AssetService:
 
     # ── LocationPlate (8-5 consumes; defined here) ──────────────────────
 
-    def add_location_plate(self, location_key: str, variant: str, image_path: str) -> LocationPlate:
-        """Create the DB row + manifest entry for a location plate in one call."""
+    def add_location_plate(
+        self, location_key: str, variant: str, image_path: str, source: dict | None = None,
+    ) -> LocationPlate:
+        """Create the DB row + manifest entry for a location plate in one call.
+
+        ``source`` merges extra provenance into the manifest entry (Story 8.17 puts
+        the render seed/reroll salt there, and the auto-labeler's verdict later) —
+        ``LocationPlate`` has no such columns and one advisory dict is not a migration.
+        """
         plate = LocationPlate(
             location_key=location_key, variant=variant, image_path=image_path, style_epoch=self.style_epoch,
         )
@@ -141,6 +148,7 @@ class AssetService:
         self._session.refresh(plate)
         self.add_asset(
             f"{location_key}/{variant}", image_path,
-            source={"type": "comfyui_generation"}, location_key=location_key, variant=variant,
+            source={"type": "comfyui_generation", **(source or {})},
+            location_key=location_key, variant=variant,
         )
         return plate
