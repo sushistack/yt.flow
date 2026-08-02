@@ -57,6 +57,9 @@ def _env(tmp_path, monkeypatch, *, mock=False, anchors=True, lookdev=True):
     monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(assets))
     monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "workspace"))
     monkeypatch.setenv("YTFLOW_LOCATION_ANCHOR_DIR", str(anchor_dir))
+    # Never the repo's own data/refs/: an absent dir is the blockout fallback, which is
+    # the default these tests assume unless _write_ref puts one there.
+    monkeypatch.setenv("YTFLOW_LOCATION_REFS_DIR", str(tmp_path / "refs"))
     monkeypatch.setenv("YTFLOW_COMFYUI_MOCK", "true" if mock else "false")
     if anchors:
         (anchor_dir / "anchor.png").write_bytes(_png(64, 64))
@@ -66,11 +69,12 @@ def _env(tmp_path, monkeypatch, *, mock=False, anchors=True, lookdev=True):
     return assets, anchor_dir
 
 
-def _fake_comfy(monkeypatch, module, *, fail_on=(), image=None):
+def _fake_comfy(monkeypatch, module, *, fail_on=(), image=None, uploads=None):
     """Replace the ComfyUI HTTP seam; returns the list of submitted workflows.
 
     ``fail_on`` holds 1-based submit call numbers that raise ComfyUIError — the shape
-    a hipErrorIllegalAddress abort takes at this seam.
+    a hipErrorIllegalAddress abort takes at this seam. ``uploads``, if given, collects
+    ``(filename, bytes)`` for every upload so a test can prove which image was sent.
     """
     calls: list[dict] = []
 
@@ -81,11 +85,39 @@ def _fake_comfy(monkeypatch, module, *, fail_on=(), image=None):
         return image if image is not None else _png(1344, 768)
 
     async def fake_upload(url, image_bytes, filename):
+        if uploads is not None:
+            uploads.append((filename, image_bytes))
         return filename
 
     monkeypatch.setattr(module.comfyui_client, "submit_and_fetch", fake_submit)
     monkeypatch.setattr(module.comfyui_client, "upload_image", fake_upload)
     return calls
+
+
+def _write_ref(tmp_path, location_key, variant, colour=(11, 22, 33)):
+    """Put a curated structure reference where ``_reference_path`` will find it."""
+    from PIL import Image
+
+    path = tmp_path / "refs" / location_key / f"ref_{variant}.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (1344, 768), colour).save(path, format="PNG")
+    return path
+
+
+def _reachable(workflow: dict, node_id: str, socket: str) -> set[str]:
+    """Node ids reachable upstream from ``workflow[node_id]["inputs"][socket]``."""
+    seen: set[str] = set()
+    frontier = [workflow[node_id]["inputs"][socket]]
+    while frontier:
+        link = frontier.pop()
+        if not (isinstance(link, list) and len(link) == 2 and isinstance(link[0], str)):
+            continue
+        upstream = link[0]
+        if upstream in seen or upstream not in workflow:
+            continue
+        seen.add(upstream)
+        frontier.extend(workflow[upstream]["inputs"].values())
+    return seen
 
 
 def _rows() -> list[LocationPlate]:
@@ -305,6 +337,100 @@ def test_an_exhausted_recovery_window_aborts_and_names_the_remaining_plates(tmp_
     assert [row.variant for row in _rows()] == ["a"]
 
 
+# ── Structure hint: curated reference vs procedural blockout ─────────────────
+
+def test_a_curated_reference_is_used_as_the_controlnet_hint(tmp_path, monkeypatch):
+    seed = _load_script()
+    _env(tmp_path, monkeypatch)
+    uploads: list[tuple[str, bytes]] = []
+    calls = _fake_comfy(monkeypatch, seed, uploads=uploads)
+    ref = _write_ref(tmp_path, "autopsy-room", "a")
+
+    assert _run(seed, ["--key", "autopsy-room", "--variant", "a"]) == 0
+
+    workflow = calls[0]
+    assert workflow[seed.BLOCKOUT_NODE]["inputs"]["image"] == "locref_autopsy-room_a.png"
+    # The photo is preprocessed into line structure before it reaches the ControlNet.
+    assert workflow[seed.SCRIBBLE_NODE]["inputs"]["image"] == [seed.BLOCKOUT_NODE, 0]
+    assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["image"] == [seed.SCRIBBLE_NODE, 0]
+    assert ("locref_autopsy-room_a.png", ref.read_bytes()) in uploads
+
+
+def test_a_plate_without_a_reference_falls_back_to_the_procedural_blockout(tmp_path, monkeypatch):
+    seed = _load_script()
+    _env(tmp_path, monkeypatch)
+    calls = _fake_comfy(monkeypatch, seed)
+    # No reference at all for this key — only then is the empty blockout the best hint.
+    assert _run(seed, ["--key", "corridor"]) == 0
+
+    by_variant = {call[seed.BLOCKOUT_NODE]["inputs"]["image"]: call for call in calls}
+    assert set(by_variant) == {
+        "blockout_corridor_a.png", "blockout_corridor_b.png", "blockout_corridor_c.png",
+    }
+    # The blockout is already line art; passing it through scribble_hed would return each
+    # stroke as a pair of thin parallel ones, so the fallback path drops the preprocessor.
+    for workflow in by_variant.values():
+        assert seed.SCRIBBLE_NODE not in workflow
+        assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["image"] == [seed.BLOCKOUT_NODE, 0]
+        assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["strength"] == seed.BLOCKOUT_STRENGTH
+
+
+def test_a_variant_without_its_own_reference_borrows_a_sibling_not_the_blockout(tmp_path, monkeypatch):
+    """Curation rarely fills all three slots, and the keys that got one reference rendered
+    variant `a` with furniture and `b`/`c` as bare boxes. Another photo of the right room
+    beats an empty box: the seed and the variant's camera wording still differ."""
+    seed = _load_script()
+    _env(tmp_path, monkeypatch)
+    calls = _fake_comfy(monkeypatch, seed)
+    _write_ref(tmp_path, "corridor", "a")  # only variant a is curated
+
+    assert _run(seed, ["--key", "corridor"]) == 0
+
+    # The upload is named per plate, not per source file, so the tell is which path ran:
+    # every variant went through the photo path (preprocessor present, full strength) and
+    # none fell back to the blockout.
+    used = {call[seed.BLOCKOUT_NODE]["inputs"]["image"] for call in calls}
+    assert used == {"locref_corridor_a.png", "locref_corridor_b.png", "locref_corridor_c.png"}
+    for call in calls:
+        assert seed.SCRIBBLE_NODE in call
+        assert call[seed.CONTROLNET_APPLY_NODE]["inputs"]["strength"] != seed.BLOCKOUT_STRENGTH
+
+
+def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monkeypatch):
+    """COPYRIGHT GUARD. A downloaded photograph may only ever reach the model as a
+    preprocessed structure map. If it were wired into the IPAdapter it would transfer the
+    photo's style, and into a latent it would be img2img — both reproduce the original.
+    This asserts on the workflow that is actually submitted, not on intent."""
+    seed = _load_script()
+    _env(tmp_path, monkeypatch)
+    calls = _fake_comfy(monkeypatch, seed)
+    _write_ref(tmp_path, "cafeteria", "b")
+
+    assert _run(seed, ["--key", "cafeteria", "--variant", "b"]) == 0
+
+    workflow = calls[0]
+    assert workflow[seed.BLOCKOUT_NODE]["inputs"]["image"] == "locref_cafeteria_b.png"
+
+    # The IPAdapter's image input resolves to the style-anchor LoadImage chain only.
+    upstream = _reachable(workflow, seed.IPADAPTER_NODE, "image")
+    assert seed.BLOCKOUT_NODE not in upstream
+    assert seed.SCRIBBLE_NODE not in upstream
+    assert upstream <= {node for node in workflow if node.startswith(seed.ANCHOR_NODE)}
+
+    # The sampler starts from noise: an EmptyLatentImage, with nothing upstream of it.
+    assert workflow[seed.SAMPLER_NODE]["inputs"]["latent_image"] == [seed.LATENT_NODE, 0]
+    assert workflow[seed.LATENT_NODE]["class_type"] == "EmptyLatentImage"
+    assert _reachable(workflow, seed.SAMPLER_NODE, "latent_image") == {seed.LATENT_NODE}
+    assert not any(
+        node["class_type"] in ("VAEEncode", "VAEEncodeForInpaint", "ImageScaleToTotalPixels")
+        for node in workflow.values()
+    ), "an encode node is how a reference photo becomes an img2img latent"
+
+    # The only node holding the uploaded filename is the structure-hint LoadImage.
+    holders = [nid for nid, node in workflow.items() if node["inputs"].get("image") == "locref_cafeteria_b.png"]
+    assert holders == [seed.BLOCKOUT_NODE]
+
+
 # ── Anchor candidates ────────────────────────────────────────────────────────
 
 def test_anchor_candidates_render_unconditioned_and_touch_no_library_state(tmp_path, monkeypatch):
@@ -325,6 +451,16 @@ def test_anchor_candidates_render_unconditioned_and_touch_no_library_state(tmp_p
         assert seed.ANCHOR_NODE not in call and seed.IPADAPTER_NODE not in call
         assert not any("IPAdapter" in node.get("class_type", "") for node in call.values())
         assert call[seed.SAMPLER_NODE]["inputs"]["model"] == [seed.MODEL_NODE, 0]
+        # Dropping every LoadImage used to leave ControlNetApplyAdvanced pointing at a
+        # node that no longer existed — a dangling link ComfyUI rejects outright.
+        assert seed.CONTROLNET_APPLY_NODE not in call and seed.SCRIBBLE_NODE not in call
+        assert call[seed.SAMPLER_NODE]["inputs"]["positive"] == [seed.POSITIVE_NODE, 0]
+        assert call[seed.SAMPLER_NODE]["inputs"]["negative"] == [seed.NEGATIVE_NODE, 0]
+        assert all(
+            isinstance(value, str) or value[0] in call
+            for node in call.values() for value in node["inputs"].values()
+            if not isinstance(value, (str, int, float, bool))
+        ), "no dangling links"
     # Candidates are review material, not library assets.
     assert not (assets / "manifest.json").exists()
     assert _rows() == []

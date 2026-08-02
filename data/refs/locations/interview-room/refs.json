@@ -1,0 +1,152 @@
+{
+  "location_key": "interview-room",
+  "query": "police interrogation room interior table two chairs one-way mirror",
+  "refs": {
+    "a": {
+      "url": "https://www.soflostudio.com/wp-content/uploads/2019/05/interrogation-room-1536x864.jpg",
+      "title": "Interrogation Room Set - SoFlo Studio",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Realistic depiction of an interrogation room with expected features."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://as1.ftcdn.net/v2/jpg/06/56/97/78/1000_F_656977870_BwCJRt34bBw5WH0TxfqJaGJtFLMNA09M.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a realistic interrogation space with all specified elements present."
+      }
+    },
+    {
+      "url": "https://c8.alamy.com/comp/EXWKT7/police-interrogation-interview-room-EXWKT7.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/dark-empty-interrogation-room-seen-one-way-mirror-investigation-interview-room-metal-table-chairs-semi-283460964.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/interrogation-room-behind-one-way-mirror-glass-police-detective-suspect-reel-to-recording-interview-handcuffed-man-camera-284635670.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/debriefing-interrogation-room-one-way-mirror-window-d-rendering-police-office-people-low-light-275196594.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.shutterstock.com/shutterstock/photos/1571636914/display_1500/stock-vector-flat-interior-of-police-station-interrogation-room-with-wooden-desk-and-chairs-for-questioning-and-1571636914.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://media.istockphoto.com/id/1482537888/photo/debriefing-or-interrogation-room-with-a-one-way-mirror-window-3d-rendering-police-office.jpg?s=1024x1024&w=is&k=20&c=wh_YGnrJhc9HHPbUsnLAex6h_-W-S6CKeTn3m4Ah7MQ=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://s3.envato.com/files/78c98d9a-8e60-43d1-bfe4-6890f55b2b75/inline_image_preview.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real interrogation room with two silhouetted figures at a table."
+      }
+    },
+    {
+      "url": "https://www.thevillaserena.com/r/img.aspx?ImgWd=600&ImgHt=337&IptFl=/img/police/police-interrogation-room-movie-set.jpg&CrpYN=Y",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room appears modern and minimal, lacking interrogation-specific features."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/futuristic-police-interrogation-room-d-background-single-metal-table-bright-white-led-overhead-lights-dark-one-way-368927343.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://image.made-in-china.com/2f0j00ZsYWfSNFkBGc/Versatile-2mm-12mm-One-Way-Mirror-Atomic-Mirror-Spy-Mirror-Low-Light-One-Way-Lens-for-Interrogation-Rooms-Scenic-Spots-Hospitals-and-Teaching-Observation-Room.jpg",
+      "reason": "download: Disallowed content-type: 'image/avif'"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interrogation-room-police-station-empty-interior-questioning-crimes-table-two-chair-height-scale-interrogation-162482560.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://image.made-in-china.com/202f0j00tbDRpLVrYmks/Unidirectional-Perspective-Glass-One-Way-Two-Way-Mirror-for-Police-Station-Investigation-Interrogation-Room.webp",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real interrogation room with one-way mirror and metal table visible."
+      }
+    },
+    {
+      "url": "https://c8.alamy.com/comp/2T1YGM4/a-view-of-a-police-interrogation-room-from-behind-a-one-way-mirror-observing-the-interrogation-in-a-room-silhouettes-of-a-police-officer-and-a-suspe-2T1YGM4.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://imgcdn.stablediffusionweb.com/2026/5/11/3391c8ad-9e99-4662-a301-35be988fb1f9.webp",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Photograph accurately depicts a bare interrogation room with all specified elements."
+      }
+    },
+    {
+      "url": "https://as2.ftcdn.net/v2/jpg/02/09/67/11/1000_F_209671147_Nz488TK4PbzD497LW6WrGXctiHUizk1D.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real interrogation room with one-way mirror and silhouetted figures."
+      }
+    },
+    {
+      "url": "http://5irorwxhrpnmrik.ldycdn.com/cloud/kqBppKnrRiiSmnjolilii/HTB1rYlbbzihSKJjy0Fiq6AuiFXah.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real interrogation room with visible people and one-way mirror."
+      }
+    },
+    {
+      "url": "https://www.researchgate.net/publication/296782552/figure/fig1/AS:526060212232192@1502433936792/Physical-layout-of-a-police-interrogation-room-as-recommended-by-Inbau-Reid-Buckley.png",
+      "reason": "download: Client error '403 Forbidden' for url 'https://www.researchgate.net/publication/296782552/figure/fig1/AS:526060212232192@1502433936792/Physical-layout-of-a-police-interrogation-room-as-recommended-by-Inbau-Reid-Buckley.png'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://image.made-in-china.com/2f0j00AcHYpoidyJqC/Unidirectional-Perspective-Glass-One-Way-Two-Way-Mirror-for-Police-Station-Investigation-Interrogation-Room.jpg",
+      "reason": "download: Disallowed content-type: 'image/avif'"
+    }
+  ]
+}

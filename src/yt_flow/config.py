@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     location_ipadapter_weight: float = Field(0.4, ge=0.0, le=1.0)
     location_plate_workflow_path: str = "data/workflows/comfyui_location_plate_api.json"
     location_anchor_dir: str = "data/anchors/locations"
+    # Curated structure references (Story 8.17): one real photo per
+    # (location_key, variant), written by scripts/fetch_location_refs.py and read
+    # back by the seed script as the ControlNet hint. Same shape as the anchor dir
+    # above so tests and operators can redirect it with one env var.
+    location_refs_dir: str = "data/refs/locations"
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
     # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,

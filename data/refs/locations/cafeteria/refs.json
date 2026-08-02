@@ -1,0 +1,76 @@
+{
+  "location_key": "cafeteria",
+  "query": "school canteen dining hall long tables benches serving counter",
+  "refs": {
+    "a": {
+      "url": "https://coboltfurniture.co.uk/cdn/shop/files/black-laminate-school-canteen-tables-with-integrated-benches.jpg?v=1759335965&width=1920",
+      "title": "Black Folding Canteen Bench for Secondary Schools | Cobolt",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clean, modern cafeteria with no people present."
+      }
+    },
+    "b": {
+      "url": "https://mustsharenews.com/wp-content/uploads/2023/02/Yuhua-Canteen-Upgrade-1024x481.jpg",
+      "title": "Yuhua Secondary School Canteen Transforms Into Garden-Themed Eatery ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clean, modern cafeteria with no people present."
+      }
+    },
+    "c": {
+      "url": "https://cdn.shopify.com/s/files/1/0953/8787/7678/files/red-folding-canteen-table-with-attached-benches-in-modern-school-dining-area.jpg?v=1759406100",
+      "title": "Red Folding Canteen Bench for Secondary Schools | Cobolt",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a cafeteria with long tables and fluorescent lighting, but it contains personal items like laptops and food trays."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://png.pngtree.com/thumb_back/fw800/background/20230613/pngtree-long-dining-hall-in-an-empty-school-with-wooden-benches-image_2917806.jpg",
+      "reason": "download: Client error '403 Forbidden' for url 'https://png.pngtree.com/thumb_back/fw800/background/20230613/pngtree-long-dining-hall-in-an-empty-school-with-wooden-benches-image_2917806.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/x/modern-school-cafeteria-interior-design-spacious-dining-hall-long-tables-benches-bright-room-clean-well-lit-367698149.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.spaceist.co.uk/wp-content/uploads/Red-white-staff-canteen-table.jpg",
+      "reason": "download: Client error '403 Forbidden' for url 'https://www.spaceist.co.uk/wp-content/uploads/Red-white-staff-canteen-table.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://static.rigg.uk/Files/casestudies/plywoodschooldiningtablesbenchesjersey/sz/w960/plywoodschooldiningtablesbenchesinjersey.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a real cafeteria with appropriate tables and lighting."
+      }
+    },
+    {
+      "url": "https://image.made-in-china.com/202f0j00ijWbVoPUrZkS/School-Canteen-Restaurant-Furniture-Nice-Food-Court-Dining-Table-and-Chair-Sets-for-4-Person.webp",
+      "reason": "download: Disallowed content-type: 'image/avif'"
+    },
+    {
+      "url": "https://lowtempind.com/wp-content/uploads/2019/12/VD.jpg",
+      "reason": "download: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1000)"
+    }
+  ]
+}

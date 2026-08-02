@@ -513,8 +513,8 @@ class CharacterService:
         logger.info("Downloaded %d reference images for %s", len(records), scp_id)
         return records
 
+    @staticmethod
     async def _download_reference_image(
-        self,
         url: str,
         refs_dir: Path,
         num: int,
@@ -525,6 +525,10 @@ class CharacterService:
         Raises on any safety violation or download failure.
 
         Redirects are NOT followed to prevent SSRF bypass (redirect to private IP).
+
+        # ponytail: a staticmethod, not a free function — it never touched instance
+        # state, and this is the one change that lets scripts/fetch_location_refs.py
+        # reuse the SSRF/size/content-type hardening without opening a DB session.
         """
         parsed = urlparse(url)
         host = parsed.hostname or ""

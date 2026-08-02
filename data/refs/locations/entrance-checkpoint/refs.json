@@ -1,0 +1,128 @@
+{
+  "location_key": "entrance-checkpoint",
+  "query": "building security checkpoint lobby interior turnstile guard booth",
+  "refs": {
+    "a": {
+      "url": "https://i.pinimg.com/736x/3c/e1/36/3ce136d4771724cea715f2646368b500.jpg",
+      "title": "Sweeper-S-HG speed gates by TiSO | Automatic security turnstile, Lobby ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Interior of a modern facility security checkpoint with turnstiles and no visible people."
+      }
+    },
+    "b": {
+      "url": "https://www.portaking.com/wp-content/uploads/2024/07/Guard-Shack.jpg",
+      "title": "Guard Shacks - Porta-King",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear interior shot of a guard booth with no people present."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://thumbs.dreamstime.com/b/salford-office-lobby-turnstile-gates-security-scanners-entry-uk-september-people-use-modern-corporate-secure-406023624.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-corporate-office-entrance-featuring-innovative-advanced-security-features-systems-imagine-lobby-turnstiles-access-344691347.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/corporate-lobby-featuring-sleek-reception-desk-advanced-facial-recognition-cameras-modern-security-turnstiles-illuminated-368910302.jpg?w=576",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/turnstiles-checkpoint-automatic-access-control-access-system-building-automatic-turnstile_1041545-14041.jpg?w=1060",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/security-checkpoint-turnstile-ray-scanner-modern-featuring-stainless-steel-baggage-brightly-lit-sterile-414604797.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-checkpoint-situated-entrance-to-building-features-automated-turnstiles-security-scanners-designed-ensure-safety-325942271.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-office-security-enhanced-turnstile-access-control-systems-safety-building-experience-future-system-386078731.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-corporate-office-lobby-entrance-featuring-automated-security-turnstiles-sleek-design-bright-lighting-leading-to-444667696.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/high-tech-corporate-lobby-facial-recognition-security-turnstiles-modern-office-access-featuring-sleek-reception-desk-370690064.jpg?w=576",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/security-checkpoint-entrance-data-center-armed-guards-metal-detectors-security-checkpoint-entrance-274270407.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://media.istockphoto.com/id/149215182/photo/lobby-entrance-with-turnstile.jpg?s=612x612&w=0&k=20&c=DLbFjUiUryhDQyTW5yl4Q-aHYeslmWhyoE8_ouxhdN4=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-office-security-turnstile-gate-glass-barriers-lobby-stainless-steel-stands-bright-entrance-featuring-access-440093843.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/electronic-turnstile-access-system-building-several-turnstiles-are-installed-nearby-check-poin_1041545-13318.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.haywardturnstiles.com/wp-content/uploads/2020/11/EZ-Lane-SL1000-installed-optical-turnstile-office-lobby-2048x1152.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The image shows a modern turnstile area but lacks a security checkpoint, metal detector, or guard booth."
+      }
+    },
+    {
+      "url": "https://www.cmolo.com/uploads/40157/page/lobby-turnstilesaee05.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility with a guard booth visible in the background."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-office-building-lobby-turnstiles-reception-desk-featuring-security-contemporary-interior-design-456891330.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://media.prefabex.com/media/_54Guard%20Booths%20(3).png",
+      "reason": "download: Client error '403 Forbidden' for url 'https://media.prefabex.com/media/_54Guard%20Booths%20(3).png'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://hfteco.com/wp-content/uploads/2025/04/1-1024x512.png",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility with people present and a visible watermark."
+      }
+    }
+  ]
+}

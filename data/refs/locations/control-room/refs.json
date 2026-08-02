@@ -1,0 +1,104 @@
+{
+  "location_key": "control-room",
+  "query": "industrial plant control room interior consoles monitor wall empty",
+  "refs": {
+    "a": {
+      "url": "https://www.trescoconsoles.com/wp-content/uploads/2021/07/13988_Eye-View2-with-backwall-jpg.webp",
+      "title": "Tresco Consoles | Mission-Critical Control Room Systems & Consoles",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A realistic depiction of a facility control room with no people present."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://thumbs.dreamstime.com/b/hushed-industrial-control-room-interior-glowing-monitors-futuristic-consoles-photograph-captures-large-scale-403905185.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/hushed-industrial-control-room-interior-glowing-monitors-futuristic-consoles-photograph-captures-large-scale-403905117.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/hushed-industrial-control-room-interior-glowing-monitors-futuristic-consoles-photograph-captures-large-scale-403905104.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/empty-modern-control-room-monitors-operations-advanced-technology-empty-modern-control-room-interior-featuring-multiple-443959837.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/empty-high-tech-control-room-wall-monitors-displaying-massive-video-multiple-screens-showing-various-data-407285536.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/control-room-interior-equipment-monitors-industrial-space-spacious-featuring-panels-green-walls-polished-floor-396775251.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/industrial-control-room-featuring-multiple-consoles-panels-displaying-array-gauges-buttons-switches-monitoring-447137810.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/precision-monitoring-consoles-power-plant-control-room_893571-24407.jpg?w=996",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/nuclear-power-plant-control-room-monitoring-operations_1036975-97815.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/hushed-industrial-control-room-interior-glowing-monitors-futuristic-consoles-photograph-captures-large-scale-403905163.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/operators-monitoring-screens-gauges-nuclear-power-plant-control-room-with-energy_1166177-14250.jpg?w=1800",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/nuclear-power-plant-control-room-monitoring-operations_1036975-97472.jpg?w=1380",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/monitors-control-room-natural-gas-power-plant_1036975-97100.jpg?w=1480",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/nuclear-power-plant-control-room-monitoring-operations_1036975-97779.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/monitors-control-room-natural-gas-power-plant_1036975-97477.jpg?w=996",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/nuclear-power-plant-control-room-monitoring-operations_1036975-97455.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/monitors-control-room-natural-gas-power-plant_1036975-97441.jpg?w=1380",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/nuclear-power-plant-control-room-monitoring-operations_1036975-97372.jpg?w=1380",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://as1.ftcdn.net/jpg/09/71/42/92/1000_F_971429297_3QucJHdJDqcqYfXWzb9TQK007VP8mRHM.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear interior shot of a control room with monitors and ambient blue lighting."
+      }
+    }
+  ]
+}

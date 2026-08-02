@@ -1,0 +1,160 @@
+{
+  "location_key": "office",
+  "query": "small office desk chair paperwork filing cabinet desk lamp interior",
+  "refs": {
+    "a": {
+      "url": "https://assets-global.website-files.com/640b68693c13566914b5f6aa/64a59140b4fc03dc0e115846_ikeaofficechair.jpg",
+      "title": "Ikea Office Desk And Chair at Amanda Worthen blog",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The office is tidy and lacks clutter, case files, or a corkboard of notes."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-office-desk-setup-computer-chair-lamp-filing-cabinet-bookshelf-image-showcases-complete-presented-white-424560067.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=777259244999126",
+      "reason": "download: Disallowed content-type: 'text/html; charset=\"utf-8\"'"
+    },
+    {
+      "url": "https://m.media-amazon.com/images/I/611ZeYPje8L._AC_SL1500_.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The desk is neat and lacks clutter, notes, or case files."
+      }
+    },
+    {
+      "url": "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=2164778027259676",
+      "reason": "download: Disallowed content-type: 'text/html; charset=\"utf-8\"'"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/tidy-home-office-with-ergonomic-chair-desk-wall-filing-cabinets-created-with-generative-ai_419341-36240.jpg?w=900",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/organized-home-office-sleek-desk-ergonomic-chair-tidy-filing-cabinet-created-generative-ai-279597786.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/clean-modern-home-office-featuring-light-wood-desk-sleek-chair-laptop-gray-multi-drawer-filing-cabinet-minimalist-setup-432263557.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/tidy-home-office-with-ergonomic-chair-desk-wall-filing-cabinets-created-with-generative-ai_124507-221064.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://oveee.com/wp-content/uploads/2025/03/1200x1200-1-6.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a modern office but lacks clutter, case files, and a corkboard."
+      }
+    },
+    {
+      "url": "https://css.lakiq.com/site/img/item/2025/02/20/16071584/1199x1199.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a modern, clean office space, not a cluttered researcher's office."
+      }
+    },
+    {
+      "url": "https://www.e-a-a.com/wp-content/uploads/2024/12/Modern-Home-Office-Design-Ideas-26.png",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a clean, modern home office, not a cluttered researcher's office."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/contemporary-home-office-desk-laptop-lamp-plant-situated-white-background-modern-setup-chair-filing-cabinet-isolated-416373816.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://assets.wfcdn.com/im/32746145/compr-r85/2252/225243737/Berezinsky+3+Piece+Computer+Desk+Office+Set.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a clean, minimal office, not cluttered."
+      }
+    },
+    {
+      "url": "https://css.lakiq.com/site/img/item/2024/11/23/15114872/1199x1199.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a modern office cubicle, not a cluttered researcher's office."
+      }
+    },
+    {
+      "url": "https://www.officefurnitureez.com/wp-content/uploads/2020/09/L-Shaped-Desk-with-File-Cabinet-and-Overhead-Storage-scaled.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a clean, modern office setup, not cluttered."
+      }
+    },
+    {
+      "url": "https://media.istockphoto.com/id/2066483164/photo/small-wood-desk-with-wood-filing-cabinet-in-home-office.jpg?s=1024x1024&w=is&k=20&c=g9jYAgkeuEPU4RYyUKOXIAWjVuOBd-3zQOUGFddUDJA=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/organized-office-workspace-computer-filing-cabinet-boxes-productive-environment-home-office-setup-desk-chair-410295117.jpg?w=1400",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://s7.orientaltrading.com/is/image/OrientalTrading/VIEWER_ZOOM/emma-oliver-work-from-home-kit-adjustable-computer-desk-mesh-office-chair-filing-cabinet~14314956$NOWA$",
+      "reason": "download: Client error '403 Forbidden' for url 'https://s7.orientaltrading.com/is/image/OrientalTrading/VIEWER_ZOOM/emma-oliver-work-from-home-kit-adjustable-computer-desk-mesh-office-chair-filing-cabinet~14314956$NOWA$'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://m.media-amazon.com/images/I/81iFwnKz5ZL.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a clean, modern office rather than a cluttered researcher's office."
+      }
+    }
+  ]
+}

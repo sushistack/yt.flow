@@ -18,7 +18,9 @@ image with --reroll, and can render its own style-anchor candidates.
 Workflow node map (data/workflows/comfyui_location_plate_api.json):
   6 = positive CLIPTextEncode, 7 = negative CLIPTextEncode, 3 = KSampler (seed),
   5 = EmptyLatentImage (render size), 11 = last LoraLoader (model chain),
-  20 = IPAdapter anchor LoadImage, 23 = IPAdapterAdvanced (weight).
+  20 = IPAdapter anchor LoadImage, 23 = IPAdapterAdvanced (weight),
+  30 = scribble ControlNetLoader, 31 = structure-hint LoadImage,
+  33 = FakeScribblePreprocessor, 32 = ControlNetApplyAdvanced.
 """
 
 import argparse
@@ -32,6 +34,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))  # sibling scripts/ modules (room_blockout)
 
 from sqlmodel import Session, select  # noqa: E402
 
@@ -47,6 +50,10 @@ from yt_flow.services.comfyui_client import ComfyUIError  # noqa: E402
 VARIANTS = ("a", "b", "c")
 POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE = "6", "7", "3"
 ANCHOR_NODE, IPADAPTER_NODE = "20", "23"
+BLOCKOUT_NODE = "31"
+BLOCKOUT_STRENGTH = 0.5
+SCRIBBLE_NODE, CONTROLNET_APPLY_NODE = "33", "32"
+CONTROLNET_LOADER_NODE = "30"
 LATENT_NODE, MODEL_NODE = "5", "11"
 LOCATION_PLATE_WIDTH = 1920
 LOCATION_PLATE_HEIGHT = 1080
@@ -76,8 +83,8 @@ LOCATION_PROMPTS = {
     "autopsy-room": "A stainless steel autopsy suite, drain channels in the tiled floor, overhead surgical lamp, instrument trays, clinical cold lighting",
     "control-room": "A facility control room, banks of monitoring screens and blinking consoles, swivel chairs, dim blue ambient light",
     "facility-exterior": "The brutalist concrete exterior of an SCP Foundation site at night, chain-link fencing, floodlights, guard towers in the distance",
-    "server-room": "A data center server room, rows of server racks with blinking status lights, raised floor tiles, climate-control ducting overhead",
-    "storage-vault": "A high-security storage vault, rows of numbered lockers and reinforced cages, dim overhead lighting, concrete floor",
+    "server-room": "A data center server room seen from a corner, server racks along two walls with blinking status lights, raised floor tiles, climate-control ducting overhead",
+    "storage-vault": "A high-security storage vault, numbered lockers and reinforced cages along the back and side walls, dim overhead lighting, concrete floor, viewed from one corner of the room",
     "medical-bay": "A Foundation infirmary room, a hospital bed with restraints, IV stand, medical cabinets, pale clinical lighting",
     "cafeteria": "An empty Foundation cafeteria, rows of long metal tables and stacked trays, fluorescent lighting, unsettlingly ordinary",
     "office": "A researcher's cluttered office, a metal desk with stacked case files, a corkboard of notes, a single desk lamp",
@@ -86,13 +93,158 @@ LOCATION_PROMPTS = {
 }
 assert set(LOCATION_PROMPTS) == set(LOCATION_KEYS), "LOCATION_PROMPTS must cover every LocationKey"
 
+# The three variants used to differ only by seed, which is not variety: the batch came
+# back as fourteen versions of the same one-point-perspective corridor with the wall
+# contents swapped. Same prompt, same composition. Each variant now states its own
+# camera, so a location's three plates are three shots of one room rather than three
+# rolls of one shot — and none of them defaults to staring down a vanishing point.
+VARIANT_CAMERAS = {
+    "a": "wide establishing shot from the doorway, eye level, the far wall visible",
+    "b": "three-quarter view from a corner of the room, low angle looking slightly up",
+    "c": "closer asymmetric framing of the room's main feature, camera off to one side",
+}
+assert set(VARIANT_CAMERAS) == set(VARIANTS), "VARIANT_CAMERAS must cover every variant"
+
+# The wording above is not what actually decides the composition — a scribble ControlNet
+# is. Words were tried first and lost: 95% of the library came back as one identical
+# receding corridor, and camera and room-shape phrasing only moved that to 74%. The
+# prompt keeps subject and style; geometry comes from the control image, which is the
+# standard archviz split.
+#
+# The control image is a curated reference photograph when one exists
+# (scripts/fetch_location_refs.py -> data/refs/locations/<key>/ref_<variant>.png), and
+# the procedural blockout below otherwise. The blockout fixes the geometry but is a box:
+# it cannot make an autopsy room read differently from a cafeteria, which is the other
+# half of the problem. A photo of the real kind of room carries both.
+VARIANT_SHOTS = {"a": "wide-room-from-doorway", "b": "corner-three-quarter", "c": "close-detail-offset"}
+# How far the room runs back, in units of its width. Corridors are meant to recede.
+LOCATION_DEPTH = {"corridor": 4.0, "maintenance-tunnel": 3.5, "cafeteria": 2.0,
+                  "facility-exterior": 2.5, "server-room": 1.8, "storage-vault": 1.8}
+DEFAULT_DEPTH = 1.3
+CORRIDOR_SHOT = "corridor"
+
+
+# None of the descriptions state the shape of the space, so the checkpoint fell back on
+# its own prior, which for "facility" is overwhelmingly a receding corridor: 95% of the
+# first batch, and still 81% after the anchor was limited to style transfer. Naming the
+# geometry is the positive-prompt counter-pull. Corridor and tunnel are left out — they
+# are supposed to recede.
+ROOM_SHAPES = {
+    "containment-chamber": "a square sealed cell, all four walls close",
+    "observation-room": "a small rectangular room, the observation window filling one wall",
+    "interview-room": "a small square room, four bare walls close around the table",
+    "autopsy-room": "a compact square operating room, the table in the middle of the floor",
+    "control-room": "a wide low-ceilinged room, consoles curving around one end",
+    "facility-exterior": "an outdoor establishing view, open sky above the building",
+    "server-room": "a square machine room, racks along two adjacent walls",
+    "storage-vault": "a boxy vault chamber, the far wall close",
+    "medical-bay": "a small square ward, the bed against one wall",
+    "cafeteria": "a wide open hall, tables scattered across an open floor",
+    "office": "a cramped square office, desk against the wall",
+    "entrance-checkpoint": "a compact lobby, the checkpoint across the width of the room",
+}
+
+
+async def _upload_blockout(settings, location_key: str, variant: str) -> str:
+    """Render this shot's room blockout and upload it as the ControlNet image."""
+    from yt_flow.services import comfyui_client
+
+    from room_blockout import render_blockout
+
+    shot = CORRIDOR_SHOT if location_key in ("corridor", "maintenance-tunnel") else VARIANT_SHOTS[variant]
+    png = render_blockout(
+        shot,
+        LOCATION_DEPTH.get(location_key, DEFAULT_DEPTH),
+        PLATE_RENDER_WIDTH,
+        PLATE_RENDER_HEIGHT,
+    )
+    return await comfyui_client.upload_image(settings.comfyui_url, png, f"blockout_{location_key}_{variant}.png")
+
+
+# A key whose own search keeps coming back empty borrows structure from a sibling room
+# with a compatible layout. autopsy-room is the case that forced this: morgue photography
+# is dominated by shots with people or watermarks, so every candidate was rejected, and
+# the empty blockout rendered a bare white box with no table and no lamp. The lender only
+# supplies geometry — the prompt still describes an autopsy suite.
+REF_BORROW = {"autopsy-room": "observation-room"}
+
+
+def _reference_path(settings, location_key: str, variant: str) -> Path | None:
+    """The curated structure reference for this plate, if fetch_location_refs.py found one.
+
+    Falls back to a sibling variant's reference for the same location before giving up.
+    Curation rarely fills all three slots, and the empty procedural blockout is a much
+    worse hint than another photo of the right room: the keys that got one reference
+    rendered variant `a` with furniture and variants `b`/`c` as bare boxes. Sharing the
+    hint costs some composition variety — the seed and the variant's camera wording still
+    differ — and buys the room its contents, which is the defect that actually shows.
+    """
+    key_dir = Path(settings.location_refs_dir) / location_key
+    exact = key_dir / f"ref_{variant}.png"
+    if exact.is_file():
+        return exact
+    siblings = sorted(key_dir.glob("ref_*.png"))
+    if not siblings and location_key in REF_BORROW:
+        lender = Path(settings.location_refs_dir) / REF_BORROW[location_key]
+        siblings = sorted(lender.glob("ref_*.png"))
+    if not siblings:
+        return None
+    # Deterministic per variant, so a re-run picks the same sibling.
+    return siblings[VARIANTS.index(variant) % len(siblings)]
+
+
+def _bypass_scribble(workflow: dict) -> dict:
+    """Feed the ControlNet straight from LoadImage, skipping the scribble preprocessor.
+
+    The blockout is *already* white-on-black structural line art. Running scribble_hed
+    over it would find the edges of the drawn lines and hand back each 5px stroke as a
+    pair of thin parallel ones — a worse hint than the input. The preprocessor exists
+    for the reference-photo path only, so the fallback path drops it.
+    """
+    workflow[CONTROLNET_APPLY_NODE]["inputs"]["image"] = [BLOCKOUT_NODE, 0]
+    workflow.pop(SCRIBBLE_NODE, None)
+    # Weaker than the reference path, and the difference is the point. A reference photo
+    # carries the room's contents as well as its shape, so it can be followed hard. The
+    # blockout is an empty box: at 0.9 the sampler obeyed it literally and returned empty
+    # boxes — an autopsy room with no table, a medical bay with no bed, a cafeteria with
+    # no tables. The geometry still lands at 0.5; the furniture comes from the prompt.
+    workflow[CONTROLNET_APPLY_NODE]["inputs"]["strength"] = BLOCKOUT_STRENGTH
+    return workflow
+
+
+async def _upload_structure_hint(settings, workflow: dict, location_key: str, variant: str) -> str:
+    """Wire this plate's ControlNet hint: the curated photo if there is one, else the blockout.
+
+    COPYRIGHT: the reference is uploaded to node 31 and nowhere else, and node 31 feeds
+    only the scribble preprocessor. It never reaches the IPAdapter (node 23, whose image
+    input is the style-anchor batch) and never reaches the latent (node 5 is an
+    EmptyLatentImage). What the sampler sees of somebody's photograph is a line drawing.
+    """
+    reference = _reference_path(settings, location_key, variant)
+    if reference is None:
+        _bypass_scribble(workflow)
+        return await _upload_blockout(settings, location_key, variant)
+    return await comfyui_client.upload_image(
+        settings.comfyui_url, reference.read_bytes(), f"locref_{location_key}_{variant}.png"
+    )
+
+
+def _plate_prompt(location_key: str, variant: str) -> str:
+    """Location description, its room geometry, and that variant's camera framing."""
+    parts = [LOCATION_PROMPTS[location_key]]
+    if location_key in ROOM_SHAPES:
+        parts.append(ROOM_SHAPES[location_key])
+    parts.append(VARIANT_CAMERAS[variant])
+    return ", ".join(parts)
+
 
 def _load_workflow(path: str) -> dict:
     try:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
         sys.exit(f"cannot load ComfyUI workflow at {path!r}: {exc}")
-    for node_id in (POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE, LATENT_NODE, ANCHOR_NODE, IPADAPTER_NODE):
+    for node_id in (POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE, LATENT_NODE, ANCHOR_NODE, IPADAPTER_NODE,
+                    BLOCKOUT_NODE, SCRIBBLE_NODE, CONTROLNET_APPLY_NODE):
         if node_id not in workflow:
             raise ValueError(f"location plate workflow at {path!r} missing node {node_id!r}")
     return workflow
@@ -148,16 +300,25 @@ def _inject(template: dict, prompt: str, seed: int, weight: float) -> dict:
 
 
 def _strip_ipadapter(workflow: dict) -> dict:
-    """Drop the IPAdapter branch, rewiring KSampler straight to the LoRA chain.
+    """Drop the IPAdapter *and* ControlNet branches, leaving prompt + LoRA chain only.
 
     An anchor *candidate* is the image the style will later be anchored to, so it
     cannot itself be style-anchored — and when --anchor-candidates runs there is no
     anchor image to load. Removal is by class_type (mirrors
     character_image_provider._drop_reference_only_nodes) so the orphaned CLIPVision /
     IPAdapterModelLoader loaders go with it and ComfyUI sees no dangling inputs.
+
+    The ControlNet branch goes too, and not only for symmetry: dropping every LoadImage
+    took node 31 out while ControlNetApplyAdvanced still pointed at it, so the candidate
+    prompt ComfyUI received had a dangling link and would have been rejected outright.
+    A candidate is also supposed to show what the checkpoint does unconditioned.
     """
     workflow = copy.deepcopy(workflow)
     workflow[SAMPLER_NODE]["inputs"]["model"] = [MODEL_NODE, 0]
+    workflow[SAMPLER_NODE]["inputs"]["positive"] = [POSITIVE_NODE, 0]
+    workflow[SAMPLER_NODE]["inputs"]["negative"] = [NEGATIVE_NODE, 0]
+    for node_id in (SCRIBBLE_NODE, CONTROLNET_APPLY_NODE, CONTROLNET_LOADER_NODE):
+        workflow.pop(node_id, None)
     for node_id, node in list(workflow.items()):
         if node.get("class_type") in ("LoadImage", "CLIPVisionLoader", "IPAdapterModelLoader", "IPAdapterAdvanced"):
             workflow.pop(node_id)
@@ -305,8 +466,11 @@ async def seed_plate(
             if template is None:
                 raise ValueError("workflow must be loaded in real mode")
             workflow = _inject_anchors(
-                _inject(template, LOCATION_PROMPTS[location_key], seed, settings.location_ipadapter_weight),
+                _inject(template, _plate_prompt(location_key, variant), seed, settings.location_ipadapter_weight),
                 anchor_names,
+            )
+            workflow[BLOCKOUT_NODE]["inputs"]["image"] = await _upload_structure_hint(
+                settings, workflow, location_key, variant
             )
             image_bytes = await _submit_with_recovery(settings, workflow, done=done, total=total)
             dest.write_bytes(_upscale_to_contract(image_bytes))

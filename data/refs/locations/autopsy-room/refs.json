@@ -1,0 +1,191 @@
+{
+  "location_key": "autopsy-room",
+  "query": "abandoned morgue autopsy room urbex stainless steel table overhead lamp",
+  "refs": {},
+  "rejected": [
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/07/MorgueP-41.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is an abandoned autopsy suite with visible drain channels and surgical equipment."
+      }
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2016/05/TwinMorgues-1.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic autopsy suite with all required elements."
+      }
+    },
+    {
+      "url": "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=204451272005123",
+      "reason": "download: Disallowed content-type: 'text/html; charset=\"utf-8\"'"
+    },
+    {
+      "url": "https://urbex.net.pl/wp-content/gallery/pl_prozektoriumz/morgue-Z-prosektorium-morgue-dissecting-room-Poland-Polska-urbex-urban-exploration-abandoned-miejsca-opuszczone-urbex.net_.pl-5.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is an abandoned autopsy suite with a drain table and tiled walls."
+      }
+    },
+    {
+      "url": "http://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-6.jpg",
+      "reason": "download: Redirect response '302 Found' for url 'http://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-6.jpg'\nRedirect location: 'https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-6.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302"
+    },
+    {
+      "url": "https://urbex.net.pl/wp-content/gallery/pl_prozektoriumz/morgue-Z-prosektorium-morgue-dissecting-room-Poland-Polska-urbex-urban-exploration-abandoned-miejsca-opuszczone-urbex.net_.pl-4.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room appears to be an abandoned medical facility, not a current autopsy suite."
+      }
+    },
+    {
+      "url": "http://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-4.jpg",
+      "reason": "download: Redirect response '302 Found' for url 'http://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-4.jpg'\nRedirect location: 'https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-4.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302"
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2016/05/TwinMorgues-12-683x1024.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo shows a real autopsy suite with all required elements."
+      }
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2016/05/TwinMorgues-5.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a real autopsy suite with all required features."
+      }
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-2-1024x682.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a real autopsy suite with all expected features."
+      }
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2016/05/TwinMorgues-6-768x512.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a well-lit, tiled autopsy suite with surgical equipment."
+      }
+    },
+    {
+      "url": "https://i.pinimg.com/736x/96/25/7a/96257a34a3536d92f7444e1ca6502857.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is an abandoned autopsy suite with visible drain channels and surgical equipment."
+      }
+    },
+    {
+      "url": "https://c8.alamy.com/comp/M051KM/autopsy-table-in-an-abandoned-coroners-court-in-london-england-britain-M051KM.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.proj3ctm4yh3m.com/urbex/wp-content/uploads/2015/06/Sellyoakmorgue-15.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo is a clear interior shot of a real autopsy suite with no people present."
+      }
+    },
+    {
+      "url": "https://urbex.net.pl/wp-content/gallery/pl_prozektoriumz/morgue-Z-prosektorium-morgue-dissecting-room-Poland-Polska-urbex-urban-exploration-abandoned-miejsca-opuszczone-urbex.net_.pl-6.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is tiled but lacks stainless steel, drain channels, and surgical lighting."
+      }
+    },
+    {
+      "url": "https://urbexetorbi.nl/wp-content/uploads/2024/02/cemetery-morgue-.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room appears to be an old morgue or autopsy area, but lacks modern features like stainless steel and clinical lighting."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/autopsy-table-dimly-lit-hospital-morgue-dark-sterile-room-centered-around-gleaming-stainless-steel-framed-medical-cabinets-391585039.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.shutterstock.com/shutterstock/photos/232398289/display_1500/stock-photo-mortuary-slab-in-old-abandoned-spooky-hospital-morgue-232398289.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/abandoned-surgical-room-vintage-operating-table-peeling-green-walls-eerie-neglected-featuring-old-beneath-flickering-331528242.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://i.pinimg.com/736x/e1/85/79/e185799dcae457bb5210f90bf637f6ec.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a realistic autopsy suite with all expected features."
+      }
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+{
+  "location_key": "observation-room",
+  "query": "hospital observation room interior window into adjacent room monitors",
+  "refs": {
+    "a": {
+      "url": "https://www.mascaridinh.com/wp-content/uploads/2018/08/Scripps-Memorial-Hospital-%E2%80%93-Emergency-Department-Observation-Suite-4.jpg",
+      "title": "Scripps Memorial Hospital - Emergency Department Observation Suite ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility, no people or overlays, interior shot of a medical observation area."
+      }
+    },
+    "b": {
+      "url": "https://hasenstabinc.com/wp-content/uploads/2022/02/Behavioral-Health-Observation-Unit-Room-Full.jpg",
+      "title": "Behavioral Health Observation Unit - Summa Health Hasenstab Architects ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility room with medical equipment, no people or overlays."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://i.pinimg.com/736x/ca/16/f9/ca16f98041ccb04542bf1b43d4ede16e.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility photograph with clear observation room setup and visible personnel."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/hospital-room-equipped-solar-powered-medical-monitors-devices-natural-daylight-coming-windows-realistic-hospital-427353447.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://i.pinimg.com/originals/70/66/21/706621b93fd3aa54b28f555230adfe4a.jpg",
+      "reason": "has_person=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real facility with people present, no overlays."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/medical-diagnostic-control-room-features-multiple-computer-monitors-laptops-office-chair-window-view-adjacent-385738309.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/hospital-room-featuring-bed-monitor-patient-monitoring-central-control-panel-medical-staff-monitor-adjust-room-conditions-with-ease_538213-55776.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://designcollaborative.com/wp-content/uploads/2024/03/NZ82993-jpg.webp",
+      "reason": "download: Client error '403 Forbidden' for url 'https://designcollaborative.com/wp-content/uploads/2024/03/NZ82993-jpg.webp'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://www.mascaridinh.com/wp-content/uploads/2018/08/Scripps-Memorial-Hospital-%E2%80%93-Emergency-Department-Observation-Suite-1.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room appears to be a medical examination room, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://www.mascaridinh.com/wp-content/uploads/2018/08/Scripps-Memorial-Hospital-%E2%80%93-Emergency-Department-Observation-Suite-7.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a medical examination corridor, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://www.mascaridinh.com/wp-content/uploads/2018/08/Scripps-Memorial-Hospital-%E2%80%93-Emergency-Department-Observation-Suite-3.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a medical examination room, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://www.unchealth.org/content/dam/unchealth/images/locations/hospitals/nc-surgical-hospital/img-system-NCSH_Observation%20Room_1.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is an observation area, but lacks the containment cell and scientific equipment described."
+      }
+    },
+    {
+      "url": "https://www.rochester.edu/adv/strong-expansion-project/wp-content/uploads/2023/02/Typ-Obs-1000w.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a hospital patient room, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-hospital-room-medical-equipment-empty-beds-monitors-machines-sterile-clean-interior-healthcare-tech-treatment-patient-390334947.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.extron.co.jp/img/mktg/bcit-hsc-16.jpg",
+      "reason": "download: Redirect response '302 Found' for url 'https://www.extron.co.jp/img/mktg/bcit-hsc-16.jpg'\nRedirect location: '//media.extron.com/public/img/mktg/bcit-hsc-16.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302"
+    },
+    {
+      "url": "https://c8.alamy.com/comp/2EAKCRF/modern-consulting-room-2EAKCRF.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/hospital-room-with-beds-monitor-wall-4k_205485-6736.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://jlgarchitects.com/wp-content/uploads/Observation-Room-scaled.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": true,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a medical waiting area, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://www.mascaridinh.com/wp-content/uploads/2018/08/Scripps-Memorial-Hospital-%E2%80%93-Emergency-Department-Observation-Suite-2.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a medical examination room, not a scientific observation room."
+      }
+    },
+    {
+      "url": "https://www.shutterstock.com/image-illustration/stylish-hospital-room-interior-bed-260nw-2544705405.jpg",
+      "reason": "blocked source (stock-photo host)"
+    }
+  ]
+}

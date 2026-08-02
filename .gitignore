@@ -19,6 +19,12 @@ workspace/
 assets/*
 !assets/manifest.json
 
+# Curated structure references (Story 8.17) are third-party photographs fetched from the
+# web. They are only ever preprocessed into a line-structure map for ControlNet, never
+# redistributed — so the pixels stay out of the repo and refs.json carries the source
+# URL and vision verdict as the audit trail. Re-fetch with scripts/fetch_location_refs.py.
+data/refs/*/ref_*.png
+
 # node (root — e2e/)
 node_modules/
 

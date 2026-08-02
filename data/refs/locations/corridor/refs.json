@@ -1,0 +1,112 @@
+{
+  "location_key": "corridor",
+  "query": "hospital basement service corridor interior pipes doors along walls",
+  "refs": {
+    "a": {
+      "url": "https://c-sglobal.com/wp-content/uploads/2016/11/Service-Corridor-Protection-01.jpg",
+      "title": "Service Corridor Protection for Guildhall Shopping Centre | CS Acrovyn®",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The corridor appears to be a modern utility space with minimal hazard markings."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://media.istockphoto.com/id/812356106/photo/an-corridor-or-hallway.jpg?s=612x612&w=0&k=20&c=sUGQPTYCwiyw1HglqBYpPi1mrqwOuSSdH5k0_-UiunM=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://static.vecteezy.com/system/resources/previews/027/730/871/non_2x/a-corridor-with-white-walls-and-pipes-on-the-ceiling-generative-ai-photo.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/dark-grungy-basement-corridor-industrial-building-pipes-along-wall-d-rendering-illustration-306819992.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/image-showcases-long-clean-corridor-featuring-bright-fluorescent-lighting-orange-utility-pipes-running-along-ceiling-411637865.jpg?w=576",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/corridor-modern-hospital-hospital-interior-architecture_839035-462146.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/industrial-pipes-conduits-basement-ceiling-building-corridor-artificial-lighting-view-running-along-illuminated-415021889.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/hospital-interior-design-modern-hospital-interior-stylized-hospital-corridor-design-hospital-corrido_605423-209392.jpg?w=1380",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/corridor-modern-hospital-hospital-interior-architecture_974729-25479.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/industrial-basement-corridor-various-metal-pipelines-dark-subterranean-service-corridor-long-metal-pipelines-vents-447172275.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/corridor-modern-hospital-hospital-interior-architecture_839035-462122.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/hospital-corridor-with-patient-room-doors_725455-965.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://media.istockphoto.com/id/1480102754/photo/corridor.jpg?s=612x612&w=0&k=20&c=u8wG-YGkJ0ZLunOPXTDnCXjFlW3MX1a9Gnn2YN8NVvI=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/industrial-facility-basement-featuring-pipes-machinery-infrastructure-industrial-facility-basement-corridor-featuring-446036166.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://i.pinimg.com/originals/9b/f9/79/9bf979aba77d224b98a639bb584906a3.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "Bright, clean hospital corridor; not dim or utilitarian as described."
+      }
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/corridor-modern-hospital-hospital-interior-architecture_974729-25523.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/empty-long-modern-building-basement-corridor-bright-lights-orange-pipes-grey-walls-silver-ceiling-clean-industrial-utility-420638714.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://i.pinimg.com/originals/f7/aa/cc/f7aacc37555bde1434cf9ed0b75d4dfa.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The corridor is clean and well-lit, not dim or utilitarian as described."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/industrial-service-corridor-cables-equipment-long-technical-engineering-ventilation-infrastructure-concept-412739052.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/modern-hospital-corridor-clean-healthcare-interior-medical-facility-hallway-bright-showcasing-well-lit-sterile-walls-354059125.jpg",
+      "reason": "blocked source (stock-photo host)"
+    }
+  ]
+}

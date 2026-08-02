@@ -1,0 +1,100 @@
+{
+  "location_key": "maintenance-tunnel",
+  "query": "underground utility maintenance tunnel interior pipes grated walkway",
+  "refs": {
+    "a": {
+      "url": "https://apicms.thestar.com.my/uploads/images/2024/11/22/3029504.jpg",
+      "title": "Common utility tunnel system feasible for new developments | The Star",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear, unobstructed view of a below-grade maintenance tunnel with all specified features present."
+      }
+    },
+    "b": {
+      "url": "https://ferreiraconstruction.com/wp-content/uploads/Ferreira-Construction_Ravenswood-Utility-Tunnel_New-York_Underground-Utilities.jpg",
+      "title": "Ravenswood Utility Tunnel | Ferreira Construction",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear and authentic view of a below-grade maintenance tunnel."
+      }
+    },
+    "c": {
+      "url": "https://www.montana.edu/ufm/engineeringutilities/images/underground-utiliy-tunnels-cropped.png",
+      "title": "Utility Tunnels - Engineering & Utilities | Montana State University",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear, unobstructed view of a below-grade maintenance tunnel."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://c8.alamy.com/comp/2BR4YJW/pipes-on-underground-maintenance-tunnel-wall-2BR4YJW.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/underground-concrete-utility-tunnel-pipes-wires-freeze-light-tunnel-underground-concrete-utility-tunnel-pipes-265122918.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://media.istockphoto.com/id/2208315193/photo/interior-maintenance-tunnel-at-hoover-dam.jpg?s=612x612&w=0&k=20&c=W-rnscnxZD7YuWgSUoocPDvZIbFD2WrOtdgant2OMT4=",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/underground-maintenance-tunnel-corridor-hallway-passage-pipes-wall-underground-maintenance-tunnel-corridor-hallway-passage-298925892.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/underground-pipeline-inspection-two-maintenance-workers-walking-curved-utility-tunnel-industrial-pipes-overhead-362881806.jpg?w=768",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/tunnel-inspection-team-two-maintenance-workers-hard-hats-safety-vests-inspect-industrial-cables-illuminated-362882068.jpg?w=768",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/underground-concrete-utility-tunnel-pipes-wires-213521772.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://as1.ftcdn.net/jpg/03/01/72/16/1000_F_301721653_jjEJYX8r4wD0izu8jZxJSCsGKMphfofE.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic below-grade maintenance tunnel with exposed pipes and dim lighting."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/underground-utility-tunnel-network-water-supply-pipeline-heat-cable-vault-165410488.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/underground-concrete-utility-tunnel-pipes-wires-lit-tungsten-bulbs-underground-concrete-utility-tunnel-pipes-353307145.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/underground-maintenance-tunnel-corridor-hallway-passage-pipes-wall-underground-maintenance-tunnel-corridor-hallway-passage-297528986.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/underground-concrete-utility-tunnel-pipes-wires-lit-tungsten-bulbs-underground-concrete-utility-tunnel-pipes-353307149.jpg",
+      "reason": "blocked source (stock-photo host)"
+    }
+  ]
+}

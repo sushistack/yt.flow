@@ -1,0 +1,48 @@
+{
+  "location_key": "server-room",
+  "query": "data centre server racks cabinets interior cabling raised floor",
+  "refs": {
+    "a": {
+      "url": "https://www.edpeurope.com/wp-content/uploads/Bergvik-Iso-Floor-Raised-Floor-System.jpg",
+      "title": "Raised Floors | Raised Access Flooring | Bergvik Raised Floors - EDP Europe",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear and detailed view of a real data center server room."
+      }
+    },
+    "b": {
+      "url": "https://www.edpeurope.com/dcs/wp-content/uploads/raised-access-floors5-800x533.jpg",
+      "title": "Raised Access Floors | Bergvik Iso Floor Raised Access Floor - EDP Data ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Interior shot of a data center server room with visible server racks and raised floor cabling."
+      }
+    },
+    "c": {
+      "url": "https://www.basor.com/assets/img/centros-datos/solucion-2@2x.jpg",
+      "title": "Basor Electric - Cable Tray Specialist",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A clear, unobstructed view of a data center server room."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "http://www.constructioncanada.net/wp-content/uploads/2014/07/Tate_Raised-access-standard.jpg",
+      "reason": "download: Redirect response '301 Moved Permanently' for url 'http://www.constructioncanada.net/wp-content/uploads/2014/07/Tate_Raised-access-standard.jpg'\nRedirect location: 'https://www.constructioncanada.net/wp-content/uploads/2014/07/Tate_Raised-access-standard.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301"
+    }
+  ]
+}

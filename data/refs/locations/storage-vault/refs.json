@@ -1,0 +1,60 @@
+{
+  "location_key": "storage-vault",
+  "query": "secure storage vault interior caged lockers shelving empty",
+  "refs": {
+    "a": {
+      "url": "https://image.made-in-china.com/202f0j00ADZvOTElLVqj/Warehouse-Metal-Modular-Storage-Locker-Security-Lockable-Storage-Cage.webp",
+      "title": "Warehouse Metal Modular Storage Locker Security Lockable Storage Cage ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real high-security storage vault with numbered lockers and dim lighting."
+      }
+    },
+    "b": {
+      "url": "http://www.giantindustrial.com/images/products/storage-cages/secure-cages-and-locking-enclosures-for-evidence-storage-and-controlled-access.jpg",
+      "title": "Secure Storage Cages & Wire Partitions | Giant Industrial Installations",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photograph depicts a high-security storage vault with numbered lockers and reinforced cages."
+      }
+    },
+    "c": {
+      "url": "https://www.seksolutions.com/uploads/2/3/3/7/23373924/1342186_orig.jpg",
+      "title": "Storage Cages & Lockers Solutions - SEK Solutions",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Real high-security storage vault with lockers and benches, taken from a corner."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://img.freepik.com/premium-photo/bank-safe-boxes-with-closed-steel-doors-underground-vault-realistic-interior-empty-room-with-metal-deposit-lockers-locks-handles-money-storage-secure-banking-service-concept-3d-render_645257-63.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/bank-safe-boxes-with-closed-steel-doors-underground-vault-perspective-view-realistic-interior-empty-room-with-metal-deposit-lockers-money-storage-secure-banking-service-concept-3d-render_645257-570.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/bank-deposit-lockers-wall-with-closed-metal-doors-black-safe-box-perspective-view-realistic-interior-empty-vault-storage-valuables-jewels-money-secure-banking-service-3d-render_645257-352.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/rows-secure-metal-deposit-boxes-fill-bank-vault-steel-lockers-combination-locks-offer-private-storage-protection-408816639.jpg",
+      "reason": "blocked source (stock-photo host)"
+    }
+  ]
+}

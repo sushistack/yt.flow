@@ -1,0 +1,120 @@
+{
+  "location_key": "containment-chamber",
+  "query": "prison isolation cell interior heavy steel door bunk concrete walls",
+  "refs": {
+    "a": {
+      "url": "https://easy-peasy.ai/cdn-cgi/image/quality=80,format=auto,width=700/https://fdczvxmwwjwpwbeeqcth.supabase.co/storage/v1/object/public/images/abecbf5b-d69f-4446-ad3c-214e21f57d72/172eecdb-5909-4f93-b3fb-0addb1ccb38f.png",
+      "title": "Prison Solitary Confinement: Isolation and Despair | AI Art Generator ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A realistic depiction of a cold concrete containment cell with no visible people or overlays."
+      }
+    },
+    "b": {
+      "url": "https://easy-peasy.ai/cdn-cgi/image/quality=80,format=auto,width=700/https://media.easy-peasy.ai/27feb2bb-aeb4-4a83-9fb6-8f3f2a15885e/d9cc03a3-10b2-40f3-8eed-ea225cfeb6b2.png",
+      "title": "Prison Solitary Confinement: Isolation and Despair | AI Art Generator ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Photograph depicts a realistic containment cell interior."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://img.freepik.com/premium-photo/horizontal-image-depicting-inside-prison-cell-cell-is-small-dimly-lit-with-cold-grey-concrete-walls-metal-bars-door_1072773-6225.jpg?w=2000",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/minimalist-prison-cell-interior-metal-cot-sink-barred-windows-stark-cinderblock-walls-pale-blue-tile-concrete-floor-evoke-402656685.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625174.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625240.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/stark-black-white-prison-cell-heavy-iron-bars-conveying-confinement-isolation-image-depicting-empty-scene-371165785.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625128.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/dim-prison-cell-interior-showing-bunk-beds-sparse-furnishings-under-harsh-lighting-dim-prison-cell-interior-showing-bunk-beds-433848838.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://masterbundles.com/wp-content/uploads/2023/05/2303_room_storefront_14--280.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room is a cold concrete containment cell with reinforced walls and dim lighting."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/minimalist-prison-cell-interior-features-metal-bars-concrete-walls-simple-bed-barred-window-lets-faint-light-creating-398601030.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/prison-cell-with-barred-window-metal-bunk-bed-toilet_36682-105859.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.steelcell.com/wp-content/uploads/2024/06/Prison-Cell.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room is a sterile containment cell, not a cold concrete SCP Foundation facility."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625026.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://img.freepik.com/premium-photo/dimly-lit-prison-corridor-with-rows-metal-cell-doors-evoking-sense-isolation-confinement-harsh-fluorescent-lighting_1323182-16552.jpg?w=1060",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/isolation-cell-888337.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/gloomy-d-prison-cell-render-barred-window-iron-grate-doorway-stark-concrete-walls-metal-creating-sense-confinement-371746963.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/prison-cell-doors-jail-corridor-heavy-green-metal-door-focus-many-locked-cells-industrial-architecture-building-detention-384832013.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625008.jpg?w=576",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/interior-jail-building-inside-corridor-isolation-prison-cell-steel-doors-ai-generative-425625725.jpg",
+      "reason": "blocked source (stock-photo host)"
+    }
+  ]
+}

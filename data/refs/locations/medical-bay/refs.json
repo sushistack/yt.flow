@@ -1,0 +1,168 @@
+{
+  "location_key": "medical-bay",
+  "query": "abandoned hospital ward urbex bed iv stand bedside cabinet decay",
+  "refs": {
+    "a": {
+      "url": "https://i2-prod.mirror.co.uk/article28926182.ece/ALTERNATES/s1200f/1_PAY-h_MDRUM_Money_Pit_Hospital-16.jpg",
+      "title": "Hospital frozen in time after being abandoned with blood samples left ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room appears to be an abandoned hospital infirmary with a bed and medical fixtures."
+      }
+    },
+    "b": {
+      "url": "https://i2-prod.irishmirror.ie/incoming/article4585116.ece/ALTERNATES/s1227b/Abandoned-hospitals.jpg",
+      "title": "Eerie pictures of Abandoned hospitals in the US - Irish Mirror Online",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "An abandoned hospital room with beds, restraints, and medical equipment."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://static.vecteezy.com/system/resources/thumbnails/050/019/531/large/desolate-abandoned-hospital-interior-filled-with-empty-beds-and-decay-video.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://c8.alamy.com/comp/2K0WWYX/bed-in-an-abandoned-hospital-2K0WWYX.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "http://www.bcd-urbex.com/wp-content/uploads/2015/04/hospital-sc-italy-3.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic infirmary room with medical equipment and no visible people."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/desolate-glimpse-past-abandoned-hospital-wards-empty-bed-tells-tales-forgotten-medical-histories-evocative-357406353.jpg?w=992",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://c8.alamy.com/comp/2K0WX00/bed-in-an-abandoned-hospital-2K0WX00.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "http://www.bcd-urbex.com/wp-content/uploads/2015/06/selly-oak-hospital-44.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic hospital infirmary room with all required elements."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/haunting-interior-view-desolate-decaying-abandoned-hospital-ward-revealing-rusty-metal-beds-peeling-paint-ceilings-430199124.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://whatsthejam.com/wp-content/uploads/2024/09/Urban-explorer-discovers-%E2%80%98eerie-abandoned-Scottish-asylum-with-equipment-and-furniture-left-behind-6.jpg",
+      "reason": "download: Client error '403 Forbidden' for url 'https://whatsthejam.com/wp-content/uploads/2024/09/Urban-explorer-discovers-%E2%80%98eerie-abandoned-Scottish-asylum-with-equipment-and-furniture-left-behind-6.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://www.obsidianurbexphotography.com/wp-content/uploads/2024/12/Abandoned-Hospital-Childrens-Ward-Poland-Old-Operating-Table.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room appears to be an abandoned medical facility with no people present."
+      }
+    },
+    {
+      "url": "https://www.obsidianurbexphotography.com/wp-content/uploads/2024/12/Abandoned-Hospital-Childrens-Ward-Poland-Operating-Theater-With-Light.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The room appears to be an abandoned medical facility with no people present."
+      }
+    },
+    {
+      "url": "https://c8.alamy.com/comp/J1Y6J0/maternity-ward-in-hospital-no-126-of-pripyat-ghost-city-chernobyl-J1Y6J0.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.obsidianurbexphotography.com/wp-content/uploads/2024/12/Abandoned-Hospital-Childrens-Ward-Poland-Ranksacked-Patient-Ward.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The watermark 'Obsidian Urbex' is present on the photo."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/abandoned-hospital-room-remnants-furniture-bed-middle-stylized-urbex-generated-ai-288072032.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.obsidianurbexphotography.com/wp-content/uploads/2024/12/Abandoned-Hospital-Childrens-Ward-Poland-Bed-With-Christmas-Wreath.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic hospital room with authentic details."
+      }
+    },
+    {
+      "url": "https://static.vecteezy.com/system/resources/previews/032/720/124/non_2x/abandoned-hospital-ward-with-beds-made-and-rubbish-abandoned-by-earthquake-or-war-ai-generative-photo.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/desolate-glimpse-past-urban-exploration-photography-captures-decaying-interior-abandoned-hospital-step-haunting-350648428.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://contentf5.dailynewshungary.com/wp-content/uploads/2025/03/urbex-abandoned-hospital.jpeg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The room appears to be an abandoned medical examination area, not a functioning infirmary."
+      }
+    },
+    {
+      "url": "http://www.bcd-urbex.com/wp-content/uploads/2015/04/hospital-sc-italy-24.jpg",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photo depicts a realistic hospital infirmary room with all required elements."
+      }
+    }
+  ]
+}

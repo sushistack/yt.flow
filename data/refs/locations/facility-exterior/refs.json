@@ -1,0 +1,148 @@
+{
+  "location_key": "facility-exterior",
+  "query": "brutalist concrete industrial facility exterior night floodlights fence",
+  "refs": {
+    "a": {
+      "url": "https://bunny-wp-pullzone-8eh7ulciaa.b-cdn.net/wp-content/uploads/2025/11/image-1763023473692-661-1024x683.webp",
+      "title": "Outdoor LED Flood Lights for Industry & Warehouse | Tosunlux",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "A high-angle exterior shot of a brutalist concrete building at night with floodlights and no visible people."
+      }
+    },
+    "b": {
+      "url": "https://i.pinimg.com/originals/46/e6/7b/46e67b5622dafda1fa0456b7c3e5bb75.jpg",
+      "title": "Pinterest | Brutalism architecture, Brutalist architecture ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photograph shows a brutalist concrete structure at night with no visible people or overlays."
+      }
+    },
+    "c": {
+      "url": "https://i.pinimg.com/originals/9d/26/25/9d2625dde5ff76e29181b79b4b76b6af.jpg",
+      "title": "Pin by Megan Murphy on Home spun | Brutalism architecture, Brutalist ...",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "The photograph shows a brutalist concrete building exterior with no visible people or overlays."
+      }
+    }
+  },
+  "rejected": [
+    {
+      "url": "https://thumbs.dreamstime.com/b/concrete-security-facility-illuminated-bright-floodlights-stark-night-multiple-surveillance-cameras-mounted-417671744.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/impressive-brutalist-police-station-illuminated-harsh-floodlights-dark-night-impressive-brutalist-police-station-321486404.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://imgcdn.stablediffusionweb.com/2024/10/18/8a9fc84a-28a2-4267-9201-b646520d9030.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The building is brutalist but the scene is daytime, not night."
+      }
+    },
+    {
+      "url": "https://pics.craiyon.com/2023-09-27/47654b279902497ca4b8d7512eb81725.webp",
+      "reason": "has_watermark_or_text=True",
+      "verdict": {
+        "matches_location": true,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.95,
+        "notes": "Photograph depicts a brutalist concrete building at night with chain-link fencing and floodlights."
+      }
+    },
+    {
+      "url": "http://www.customizelighting.com/wp-content/uploads/2024/06/A_large_industrial_facility_with_high-power_LED_floodlights.jpg",
+      "reason": "download: Redirect response '301 Moved Permanently' for url 'http://www.customizelighting.com/wp-content/uploads/2024/06/A_large_industrial_facility_with_high-power_LED_floodlights.jpg'\nRedirect location: 'https://www.customizelighting.com/wp-content/uploads/2024/06/A_large_industrial_facility_with_high-power_LED_floodlights.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/nighttime-view-storage-facility-floodlights-illuminating-perimeter-nighttime-view-storage-facility-floodlights-276892135.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://megalamparas.com.gt/wp-content/uploads/2025/06/iluminacion-exteriores.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The building appears modern but lacks the brutalist concrete and chain-link fencing typical of an SCP Foundation site."
+      }
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/z/post-apocalypse-dystopian-brutalist-industrial-complex-concrete-realistic-abandoned-lots-greenery-photo-real-atmospheric-337463354.jpg?w=768",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://static.vecteezy.com/system/resources/previews/047/309/137/non_2x/brutalist-architecture-detail-in-monochrome-photo.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://cdn.pakutaso.com/shared/img/thumb/yakeiPAR589850040_TP_V4.jpg",
+      "reason": "download: Client error '403 Forbidden' for url 'https://cdn.pakutaso.com/shared/img/thumb/yakeiPAR589850040_TP_V4.jpg'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+    },
+    {
+      "url": "https://thumbs.dreamstime.com/b/brutalist-style-concrete-building-multiple-levels-staircases-brutalist-concrete-architecture-building-showing-outdoor-324111650.jpg",
+      "reason": "blocked source (stock-photo host)"
+    },
+    {
+      "url": "https://www.agcled.com/static/case/1/12/perimeter-fence-lighting-led-flood-light.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The photo shows a chain-link fence at night but lacks the brutalist concrete SCP Foundation site elements."
+      }
+    },
+    {
+      "url": "https://as2.ftcdn.net/jpg/11/21/69/37/1000_F_1121693774_AdtnPlRcqGgUnlQn3jAywqnb7WW4B06X.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": true,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The photo shows a brutalist concrete structure but lacks the specific elements like chain-link fencing, floodlights, and guard towers."
+      }
+    },
+    {
+      "url": "https://i.pinimg.com/originals/26/e0/3b/26e03bb7120d40dc3b33f78a51ee41ef.jpg",
+      "reason": "matches_location=False",
+      "verdict": {
+        "matches_location": false,
+        "has_person": false,
+        "has_watermark_or_text": false,
+        "matches_shot_type": true,
+        "confidence": 0.9,
+        "notes": "The building is brutalist but lacks the specific features of an SCP Foundation site."
+      }
+    }
+  ]
+}
