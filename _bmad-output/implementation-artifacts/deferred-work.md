@@ -344,3 +344,34 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
   summary: Approved non-standing (`sitting`) STOCK card sets are not superseded by promotion, so one video can show the same extra masked when sitting and bare-faced when standing.
   evidence: `_resolve_card_path` serves `sitting` cards from `get_card` independently of the standing `angle_*_path` columns that promotion repoints, and `approve_stock_cast.py` retires only `hint:*` poses. No sitting sets exist for these keys today, so this is latent rather than live.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
+  summary: `_normalize_subject_scale` pins every card's subject to 94% of canvas height, which changes on-screen character size for every existing shot, and no composite-level test covers it.
+  evidence: `video.py:531 _character_scale_filter` is downscale-only and fits the whole 832×1216 canvas into the depth-scaled box; it was calibrated against sprites that carried their own padding. A `near` card's subject now occupies ~0.69 of frame height. `video.py:541`'s own comment says "never full-frame — that's D13"; that margin shrank with no AC or test on the composited frame.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
+  summary: Keep-largest-only plus the 0.94 rescale can magnify a partial cutout into a full-canvas card that passes every automated check.
+  evidence: If the 7×7 opening severs a low-contrast limb, only one fragment survives `_clean_alpha_noise`, and `_normalize_subject_scale` then Lanczos-upscales that fragment to 94% of canvas height. There is no lower bound on subject height and no cap on the scale factor, so a head-and-torso fragment becomes a blurry full-canvas card that has alpha, gets auto-approved, and is only visible to a human watching the render.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
+  summary: `enrich_ban` scrubs one exact literal, so near-miss spellings of the banned token pass through into the descriptor that drives angles 2-4.
+  evidence: `_scrub_phrase` does a case-insensitive `re.escape` of a single phrase. "SCP-Foundation", "S.C.P. Foundation", "the Foundation's containment wing" and "Foundation personnel" all survive it. There is also no check that the vision read-back is free of `STOCK_NEGATIVE` terms before it is persisted — the enrichment prompt explicitly asks for "anomalous traits, scars, markings, accessories", so a still-masked front card can describe its own mask into the text prompt for the other three angles.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
+  summary: All three STOCK keys share one demographic, and `1girl` in the negative makes it non-overridable — a shot casting two or three extras renders near-identical men.
+  evidence: `_BARE_FACE` pins "1boy, mature adult man, 35 years old, short straight black hair, brown eyes" for every key; only `_KEY_FEATURES` differs. Story 8.18's cast-diversity validator can enforce variety in the *decision* while the asset library cannot deliver it. Pinning colour to fix cross-angle drift and pinning it identically across keys are separable; only the first was needed.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `--reroll` disables abort-resume, so a re-roll of the 42-plate batch that crashes at plate 30 re-renders all 30 completed plates.
+  evidence: The resume guard is `if not force and not salt and _valid_plate(...)`, so any salt turns resume off. The same line also skips approved plates unless `--force`, which makes `--reroll <recorded-salt>` a silent no-op for exactly the approved keeper the `--help` text promises can be reproduced.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `label_location_plates.py`'s `approve_plate` call is unguarded, so one bad manifest entry aborts the rest of the batch after the verdict has already been persisted.
+  evidence: `LocationService.approve_plate` raises `LookupError` and `approve_asset` can raise on a retired/unknown entry; `scripts/approve_location_plate.py:80` catches `(LookupError, ValueError)` around the identical call and the labeler does not. `_record_verdict` runs first, so the manifest can end up saying "approved" for a plate the DB still calls draft, with plates 9-42 never scored.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-17-location-plate-data-generation.md`
+  summary: `MODEL_NODE` and `CONTROLNET_LOADER_NODE` are dereferenced but absent from `_load_workflow`'s node validation.
+  evidence: `_strip_ipadapter` writes `["11", 0]` into the KSampler, but node 11 is not in the validated set. Renumbering the LoRA chain in the workflow JSON would make every `--anchor-candidates` submission a dangling-link rejection, swallowed by the per-candidate `except Exception` as an unexplained "failed" line.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-15-stock-face-mask-bias-fix.md`
+  summary: The plate composition verifier's rubric mislabels any receding-wall interior as a corridor, which sent three rounds of tuning after a phantom defect.
+  evidence: `scratchpad/verify_plates.py` asks the vision model to pick a composition label; corner-view rooms whose geometry demonstrably matched their blockout hint were reported as `one-point-perspective-corridor`, producing a "60% corridors" figure that a side-by-side hint/result comparison disproved. Acting on it pushed ControlNet strength to 0.9, which caused the empty-room defect. Replace the label question with observable facts (is the far wall visible, how many walls, could you walk many metres down it) before reusing this verifier as a gate.

@@ -38,7 +38,11 @@ def _drop_reference_only_nodes(workflow: dict) -> None:
 
 
 _SUBJECT_HEIGHT_FRACTION = 0.94
-_MAX_SUBJECT_ASPECT = 0.75
+# Leaves the feet a transparent gutter. video.py's CARD_EDGE_FEATHER boxblurs the alpha
+# plane, and with the subject flush against the last row there is no padding for the
+# feather to eat — so it eats the shoe line instead and the character reads as standing
+# on a softened stub.
+_BOTTOM_GUTTER = 8
 
 
 def _normalize_subject_scale(png_bytes: bytes) -> bytes:
@@ -49,10 +53,12 @@ def _normalize_subject_scale(png_bytes: bytes) -> bytes:
     smaller than its own side and back views. Prompt wording cannot fix that — framing is
     not something the text encoder controls — but on an alpha cutout it is arithmetic.
 
-    Also rejects a card whose subject is far too wide to be one standing person: two
-    figures side by side survive the largest-component cut when they touch, and this is
-    the cheapest place to notice. Raising here reuses the existing per-angle failure
-    path (Story 8.15).
+    Deliberately does NOT try to detect a two-figure card from the bounding box. That was
+    tried and removed: measured on real cards a two-figure sprite was 0.359 wide-to-tall
+    and a known-good single figure 0.358, because the figures overlap — so the check missed
+    the case it existed for while rejecting legitimate wide poses (`sitting`, and Story 8.4
+    `pose_hint` cards like "lying on operating table"), which silently fell back to the base
+    standing card. Counting people is a vision-model question, not a geometry one.
     """
     import io
 
@@ -69,12 +75,6 @@ def _normalize_subject_scale(png_bytes: bytes) -> bytes:
     top, bottom = int(rows[0]), int(rows[-1]) + 1
     left, right = int(cols[0]), int(cols[-1]) + 1
     subject_h, subject_w = bottom - top, right - left
-    if subject_w / subject_h > _MAX_SUBJECT_ASPECT:
-        raise ValueError(
-            f"generated character sprite is {subject_w}x{subject_h}; too wide for one "
-            "standing figure (likely two subjects)"
-        )
-
     width, height = im.size
     scale = (height * _SUBJECT_HEIGHT_FRACTION) / subject_h
     new_w, new_h = max(1, round(subject_w * scale)), max(1, round(subject_h * scale))
@@ -84,7 +84,12 @@ def _normalize_subject_scale(png_bytes: bytes) -> bytes:
     subject = im.crop((left, top, right, bottom)).resize((new_w, new_h), Image.LANCZOS)
 
     out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    out.paste(subject, ((width - new_w) // 2, height - new_h), subject)
+    # No mask argument. Passing the source as its own mask double-applies alpha: a
+    # (20,20,20,140) edge pixel lands as (11,11,11,77), so every anti-aliased edge comes
+    # out at ~45% of its opacity with RGB dragged toward black. That is exactly the
+    # feathered edge band _clean_alpha_noise preserves on purpose (Story 11.1 AC5), and
+    # compositing the result gives every character a thin dark halo.
+    out.paste(subject, ((width - new_w) // 2, height - new_h - _BOTTOM_GUTTER))
     buf = io.BytesIO()
     out.save(buf, format="PNG")
     return buf.getvalue()
@@ -247,14 +252,19 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._inject_reference_image(workflow, uploaded_name)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI i2i generation succeeded (%dx%d)", width, height)
-            return _normalize_subject_scale(_clean_alpha_noise(result))
+            cleaned = _clean_alpha_noise(result)
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
             # Fallback: bypass the reference-image conditioning and use t2i
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i fallback succeeded (%dx%d)", width, height)
-            return _normalize_subject_scale(_clean_alpha_noise(result))
+            cleaned = _clean_alpha_noise(result)
+        # Outside the except. Normalising inside the i2i `try` meant a raise from it was
+        # caught by the t2i fallback, which then re-rendered the angle *without the front
+        # card as reference* and returned it as valid — a different person in the same
+        # set, logged as "ComfyUI i2i failed". Framing is not a reason to drop the anchor.
+        return _normalize_subject_scale(cleaned)
 
     def _load_workflow(self) -> dict:
         """Load ComfyUI workflow JSON template.

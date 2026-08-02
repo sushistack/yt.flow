@@ -860,19 +860,45 @@ class TestReferenceImageInjectionAndFallback:
         assert abs(subject_height(small) - subject_height(large)) <= 2
         assert abs(subject_height(small) - 400 * _SUBJECT_HEIGHT_FRACTION) <= 4
 
-    def test_normalize_subject_scale_rejects_two_side_by_side_figures(self):
-        """Touching figures survive the largest-component cut, so the give-away is the
-        bounding box: nobody standing is nearly as wide as they are tall."""
+    def test_normalize_subject_scale_preserves_the_antialiased_edge_alpha(self):
+        """Story 8.15 review: pasting the subject with itself as the mask double-applies
+        alpha — a 140-alpha edge pixel came out at 77 with RGB dragged toward black. That
+        is the feathered band _clean_alpha_noise keeps on purpose (11.1 AC5), so every
+        composited character grew a thin dark halo. The synthetic bars used by the other
+        tests are fully opaque and cannot see it."""
         from yt_flow.services.character_image_provider import _normalize_subject_scale
 
-        arr = np.zeros((400, 400, 4), dtype=np.uint8)
-        arr[50:350, 60:340, :3] = 255
-        arr[50:350, 60:340, 3] = 255  # 280 wide x 300 tall — ratio 0.93
+        arr = np.zeros((400, 300, 4), dtype=np.uint8)
+        arr[100:300, 130:170, :3] = 200
+        arr[100:300, 130:170, 3] = 140  # a uniformly semi-transparent subject
         buf = io.BytesIO()
         Image.fromarray(arr, "RGBA").save(buf, format="PNG")
 
-        with pytest.raises(ValueError, match="too wide for one standing figure"):
-            _normalize_subject_scale(buf.getvalue())
+        out = np.array(Image.open(io.BytesIO(_normalize_subject_scale(buf.getvalue()))).convert("RGBA"))
+        alphas = out[:, :, 3][out[:, :, 3] > 0]
+        assert alphas.max() >= 138, f"alpha was squared: max {alphas.max()} of 140"
+        lit = out[out[:, :, 3] > 100]
+        assert lit[:, 0].max() >= 195, f"RGB premultiplied toward black: max {lit[:, 0].max()} of 200"
+
+    def test_normalize_subject_scale_keeps_a_bottom_gutter_for_the_feather(self):
+        """video.py boxblurs the alpha plane; flush against the last row the feather eats
+        the shoe line instead of padding."""
+        from yt_flow.services.character_image_provider import (
+            _BOTTOM_GUTTER,
+            _normalize_subject_scale,
+        )
+
+        arr = np.zeros((400, 300, 4), dtype=np.uint8)
+        arr[150:250, 140:160, :3] = 255
+        arr[150:250, 140:160, 3] = 255
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        out = np.array(Image.open(io.BytesIO(_normalize_subject_scale(buf.getvalue()))).convert("RGBA"))
+        rows = np.flatnonzero(out[:, :, 3].max(axis=1) > 10)
+        assert 400 - (rows[-1] + 1) >= _BOTTOM_GUTTER - 1
+
+
 
     def test_clean_alpha_noise_drops_a_flanking_second_figure(self):
         """Story 8.15: the checkpoint likes to compose a character reference sheet,
