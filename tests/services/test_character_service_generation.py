@@ -586,15 +586,17 @@ class TestMultiAngleGeneration:
         assert reloaded.angle_side_path is None
         assert reloaded.selected_image_path is None
 
-    def test_generate_cards_enrich_false_keeps_the_callers_descriptor(self, service, tmp_path):
-        """Story 8.15: the enrichment prompt says "an SCP Foundation character", so
-        re-enriching a STOCK card writes that mask-attractor token straight back into
-        ``visual_descriptor`` — which is exactly what angles 2-4 are prompted from."""
+    def test_generate_cards_enrich_ban_scrubs_the_token_but_keeps_the_read_back(self, service, tmp_path):
+        """Story 8.15: the enrichment prompt says "an SCP Foundation character", so its
+        read-back writes that mask-attractor token straight into ``visual_descriptor`` —
+        which is exactly what angles 2-4 are prompted from. Skipping enrichment instead
+        cost cross-angle identity (three different faces in one card set), so the
+        read-back is kept and only the banned phrase is removed."""
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
         mock_provider.generate = AsyncMock(return_value=TINY_PNG)
-        enrich = AsyncMock(return_value="This SCP Foundation character wears a white skull mask")
+        enrich = AsyncMock(return_value="This SCP Foundation character has a plain face")
 
         with patch.object(service, "_get_image_provider", return_value=mock_provider), \
              patch.object(service, "enrich_descriptor_from_references", enrich):
@@ -603,13 +605,13 @@ class TestMultiAngleGeneration:
                     "STOCK-d-class",
                     descriptor="ordinary human face, orange jumpsuit",
                     angles=["front", "side"],
-                    enrich=False,
+                    enrich_ban="SCP Foundation",
                 )
             )
 
-        enrich.assert_not_awaited()
+        enrich.assert_awaited_once()
         character = service.check_existing_character("STOCK-d-class")
-        assert character.visual_descriptor == "ordinary human face, orange jumpsuit"
+        assert character.visual_descriptor == "This character has a plain face"
 
     def test_generate_cards_enriches_by_default(self, service, tmp_path):
         """Derived keys keep enrichment — it is what buys the family resemblance."""
@@ -822,6 +824,25 @@ class TestReferenceImageInjectionAndFallback:
         assert cleaned[50, 50, 3] == 255  # main blob stays fully opaque
         assert cleaned[85, 85, 3] == 255  # large detached component survives
         assert cleaned[7, 7, 3] == 0  # disconnected speck removed
+
+    def test_clean_alpha_noise_drops_a_flanking_second_figure(self):
+        """Story 8.15: the checkpoint likes to compose a character reference sheet,
+        leaving half-drawn duplicates beside the subject. They are far too big for the
+        old 2%-of-largest rule to catch, and a card must be one subject."""
+        from yt_flow.services.character_image_provider import _clean_alpha_noise
+
+        arr = np.zeros((200, 200, 4), dtype=np.uint8)
+        arr[40:180, 80:130, :3] = 255
+        arr[40:180, 80:130, 3] = 255  # subject: 140x50 = 7000px
+        arr[50:150, 10:50, :3] = 255
+        arr[50:150, 10:50, 3] = 255  # flanking ghost, fully separate: 4000px = 57%
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        cleaned = np.array(Image.open(io.BytesIO(_clean_alpha_noise(buf.getvalue()))).convert("RGBA"))
+
+        assert cleaned[100, 100, 3] == 255  # subject survives
+        assert cleaned[100, 30, 3] == 0  # ghost removed despite being 57% of the subject
 
     def test_clean_alpha_noise_preserves_antialiased_edge_band(self):
         """Story 11.1 AC5: the component interior still snaps to 255 (dither-band

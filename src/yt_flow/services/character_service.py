@@ -75,12 +75,28 @@ _ANGLE_FIELD_NAMES: dict[str, str] = {
 # Raised 2026-07-07 (Story 8.2 Task 8 follow-up) — the original values let the
 # self-referencing stock/derived chain (AC7) redraw the face/mask/insignia per
 # angle; identity now takes priority, re-tune down only if angle turn regresses.
+# Re-tuned down 2026-08-01 (Story 8.15) on exactly that condition: staged STOCK
+# cards came back with "side" and "three_quarter" rendered as another frontal.
+# The 07-07 raise assumed text-side identity was also working, but vision
+# enrichment started failing silently on 07-12 (qwen-vl max_tokens 400, fixed in
+# this story), so the weights had been carrying identity alone — and failing at
+# it. With enrichment restored, text locks the face and these can pull less.
 _ANGLE_IPADAPTER_WEIGHTS: dict[str, float] = {
     "front": 0.2,
-    "three_quarter": 0.5,
-    "side": 0.45,
-    "back": 0.35,
+    "three_quarter": 0.35,
+    "side": 0.3,
+    "back": 0.3,
 }
+def _scrub_phrase(text: str, phrase: str) -> str:
+    """Drop every case-insensitive occurrence of ``phrase``, tidying the seams.
+
+    Used on vision-enriched descriptors so a prompt token the caller deliberately
+    excluded cannot re-enter through the model's read-back (Story 8.15).
+    """
+    cleaned = re.sub(re.escape(phrase), "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 _POSE_DESCRIPTIONS: dict[str, str] = {
     "standing": "standing upright",
     "sitting": "sitting on a plain simple chair, seated pose",
@@ -793,7 +809,7 @@ class CharacterService:
         anchor_path: str | None = None,
         angles: list[str] | None = None,
         negative_suffix: str | None = None,
-        enrich: bool = True,
+        enrich_ban: str | None = None,
         stage: bool = False,
     ) -> list[str]:
         """Generate and persist a card library from a descriptor.
@@ -802,11 +818,12 @@ class CharacterService:
         front card for identity consistency. An explicit anchor can condition the
         front angle instead.
 
-        ``enrich=False`` keeps ``visual_descriptor`` at the caller's ``descriptor``
-        instead of the vision model's read-back of the generated front. The
-        enrichment prompt says "an SCP Foundation character", so for the STOCK
-        extras it reinjects the exact token their descriptors were purged of — the
-        mask attractor (Story 8.15). Enrichment stays on everywhere else.
+        ``enrich_ban`` is a phrase stripped from the enriched descriptor before it
+        is persisted. The enrichment prompt says "an SCP Foundation character", so
+        its read-back reinjects into every non-front angle the exact token the STOCK
+        descriptors were purged of — the mask attractor (Story 8.15). Scrubbing beats
+        skipping enrichment outright: the read-back is what keeps the four angles the
+        same person, and without it the cards drifted into three different faces.
 
         With ``stage=True`` the cards land in the next style epoch and the live
         ``angle_*_path`` columns are left alone — ``_resolve_card_path`` reads those
@@ -851,11 +868,13 @@ class CharacterService:
             saved.append(path)
             if angle == "front":
                 front_path = path
-            if angle == "front" and anchor_path is None and enrich:
+            if angle == "front" and anchor_path is None:
                 # Describe the just-generated face/mask/insignia in text so the
                 # self-referencing angles below stay the same person, not just
                 # the same outfit — IPAdapter alone doesn't lock facial identity.
                 enriched = await self.enrich_descriptor_from_references(card_key, [self._abs_asset_path(path)])
+                if enriched and enrich_ban:
+                    enriched = _scrub_phrase(enriched, enrich_ban)
                 if enriched:
                     character = self.update_character(character.id, visual_descriptor=enriched)
             if pose == "standing":

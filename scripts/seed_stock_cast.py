@@ -21,11 +21,17 @@ from yt_flow.services.image_search import DuckDuckGoImageSearch  # noqa: E402
 # head/face state leads it — and it stays purely affirmative. Diffusion text encoders
 # do not negate, so "no mask" in the positive prompt summons masks; every prohibition
 # belongs in STOCK_NEGATIVE instead (Story 8.15).
+# Leads with Danbooru tags because the checkpoint is AnimagineXL, which is trained on
+# them: "solo, 1boy" is the idiomatic one-character control for this model family.
+# Prose alone did not hold — a run without them came back as a four-up character sheet,
+# and because the four figures touched each other they were a single alpha component,
+# so the largest-component cut in _clean_alpha_noise could not rescue it either.
 _BARE_FACE = (
-    "adult, ordinary unremarkable human face, short dark hair, visible eyes, nose "
-    "and mouth, plain forgettable features, natural skin"
+    "solo, 1boy, adult, ordinary unremarkable human face, short dark hair, visible "
+    "eyes, nose and mouth, plain forgettable features, natural skin"
 )
-# "SCP Foundation" is deliberately absent: probing the live checkpoint showed that
+BANNED_STOCK_TOKEN = "SCP Foundation"
+# The token above is deliberately absent below: probing the live checkpoint showed that
 # token alone is what collapsed these extras into a masked, hazmat-suited figure —
 # with it the render is a skull mask or a visored helmet, without it an ordinary
 # person, every other lever held constant. The wardrobe carries the setting instead.
@@ -40,8 +46,8 @@ STOCK_DESCRIPTORS = {
         "professional posture"
     ),
     "STOCK-security": (
-        f"{_BARE_FACE}, an adult security guard, black tactical vest over a dark "
-        "uniform, long dark trousers, black cap, alert disciplined posture"
+        f"{_BARE_FACE}, a security guard in his thirties, black tactical vest over a "
+        "dark uniform, long dark trousers, black cap, alert disciplined posture"
     ),
 }
 # Suppression stays per-call and STOCK-scoped: the shared workflow's own negative
@@ -55,7 +61,9 @@ STOCK_DESCRIPTORS = {
 # (bald, child, shorts…) are steered affirmatively by the descriptor instead.
 STOCK_NEGATIVE = (
     "skull mask, plague doctor mask, gas mask, respirator, helmet, visor, "
-    "hazmat suit, glowing eyes, undead, monster"
+    "hazmat suit, glowing eyes, undead, monster, "
+    "multiple views, character sheet, reference sheet, turnaround, 2boys, "
+    "multiple boys, duplicate"
 )
 VALID_POSES = ("standing", "sitting")
 
@@ -176,9 +184,10 @@ async def seed_key(
         negative_suffix=STOCK_NEGATIVE if is_stock else None,
         # Vision enrichment describes the generated front back into visual_descriptor,
         # and its prompt says "an SCP Foundation character" — the one token these
-        # descriptors were purged of, because it is what attracts the mask. Derived
-        # keys keep it: they need the family resemblance it buys.
-        enrich=not is_stock,
+        # descriptors were purged of, because it is what attracts the mask. Keep the
+        # enrichment (it is what holds the four angles to one face) and strip the
+        # token from its output. Derived keys are SCP entities, so they keep it.
+        enrich_ban=BANNED_STOCK_TOKEN if is_stock else None,
         stage=stage,
     )
     if len(paths) < 4:

@@ -67,13 +67,17 @@ def _clean_alpha_noise(png_bytes: bytes) -> bytes:
     if num_components == 0:
         return png_bytes
     sizes = ndimage.sum(binary, labeled, range(1, num_components + 1))
-    largest_size = float(np.max(sizes))
-    keep_labels = {
-        idx + 1
-        for idx, size in enumerate(sizes)
-        if float(size) >= largest_size * 0.02
-    }
-    keep_mask = np.isin(labeled, list(keep_labels))
+    # Largest component only. The old rule kept anything >= 2% of the largest, which
+    # is right for dither speckle but let whole secondary figures through: the
+    # checkpoint likes to compose a character reference sheet, and the flanking
+    # half-drawn duplicates are 30-70% of the subject, far above 2%. A card must be
+    # one subject, and the generation prompt cannot currently enforce that (the live
+    # Langfuse prompt is missing the repo file's single-subject clause), so the cut
+    # happens here where it is deterministic (Story 8.15).
+    # ponytail: a genuinely detached element (dropped prop, floating accessory) would
+    # be discarded too; the 25x25 closing above already bridges anything attached.
+    # Switch back to a fraction-of-largest rule if a real card ever loses a limb.
+    keep_mask = labeled == (int(np.argmax(sizes)) + 1)
     # Interior (2px erode) snaps to 255 — the dither band lives in flat regions
     # inside the component, so snapping there still removes it. The edge band
     # (keep_mask minus interior) keeps the ORIGINAL alpha so anti-aliased edges

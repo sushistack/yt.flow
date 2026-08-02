@@ -83,14 +83,14 @@ async def test_seed_key_generates_derived_descriptor(tmp_path, monkeypatch):
         service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
 
         async def fake_generate(
-            key, *, descriptor, pose="standing", anchor_path=None, negative_suffix=None, enrich=True, **kwargs
+            key, *, descriptor, pose="standing", anchor_path=None, negative_suffix=None, enrich_ban=None, **kwargs
         ):
             assert key == "SCP-049-2"
             assert descriptor == "reanimated human"
             assert pose == "standing"
             assert anchor_path is None
             assert negative_suffix is None  # STOCK-only suppression, not derived keys
-            assert enrich is True  # derived keys need the family resemblance enrichment buys
+            assert enrich_ban is None  # derived keys are SCP entities; nothing to scrub
             return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
@@ -191,9 +191,10 @@ async def test_seed_key_stage_bypasses_guard_and_threads_stage_and_negative(tmp_
     assert len(paths) == 4
     assert calls[0]["stage"] is True
     assert calls[0]["negative_suffix"] == seed.STOCK_NEGATIVE
-    # Vision enrichment would overwrite visual_descriptor with text from a prompt that
-    # says "an SCP Foundation character" — the token these descriptors exist to avoid.
-    assert calls[0]["enrich"] is False
+    # Vision enrichment overwrites visual_descriptor with text from a prompt that says
+    # "an SCP Foundation character" — the token these descriptors exist to avoid. The
+    # read-back is kept (it holds the four angles to one face) with the token scrubbed.
+    assert calls[0]["enrich_ban"] == seed.BANNED_STOCK_TOKEN
 
 
 def test_stock_descriptors_pin_a_bare_human_face():
@@ -203,7 +204,15 @@ def test_stock_descriptors_pin_a_bare_human_face():
     STOCK_NEGATIVE. "SCP Foundation" is banned outright: live probing showed that
     token alone collapses these extras into masked, hazmat-suited figures."""
     seed = _load_script()
-    required = ("short dark hair", "ordinary unremarkable human face", "visible eyes, nose and mouth")
+    # "solo, 1boy" leads: AnimagineXL is Danbooru-tagged, and prose alone let the
+    # model compose a four-up character sheet whose figures touched — one alpha
+    # component, so the largest-component cut could not remove them either.
+    required = (
+        "solo, 1boy",
+        "short dark hair",
+        "ordinary unremarkable human face",
+        "visible eyes, nose and mouth",
+    )
     forbidden = (
         "mask", "helmet", "skull", "glowing", "undead", "monster", "plague",
         "hazmat", "scp foundation", "doctor",
@@ -227,6 +236,9 @@ def test_stock_negative_carries_the_prohibitions():
     for term in (
         "skull mask", "plague doctor mask", "gas mask", "respirator",
         "helmet", "visor", "hazmat suit", "glowing eyes", "undead", "monster",
+        # Multi-subject suppression: the checkpoint composes character sheets, and
+        # touching figures form one alpha component that no cutout rule can split.
+        "character sheet", "multiple views", "2boys",
     ):
         assert term in text, f"STOCK_NEGATIVE is missing {term!r}"
     for term in ("faceless", "no face"):
