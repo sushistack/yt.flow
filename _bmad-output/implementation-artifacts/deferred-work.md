@@ -406,14 +406,17 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
   summary: IC-Light v1 relighting works mechanically but degrades the art, so Tier 3 stays parked behind `ytflow_verified_iclight=false`.
   evidence: The authored graph executes on the installed nodes and satisfies the sprite contract (same resolution, RGBA, alpha within 1/255 of the source silhouette) — Tier 3's first real output since 8.7. But IC-Light v1 is trained on photoreal subjects while these cards are flat anime illustration: denoise 0.45/0.60/0.85 gave washed grey, near-black and blue-monochrome, non-monotonic and all worse than the unlit card. Same domain-transfer failure that ruled out libcom's photoreal composite scorer. Revisit with a masked low-denoise fuse pass, a low-ratio blend that takes only the light direction, or an illustration-domain relighter — not with more parameter search on this model.
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — `video.py:ground_y_expr` mirrors `_zoompan_filter`'s own per-direction lo/hi/frames maths as a closed-form `t` expression (verified against an independent re-derivation of the crop maths: delta 0.00000 on 5 directions at both ends), and the contact shadow's overlay slides by the same expression plus a constant. Live: 3.9px max feet-vs-floor error tracked, 57.2px static.
   summary: The ground line is measured on a static plate but the plate is under Ken Burns zoom and pan, so feet detach from the floor over the length of every moving shot.
   evidence: `_zoompan_filter` runs `ZOOM_IN_MAX = 1.15` and sweeps the crop window ~0.15 of frame height for pan directions, while the card's feet and shadow stay pinned at `main_h*ground_y` for the whole clip. On a centre zoom-in a floor at 0.80 travels to ~0.845 by the last frame (~49px). Feet and shadow stay consistent with each other, so the fix is coherent — but both drift off the floor. Correct fix is to make `ground_y` a function of `t` mirroring the zoompan expression, which means the resolver has to hand video.py the plate's floor geometry rather than one number.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — `depth_map_cache_path` is content-addressed (`<workspace>/cache/depth/<sha256>.png`), so N per-shot copies of one plate cost one estimation, across runs too. `resolve_placements`' memo keys on the same value, and a new test builds five byte-identical copies at distinct paths and asserts one submit.
   summary: Depth estimation runs once per SHOT, not once per plate — an 80-shot run using one stock plate does 80 serial DepthAnythingV2 estimations.
   evidence: `image_node` always materialises a per-shot copy (`dest = out_dir / f"{_shot_base(...)}.png"`, and `shutil.copyfile(plate["path"], dest)` for STOCK hits), so `shot["image_path"]` is never the shared `assets/locations/` plate. The spec's "compute once per plate, shared with Story 11.5" is impossible as built, and `test_resolve_placements_computes_one_depth_map_per_background` only passes because its fixture hands two shots the same `image_path` — a state the real pipeline cannot produce. Key the cache on the STOCK plate when the shot has a `location_key`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — `ground_plane` returns `(row, plane value)` from one band normalisation and `occlusion_mask` takes that plane; the frame-normalised derivation survives only for standalone calls.
   summary: `ground_line` and `occlusion_mask` normalise the depth target against different ranges, so the occlusion plane does not match the ground plane the docstrings claim it shares.
   evidence: `ground_line` normalises `_DEPTH_TARGET` against the column band's own min/max; `occlusion_mask` normalises the same fraction against the whole frame's min/max. On a plate with a bright near wall at one edge and a dim centre column the two planes land at ~62 and ~194, so every genuine occluder between them is invisible and the mask returns None; reversed, the mask eats most of the card.
 
@@ -422,21 +425,34 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
   evidence: `_merge_placements` runs before the Tier-3 loop, which does `{**card, "path": relit_path}` and keeps `occlusion_mask`. `blend` requires exact dimension match; verified with real ffmpeg that a mismatch gives "First input link top parameters (size ...) do not match" → exit 234 → `RuntimeError` out of `_render_scene_fast`. The AD-10 try/except wraps only the resolver call, not the chain build. Latent today (tier 3 is parked) but live the moment it is enabled. Also: the mask filename keys on (plate, card_key, position, depth) but its geometry depends on the sprite file, so two shots differing only by `angle`/`pose` overwrite each other's mask.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — now 0.406/0.553/0.737, and `test_card_height_fractions_match_video_pys_own_scale_math` re-derives them from video.py's `CHAR_MAX_W/H` + `_DEPTH_SCALE` so the duplicate cannot drift.
   summary: `_CARD_HEIGHT_FRAC` is wrong by 11-18% of frame height, stretching the occluder pattern by ~100px.
   evidence: The service assumes rendered card heights of far 0.45 / mid 0.65 / near 0.82; computed from `CHAR_MAX_H = 796.34`, `_DEPTH_SCALE` and an 832x1216 sprite under `force_original_aspect_ratio=decrease`, the real values are 0.406 / 0.553 / 0.737. The crop is then resized onto the sprite, so the error becomes a vertical stretch — a mid card behind a desk gets the masked edge ~100px from its true height.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — both declared `NotRequired` on `CastMember`, with `EXPECTED_FIELDS` in `test_state_imports.py` updated to match.
   summary: `ground_y` and `occlusion_mask` are not declared on the `CastMember` TypedDict, so the new cross-layer contract is typed nowhere.
   evidence: `build_contact_shadow(cast_member: CastMember)` now reads `ground_y`, a key the declared type does not have. Stories 8.8 and 8.9 both added their card keys as `NotRequired` entries; this one left the contract in two docstrings, and `state.py` still reads as if no ground field exists.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — `_DEFAULT_GROUND` is now the median over the 41 readable library plates (far 0.768 / mid 0.848 / near 0.931), measured with DepthAnything V2, and a test pins them ordered and inside `_GROUND_BAND`.
   summary: With the flag on and depth estimation unavailable, far and mid contact shadows move on the strength of three unmeasured constants.
   evidence: `_DEFAULT_GROUND` is `{far 0.65, mid 0.75, near 0.85}`; only `near` reproduces the pre-8.16 shadow constant and only that case is tested. If ComfyUI is down every far/mid shadow jumps from `Y/H=0.85` to 0.65/0.75, announced by one WARNING per plate that is easy to lose in a 40-shot run.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — the cache key is the plate's sha256, so a rewritten image simply misses.
   summary: The depth-map cache hit is path-only, so a re-rendered image keeps the previous image's depth map.
   evidence: `depth_map_file` returns the sidecar if it exists, with no mtime, size or content check. An image-stage retry, a seed change or a manual replace rewrites the PNG in place and every card in that shot is grounded against the old geometry, silently.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  status: RESOLVED 2026-08-03 — `test_pipeline_imports_no_services` added, with the four pre-existing crossings (two prompt_service, two comfyui_client) allow-listed by (file, module) so the list cannot grow silently.
   summary: No test forbids `pipeline → services`, so the injection seam this story is built around is protected by convention alone.
   evidence: `tests/domain/test_state_imports.py` enforces `pipeline ↛ db` and `api ↛ pipeline` only. Pre-existing, but 8.16 adds a third seam that depends on the rule.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  summary: The occlusion mask is cut once in plate space but rides the card, so it drifts off the plate's occluder over a moving shot.
+  evidence: With ground tracking on, card and plate now move together vertically, but the occluder and the card's ground point sit at different heights and travel at different rates under zoompan (the card's own parallax zoom only approximates the plate's). Measured for a 1.15x push-in with feet at 0.85 and an occluder edge at 0.70: ~25px divergence by the last frame, i.e. the character peeks past a hard edge late in the shot. Correct fix is frame-space occlusion — repaint the plate's near-cut over the composited card — which needs the alpha-cut plate carried through zoompan and is a story of its own. Recorded in `_occlusion_fragment`'s docstring as a named ceiling.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
+  summary: `scripts/score_composites.py` cannot detect placement drift, only gross placement failure.
+  evidence: Measured 2026-08-03 — qwen-vl-plus returned `grounded: 5` for both the ground-tracked render and the static-anchor render whose feet were 57px off the floor by the final frame. It catches mid-air / on-a-wall / doll-sized, and is a useful regression net over many frames, but a "how far off" question needs the pixel measurement. Raising resolution or cropping to the feet before scoring is the obvious next attempt.
