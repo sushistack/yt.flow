@@ -19,6 +19,7 @@ EXPECTED_FIELDS = {
     "CastMember": {
         "card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy",
         "movement_mode", "movement_direction", "movement_pace",
+        "ground_y", "occlusion_mask",
     },
     "SceneState": {
         "scene_num", "narration", "shots", "audio_path", "audio_duration",
@@ -106,3 +107,30 @@ def test_api_imports_no_pipeline():
             if py.name == "main.py" and mod in allowed:
                 continue  # allowed: injection seam
             assert not mod.startswith("yt_flow.pipeline"), f"{py.name}: imports {mod}"
+
+
+# The pipeline→services crossings that predate the rule being enforced, each a
+# stateless client rather than a db/session-holding service: the two Langfuse prompt
+# fetches and the ComfyUI HTTP client. Anything NEW belongs behind an inject_* seam
+# (Story 8.16's ground/relight resolvers are the model), which is what this list is
+# for — it must not grow.
+_LEGACY_PIPELINE_SERVICE_IMPORTS = {
+    ("scenario.py", "yt_flow.services.prompt_service"),
+    ("scenario_chain.py", "yt_flow.services"),
+    ("image.py", "yt_flow.services"),
+    ("image.py", "yt_flow.services.comfyui_client"),
+}
+
+
+def test_pipeline_imports_no_services():
+    # AD-1: pipeline layer must never import from services or api. Story 8.16 builds its
+    # ground-plane and relight crossings on that rule (inject_ground_resolver /
+    # inject_relight_resolver), and until now only pipeline↛db and api↛pipeline were
+    # enforced — this third seam was convention alone.
+    pkg = Path(state.__file__).resolve().parents[1]
+    for py in (pkg / "pipeline").rglob("*.py"):
+        for mod in _yt_flow_imports(py):
+            if (py.name, mod) in _LEGACY_PIPELINE_SERVICE_IMPORTS:
+                continue
+            assert not mod.startswith("yt_flow.services"), f"{py.name}: imports {mod}"
+            assert not mod.startswith("yt_flow.api"), f"{py.name}: imports {mod}"

@@ -71,6 +71,12 @@ class CastMember(TypedDict):
     movement_mode: NotRequired[CharacterMovementMode]  # Story 8.9; absent == parser/resolver default "anchored"
     movement_direction: NotRequired[CharacterMovementDirection]  # Story 8.9; absent == default "none"
     movement_pace: NotRequired[CharacterMovementPace]  # Story 8.9; absent == default "slow"
+    ground_y: NotRequired[float]  # Story 8.16; fraction of FRAME height the feet stand on.
+                                  # Written only by inject_ground_resolver; absent == the
+                                  # pre-8.16 centre anchor. Read by video.py's overlay AND
+                                  # build_contact_shadow — one value, two consumers.
+    occlusion_mask: NotRequired[str]  # Story 8.16; gray mask at the sprite's own pixel size,
+                                      # multiplied into its alpha. Absent == nothing in front.
 
 
 class WordTiming(TypedDict):
