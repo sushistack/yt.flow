@@ -9,6 +9,7 @@ Three layers, none of which existed before this story:
 ComfyUI is never touched: the ground resolver is a plain fake.
 """
 
+import re
 import shutil
 import struct
 import subprocess
@@ -216,14 +217,53 @@ def test_far_cards_sit_higher_in_frame_than_near_cards():
     assert feet("far") < feet("mid") < feet("near")
 
 
+def test_card_height_fractions_match_video_pys_own_scale_math():
+    """compositing_service duplicates the rendered card height per depth to place the
+    occlusion crop box. Wrong values become a vertical STRETCH of the occluder pattern
+    (the shipped 0.45/0.65/0.82 were off by 11-18% of frame height, ~100px on mid), so
+    re-derive them here from video.py's constants rather than trusting the copy."""
+    from yt_flow.pipeline.nodes.video import CHAR_MAX_H, CHAR_MAX_W, _DEPTH_SCALE
+    from yt_flow.services.compositing_service import _CARD_HEIGHT_FRAC
+
+    sprite_w, sprite_h = 832, 1216  # the card generator's canvas
+    for depth, scale in _DEPTH_SCALE.items():
+        # force_original_aspect_ratio=decrease: whichever axis binds first.
+        fit = min(CHAR_MAX_W * scale / sprite_w, CHAR_MAX_H * scale / sprite_h)
+        assert _CARD_HEIGHT_FRAC[depth] == pytest.approx(sprite_h * fit / COMP_H, abs=0.005), depth
+
+
 async def test_ground_resolver_drives_both_overlay_and_shadow(monkeypatch, tmp_path, assets):
     _inject_cast(monkeypatch, {"1:S001": [_card(assets.character)]})
     _inject_ground(monkeypatch, {"1:S001": [{"ground_y": 0.7}]})
     fc = await _render(monkeypatch, tmp_path, assets)
 
-    assert "y='main_h*0.7-overlay_h'" in fc
-    assert "(Y/H-0.7)" in fc
+    assert "(Y/H-0.7)" in fc          # ellipse drawn at the measured ground line
     assert "(main_h-overlay_h)/2" not in fc
+
+    # Feet and shadow both track the plate under Ken Burns, and they coincide on
+    # every frame — not just the first. A static anchor would leave the card
+    # hovering by the last frame of every moving shot.
+    def ev(expr: str, t: float, overlay_h: float) -> float:
+        return eval(  # noqa: S307
+            expr.replace("main_h", str(COMP_H)).replace("overlay_h", str(overlay_h))
+            .replace("t", str(t)),
+            {"min": min, "max": max},
+        )
+
+    # zoompan's y= has no overlay_h; the shadow's is the card expression plus a
+    # constant offset — the card's own is the last.
+    feet_expr = [e for e in re.findall(r"y='([^']+)'", fc) if "overlay_h" in e][-1]
+    shadow_expr = fc.split("[sh0]overlay=x=0:y='")[1].split("'")[0]
+    assert "t" in feet_expr
+    rows = []
+    for t in (0.0, 3.0):
+        feet = ev(feet_expr, t, 400) + 400
+        # The shadow plane is a full-frame canvas: its ellipse centre lands at
+        # its own offset plus the drawn fraction.
+        centre = ev(shadow_expr, t, COMP_H) + 0.7 * COMP_H
+        assert abs(feet - centre) < 1.0, f"feet {feet} vs shadow {centre} at t={t}"
+        rows.append(feet)
+    assert rows[0] != rows[1]
 
 
 # ── Resolver contract / degradation ──────────────────────────────────────────

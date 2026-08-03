@@ -1,9 +1,9 @@
 """compositing_service — depth-aware card placement (Story 8.16).
 
 One monocular depth map per background plate, computed once through ComfyUI's
-``DepthAnythingV2Preprocessor`` and cached *beside the plate* as
-``<plate>.depth.png`` — never per shot, never per card, and in a location Story
-11.5's parallax work can reuse. From that map:
+``DepthAnythingV2Preprocessor`` and cached under a content-addressed index
+(``<workspace>/cache/depth/<sha256>.png``) — never per shot, never per card, and
+in a location Story 11.5's parallax work can reuse. From that map:
 
 * :func:`ground_line` — the fraction of frame height where a card at a given
   (``position``, ``depth``) plants its feet. video_node anchors the overlay's
@@ -23,6 +23,7 @@ higher sample value means closer to camera throughout this module.
 """
 
 import copy
+import hashlib
 import json
 import logging
 import uuid
@@ -44,6 +45,11 @@ DEPTH_IMAGE_NODE = "1"
 # re-expresses as offsets.
 _X_FRAC: dict[str, float] = {"left": 1 / 3, "center": 0.5, "right": 2 / 3}
 
+# Output frame aspect (video.py COMP_W/COMP_H — duplicated for the same AD-1
+# reason as _X_FRAC). Used to undo the vertical centre-crop video.py's Ken Burns
+# chain applies to a plate that is not already 16:9.
+_FRAME_ASPECT = 1920 / 1080
+
 # Where each depth plane sits inside the plate's own observed depth spread
 # (0.0 = the farthest pixel in frame, 1.0 = the nearest).
 # Where in the column's depth range this card's feet sit. `far` was 0.30, which on a real
@@ -51,11 +57,21 @@ _X_FRAC: dict[str, float] = {"left": 1 / 3, "center": 0.5, "right": 2 / 3}
 # far card demonstrably behind a mid card without leaving the floor.
 _DEPTH_TARGET: dict[str, float] = {"far": 0.45, "mid": 0.65, "near": 0.85}
 
-# Ground line when no depth map is available (estimation off, unavailable or
-# failed). ``near`` is exactly the pre-8.16 hardcoded shadow ``Y/H`` — so a
-# fallback near card keeps today's shadow position and simply moves its feet
-# onto it instead of leaving them at frame centre.
-_DEFAULT_GROUND: dict[str, float] = {"far": 0.65, "mid": 0.75, "near": 0.85}
+# Ground line when no depth map is available (estimation off, unavailable or failed)
+# or when the plate's own band has no readable floor. MEASURED, not assumed: the median
+# over all 41 readable plates in the approved library (assets/locations/*/[abc].png,
+# DepthAnything V2, centre band). The first values here were guessed at 0.65/0.75/0.85
+# to keep `near` equal to the pre-8.16 hardcoded shadow constant, which made every
+# far/mid fallback shadow move on three numbers nobody had checked.
+_DEFAULT_GROUND: dict[str, float] = {"far": 0.768, "mid": 0.848, "near": 0.931}
+
+# A band whose far and near ground lines land closer together than this has no readable
+# floor under the card — a flat wall, a plate whose centre column is one surface, or a
+# depth map that failed quietly. Measured: 7 of 41 library plates, and without this guard
+# they resolved all three depths onto one clamped value, i.e. exactly the
+# depth-independent anchor this story removed. Falling back to the measured medians is
+# strictly better than pretending a collapsed reading is a floor.
+_MIN_GROUND_SPREAD = 0.05
 
 # A ground line outside this band is a depth artifact, not a floor: above the
 # low bound the card would stand on the back wall, below the high bound its feet
@@ -77,19 +93,37 @@ _MIN_OCCLUDER_FRAC = 0.02
 # On-screen card height per depth plane as a fraction of frame height — the
 # framing convention video.py's ``_DEPTH_SCALE`` targets (far ≈ wide shot,
 # near ≈ close).
-# ponytail: only used to place the occlusion mask's crop box. The mask is
-# authored at the card's own pixel size, so a few percent of box error shifts
-# the occluder edge slightly and costs nothing else; deriving the exact box
-# would mean duplicating video.py's motion-safe CHAR_MAX_W/H math into services/.
-_CARD_HEIGHT_FRAC: dict[str, float] = {"far": 0.45, "mid": 0.65, "near": 0.82}
+# ponytail: only used to place the occlusion mask's crop box, which is then resized
+# onto the sprite — so box error becomes a vertical STRETCH of the occluder pattern,
+# not a harmless shift. The first values here (0.45/0.65/0.82) were assumed and were
+# wrong by 11-18% of frame height, ~100px of stretch on a mid card. These are computed
+# from video.py's CHAR_MAX_H = 796.34, _DEPTH_SCALE and an 832x1216 sprite under
+# force_original_aspect_ratio=decrease. tests/pipeline/nodes/test_video_depth_placement
+# re-derives them from video.py's own constants so the two cannot drift.
+_CARD_HEIGHT_FRAC: dict[str, float] = {"far": 0.406, "mid": 0.553, "near": 0.737}
 
 
 # ── Depth map: compute once per plate, cache beside it ───────────────────────
 
 
-def depth_map_cache_path(background_path: str | Path) -> Path:
-    """``assets/locations/<key>/<variant>.png`` -> ``.../<variant>.depth.png``."""
-    return Path(background_path).with_suffix(".depth.png")
+def depth_map_cache_path(background_path: str | Path, settings: Settings | None = None) -> Path:
+    """Content-addressed: ``<workspace>/cache/depth/<sha256 of the plate>.png``.
+
+    Keyed on bytes, not path, because image_node ``shutil.copyfile``s an approved
+    stock plate into every shot that uses it — a path key estimates the same
+    fourteen plates once per shot (80 estimations on an 80-shot run) and again on
+    the next run. A content key collapses those to one per distinct plate,
+    forever, and cannot serve a stale map after a plate is re-rolled in place.
+
+    Falls back to ``<plate>.depth.png`` when no settings are available (the map
+    then lives beside the plate, as before).
+    """
+    background = Path(background_path)
+    workspace = getattr(settings, "workspace_path", None) if settings else None
+    if not workspace:
+        return background.with_suffix(".depth.png")
+    digest = hashlib.sha256(background.read_bytes()).hexdigest()
+    return Path(workspace) / "cache" / "depth" / f"{digest}.png"
 
 
 async def depth_map_file(
@@ -104,13 +138,11 @@ async def depth_map_file(
     node/checkpoint, malformed workflow) — the caller then falls back to
     :data:`_DEFAULT_GROUND`, so depth estimation can never fail a run (AD-10).
 
-    ponytail: cached beside the image rather than under a content-hash index.
-    A stock plate is a stable file (that's the reuse Story 11.5 wants), and a
-    freely generated background is unique to its run by construction, so a hash
-    key would add a lookup table that could never hit twice.
+    The cache key is the plate's bytes (see :func:`depth_map_cache_path`), so the
+    per-shot copies image_node makes of one approved plate cost one estimation.
     """
     background = Path(background_path)
-    cache = depth_map_cache_path(background)
+    cache = depth_map_cache_path(background, settings)
     if cache.exists():
         return cache
     if getattr(settings, "comfyui_mock", False):
@@ -133,6 +165,7 @@ async def depth_map_file(
         image_bytes = await client.submit_and_fetch(settings.comfyui_url, workflow)
         # Atomic publish, same idiom as RelightCache.store: a half-written depth
         # map would otherwise be read as a valid cache hit forever.
+        cache.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache.with_name(f"{cache.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_bytes(image_bytes)
         tmp.replace(cache)
@@ -179,45 +212,68 @@ def ground_line(depth_map: Any, position: str, depth: str) -> float:
     the card stands higher, behind it. That is why :func:`occlusion_mask` then
     finds it in front and masks the card there — the two read the same plane.
     """
-    fallback = _DEFAULT_GROUND.get(depth, _DEFAULT_GROUND["mid"])
+    band = ground_plane(depth_map, position, depth)
+    if band is None:
+        return _DEFAULT_GROUND.get(depth, _DEFAULT_GROUND["mid"])
+    return band[0]
+
+
+def ground_plane(depth_map: Any, position: str, depth: str) -> tuple[float, float] | None:
+    """``(ground fraction, the absolute depth value of that plane)``, or ``None``.
+
+    Both numbers come out of the SAME column-band normalisation. They used to be
+    derived independently — ``ground_line`` against the band's own min/max and
+    ``occlusion_mask`` against the whole frame's — so on a plate with a bright near
+    wall at one edge and a dim centre column the "shared plane" the docstrings
+    promised landed at ~62 in one function and ~194 in the other: every real
+    occluder between them was invisible, and reversed the mask ate the card.
+    """
     if depth_map is None:
-        return fallback
+        return None
     import numpy as np
 
     arr = np.asarray(depth_map, dtype=float)
     if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 1:
-        return fallback
+        return None
     h, w = arr.shape
     centre = _X_FRAC.get(position, _X_FRAC["center"]) * w
     half = max(1, w // 12)
     band = arr[:, max(0, int(centre - half)):min(w, int(centre + half) + 1)]
     profile = np.median(band, axis=1)
-    low, high = float(profile.min()), float(profile.max())
-    if high - low < 1e-6:
-        return fallback
-    # Accumulate upward from the bottom row, not downward from the top. A floor is the
-    # nearest surface at the bottom of the frame and recedes as it goes up, so scanning
-    # up is the direction that describes it. Accumulating downward instead let anything
-    # bright high in the band — a ceiling pipe, a foreground railing, a desk crossing the
-    # frame — saturate the running max for every row beneath it: measured, a near-depth
-    # object wider than half the band collapsed far/mid/near to one identical clamped
-    # value, which is exactly the depth-independent anchor this story removed.
+    if float(profile.max()) - float(profile.min()) < 1e-6:
+        return None
     # Scan upward from the bottom row, taking a running MINIMUM. The floor is the nearest
     # surface at the bottom of frame and recedes (gets darker) as it rises, so "the
     # nearest the floor has been at or below this row" is non-increasing going up, and
     # the row where it first drops to the target is that depth's ground line.
     #
-    # The previous version accumulated a running maximum downward from the top, which let
+    # The first version accumulated a running maximum downward from the top, which let
     # anything bright high in the band — a ceiling pipe, a foreground railing, a desk
     # crossing frame — saturate every row beneath it. Measured: a near-depth object wider
     # than half the band collapsed far/mid/near to one identical clamped value, i.e. the
     # depth-independent anchor this story exists to remove.
     monotone = np.minimum.accumulate(profile[::-1])
-    target = low + (high - low) * _DEPTH_TARGET.get(depth, _DEPTH_TARGET["mid"])
-    hits = np.nonzero(monotone <= target)[0]
-    idx = int(hits[0]) if hits.size else h - 1
-    row = (h - 1) - idx
-    return min(max(row / (h - 1), _GROUND_BAND[0]), _GROUND_BAND[1])
+    # Normalise the target against the MONOTONE CURVE's own range, not the raw profile's.
+    # The raw range includes rows the floor curve never reaches (a bright ceiling fixture,
+    # a dark upper wall), so on a plate whose bottom row is already darker than the raw
+    # `near` target every depth hit at index 0 and clamped to 0.98 together — measured
+    # across the 42-plate library, that collapsed a third of them, the exact failure the
+    # running-minimum change was made to remove. Against the curve's own endpoints the
+    # bottom row IS `near`'s extreme and the top row is `far`'s, so the three planes are
+    # strictly ordered on any plate with a floor.
+    m_far, m_near = float(monotone[-1]), float(monotone[0])
+
+    def _row(fraction: float) -> float:
+        target = m_far + (m_near - m_far) * fraction
+        hits = np.nonzero(monotone <= target)[0]
+        idx = int(hits[0]) if hits.size else h - 1
+        row = (h - 1) - idx
+        return min(max(row / (h - 1), _GROUND_BAND[0]), _GROUND_BAND[1])
+
+    if _row(_DEPTH_TARGET["near"]) - _row(_DEPTH_TARGET["far"]) < _MIN_GROUND_SPREAD:
+        return None  # no readable floor in this band; see _MIN_GROUND_SPREAD
+    fraction = _DEPTH_TARGET.get(depth, _DEPTH_TARGET["mid"])
+    return _row(fraction), m_far + (m_near - m_far) * fraction
 
 
 def card_box(
@@ -243,6 +299,7 @@ def occlusion_mask(
     out_path: str | Path,
     *,
     card_size: tuple[int, int] | None = None,
+    plane: float | None = None,
 ) -> Path | None:
     """Write a gray alpha mask for whatever the plate puts *in front* of a card.
 
@@ -272,10 +329,12 @@ def occlusion_mask(
     low, high = float(arr.min()), float(arr.max())
     if high - low < 1e-6:
         return None
-    plane = low + (high - low) * (
-        _DEPTH_TARGET.get(card_depth, _DEPTH_TARGET["mid"]) + _OCCLUSION_MARGIN
-    )
-    occluded = arr[y0:y1, x0:x1] > plane
+    if plane is None:
+        # Standalone call (no ground plane supplied): normalise against the whole
+        # frame. resolve_placements always passes ground_plane()'s own value so the
+        # two planes agree — see ground_plane's docstring for what disagreeing cost.
+        plane = low + (high - low) * _DEPTH_TARGET.get(card_depth, _DEPTH_TARGET["mid"])
+    occluded = arr[y0:y1, x0:x1] > plane + (high - low) * _OCCLUSION_MARGIN
     # `.all()` guards an inverted/failed estimate: "the whole card is behind
     # everything" means the plane is wrong, not that the card is invisible.
     if occluded.mean() < _MIN_OCCLUDER_FRAC or occluded.all():
@@ -317,23 +376,68 @@ async def resolve_placements(
             background = shot.get("image_path")
             if not cards or not background:
                 continue
-            if background not in depth_maps:
-                depth_maps[background] = load_depth_map(
+            # Memo on the content-addressed cache path, not the shot's own path:
+            # the same plate copied into 80 shots is 80 paths but one depth map.
+            memo_key = str(depth_map_cache_path(background, settings))
+            if memo_key not in depth_maps:
+                depth_maps[memo_key] = load_depth_map(
                     await depth_map_file(background, settings, comfyui_client=comfyui_client)
                 )
-            depth_map = depth_maps[background]
+            depth_map = depth_maps[memo_key]
             placements[shot_key] = [
                 _place(card, depth_map, background) for card in cards
             ]
     return placements
 
 
+def frame_fraction(plate_aspect: float, plate_fraction: float) -> float:
+    """Convert a fraction of the PLATE's height to a fraction of the FRAME's.
+
+    video.py's Ken Burns chain is ``scale=<0.9*1920>:-2,crop=<0.9*1920>:<0.9*1080>``
+    — a plate narrower than 16:9 (the shot generator emits 1344x768 = 1.75) is
+    scaled to the safe width and then centre-cropped vertically, so the floor the
+    depth map measured is not at the same height in the frame. The ground line
+    would sit a few pixels below the real floor on every generated plate, which is
+    exactly the error this story exists to remove.
+
+    ``k = frame_aspect / plate_aspect`` is the scaled-to-safe height ratio; a plate
+    at or wider than 16:9 loses nothing to the crop (ffmpeg clamps a crop it cannot
+    satisfy) and passes through unchanged.
+    """
+    k = (_FRAME_ASPECT / plate_aspect) if plate_aspect > 0 else 1.0
+    if k <= 1.0:
+        return plate_fraction
+    return plate_fraction * k - (k - 1.0) / 2.0
+
+
+def _plate_aspect(background: str, depth_map: Any) -> float:
+    try:
+        from PIL import Image
+
+        with Image.open(background) as im:  # header read only
+            w, h = im.size
+        return w / max(1, h)
+    except Exception:  # noqa: BLE001 — fall back to the depth map's own shape
+        if depth_map is not None and getattr(depth_map, "ndim", 0) == 2:
+            return depth_map.shape[1] / max(1, depth_map.shape[0])
+        return _FRAME_ASPECT
+
+
 def _place(card: dict, depth_map: Any, background: str) -> dict:
     position = card.get("position") or "center"
     depth = card.get("depth") or "mid"
-    ground_y = ground_line(depth_map, position, depth)
-    placement: dict[str, Any] = {"ground_y": round(ground_y, 4)}
-    mask = _card_occlusion_mask(card, depth_map, background, position, depth, ground_y)
+    # Two frames of reference: the mask is cut in the depth map's own space, the
+    # overlay anchor is in output-frame space. Mixing them put the mask box a few
+    # percent off the card.
+    band = ground_plane(depth_map, position, depth)
+    plate_ground = band[0] if band else _DEFAULT_GROUND.get(depth, _DEFAULT_GROUND["mid"])
+    placement: dict[str, Any] = {
+        "ground_y": round(frame_fraction(_plate_aspect(background, depth_map), plate_ground), 4),
+    }
+    mask = _card_occlusion_mask(
+        card, depth_map, background, position, depth, plate_ground,
+        plane=band[1] if band else None,
+    )
     if mask is not None:
         placement["occlusion_mask"] = str(mask)
     return placement
@@ -341,6 +445,7 @@ def _place(card: dict, depth_map: Any, background: str) -> dict:
 
 def _card_occlusion_mask(
     card: dict, depth_map: Any, background: str, position: str, depth: str, ground_y: float,
+    *, plane: float | None = None,
 ) -> Path | None:
     """Write card k's mask beside the background, named for the tuple that
     produced it — (plate, card, position, depth) is a finite set, same reasoning
@@ -359,7 +464,7 @@ def _card_occlusion_mask(
         out = Path(background).with_suffix(f".occ_{stem}_{position}_{depth}.png")
         return occlusion_mask(
             depth_map, card_box(depth_map.shape, position, ground_y, depth, aspect),
-            depth, out, card_size=card_size,
+            depth, out, card_size=card_size, plane=plane,
         )
     except Exception as exc:  # noqa: BLE001 — AD-10: no mask is always a valid outcome
         logger.warning("Occlusion mask failed for card %r: %s", card.get("card_key"), exc)

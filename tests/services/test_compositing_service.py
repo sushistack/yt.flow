@@ -103,12 +103,16 @@ def test_ground_line_no_depth_map_uses_per_depth_default():
     assert values == sorted(values) and values[0] < values[-1]
 
 
-def test_ground_line_default_near_matches_pre_816_shadow_constant():
-    """The fallback near ground line IS the old hardcoded shadow Y, so an
-    un-grounded near card's shadow never moves."""
-    from yt_flow.pipeline.nodes import composite_harmonization
-
-    assert cs._DEFAULT_GROUND["near"] == composite_harmonization._DEFAULT_GROUND_Y
+def test_ground_line_defaults_are_the_measured_library_medians():
+    """The fallback ground lines were originally chosen so `near` equalled the pre-8.16
+    hardcoded shadow constant (0.85) — which meant every far/mid fallback shadow moved on
+    two numbers nobody had measured. These are the medians over the 41 readable plates in
+    the approved library; the assertion here is that they stay ordered and inside the
+    band, so a future edit cannot quietly put a fallback floor above the horizon."""
+    values = [cs._DEFAULT_GROUND[d] for d in ("far", "mid", "near")]
+    assert values == sorted(values)
+    assert cs._GROUND_BAND[0] <= values[0] and values[-1] <= cs._GROUND_BAND[1]
+    assert values[-1] - values[0] >= cs._MIN_GROUND_SPREAD
 
 
 def test_ground_line_flat_depth_map_falls_back():
@@ -186,6 +190,47 @@ def test_occlusion_mask_fully_occluded_box_is_rejected(tmp_path):
     dm[100:, :] = NEAREST
     box = (0, 100, 200, 180)
     assert cs.occlusion_mask(dm, box, "far", tmp_path / "e.png") is None
+
+
+def test_frame_fraction_undoes_the_ken_burns_centre_crop():
+    """A 1344x768 generated plate (1.75) is scaled to the safe width and centre-cropped
+    to 16:9 before zoompan, so a floor measured on the plate is a few pixels higher in
+    the frame. A 16:9 plate loses nothing and must pass through untouched."""
+    assert cs.frame_fraction(1920 / 1080, 0.85) == 0.85
+    assert cs.frame_fraction(1920 / 1080, 0.0) == 0.0
+
+    corrected = cs.frame_fraction(1344 / 768, 0.85)
+    assert corrected > 0.85
+    # Derived independently: scaled height 1728/1.75 = 987.4 rows, crop keeps the
+    # middle 972, so row 0.85*987.4 lands at (839.3 - 7.7)/972 of the crop.
+    assert abs(corrected - (0.85 * 987.43 - 7.71) / 972) < 0.001
+
+    # A plate WIDER than the frame cannot be cropped taller than it is (ffmpeg clamps),
+    # so it must not be "corrected" the other way.
+    assert cs.frame_fraction(2.35, 0.85) == 0.85
+    assert cs.frame_fraction(0.0, 0.85) == 0.85  # degenerate: no correction, no crash
+
+
+async def test_resolve_placements_ground_is_in_frame_space_but_mask_is_in_plate_space(tmp_path):
+    """The two live in different coordinate systems; mixing them shifted the mask box."""
+    plate = tmp_path / "narrow.png"
+    Image.new("RGB", (1344, 768), (9, 9, 9)).save(plate)
+    card = _rgba_card(tmp_path / "card.png")
+    depth = np.full((768, 1344), 40, dtype=np.uint8)
+    depth[500:, :] = np.linspace(40, 250, 268, dtype=np.uint8)[:, None]
+    buf = io.BytesIO()
+    Image.fromarray(depth, "L").save(buf, format="PNG")
+    client = _FakeClient(buf.getvalue())
+    settings = _settings(tmp_path)
+
+    scenes = [{"scene_num": 1, "shots": [{"shot_id": "S001", "image_path": str(plate)}]}]
+    cast = {"1:S001": [{"card_key": "A", "path": str(card), "position": "center", "depth": "mid"}]}
+    out = await cs.resolve_placements(scenes, cast, settings, comfyui_client=client)
+
+    dm = cs.load_depth_map(cs.depth_map_cache_path(plate, settings))
+    plate_ground = cs.ground_line(dm, "center", "mid")
+    assert out["1:S001"][0]["ground_y"] == round(cs.frame_fraction(1344 / 768, plate_ground), 4)
+    assert out["1:S001"][0]["ground_y"] != round(plate_ground, 4)
 
 
 def test_card_box_bottom_edge_sits_on_the_ground_line():
@@ -321,7 +366,11 @@ async def test_resolve_placements_falls_back_without_a_depth_map(tmp_path):
 
 async def test_resolve_placements_emits_an_occlusion_mask_when_something_is_in_front(tmp_path):
     dm = _wall_and_floor()
-    dm[60:, 120:200] = NEAREST  # a foreground pillar rising through centre-frame
+    # A pillar narrower than the card's column band: it crosses the card, but the band's
+    # median still reads the floor behind it, so a ground line IS resolvable. (Widen it to
+    # swallow the whole band and the band has no floor at all — see
+    # test_a_band_swallowed_by_a_near_object_has_no_readable_floor.)
+    dm[60:, 140:160] = NEAREST
     buf = io.BytesIO()
     Image.fromarray(dm.astype(np.uint8), "L").save(buf, format="PNG")
     card = _rgba_card(tmp_path / "card.png")
@@ -332,6 +381,21 @@ async def test_resolve_placements_emits_an_occlusion_mask_when_something_is_in_f
     mask = out["1:S001"][0].get("occlusion_mask")
     assert mask is not None and Path(mask).exists()
     assert Image.open(mask).size == (50, 100)  # authored at the sprite's own size
+
+
+def test_a_band_swallowed_by_a_near_object_has_no_readable_floor():
+    """A near object filling the card's whole column band leaves no floor to read, and
+    the honest answer is "no reading" — not a clamped value that looks like a floor.
+    Measured on the real library: 7 of 41 plates resolved all three depths onto one
+    clamped number before this guard, which is the depth-independent anchor this story
+    exists to remove."""
+    dm = _wall_and_floor()
+    dm[60:, 120:200] = NEAREST  # covers centre band (w//12 either side of 160)
+    assert cs.ground_plane(dm, "center", "far") is None
+    # ...and the public helper then hands back the measured fallback.
+    assert cs.ground_line(dm, "center", "far") == cs._DEFAULT_GROUND["far"]
+    # A card at another position still reads its own floor — the guard is per-band.
+    assert cs.ground_plane(dm, "left", "far") is not None
 
 
 async def test_resolve_placements_skips_shots_without_cards_or_background(tmp_path):
@@ -366,6 +430,35 @@ async def test_resolve_placements_computes_one_depth_map_per_background(tmp_path
     out = await cs.resolve_placements(scenes, cast, _settings(tmp_path), comfyui_client=client)
     assert set(out) == {"1:S001", "1:S002"}
     assert len(client.submits) == 1  # two shots, one plate, one estimation
+
+
+async def test_per_shot_copies_of_one_plate_cost_one_estimation(tmp_path):
+    """image_node copies an approved stock plate into every shot that uses it, so
+    the shots hold N distinct paths with identical bytes. A path-keyed cache
+    estimated each one (80-shot run = 80 estimations); the content key does not."""
+    source = tmp_path / "plate.png"
+    Image.new("RGB", (64, 64), (9, 9, 9)).save(source)
+    card = _rgba_card(tmp_path / "card.png")
+    shots, cast = [], {}
+    for i in range(5):
+        copy_path = tmp_path / f"scene_{i}_shot.png"
+        copy_path.write_bytes(source.read_bytes())      # exactly what shutil.copyfile does
+        shots.append({"shot_id": f"S00{i}", "image_path": str(copy_path)})
+        cast[f"1:S00{i}"] = [
+            {"card_key": "A", "path": str(card), "position": "center", "depth": "mid"},
+        ]
+    settings = _settings(tmp_path)
+    settings.workspace_path = str(tmp_path / "ws")
+    client = _FakeClient(_gray_png(size=(64, 64)))
+
+    out = await cs.resolve_placements(
+        [{"scene_num": 1, "shots": shots}], cast, settings, comfyui_client=client,
+    )
+    assert len(out) == 5
+    assert len(client.submits) == 1
+    # ...and the next run over the same plate hits the same cache entry.
+    assert await cs.depth_map_file(source, settings, comfyui_client=client) is not None
+    assert len(client.submits) == 1
 
 
 def test_ground_line_survives_a_wide_near_object_high_in_the_band():

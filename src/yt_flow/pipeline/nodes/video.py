@@ -418,6 +418,44 @@ def _character_zoom_filter(spec: EffectSpec, duration: float) -> str:
     return f"scale=w='iw*{z}':h='ih*{z}':eval=frame"
 
 
+def ground_y_expr(spec: "EffectSpec", duration: float, ground_y: float) -> str:
+    """Where a fixed floor point sits in the OUTPUT frame while zoompan moves the plate.
+
+    The ground line is measured once on the still plate, but the plate is under Ken Burns
+    for the whole shot: the crop window zooms and pans, so a floor at 0.80 of plate height
+    travels to ~0.845 by the last frame of a centre push-in. Pinning the card's feet to
+    the static fraction let feet and shadow stay consistent with each other while both
+    drifted off the floor — the "floating" read returning in the second half of every
+    moving shot.
+
+    zoompan crops ``ih/zoom`` tall at ``y_top`` and scales it to the output, so a source
+    fraction ``p`` lands at ``(p - y_top/ih) * zoom``. This mirrors _zoompan_filter's own
+    lo/hi/frames/direction so the two cannot drift apart.
+    """
+    frames = max(1, round(duration * FPS))
+    lo, hi = spec.start_zoom, spec.end_zoom
+    d = spec.direction
+    # zoompan advances per output frame; overlay only has t, and on == t*FPS.
+    if d == "out-center":
+        inc = (lo - hi) / frames
+        z = f"max({hi + 0.001:.6f},{lo:.6f}-{abs(inc):.6f}*t*{FPS})"
+    else:
+        inc = (hi - lo) / frames
+        z = f"min({lo:.6f}+{inc:.6f}*t*{FPS},{hi:.6f})"
+    prog = f"min(t*{FPS}/{frames},1)"
+    if d in ("pan-up", "pan-up-right", "pan-up-left"):
+        top = f"(1-1/({z}))*{prog}"
+    elif d in ("pan-down", "pan-down-right", "pan-down-left"):
+        top = f"(1-1/({z}))*(1-{prog})"
+    else:  # centre zoom in/out and the purely horizontal pans
+        top = f"(1/2-1/(2*({z})))"
+    # Same ceiling _apply_placement enforces on the static value, but the animated
+    # value can climb past it mid-shot (0.80 reaches 0.845 on a 1.15x push-in), so
+    # the clamp has to live inside the expression too or the motion box is violated
+    # only on the frames nobody checked.
+    return f"main_h*min((({ground_y:g}-({top}))*({z})),{_GROUND_Y_MAX:g})-overlay_h"
+
+
 def _overlay_filter(
     position: str = "center", k: int = 0,
     spec: EffectSpec | None = None, duration: float | None = None,
@@ -426,6 +464,7 @@ def _overlay_filter(
     movement_mode: str = "anchored", movement_direction: str = "none",
     movement_pace: str = "slow",
     ground_y: float | None = None,
+    ground_y_expression: str | None = None,
 ) -> str:
     """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
     [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8] [Story 8.9 AC:5,7]
@@ -465,7 +504,13 @@ def _overlay_filter(
     x = f"main_w*{x_frac}-overlay_w/2"
     if movement.x_terms:
         x += " + " + " + ".join(movement.x_terms)
-    y = "(main_h-overlay_h)/2" if ground_y is None else f"main_h*{ground_y:g}-overlay_h"
+    if ground_y_expression is not None:
+        # Tracks the plate under Ken Burns; see ground_y_expr.
+        y = ground_y_expression
+    elif ground_y is not None:
+        y = f"main_h*{ground_y:g}-overlay_h"
+    else:
+        y = "(main_h-overlay_h)/2"
     if movement.y_terms:
         y += " + " + " + ".join(movement.y_terms)
     if spec is not None and duration:
@@ -584,7 +629,16 @@ def _occlusion_fragment(k: int, mask_path: str) -> tuple[list[str], str]:
     occluder edge with it. The alternative — repainting the occluder in frame
     space over the composited card — needs the plate's alpha-cut copy carried
     through zoompan, whose alpha handling ``_character_zoom_filter`` already
-    warns about; not worth it for a sub-5px error on a soft mask edge.
+    warns about.
+
+    Known ceiling, measured not guessed: the mask is cut once in plate space, but
+    under Ken Burns the plate's occluder and the card's ground point travel at
+    different rates (they sit at different heights, and the card's own parallax
+    zoom only approximates the plate's). On a 1.15x push-in with the feet at 0.85
+    and an occluder edge at 0.70 they diverge by ~25px by the last frame — the
+    character peeks slightly past a hard edge late in a moving shot. Upgrade path
+    is frame-space occlusion, which is a story of its own; recorded in
+    deferred-work.md rather than half-built here.
     """
     escaped = _escape_subtitles_path(Path(mask_path).resolve())
     return (
@@ -1039,9 +1093,15 @@ def _build_card_chain(
             char_chain += f",{_character_zoom_filter(char_spec, duration)}"
         else:
             char_spec = None
+        # The plate is under Ken Burns for the whole shot, so a floor measured on the
+        # still plate moves. Track it (Story 8.16) instead of pinning feet to a static
+        # fraction and letting card and floor part company by the last frame.
+        ground_expr = (
+            ground_y_expr(spec, duration, float(ground_y)) if ground_y is not None else None
+        )
         overlay = _overlay_filter(
             position, k, char_spec, duration, depth, motion_style, motion_energy,
-            movement_mode, movement_direction, movement_pace, ground_y,
+            movement_mode, movement_direction, movement_pace, ground_y, ground_expr,
         )
         # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
         # stage for breath/sway/tremble/pulse so it composes with either branch above.
@@ -1062,9 +1122,18 @@ def _build_card_chain(
         base_label = prev_label
         if harmonize:
             shadow = build_contact_shadow(card)
+            # geq draws a static ellipse (it has no time terms), so when ground_y_expr
+            # walks the feet with the plate the shadow has to slide with them or the
+            # card grows a detached puddle. Same expression, offset from the static
+            # y_frac the ellipse was drawn at — they cannot disagree by construction.
+            shadow_y = "0"
+            if ground_expr is not None:
+                shadow_y = f"({ground_expr})+main_h*{1.0 - float(ground_y):g}"
             chain_parts.append(f"color=c=black:s={COMP_W}x{COMP_H},format=rgba[sh{k}src]")
             chain_parts.append(f"[sh{k}src]{shadow}[sh{k}]")
-            chain_parts.append(f"[{base_label}][sh{k}]overlay=x=0:y=0[shg{k}]")
+            chain_parts.append(
+                f"[{base_label}][sh{k}]overlay=x=0:y='{shadow_y}':eval=frame[shg{k}]"
+            )
             base_label = f"shg{k}"
 
         # Tier 2 (AC:5,6): light wrap between the tinted card and the overlay.

@@ -174,10 +174,16 @@ class Settings(BaseSettings):
     # Depth-aware card placement (Story 8.16): stand a card's feet on a ground
     # plane estimated from the plate's monocular depth map instead of frame
     # centre, with the contact shadow derived from the same value, and mask the
-    # card where the plate is nearer than it. Off until the live-verification
-    # gate (same posture as tier 3): with no resolver injected video.py's
-    # filtergraph is byte-identical to pre-8.16.
-    depth_placement_enabled: bool = False
+    # card where the plate is nearer than it.
+    #
+    # ON after live verification (2026-08-03): rendered a real control-room plate
+    # with a real card through real ffmpeg and measured the composited feet row
+    # against the plate's own floor on every frame of a 1.15x push-in — 3.9px max
+    # error tracking, versus 57.2px for a static anchor by the last frame. Ground
+    # lines measured across all 41 readable library plates: strictly ordered
+    # far<=mid<=near on 41/41. With no depth map (ComfyUI down, mock mode) the
+    # resolver hands back the measured fallback ground and the run completes.
+    depth_placement_enabled: bool = True
     depth_comfyui_workflow_path: str = "data/workflows/comfyui_depth_anything_v2_api.json"
 
     # Per-shot cut assembly (Story 8.11): a shot's clip window shorter than this
