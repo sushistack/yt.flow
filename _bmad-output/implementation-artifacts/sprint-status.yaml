@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-06-30
-last_updated: 2026-08-01  # 2026-08-01 갱신: 품질 우선 리서치(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) 완료 — Epic 11(11-1~11-6, backlog) 신설: Epic 8이 안 다루는 모션/생성 파라미터 갭. 갱신된 우선순위: 11-1(8-16 착수 전 필수) → 8-15 → 8-17 → 8-16 → 11-2/11-3 → 8-18 → 8-19 → 11-4 → 11-5 → 8-20 → 11-6(조건부). 리서치 판정: 8-20은 IPAdapter FaceID 대신 Qwen-Image-Edit-2511 파생(양식화/비인간 얼굴에서 FaceID류 실패) + OpenPose는 인간형 한정으로 기법 수정 필요. 이전(2026-07-12): 8-15~8-20 + Epic 10 신설.
+last_updated: 2026-08-03  # 2026-08-03 갱신(Jay): ① DEV MODE — 개발 단계 품질 게이팅 OFF(cc82403), 프롬프트는 repo→production 직접 시딩, A/B·골든셋·promotion 게이트 미요구. 적체 candidate 2건 승격 완료(11-2 visual_breakdown v12, 5-22 writing v7). ② Epic 12(대본·나레이션 품질) + Epic 13(품질 관측·게이트 성숙) 신설 — 둘 다 GPU 불필요라 Epic 8/11(GPU 필수)과 병렬. Epic 10은 Epic 12로 흡수(10-1 → 12-4). 모델 분리 결정: 기획=DeepSeek / 한국어 문장=Claude / judge=Gemini. 비-GPU 착수 순서: 13-1 → 12-2 → 12-1 → 12-3 → 12-4. ③ 이전(2026-08-01) 갱신: 품질 우선 리서치(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) 완료 — Epic 11(11-1~11-6, backlog) 신설: Epic 8이 안 다루는 모션/생성 파라미터 갭. 갱신된 우선순위: 11-1(8-16 착수 전 필수) → 8-15 → 8-17 → 8-16 → 11-2/11-3 → 8-18 → 8-19 → 11-4 → 11-5 → 8-20 → 11-6(조건부). 리서치 판정: 8-20은 IPAdapter FaceID 대신 Qwen-Image-Edit-2511 파생(양식화/비인간 얼굴에서 FaceID류 실패) + OpenPose는 인간형 한정으로 기법 수정 필요. 이전(2026-07-12): 8-15~8-20 + Epic 10 신설.
 project: yt.flow
 project_key: NOKEY
 tracking_system: file-system
@@ -177,9 +177,10 @@ development_status:
   9-1-content-language-config-switch: done  # 2026-07-07 코드리뷰 완료 — subtitle_node에 독립 fail-fast 가드 추가(retry_stage 우회 버그 수정), config.py 코멘트에 qwen_tts_voice 커플링 보강, scenario 테스트 강화. 전체 스위트 754 passed/1 skipped/0 failed
   epic-9-retrospective: optional
 
-  # ── Epic 10: 서사 구조 다양화 ────────────────────────────────────────────────
-  epic-10: in-progress
-  10-1-story-archetype-diversification: backlog  # 2026-07-12 Jay E2E 시청 피드백 발의 — structure.md가 INCIDENT-FIRST 4막 구조 하나만 전 SCP에 강제함을 확인, 서사 다양성이 지금까지 스코프 밖이었음. 다큐/크리피파스타 페이싱 기법 반영한 아키타입 2-3종 추가 + golden-set(6.2) 연동.
+  # ── Epic 10: 서사 구조 다양화 → Epic 12로 흡수 (2026-08-03, Jay) ─────────────
+  # 스토리 1개뿐이고 Epic 12와 동일 계층(scenario, GPU 불필요)이라 흡수. 10-1 → 12-4로 이동.
+  # 운영 잡일(챕터 카드 표시시간 2배, 씬 경계 음성 fade 원인 조사)은 Epic 11 소관으로 이관.
+  epic-10: absorbed-into-epic-12
 
   # ── Epic 11: 시네마틱 모션 & 프레임 품질 하드닝 ─────────────────────────────
   # 2026-08-01 품질 리서치 발의(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) — Epic 8이 안 다루는 "조잡함"의 나머지 절반(모션+생성 파라미터).
@@ -192,3 +193,27 @@ development_status:
   11-5-depthflow-25d-parallax: backlog  # zoompan(줌+팬만, 양자화 지터) → DepthFlow(OpenGL=ROCm무관, ComfyUI 노드팩 존재) 배경 플레이트 2.5D 패럴랙스, Depth-Anything V2 depth map(8-17 시딩 시 저장분 공유), 캐릭터 레이어 60-80% 변위 레이어드 패럴랙스. 의존: 11-3, 8-17
   11-6-hero-shot-selective-i2v: backlog  # 조건부(11-1~11-5 후 필요성 실측 시만) — Wan 2.2 GGUF Q5(peak 12-14GB, ROCm 공식지원, 예상 5-15분/클립) 에피소드당 1-3 히어로샷, Wan2.2-Fun 카메라컨트롤, 입력은 합성완료 프레임. 호스티드(Kling ~$0.10/s) 폴백
   epic-11-retrospective: optional
+  # 운영 잡일(스토리 번호 없음, 2026-08-03 Epic 10에서 이관): ① 챕터 카드 표시시간 2배 MIN/MAX_CARD_DURATION(1.5→3.0/2.5→5.0) ② 씬 경계 음성 fade 원인 파형 분석(7.1 사이드체인 릴리즈 vs Qwen TTS 발화 꼬리)
+
+  # ── Epic 12: 대본·나레이션 품질 (GPU 불필요 — Epic 8/11과 완전 병렬) ────────
+  # 2026-08-03 발의(Jay). 리서치 Phase 3 = "조잡함"의 대본 절반. 구조는 이미 SOTA급, 갭은 4개:
+  # 리텐션이 산문 형용사로만 존재 / writer=judge 동일모델 bias / 한국어 표면품질 DeepSeek 한계 / pass-2 판정 폐기.
+  # 착수 순서: 12-2 → 12-1 → 12-3 → 12-4 (문장 품질이 먼저 올라야 구조 개선이 체감됨), 12-5는 조건부.
+  epic-12: backlog
+  12-1-retention-schema: backlog  # 훅 타입/오픈루프 원장(씬별 planted·closed)/패턴 인터럽트 간격/비트별 단어예산을 아웃라인 스키마 필드로. 검증은 8-18/11-2 패턴(scenario_chain 내부 순수함수 결정론 체크), 원장 미청산은 명시적 위반. 아웃라인 항목을 형용사→사건기반(누가/무엇을/결과)으로.
+  12-2-model-split-claude-gemini: backlog  # 2026-08-03 Jay 결정: 기획/구조/파싱=DeepSeek 유지(비용·스키마순응·6-3 캐시자산), 최종 한국어 문장=Claude급, judge=Gemini(제3계열 → writer/planner 양쪽과 다른 계열이라 self-preference bias 구조적 차단). 5-13 프로바이더 교체 선례지만 요청/응답 스키마 상이로 순수 스왑 아님. 신규 유료 API 2개 추가 결정 기록 필수. 경계 확정 필요: tts_normalize(5-4/5-18 이중트랙)와 writing 출력계약 얽힘.
+  12-3-pass2-verdict-grounded-gate: backlog  # 코드 확인으로 리서치 주장 정정: pass-1 판정은 정상 사용(scenario.py:364 retry 트리거), 무시되는 건 pass-2 — scenario.py:370/401/421/426이 재계산 review/critic을 덮어쓰고 아무도 안 읽고 432 tts_normalize 직행 → 재시도 후에도 retry 판정인 시나리오가 무신호로 휴먼게이트 통과(AD-10 조용한강등금지 위반). ① pass-2 부정 판정을 게이트 페이로드에 critic 요약 첨부해 표면화(런 실패 아님) ② review에 entity_sheet 대조 모순검사(인용 기반) + 결정론 slop/반복/길이 메트릭. 6-10은 승격경로, 이건 런타임 경로.
+  12-4-story-archetype-diversification: backlog  # 구 10-1(2026-08-03 Epic 10 흡수로 이동). INCIDENT-FIRST 외 아키타입 2-3종(리서치 권고는 3-5종: discovery-log/interview-testimony/containment-breach-realtime/researcher-descent), 선택 주체는 research 스테이지. 아키타입별 few-shot 골든예시 → 6-2 golden-set 연동, PROMPT_POLICY 준수. 참고: arXiv 2602.15851 서베이 → 1차문헌(Propp류)까지 확인.
+  12-5-tts-provider-comparison-naver: backlog  # 2026-08-03 Jay 발의("네이버가 한국어 현지화 잘됨"). 산출물은 교체가 아니라 청취 판정 — DoD: 동일 씬 1개로 3후보(Qwen 스톡/Qwen 클론/Naver Clova) A/B 청취, 5-21 미결 DoD(스톡vs클론) 흡수해 한번에 정리. 리스크 3: ① Naver 셀프서브 음성클로닝 지원여부 확인 필요(미지원이면 5-21/5-24 클론자산 폐기 대가) ② tts_normalize(5-4/5-18)가 Qwen 읽기습성에 튜닝돼 있어 엔진 교체 시 정규화 재검토 딸려옴 ③ word timings는 양쪽 모두 미제공이라 11-4 WhisperX는 무관(득실 없음). 결합은 얕음(tts.py:121-126 단일 httpx POST). ponytail: 청취가 교체를 정당화할 때만 코드 변경.
+  epic-12-retrospective: optional
+
+  # ── Epic 13: 품질 관측 & 게이트 성숙 ────────────────────────────────────────
+  # 2026-08-03 발의(Jay). 리서치 Phase 4 #20/#21 + Phase 2 #13. 반복 사고 패턴 = "조용한 성공 위장":
+  # 8-17(done인데 plates 0행) / 8-15(2026-07-12부터 전 enrichment 400 실패 중) / 11-4(WhisperX 한번도 안 돌았음).
+  # 전부 코드 정상 + 결과물만 없던 사례이고 테스트·git이 못 보는 계층. 13-1 우선(가장 싸고 즉시 디버깅비용 절감).
+  epic-13: backlog
+  13-1-surface-silent-degradations: backlog  # AD-10 요구와 달리 로그만 남기고 통과하는 경로들: cast 카드 부재 배경만 렌더(8-13 캡 초과분), 플레이트 미스, relight/harmonization 실패(8-7 per-shot 격리), 세그 실패 플랫폴백(5-11), special_pose 캡 초과(8-4), vision enrichment 400(8-15). 런 단위 경고 레코드 → 게이트 응답/3-5 UI 배지 노출. 비치명적 계약은 유지(설계는 옳음), "사람이 모른다"만 고침.
+  13-2-visual-eval-axes: backlog  # eval_service judge가 나레이션 텍스트만 채점(4-2 3축) → 영상이 조잡해도 점수 불변. 규칙/도구 기반 축 추가: libcom composite score(8-16 캘리브레이션 임계값 재사용, 8-16 미착수면 나머지 축만), 모션 다양성·아키타입 커버리지(11-2 enum 분포), 컷 정렬 오차(11-4 룰메트릭 승격). 입력은 기존 런 산출물이라 GPU 재실행 불필요.
+  13-3-comfyui-workflow-ops-hardening: backlog  # 프롬프트 주입이 워크플로 JSON 노드 ID "6"/"7"에 하드코딩(PRD OQ-2 확정 → image.py _inject_prompts) → 노드 재번호 시 조용히 오주입/실패. 타이틀(_meta.title) 기반 파라미터 매니페스트로 교체 + ComfyUI-Manager 스냅샷·코어버전 git 핀(8-7 IC-Light 노드 부재 판단이 뒤집힌 것도 이 관측성 부재의 증상) + 렌더 provenance 사이드카(워크플로 해시/파라미터/시드/torch·ROCm, 11-1 seed 사이드카의 확장). 코드는 비-GPU, 검증은 ComfyUI 필요.
+  13-4-ab-gate-unfreeze: backlog  # 2026-08-03 DEV MODE(품질게이팅 OFF, cc82403)의 되돌림 스토리. PROMPT_POLICY Rules 3/4 SUSPENDED 해제 + 6-12 YTFLOW_ALLOW_AB_GATE 동결해제 + 6-10 median 게이트로 보류후보 재평가 + 13-2 시각축 게이트 포함. 6-12는 "동결한다"/13-4는 "해제한다"로 분리 — 해제조건(파이프라인 완성 정의) 판단이 별도 의사결정이라. 착수조건: Epic 8/11 GPU 스토리 종료 + E2E 산출물 Jay 기준 통과 후.
+  epic-13-retrospective: optional
