@@ -109,7 +109,7 @@ def _octave_amps(amp: float, octaves: int) -> list[float]:
     return [norm * 0.5 ** j for j in range(octaves)]
 
 
-def _value_noise(p: str, hash_mult: float) -> str:
+def _value_noise_expr(p: str, hash_mult: float) -> str:
     """One octave of value noise in [-1, 1] at lattice position ``p`` (an
     ffmpeg sub-expression): hash the two neighboring lattice integers into
     [-1,1] via sin(i*mult), smoothstep-interpolate between them. C0-continuous
@@ -141,7 +141,7 @@ def fbm_expr(
         f_j = lattice_freq * 2 ** j
         o_j = offset + j * _OCTAVE_OFFSET
         p = f"(({t_var})*{f_j:.6g}+{o_j:.6g})"
-        parts.append(f"{_value_noise(p, hash_mult)}*{a_j:.6g}")
+        parts.append(f"{_value_noise_expr(p, hash_mult)}*{a_j:.6g}")
     return "(" + "+".join(parts) + ")"
 
 
@@ -211,6 +211,212 @@ def camera_noise_exprs(
     if not (x or y or rot or zoom):
         return None
     return CameraNoiseExprs(x, y, rot, zoom, overscan_margin(hint, trauma=trauma))
+
+
+# ── Numeric trajectory sampler (Story 11.5 AC4) ──────────────────────────────
+# Story 11.3 emits the model above as closed-form ffmpeg expressions in `t`.
+# A 2.5D renderer needs the same curve as PER-FRAME NUMBERS, so the two share
+# this module's constants and noise formula rather than growing a second,
+# subtly-different noise implementation. `_fbm` below is `fbm_expr` evaluated;
+# tests/pipeline/nodes/test_camera_path.py proves that literally, by eval()ing
+# the generated expression string against the numeric sampler at representative
+# timestamps (the strings are valid Python given sin/floor/pow/max/min).
+
+# AC6: visible x/y displacement stays inside the 1-3% of frame WIDTH band that
+# single-image depth displacement can hide disocclusion inside. Wider than 3%
+# and the disoccluded edge behind a foreground object becomes a rubber smear;
+# under 1% there is no readable depth cue at all.
+DISPLACEMENT_MIN = 0.01
+DISPLACEMENT_MAX = 0.03
+
+
+def clamp_displacement(frac: float) -> float:
+    """Config's requested peak displacement, forced into the AC6 band."""
+    return min(max(frac, DISPLACEMENT_MIN), DISPLACEMENT_MAX)
+
+
+class CameraSample(NamedTuple):
+    """One frame of camera state. Renderer-independent by contract (AC4).
+
+    ``x``/``y`` are offsets of the *visible content*, both as fractions of frame
+    WIDTH (y shares the width unit because NoiseProfile's amplitudes do —
+    ``_camera_shake_filter`` multiplies both by COMP_W for the same reason).
+    Positive x moves content right, positive y moves content down. ``rot`` is
+    radians, ``zoom`` a scale delta from 1.0.
+    """
+    t: float
+    x: float
+    y: float
+    rot: float
+    zoom: float
+
+
+def _value_noise_num(p_val: float, hash_mult: float) -> float:
+    """Numeric twin of :func:`_value_noise_expr` — same hash, same smoothstep."""
+    i = math.floor(p_val)
+    u = p_val - i
+    s = u * u * (3 - 2 * u)
+    a = math.sin(i * hash_mult)
+    b = math.sin((i + 1) * hash_mult)
+    return a + (b - a) * s
+
+
+def _fbm(
+    amp: float, lattice_freq: float, octaves: int, offset: float, t: float,
+    hash_mult: float = _HASH_X,
+) -> float:
+    """Numeric twin of :func:`fbm_expr`, bounded to [-amp, amp]."""
+    if amp == 0 or octaves <= 0 or lattice_freq == 0:
+        return 0.0
+    total = 0.0
+    for j, a_j in enumerate(_octave_amps(amp, octaves)):
+        # Round-trip through the same %.6g formatting fbm_expr emits, or the
+        # numeric path and the expression path disagree in the 7th digit and the
+        # parity test has to be loosened until it stops proving anything.
+        f_j = float(f"{lattice_freq * 2 ** j:.6g}")
+        o_j = float(f"{offset + j * _OCTAVE_OFFSET:.6g}")
+        total += _value_noise_num(t * f_j + o_j, hash_mult) * float(f"{a_j:.6g}")
+    return total
+
+
+def _trauma_envelope(t: float) -> float:
+    return max(0.0, 1 - t / TRAUMA_TAU) ** 2
+
+
+def _trauma_value(trauma: float, peak: float, offset: float, hash_mult: float, t: float) -> float:
+    """Numeric twin of :func:`_trauma_term`."""
+    if trauma <= 0 or peak == 0:
+        return 0.0
+    carrier = _fbm(trauma * trauma * peak, TRAUMA_FREQ, TRAUMA_OCTAVES, offset, t, hash_mult)
+    return _trauma_envelope(t) * carrier
+
+
+def has_motion(hint: str | None, *, trauma: float = 0.0) -> bool:
+    """False for a genuinely static camera — ``locked``/``static`` with no
+    trauma. Mirrors :func:`camera_noise_exprs` returning None, so AC4's "locked
+    with no trauma remains a no-motion path" is one predicate both renderers
+    agree on instead of two independent guesses."""
+    return camera_noise_exprs(hint, 0, trauma=trauma) is not None
+
+
+def sample_path(
+    hint: str | None,
+    k: int,
+    *,
+    duration: float,
+    fps: int,
+    trauma: float = 0.0,
+    xy_peak: float | None = None,
+    base_zoom: tuple[float, float] = (1.0, 1.0),
+    base_pan: tuple[float, float] = (0.0, 0.0),
+) -> list[CameraSample]:
+    """Per-frame camera samples for one shot — the same archetype/profile/``k``/
+    trauma/duration model Story 11.3 emits as ffmpeg expressions (AC4).
+
+    Deterministic and byte-stable across processes and retries: every value
+    comes from ``sin``-hash value noise over ``(t, k, channel)``, never
+    ``random`` and never the builtin ``hash()`` (PYTHONHASHSEED would resalt it
+    on a resumed run — 11-1's lesson). Adjacent ``k`` decorrelate through
+    ``_K_STRIDE``, exactly as the expression path does.
+
+    ``base_zoom``/``base_pan`` carry the shot's Ken Burns *base move* — the
+    push-in ramp and the directional pan — because AC7 requires the trajectory to
+    own base movement, handheld noise and trauma **exactly once**. video.py
+    derives them from its own ``EffectSpec``/``_PAN_SIGN`` vocabulary and passes
+    them in; keeping that vocabulary out of here is what leaves this module
+    renderer- and Ken-Burns-independent. ``base_pan`` is the TOTAL content
+    displacement over the shot, in width fractions, reached linearly.
+
+    ``xy_peak`` (AC6) rescales x and y — base pan and noise together — so their
+    analytic worst case equals exactly that fraction of frame width. Capping the
+    combined peak rather than each contributor is what makes the bound hold by
+    construction instead of by hoping the two never peak together.
+    """
+    p = noise_profile_for(hint)
+    base = k * _K_STRIDE
+    frames = max(1, round(duration * fps))
+    noise_xy, _, _ = max_excursion(hint, trauma=trauma)
+    pan_x, pan_y = base_pan
+    peak = max(abs(pan_x), abs(pan_y)) + noise_xy
+    gain = 1.0 if (xy_peak is None or peak <= 0) else xy_peak / peak
+    z0, z1 = base_zoom
+
+    def channel(ch: float, ch_trauma: float, hm: float, t: float) -> float:
+        return (
+            _fbm(p.sway_amp, p.sway_freq, p.sway_octaves, base + ch, t, hm)
+            + _fbm(p.tremor_amp, p.tremor_freq, 2, base + ch + 2.7, t, hm)
+            + _trauma_value(trauma, TRAUMA_MAX_XY, base + ch_trauma, hm, t)
+        )
+
+    samples: list[CameraSample] = []
+    for frame in range(frames):
+        t = frame / fps
+        prog = min(t * fps / frames, 1.0)
+        x = (pan_x * prog + channel(_CH_X, _CH_TRAUMA_X, _HASH_X, t)) * gain
+        y = (pan_y * prog + channel(_CH_Y, _CH_TRAUMA_Y, _HASH_Y, t)) * gain
+        rot = _fbm(
+            math.radians(p.rot_deg), p.sway_freq,
+            max(p.sway_octaves, 1) if p.rot_deg else 0, base + _CH_ROT, t, _HASH_Y,
+        ) + _trauma_value(
+            trauma, math.radians(TRAUMA_MAX_ROT_DEG), base + _CH_TRAUMA_ROT, _HASH_Y, t,
+        )
+        zoom = (z0 + (z1 - z0) * prog) - 1.0 + _fbm(
+            p.zoom_amp, p.sway_freq, p.sway_octaves, base + _CH_ZOOM, t, _HASH_X,
+        )
+        samples.append(CameraSample(t, x, y, rot, zoom))
+    return samples
+
+
+def xy_gain(
+    hint: str | None, *, trauma: float, xy_peak: float | None,
+    base_pan: tuple[float, float],
+) -> float:
+    """The rescale factor :func:`sample_path` applies to x and y.
+
+    Exposed because the *card* layer terms (Story 11.5 AC7) are built as ffmpeg
+    expressions rather than samples, and they must ride the identical gain or the
+    plate and the cards drift apart on exactly the shots where the cap bites.
+    """
+    noise_xy, _, _ = max_excursion(hint, trauma=trauma)
+    peak = max(abs(base_pan[0]), abs(base_pan[1])) + noise_xy
+    return 1.0 if (xy_peak is None or peak <= 0) else xy_peak / peak
+
+
+def sample_overscan_margin(
+    samples: list[CameraSample], *, w: float = 1920.0, h: float = 1080.0,
+) -> float:
+    """Overscan margin M (scale = 1+M) a warping renderer needs so no frame can
+    expose an uncovered border (Story 11.5 AC6).
+
+    Same construction as :func:`overscan_margin` — translation excursion plus the
+    rotated corner's swing against the shorter half-extent, plus the micro-zoom
+    trough — but read off the OBSERVED samples, because ``xy_peak`` rescaling
+    makes the analytic profile bound wrong for a capped trajectory.
+
+    This function is the single owner of that number: parallax_service receives
+    it, and video.py's card-side ground tracking uses the same value, so the
+    plate's scale-up and the cards' floor tracking cannot disagree.
+    """
+    if not samples:
+        return 0.0
+    x_max, y_max, rot_max, _ = sample_bounds(samples)
+    zoom_min = min(s.zoom for s in samples)
+    corner_r = math.hypot(w, h) / 2
+    displaced = max(x_max, y_max) * w + corner_r * rot_max + _EDGE_SLACK_PX
+    return max(0.0, -zoom_min) + max(displaced / (w / 2), displaced / (h / 2))
+
+
+def sample_bounds(samples: list[CameraSample]) -> tuple[float, float, float, float]:
+    """Observed ``(|x|max, |y|max, |rot|max, zoom_max)`` — what the renderer's
+    overscan must cover and what tests assert the AC6 cap against."""
+    if not samples:
+        return 0.0, 0.0, 0.0, 0.0
+    return (
+        max(abs(s.x) for s in samples),
+        max(abs(s.y) for s in samples),
+        max(abs(s.rot) for s in samples),
+        max(s.zoom for s in samples),
+    )
 
 
 def max_excursion(hint: str | None, *, trauma: float = 0.0) -> tuple[float, float, float]:

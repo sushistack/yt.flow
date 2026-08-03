@@ -11,18 +11,24 @@
   "2": {
     "class_type": "DepthAnythingV2Preprocessor",
     "_meta": {
-      "title": "Monocular relative depth (brighter = nearer)"
+      "title": "Monocular relative depth (brighter = nearer). ckpt_name/resolution are OVERWRITTEN per call from Settings.depth_model_ckpt/depth_model_resolution (Story 11.5 AC3) \u2014 edit config, not this file. Small = Apache-2.0; vitb/vitl/vitg are CC-BY-NC-4.0."
     },
     "inputs": {
-      "image": ["1", 0],
-      "ckpt_name": "depth_anything_v2_vitl.pth",
+      "image": [
+        "1",
+        0
+      ],
+      "ckpt_name": "depth_anything_v2_vits.pth",
       "resolution": 1024
     }
   },
   "3": {
     "class_type": "SaveImage",
     "inputs": {
-      "images": ["2", 0],
+      "images": [
+        "2",
+        0
+      ],
       "filename_prefix": "ytflow_depth"
     }
   }

@@ -7,6 +7,7 @@ observability, AD-1 layer guards, integration (skippable without ffmpeg+ffprobe)
 
 import asyncio
 import json
+import dataclasses
 import shutil
 import subprocess
 from pathlib import Path
@@ -40,6 +41,21 @@ _REAL_RECORD_TRACE = video._record_trace  # the autouse _silent_trace fixture be
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
 
 
+def _legacy_motion(image, spec, duration, *, shake="", bg_chain=None):
+    """The legacy zoompan MotionSource (Story 11.5's AC9 final rung).
+
+    These unit tests exercise the zoompan path directly, so they build the seam
+    object rather than going through build_motion_source (which would need an
+    injected renderer). `bg_chain` overrides the chain for callers that only care
+    about the card side.
+    """
+    m = video._legacy_motion(
+        {"image_path": str(image)}, spec, duration,
+        parallax_enabled=False, camera_shake=shake,
+    )
+    return m if bg_chain is None else dataclasses.replace(m, bg_chain=bg_chain)
+
+
 def _settings_ns(
     tmp_path, *, chapter_cards: bool = False, chapter_card_duration_sec: float = 1.75,
     sound_design_enabled: bool = False, post_fx_enabled: bool = False,
@@ -66,6 +82,11 @@ def _settings_ns(
         composite_harmonization_tier=composite_harmonization_tier,
         min_shot_clip_sec=min_shot_clip_sec,
         camera_noise_enabled=camera_noise_enabled,
+        # Story 11.5: the 2.5D renderer is never injected in these tests, so the
+        # kill-switch value only has to exist; build_motion_source takes the
+        # legacy zoompan path either way.
+        parallax_25d_enabled=False,
+        parallax_displacement_frac=0.02,
     )
 
 
@@ -2048,8 +2069,8 @@ def test_build_card_chain_feathers_card_alpha_first():
     every later scale stage preserves/shrinks the soft edge instead of re-hardening it."""
     spec = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=video.ZOOM_IN_MAX)
     chain_parts, _ = video._build_card_chain(
-        "null", [{"depth": "mid"}], spec, 2.0, None,
-        parallax_enabled=False, composite_harmonization_tier=0,
+        _legacy_motion("x.png", spec, 2.0, bg_chain="null"),
+        [{"depth": "mid"}], 2.0, None, composite_harmonization_tier=0,
     )
     card_stage = next(p for p in chain_parts if p.startswith("[1:v]"))
     assert card_stage.startswith(f"[1:v]{video.CARD_EDGE_FEATHER},")
@@ -3262,11 +3283,11 @@ async def test_render_fast_bg_only_shake_before_postfx_before_subtitles(monkeypa
     calls = _capture_args(monkeypatch)
     shake = video._camera_shake_filter("shake", 2.0, k=0)
     await video._render_scene_fast(
-        _shot(assets.image, "shake"), EffectSpec("in-center", 1.0, 1.15), 2.0,
-        tmp_path / "seg.mp4", 1,
+        _legacy_motion(assets.image, EffectSpec("in-center", 1.0, 1.15), 2.0, shake=shake),
+        2.0, tmp_path / "seg.mp4", 1,
         cards=[], mood="dread", audio_path=assets.audio, subtitle_path=assets.subtitle,
-        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
-        include_stinger=True, composite_harmonization_tier=0, camera_shake=shake,
+        sound_design_enabled=False, post_fx_enabled=True,
+        include_stinger=True, composite_harmonization_tier=0,
     )
     vf = _video_filter_of(calls[0])
     assert vf.index("rotate=") < vf.index("vignette") < vf.index("subtitles=")
@@ -3276,12 +3297,12 @@ async def test_render_fast_card_branch_shake_before_postfx_before_subtitles(monk
     calls = _capture_args(monkeypatch)
     shake = video._camera_shake_filter("shake", 2.0, k=0)
     await video._render_scene_fast(
-        _shot(assets.image, "shake"), EffectSpec("in-center", 1.0, 1.15), 2.0,
-        tmp_path / "seg.mp4", 1,
+        _legacy_motion(assets.image, EffectSpec("in-center", 1.0, 1.15), 2.0, shake=shake),
+        2.0, tmp_path / "seg.mp4", 1,
         cards=[_card(assets.character)], mood="dread", audio_path=assets.audio,
         subtitle_path=assets.subtitle,
-        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
-        include_stinger=True, composite_harmonization_tier=0, camera_shake=shake,
+        sound_design_enabled=False, post_fx_enabled=True,
+        include_stinger=True, composite_harmonization_tier=0,
     )
     fc = _video_filter_of(calls[0])
     assert fc.index("overlay") < fc.index("rotate=") < fc.index("vignette") < fc.index("subtitles=")
@@ -3292,13 +3313,14 @@ async def test_render_fast_empty_shake_leaves_chain_unchanged(monkeypatch, tmp_p
     calls = _capture_args(monkeypatch)
     common = dict(
         cards=[], mood="dread", audio_path=assets.audio, subtitle_path=assets.subtitle,
-        sound_design_enabled=False, post_fx_enabled=True, parallax_enabled=False,
+        sound_design_enabled=False, post_fx_enabled=True,
         include_stinger=True, composite_harmonization_tier=0,
     )
-    shot = _shot(assets.image, "shake")
     spec = EffectSpec("in-center", 1.0, 1.15)
-    await video._render_scene_fast(shot, spec, 2.0, tmp_path / "a.mp4", 1, **common, camera_shake="")
-    await video._render_scene_fast(shot, spec, 2.0, tmp_path / "a.mp4", 1, **common)
+    await video._render_scene_fast(
+        _legacy_motion(assets.image, spec, 2.0, shake=""), 2.0, tmp_path / "a.mp4", 1, **common)
+    await video._render_scene_fast(
+        _legacy_motion(assets.image, spec, 2.0), 2.0, tmp_path / "a.mp4", 1, **common)
     assert calls[0] == calls[1]
     assert "rotate=" not in _video_filter_of(calls[0])
 
@@ -3309,14 +3331,12 @@ async def test_compose_shot_clip_attaches_shake_both_branches(monkeypatch, tmp_p
     shot = _shot(assets.image, "shake")
     spec = EffectSpec("in-center", 1.0, 1.15)
     await video._compose_shot_clip(
-        shot, spec, 2.0, tmp_path / "bg.mp4",
-        cards=[], mood=None, parallax_enabled=False, composite_harmonization_tier=0,
-        camera_shake=shake,
+        shot, _legacy_motion(assets.image, spec, 2.0, shake=shake), 2.0, tmp_path / "bg.mp4",
+        cards=[], mood=None, composite_harmonization_tier=0,
     )
     await video._compose_shot_clip(
-        shot, spec, 2.0, tmp_path / "card.mp4",
-        cards=[_card(assets.character)], mood=None, parallax_enabled=False,
-        composite_harmonization_tier=0, camera_shake=shake,
+        shot, _legacy_motion(assets.image, spec, 2.0, shake=shake), 2.0, tmp_path / "card.mp4",
+        cards=[_card(assets.character)], mood=None, composite_harmonization_tier=0,
     )
     bg_vf = _video_filter_of(calls[0])
     assert "rotate=" in bg_vf and bg_vf.index("zoompan") < bg_vf.index("rotate=")
@@ -3453,9 +3473,22 @@ def test_config_camera_noise_enabled_default_true():
     assert Settings.model_fields["camera_noise_enabled"].default is True
 
 
-def test_char_max_box_numerically_unchanged_by_tremble_rework():
-    """[Story 11.3 AC:5] tremble's fBm rework keeps total amplitude 3.0px, so
-    the motion-safe box (7.3/8.8 regression invariant) must not move."""
+def test_char_max_box_reserves_the_widest_macro_pan_budget():
+    """[Story 11.3 AC:5 / Story 11.5 AC:7] tremble's fBm rework keeps total
+    amplitude 3.0px, so the idle-motion half of the motion-safe box must not move.
+
+    Story 11.5 widened the *macro-pan* half: a card can now take either 7.3's
+    zoompan parallax (CHAR_PAN_AMPLITUDE_PX = 12px) or the 2.5D layer parallax
+    (3% of width x the 0.80 near ratio = 46.08px), and the box has to hold for
+    whichever runs — so it reserves the larger. Asserting the formula rather than
+    a literal keeps this a real invariant instead of a number to re-paste.
+    """
     assert cm.max_excursion() == (18.0, 16.5, 1.075)
-    assert video.CHAR_MAX_W == (1920 - 2 * (18.0 + video.CHAR_PAN_AMPLITUDE_PX)) / video.CHAR_MAX_ZOOM / 1.075
-    assert video.CHAR_MAX_H == (1080 - 2 * (16.5 + video.CHAR_PAN_AMPLITUDE_PX)) / video.CHAR_MAX_ZOOM / 1.075
+    assert video._MACRO_PAN_RESERVE_PX == max(video.CHAR_PAN_AMPLITUDE_PX, video._LAYER_MAX_PX)
+    assert video._LAYER_MAX_PX == pytest.approx(0.03 * 1920 * 0.80)
+    assert video.CHAR_MAX_W == (
+        1920 - 2 * (18.0 + video._MACRO_PAN_RESERVE_PX)
+    ) / video.CHAR_MAX_ZOOM / 1.075
+    assert video.CHAR_MAX_H == (
+        1080 - 2 * (16.5 + video._MACRO_PAN_RESERVE_PX)
+    ) / video.CHAR_MAX_ZOOM / 1.075

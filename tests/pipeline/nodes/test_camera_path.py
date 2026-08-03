@@ -159,3 +159,115 @@ def test_locked_margin_zero():
 
 def test_version_constant():
     assert cp.CAMERA_PATH_VERSION == "1"
+
+
+# ── Numeric trajectory sampler (Story 11.5 AC4) ──────────────────────────────
+
+
+def _eval_expr(expr: str, t: float) -> float:
+    """Evaluate one of Story 11.3's generated ffmpeg expressions in Python.
+
+    The generated strings use only ``sin``/``floor``/``pow``/``max``/``min``,
+    parentheses and arithmetic, so they ARE valid Python given this namespace.
+    That is what makes the parity assertion below a real proof rather than two
+    reimplementations agreeing with each other's bugs.
+    """
+    return float(eval(expr, {  # noqa: S307 — fixed, code-generated expressions
+        "__builtins__": {},
+        "sin": math.sin, "floor": math.floor, "pow": pow, "max": max, "min": min, "t": t,
+    }))
+
+
+@pytest.mark.parametrize("hint", CAMERA_ARCHETYPES)
+@pytest.mark.parametrize("trauma", [0.0, 0.5])
+def test_numeric_sampler_matches_ffmpeg_expressions(hint, trauma):
+    """AC4: the numeric sampler and Story 11.3's expressions are ONE curve."""
+    exprs = cp.camera_noise_exprs(hint, 3, trauma=trauma)
+    samples = cp.sample_path(hint, 3, duration=2.0, fps=25, trauma=trauma)
+    if exprs is None:  # locked, no trauma — proven silent below
+        assert all(s.x == s.y == s.rot == s.zoom == 0.0 for s in samples)
+        return
+    for s in samples:
+        assert s.x == pytest.approx(_eval_expr(exprs.x_expr or "0", s.t), abs=1e-12)
+        assert s.y == pytest.approx(_eval_expr(exprs.y_expr or "0", s.t), abs=1e-12)
+        assert s.rot == pytest.approx(_eval_expr(exprs.rot_expr or "0", s.t), abs=1e-12)
+        assert s.zoom == pytest.approx(_eval_expr(exprs.zoom_expr or "0", s.t), abs=1e-12)
+
+
+def test_sampler_is_deterministic_across_calls():
+    a = cp.sample_path("shake", 7, duration=1.5, fps=25, trauma=0.6)
+    b = cp.sample_path("shake", 7, duration=1.5, fps=25, trauma=0.6)
+    assert a == b  # exact float equality: no hash(), no unseeded randomness
+
+
+def test_sampler_frame_count_and_timestamps():
+    samples = cp.sample_path("push_in", 0, duration=2.0, fps=25)
+    assert len(samples) == 50
+    assert samples[0].t == 0.0
+    assert samples[-1].t == pytest.approx(49 / 25)
+    # A sub-frame duration still yields one frame, never zero.
+    assert len(cp.sample_path("push_in", 0, duration=0.01, fps=25)) == 1
+
+
+def test_adjacent_shot_indices_decorrelate():
+    a = cp.sample_path("push_in", 4, duration=1.0, fps=25)
+    b = cp.sample_path("push_in", 5, duration=1.0, fps=25)
+    assert [s.x for s in a] != [s.x for s in b]
+
+
+def test_locked_without_trauma_is_no_motion():
+    samples = cp.sample_path("locked", 2, duration=1.0, fps=25)
+    assert not cp.has_motion("locked")
+    assert not cp.has_motion("static")
+    assert all(s == (s.t, 0.0, 0.0, 0.0, 0.0) for s in samples)
+
+
+def test_locked_with_trauma_still_shakes():
+    assert cp.has_motion("locked", trauma=0.5)
+    samples = cp.sample_path("locked", 2, duration=1.0, fps=25, trauma=0.5)
+    assert any(s.x != 0.0 for s in samples)
+
+
+def test_trauma_decays_to_zero():
+    samples = cp.sample_path("locked", 1, duration=2.0, fps=25, trauma=0.9)
+    early = max(abs(s.x) for s in samples if s.t < cp.TRAUMA_TAU / 2)
+    late = max(abs(s.x) for s in samples if s.t > cp.TRAUMA_TAU)
+    assert late == 0.0 < early
+
+
+@pytest.mark.parametrize("hint", CAMERA_ARCHETYPES)
+@pytest.mark.parametrize("frac", [0.01, 0.02, 0.03])
+def test_xy_peak_caps_combined_displacement(hint, frac):
+    """AC6: base pan + noise + trauma together never exceed the requested cap."""
+    samples = cp.sample_path(
+        hint, 6, duration=3.0, fps=25, trauma=0.8, xy_peak=frac,
+        base_zoom=(1.0, 1.15), base_pan=(0.05, -0.04),  # deliberately over-budget
+    )
+    x_max, y_max, _, _ = cp.sample_bounds(samples)
+    assert x_max <= frac + 1e-12
+    assert y_max <= frac + 1e-12
+
+
+def test_clamp_displacement_holds_the_ac6_band():
+    assert cp.clamp_displacement(0.0) == cp.DISPLACEMENT_MIN == 0.01
+    assert cp.clamp_displacement(0.9) == cp.DISPLACEMENT_MAX == 0.03
+    assert cp.clamp_displacement(0.02) == 0.02
+
+
+def test_base_move_is_carried_and_owned_once():
+    """AC7: the base Ken Burns move lives in the trajectory, not beside it."""
+    zoom_only = cp.sample_path("locked", 0, duration=2.0, fps=25, base_zoom=(1.0, 1.15))
+    assert zoom_only[0].zoom == pytest.approx(0.0)
+    assert zoom_only[-1].zoom == pytest.approx(0.15, abs=0.01)
+    pan_only = cp.sample_path("locked", 0, duration=2.0, fps=25, base_pan=(0.02, 0.0))
+    assert pan_only[0].x == pytest.approx(0.0)
+    assert pan_only[-1].x == pytest.approx(0.02, abs=0.001)
+    assert all(s.y == 0.0 for s in pan_only)
+
+
+def test_legacy_expression_api_unchanged():
+    """AC4: 11.3's expression surface keeps working exactly as before."""
+    assert cp.fbm_expr(0.0, 1.0, 2, 0.0) == ""
+    assert cp.camera_noise_exprs("locked", 0) is None
+    assert cp.camera_noise_exprs("push_in", 0) is not None
+    assert cp.overscan_margin("locked") == 0.0

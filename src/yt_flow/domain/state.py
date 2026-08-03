@@ -113,6 +113,11 @@ class ShotData(TypedDict):
     camera_angle: str | None
     camera_movement: str | None  # one of CAMERA_ARCHETYPES (Story 11.2) | legacy free-text hint | None
     image_path: str | None       # background-only render (Story 8.3); character overlays live in `cast`
+    depth_map_path: NotRequired[str | None]  # Story 11.5: monocular depth companion of THIS
+                                  # shot's image_path, resolved once in the image stage and
+                                  # consumed by the video stage's 2.5D parallax renderer.
+                                  # NotRequired so pre-11.5 checkpoints still deserialize;
+                                  # absent/None == no depth, renderer falls back (AC9).
     cast: list[CastMember]       # [] == background-only shot: downstream does NO overlay work at all
     location_key: LocationKey | None  # Story 8.5: STOCK plate to copy instead of generating.
                                        # None == use image_prompt (existing generation behavior).

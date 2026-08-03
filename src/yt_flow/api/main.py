@@ -12,13 +12,14 @@ from yt_flow.api.routes import characters, progress, runs, scps, stages
 from yt_flow.api.routes.scps import ScpEntry  # re-exported for tests/callers
 from yt_flow.api.sse import SSEQueueRegistry
 from yt_flow.config import Settings
-from yt_flow.pipeline.nodes.image import inject_location_service
+from yt_flow.pipeline.nodes.image import inject_depth_resolver, inject_location_service
 from yt_flow.pipeline.nodes.video import (
     inject_cast_resolver,
     inject_ground_resolver,
+    inject_motion_renderer,
     inject_relight_resolver,
 )
-from yt_flow.services import compositing_service, run_service
+from yt_flow.services import compositing_service, parallax_service, run_service
 from yt_flow.services.character_service import CharacterService
 from yt_flow.services.location_service import LocationService
 
@@ -49,6 +50,37 @@ async def lifespan(app: FastAPI):
             return svc.resolve_stock_plates(location_key)
 
     inject_location_service(_resolve_location)
+
+    # Story 11.5: inject the depth-companion resolver into image_node so every
+    # shot carries the depth map its 2.5D parallax render needs. Shares Story
+    # 8.16's content-addressed cache — one estimation per distinct plate, ever.
+    # Gated on the same kill switch as the renderer: off, shots carry no
+    # depth_map_path and the video stage keeps its pre-11.5 zoompan behaviour.
+    if settings.parallax_25d_enabled:
+        async def _resolve_depth(image_path: str) -> dict:
+            # [review fix] `cached` asks the SAME strict question depth_map_file
+            # asks (verify_depth_pair), not just "is a file there". A map present
+            # without a valid sidecar — 8.16's legacy Large-model maps, or a crash
+            # between map and sidecar — is a miss that re-runs inference, and
+            # reporting it as a hit is precisely the trace lie AC10 forbids.
+            import hashlib
+
+            source_sha = hashlib.sha256(Path(image_path).read_bytes()).hexdigest()
+            cache = compositing_service.depth_map_cache_path(image_path, settings)
+            cached = compositing_service.verify_depth_pair(
+                cache, source_sha, compositing_service.depth_contract(settings),
+            )
+            path = await compositing_service.depth_map_file(image_path, settings)
+            return {"path": str(path) if path else None, "cached": cached and path is not None}
+
+        inject_depth_resolver(_resolve_depth)
+
+        # Story 11.5: inject the 2.5D renderer ladder into video_node. Same gate
+        # as the depth resolver above — a run must never composite cards against
+        # layer ratios for a plate that got no depth companion.
+        inject_motion_renderer(
+            lambda **kw: parallax_service.render_motion_clip(settings=settings, **kw)
+        )
 
     # Story 8.7 Tier 3: inject IC-Light relight precomputation into video_node
     async def _precompute_relights(scenes: list, cast_cards: dict) -> tuple[dict, dict]:

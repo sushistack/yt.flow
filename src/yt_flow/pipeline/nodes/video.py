@@ -19,13 +19,13 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple, get_args
 
 from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
-from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.domain.state import CastDepth, PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes import camera_path, character_motion, character_movement, shot_timing
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
@@ -80,6 +80,33 @@ def inject_relight_resolver(fn: Any) -> None:
 # Same AD-1-avoidance pattern as the two resolvers above: the depth map lives in
 # services/compositing_service.py (ComfyUI + PIL/numpy), never imported here.
 _ground_resolver: Any = None
+
+
+# ── 2.5D motion renderer injection (Story 11.5) ───────────────────────────────
+# The renderer drives an external runtime, numpy/PIL and ffprobe, so it arrives
+# as a callable and video.py stays on domain+config only [AD-1]. None (the kill
+# switch off, or no wiring) means the legacy zoompan path.
+#
+# [review fix] "Byte-identical to pre-11.5" is NOT true and the comment used to
+# claim it. The *filtergraph* the legacy branch emits is unchanged, but three
+# constants moved for everyone regardless of the switch: _MACRO_PAN_RESERVE_PX
+# widened the motion-safe box (CHAR_MAX_W/H, _GROUND_Y_MAX), which moved
+# compositing_service._CARD_HEIGHT_FRAC, and _DEFAULT_GROUND was re-measured
+# against the Apache-2.0 Small checkpoint AC3 mandates. The kill switch is a
+# behavioural rollback of the RENDERER, not a byte-for-byte rollback of output.
+_motion_renderer: Any = None
+
+
+def inject_motion_renderer(fn: Any) -> None:
+    """Inject ``parallax_service.render_motion_clip``.
+
+    ``fn`` is keyword-only and returns ``{"path": str | None, "renderer": str,
+    "cached": bool, "latency_ms": int, "fallback_reason": str | None}``.
+    ``path=None`` is a normal shot-local outcome: :func:`build_motion_source`
+    then uses the legacy zoompan chain and records the reason.
+    """
+    global _motion_renderer
+    _motion_renderer = fn
 
 
 def inject_ground_resolver(fn: Any) -> None:
@@ -174,6 +201,23 @@ CHAR_PAN_AMPLITUDE_PX = 12     # ponytail: eyeball-tuned; per-direction sign liv
 # frame edges at the in-center peak (Story 7.3 AC:4).
 CHAR_MAX_ZOOM = 1.0 + (ZOOM_IN_MAX - 1.0) * CHAR_DEPTH_FACTOR
 
+# ── Layered character parallax (Story 11.5 AC7) ───────────────────────────────
+# On the 2.5D path the plate's own displacement is depth-modulated, so cards must
+# be their own layers moving in the SAME apparent direction at a closed,
+# server-owned fraction of the plate's excursion — never a number an LLM emits.
+# Keyed on the existing `near | mid | far` enum: nearer layers travel further,
+# which is the whole depth cue. Values are the AC7 band's endpoints and midpoint.
+_LAYER_PARALLAX_RATIO: dict[str, float] = {"far": 0.60, "mid": 0.70, "near": 0.80}
+assert set(_LAYER_PARALLAX_RATIO) == set(get_args(CastDepth))  # closed enum, no drift
+assert all(0.60 <= r <= 0.80 for r in _LAYER_PARALLAX_RATIO.values())
+
+# Worst-case card excursion the layer parallax can produce: the AC6 displacement
+# ceiling times the widest layer ratio. Reserved in the motion-safe box below
+# because AC7 requires the FULL combined excursion to be proven on-frame, not
+# assumed — 7.3's CHAR_PAN_AMPLITUDE_PX budget (12px) covers only the bottom of
+# the 1-3% band, so a near card at 3% would have clipped by ~34px per side.
+_LAYER_MAX_PX = camera_path.DISPLACEMENT_MAX * COMP_W * max(_LAYER_PARALLAX_RATIO.values())
+
 # Worst-case excursion across every motion_style/motion_energy combination
 # (Story 8.8 AC:7) — read from character_motion's table so this can never
 # drift out of sync with the constants that actually drive the filtergraph.
@@ -186,12 +230,19 @@ _MAX_MOTION_X_PX, _MAX_MOTION_Y_PX, _MAX_MOTION_SCALE = character_motion.max_exc
 # mis-sized ComfyUI asset (character bytes are written raw, never scaled
 # upstream) can't overflow. Dividing by CHAR_MAX_ZOOM * _MAX_MOTION_SCALE means
 # a character capped here then zoomed to its peak *and* pulsed to its peak
-# scale lands back inside the frame; reserving the max x/y excursion *and*
-# CHAR_PAN_AMPLITUDE_PX per side means the worst-case corner still stays on
+# scale lands back inside the frame; reserving the max x/y excursion *and* the
+# widest macro-pan budget per side means the worst-case corner still stays on
 # screen by construction — not by eyeball (Story 7.3 AC:4/AC:8, Story 8.8 AC:7
 # regression invariant).
-CHAR_MAX_W = (COMP_W - 2 * (_MAX_MOTION_X_PX + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
-CHAR_MAX_H = (COMP_H - 2 * (_MAX_MOTION_Y_PX + CHAR_PAN_AMPLITUDE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
+#
+# Story 11.5 AC:7: the reserved macro-pan budget is now the LARGER of 7.3's
+# zoompan-path amplitude and the 2.5D layer-parallax ceiling, because a card can
+# take either path and the box has to hold for both. That widened the reserve
+# 12px -> 46.08px per side, which is why _CARD_HEIGHT_FRAC in
+# compositing_service moved too (it is derived from CHAR_MAX_H).
+_MACRO_PAN_RESERVE_PX = max(CHAR_PAN_AMPLITUDE_PX, _LAYER_MAX_PX)
+CHAR_MAX_W = (COMP_W - 2 * (_MAX_MOTION_X_PX + _MACRO_PAN_RESERVE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
+CHAR_MAX_H = (COMP_H - 2 * (_MAX_MOTION_Y_PX + _MACRO_PAN_RESERVE_PX)) / CHAR_MAX_ZOOM / _MAX_MOTION_SCALE
 
 # ── Multi-card cast compositing (Story 8.3) ───────────────────────────────────
 # Stacking order (far painted first, near painted last/on top) — never stored,
@@ -456,6 +507,254 @@ def ground_y_expr(spec: "EffectSpec", duration: float, ground_y: float) -> str:
     return f"main_h*min((({ground_y:g}-({top}))*({z})),{_GROUND_Y_MAX:g})-overlay_h"
 
 
+# ── 2.5D motion source (Story 11.5 AC4/AC7/AC8) ───────────────────────────────
+
+
+class TrajectoryExprs(NamedTuple):
+    """The numeric trajectory re-expressed as ffmpeg expressions in ``t``.
+
+    One source for both consumers: the CARD layer terms and the card's floor
+    tracking. The plate itself is rendered from the *samples* of the same
+    trajectory, so parity between plate and cards is by construction, not by two
+    implementations agreeing — ``camera_path.sample_path`` and
+    ``camera_path.camera_noise_exprs`` are proven identical curves by
+    ``test_numeric_sampler_matches_ffmpeg_expressions``.
+    """
+    x_expr: str      # content x offset, fraction of frame WIDTH
+    y_expr: str      # content y offset, fraction of frame WIDTH
+    zoom_expr: str   # scale delta from 1.0
+    margin: float    # overscan the plate was scaled up by
+
+
+def _trajectory_exprs(
+    hint: str | None, k: int, spec: EffectSpec, duration: float,
+    *, trauma: float, xy_peak: float, samples: list,
+) -> TrajectoryExprs:
+    """Build the expression twin of ``samples`` for the same shot."""
+    base_pan = _base_pan(spec)
+    gain = camera_path.xy_gain(hint, trauma=trauma, xy_peak=xy_peak, base_pan=base_pan)
+    noise = camera_path.camera_noise_exprs(hint, k, trauma=trauma)
+    frames = max(1, round(duration * FPS))
+    prog = f"min(t*{FPS}/{frames},1)"
+
+    def axis(pan: float, noise_expr: str) -> str:
+        terms = [f"({pan:.9g})*{prog}"] if pan else []
+        if noise_expr:
+            terms.append(f"({noise_expr})")
+        return f"({'+'.join(terms)})*{gain:.9g}" if terms else "0"
+
+    z0, z1 = spec.start_zoom, spec.end_zoom
+    zoom_terms = [f"({z0:.9g}+({z1 - z0:.9g})*{prog}-1)"]
+    if noise is not None and noise.zoom_expr:
+        zoom_terms.append(f"({noise.zoom_expr})")
+    return TrajectoryExprs(
+        x_expr=axis(base_pan[0], noise.x_expr if noise else ""),
+        y_expr=axis(base_pan[1], noise.y_expr if noise else ""),
+        zoom_expr="+".join(zoom_terms),
+        margin=camera_path.sample_overscan_margin(samples),
+    )
+
+
+def _base_pan(spec: EffectSpec) -> tuple[float, float]:
+    """The shot's Ken Burns base move as a total content displacement, in frame-
+    width fractions — the 2.5D twin of ``_zoompan_filter``'s crop-window walk.
+
+    Signs come from ``_PAN_SIGN``, which is already expressed in *apparent
+    on-screen* space (a crop moving right makes content appear to move left), so
+    the trajectory, the plate warp and the card layers all share one direction
+    convention: positive = content moves right/down. Magnitude reuses the AC6
+    displacement ceiling, then ``xy_peak`` rescales the whole trajectory into the
+    configured band — the pan is never separately tunable, which is what stops it
+    from silently escaping the cap.
+    """
+    sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
+    amp = camera_path.DISPLACEMENT_MAX
+    return sx * amp, sy * amp
+
+
+@dataclass
+class MotionSource:
+    """How one shot's background arrives at the composition stage.
+
+    THE seam AC8 asks for: all four render branches (fast/multi-clip x
+    card/background-only) build their background from exactly this object, so a
+    2.5D clip and a legacy zoompan chain cannot drift into two code paths.
+
+    - legacy: ``bg_input`` loops the still plate, ``bg_chain`` is the zoompan
+      chain, ``camera_shake`` carries 11.3's post-composite stage, and 7.3's
+      card parallax is on — the same filtergraph pre-11.5 emitted. (Card *size*
+      and the ground clamp did move for both paths; see ``_motion_renderer``.)
+    - 2.5D: ``bg_input`` reads the pre-rendered clip, ``bg_chain`` is a no-op,
+      and ``camera_shake``/``parallax_enabled`` are OFF because the trajectory
+      already owns base movement, handheld noise and trauma exactly once (AC7).
+    """
+    bg_input: list[str]
+    bg_chain: str
+    spec: EffectSpec
+    camera_shake: str = ""
+    parallax_enabled: bool = False
+    trajectory: TrajectoryExprs | None = None
+    renderer: str = "legacy"
+    fallback_reason: str | None = None
+    latency_ms: int = 0
+    cached: bool = False
+
+    @property
+    def is_clip(self) -> bool:
+        return self.trajectory is not None
+
+    def layer_terms(self, depth: str) -> tuple[str, str] | None:
+        """Card ``depth``'s (x, y) offset expressions — AC7's 0.60-0.80 of plate
+        displacement, in the same apparent direction, in pixels."""
+        if self.trajectory is None:
+            return None
+        ratio = _LAYER_PARALLAX_RATIO.get(depth, _LAYER_PARALLAX_RATIO["mid"])
+        amp = ratio * COMP_W
+        return (
+            f"({self.trajectory.x_expr})*{amp:.6g}",
+            f"({self.trajectory.y_expr})*{amp:.6g}",
+        )
+
+    def ground_expr(self, ground_y: float, duration: float) -> str:
+        """Where the plate's measured floor sits in the OUTPUT frame, per frame.
+
+        On the legacy path this is Story 8.16's zoompan tracker unchanged. On the
+        2.5D path the plate is not zoompanned at all — it is scaled up by
+        ``margin`` and then inverse-affine warped — so the floor tracking is
+        derived from the trajectory's own zoom instead: a source fraction ``p`` of
+        the overscanned plate lands at ``0.5 + (p-0.5)*(1+margin)*(1+zoom)``.
+
+        Only the ZOOM term lives here: the translation is already applied to the
+        card by :meth:`layer_terms`, and adding it twice is exactly the
+        double-motion AC7 forbids.
+        """
+        if self.trajectory is None:
+            return ground_y_expr(self.spec, duration, ground_y)
+        m = 1.0 + self.trajectory.margin
+        centred = f"(({ground_y:g}-0.5)*{m:.6g}*(1+({self.trajectory.zoom_expr})))"
+        return f"main_h*min(0.5+{centred},{_GROUND_Y_MAX:g})-overlay_h"
+
+
+def _legacy_motion(
+    shot: ShotData, spec: EffectSpec, duration: float,
+    *, parallax_enabled: bool, camera_shake: str, fallback_reason: str | None = None,
+) -> MotionSource:
+    """The pre-11.5 background: the still plate looped under zoompan.
+
+    The final rung of AC9's ladder and the whole behaviour of the AC9 kill
+    switch — the same two calls Story 7.3/11.3 made, in the same order, so the
+    emitted filtergraph is unchanged. (Not the same *output*: see
+    ``_motion_renderer`` for the three constants that moved for both paths.)
+    """
+    return MotionSource(
+        bg_input=["-loop", "1", "-framerate", str(FPS), "-i", str(shot["image_path"])],
+        bg_chain=_zoompan_filter(spec, duration),
+        spec=spec,
+        camera_shake=camera_shake,
+        parallax_enabled=parallax_enabled,
+        renderer="legacy",
+        fallback_reason=fallback_reason,
+    )
+
+
+async def build_motion_source(
+    shot: ShotData,
+    duration: float,
+    *,
+    k: int,
+    trauma: float,
+    motion_dir: Path,
+    parallax_enabled: bool,
+    camera_shake: str,
+    renderer_counts: dict[str, int] | None = None,
+) -> MotionSource:
+    """Resolve one shot's background motion — the single seam of AC8.
+
+    Tries the injected 2.5D renderer (which runs its own depthflow → depth-warp
+    ladder) and falls back to the legacy zoompan chain when it declines or fails.
+    Every degradation is logged with run/scene/shot context and counted for the
+    trace (AC9): a shot that quietly rendered flat must be visible afterwards.
+
+    Never raises: a renderer problem is shot-local by construction here, and the
+    stage only fails if the legacy chain itself fails downstream in ffmpeg (AC9 —
+    "only failure of every validated renderer fails the video stage").
+    """
+    spec = select_effect(shot, k)
+    counts = renderer_counts if renderer_counts is not None else {}
+
+    def legacy(reason: str | None) -> MotionSource:
+        if reason:
+            counts[f"fallback_{reason}"] = counts.get(f"fallback_{reason}", 0) + 1
+        counts["legacy"] = counts.get("legacy", 0) + 1
+        return _legacy_motion(
+            shot, spec, duration, parallax_enabled=parallax_enabled,
+            camera_shake=camera_shake, fallback_reason=reason,
+        )
+
+    if _motion_renderer is None:
+        return legacy(None)  # kill switch / no injection: not a degradation
+
+    settings = _settings()
+    xy_peak = camera_path.clamp_displacement(settings.parallax_displacement_frac)
+    hint = shot.get("camera_movement")
+    samples = camera_path.sample_path(
+        hint, k, duration=duration, fps=FPS, trauma=trauma, xy_peak=xy_peak,
+        base_zoom=(spec.start_zoom, spec.end_zoom), base_pan=_base_pan(spec),
+    )
+    try:
+        result = await _motion_renderer(
+            image_path=shot["image_path"],
+            depth_map_path=shot.get("depth_map_path"),
+            samples=[tuple(s) for s in samples],
+            duration=duration,
+            fps=FPS,
+            out_path=motion_dir / f"{shot['shot_id']}_k{k}.mp4",
+            overscan_margin=camera_path.sample_overscan_margin(samples),
+            displacement_frac=xy_peak,
+            layer_ratios=_LAYER_PARALLAX_RATIO,
+            provenance_extra={
+                "archetype": hint or "",
+                "k": k,
+                "trauma": round(trauma, 6),
+                "camera_path_version": camera_path.CAMERA_PATH_VERSION,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — AD-10: a renderer fault is shot-local
+        logger.warning("2.5D renderer raised for shot %s: %s", shot["shot_id"], exc)
+        return legacy("renderer_exception")
+
+    if not result or not result.get("path"):
+        reason = (result or {}).get("fallback_reason") or "unknown"
+        logger.warning(
+            "shot %s fell back to legacy zoompan (%s)", shot["shot_id"], reason,
+        )
+        return legacy(reason)
+
+    renderer = result["renderer"]
+    counts[renderer] = counts.get(renderer, 0) + 1
+    counts["latency_ms"] = counts.get("latency_ms", 0) + int(result.get("latency_ms") or 0)
+    if result.get("cached"):
+        counts["cache_hit"] = counts.get("cache_hit", 0) + 1
+    return MotionSource(
+        # No `-loop`: the clip already carries exactly the planned frame count,
+        # validated by FFprobe before promotion.
+        bg_input=["-i", str(result["path"])],
+        bg_chain="null",
+        spec=spec,
+        # Both OFF: the trajectory inside the clip already owns base movement,
+        # handheld noise and trauma, and 7.3's card zoom coupling would fight the
+        # layer ratios (AC7 — "exactly once").
+        camera_shake="",
+        parallax_enabled=False,
+        trajectory=_trajectory_exprs(
+            hint, k, spec, duration, trauma=trauma, xy_peak=xy_peak, samples=samples,
+        ),
+        renderer=renderer,
+        latency_ms=int(result.get("latency_ms") or 0),
+        cached=bool(result.get("cached")),
+    )
+
+
 def _overlay_filter(
     position: str = "center", k: int = 0,
     spec: EffectSpec | None = None, duration: float | None = None,
@@ -465,6 +764,7 @@ def _overlay_filter(
     movement_pace: str = "slow",
     ground_y: float | None = None,
     ground_y_expression: str | None = None,
+    layer_terms: tuple[str, str] | None = None,
 ) -> str:
     """Card overlay, rule-of-thirds anchored, with phase-decorrelated idle motion.
     [AC:1,2,3] [Story 8.3 AC:6,7] [Story 8.8 AC:6,8] [Story 8.9 AC:5,7]
@@ -513,7 +813,14 @@ def _overlay_filter(
         y = "(main_h-overlay_h)/2"
     if movement.y_terms:
         y += " + " + " + ".join(movement.y_terms)
-    if spec is not None and duration:
+    if layer_terms is not None:
+        # Story 11.5 AC:7 — the 2.5D layer term REPLACES 7.3's macro pan in the
+        # same composition slot. Both are "this card's share of the plate's
+        # apparent movement"; running them together would apply base movement
+        # twice, which is the double-motion AC7 exists to forbid.
+        x += f" + ({layer_terms[0]})"
+        y += f" + ({layer_terms[1]})"
+    elif spec is not None and duration:
         sx, sy = _PAN_SIGN.get(spec.direction, (0, 0))
         pan_amp = CHAR_PAN_AMPLITUDE_PX * _DEPTH_PARALLAX.get(depth, _DEPTH_PARALLAX["mid"])
         if sx:
@@ -839,6 +1146,9 @@ def _record_trace(
     relit_pairs_computed: int = 0,
     relit_pairs_failed: int = 0,
     camera_noise_enabled: bool = False,
+    renderer_counts: dict[str, int] | None = None,
+    parallax_25d_enabled: bool = False,
+    displacement_frac: float = 0.0,
     error=None,
 ) -> None:
     """Best-effort Langfuse span enrichment. [AD-10 — tracing is non-fatal]"""
@@ -884,6 +1194,17 @@ def _record_trace(
             "camera_path": {
                 "version": camera_path.CAMERA_PATH_VERSION,
                 "enabled": camera_noise_enabled,
+            },
+            # Story 11.5 AC:10 — which renderer actually produced each shot's
+            # background, how long it took, how often the cache answered, and
+            # every fallback reason keyed `fallback_<reason>`. This is the ONLY
+            # signal separating "2.5D rendered" from "2.5D silently fell back",
+            # so it is reported unconditionally, not just when something failed.
+            "parallax_25d": {
+                "enabled": parallax_25d_enabled,
+                "displacement_frac": displacement_frac,
+                "layer_ratios": _LAYER_PARALLAX_RATIO,
+                "renderer_counts": renderer_counts or {},
             },
             "ending_credit": ending_credit,
             "ending_credit_error": ending_credit_error,
@@ -996,7 +1317,19 @@ def _merge_placements(
 # bottom, and a measured near ground line of 0.94 leaves 65px for a 28.5px requirement
 # only by luck. Clamping here rather than in compositing_service keeps the motion
 # constants in the module that owns them (services must not import pipeline, AD-1).
-_GROUND_Y_MAX = 1.0 - (_MAX_MOTION_Y_PX + CHAR_PAN_AMPLITUDE_PX) / COMP_H
+#
+# [review fix] The pan budget here is _MACRO_PAN_RESERVE_PX, the SAME reserve
+# CHAR_MAX_W/H use — not 7.3's 12px. A 2.5D card's layer term reaches
+# _LAYER_MAX_PX (46.08px) downward, so under the old 12px budget a card at the
+# clamp ran 34.1px past the bottom edge in the analytic worst case (18.7px at the
+# shipped 2%). Measured trajectories only reached ~29px of that ceiling, so it
+# survived by ~5px of luck rather than clipping outright — which is the same "only
+# by luck" this comment already warned about above, and not a bound this module
+# accepts. Widening CHAR_MAX_H alone fixed only the CENTRE-anchored case;
+# ground-anchored cards (the production path — depth_placement_enabled=True) spend
+# the whole reserve downward and need it reserved here too (AC7's "full combined
+# excursion is proven not to clip the card").
+_GROUND_Y_MAX = 1.0 - (_MAX_MOTION_Y_PX + _MACRO_PAN_RESERVE_PX) / COMP_H
 
 
 def _apply_placement(card: dict, placement: object) -> dict:
@@ -1026,17 +1359,15 @@ def _apply_placement(card: dict, placement: object) -> dict:
 
 
 def _build_card_chain(
-    zp_chain: str,
+    motion: MotionSource,
     ordered_cards: list[dict],
-    spec: EffectSpec,
     duration: float,
     mood: str | None,
     *,
-    parallax_enabled: bool,
     composite_harmonization_tier: int,
 ) -> tuple[list[str], str]:
-    """Background zoompan + N stacked card overlays, far painted first, near
-    last/on top. [Story 8.3 AC:6,7] [Story 8.7] [Story 8.8] [Story 8.9]
+    """Background motion + N stacked card overlays, far painted first, near
+    last/on top. [Story 8.3 AC:6,7] [Story 8.7] [Story 8.8] [Story 8.9] [11.5 AC:7,8]
 
     Shared by the single-pass scene render (`_render_scene_fast`) and Story
     8.11's per-shot silent-clip pass (`_compose_shot_clip`) — one
@@ -1044,7 +1375,14 @@ def _build_card_chain(
     callers only invoke this when `ordered_cards` is non-empty; the
     background-only case renders through a separate, simpler `-vf` path with
     no `-filter_complex` at all. Returns (chain_parts, final_label).
+
+    Story 11.5: the background arrives through `motion` — either a zoompan chain
+    over the still plate (legacy) or a no-op over the pre-rendered 2.5D clip. The
+    card side reads `motion` for its layer terms, its parallax coupling and its
+    floor tracking, so one object decides all four together.
     """
+    spec = motion.spec
+    parallax_enabled = motion.parallax_enabled
     # Composite harmonization (Story 8.7): lazy import behind the tier check
     # so tier=0 never touches this module (AC:13 — ponytail, don't import
     # what you don't use).
@@ -1061,7 +1399,7 @@ def _build_card_chain(
     if light_wrap:
         from yt_flow.pipeline.nodes.composite_harmonization import build_light_wrap
 
-    chain_parts = [f"[0:v]{zp_chain}[bg]"]
+    chain_parts = [f"[0:v]{motion.bg_chain}[bg]"]
     prev_label = "bg"
     for k, card in enumerate(ordered_cards):
         depth = card.get("depth", "mid")
@@ -1097,11 +1435,13 @@ def _build_card_chain(
         # still plate moves. Track it (Story 8.16) instead of pinning feet to a static
         # fraction and letting card and floor part company by the last frame.
         ground_expr = (
-            ground_y_expr(spec, duration, float(ground_y)) if ground_y is not None else None
+            motion.ground_expr(float(ground_y), duration) if ground_y is not None else None
         )
+        layer_terms = motion.layer_terms(depth)
         overlay = _overlay_filter(
             position, k, char_spec, duration, depth, motion_style, motion_energy,
             movement_mode, movement_direction, movement_pace, ground_y, ground_expr,
+            layer_terms,
         )
         # Scale-pulse (Story 8.8 AC:6): "" for hold/glitch, appended as its own
         # stage for breath/sway/tremble/pulse so it composes with either branch above.
@@ -1129,10 +1469,22 @@ def _build_card_chain(
             shadow_y = "0"
             if ground_expr is not None:
                 shadow_y = f"({ground_expr})+main_h*{1.0 - float(ground_y):g}"
+            shadow_x = "0"
+            if layer_terms is not None:
+                # [review fix] The 2.5D layer term translates the card as a whole
+                # LAYER, and the contact shadow belongs to that layer — it is the
+                # card's own footprint, not a mark on the plate. Without this the
+                # shadow stayed pinned while the card slid up to 30.7px away at the
+                # shipped 2% displacement (46.08px at 3%), i.e. exactly the
+                # "detached puddle" the shadow_y tracking above exists to prevent.
+                # Idle bob/sway is still deliberately NOT applied: feet lift off a
+                # stationary shadow, a whole layer does not.
+                shadow_x = f"({layer_terms[0]})"
+                shadow_y = f"({shadow_y})+({layer_terms[1]})"
             chain_parts.append(f"color=c=black:s={COMP_W}x{COMP_H},format=rgba[sh{k}src]")
             chain_parts.append(f"[sh{k}src]{shadow}[sh{k}]")
             chain_parts.append(
-                f"[{base_label}][sh{k}]overlay=x=0:y='{shadow_y}':eval=frame[shg{k}]"
+                f"[{base_label}][sh{k}]overlay=x='{shadow_x}':y='{shadow_y}':eval=frame[shg{k}]"
             )
             base_label = f"shg{k}"
 
@@ -1157,8 +1509,7 @@ def _build_card_chain(
 
 
 async def _render_scene_fast(
-    shot: ShotData,
-    spec: EffectSpec,
+    motion: MotionSource,
     duration: float,
     seg_path: Path,
     n: int,
@@ -1169,12 +1520,10 @@ async def _render_scene_fast(
     subtitle_path: str,
     sound_design_enabled: bool,
     post_fx_enabled: bool,
-    parallax_enabled: bool,
     include_stinger: bool,
     composite_harmonization_tier: int,
-    camera_shake: str = "",
 ) -> None:
-    """Render a scene segment in a single ffmpeg pass: Ken Burns zoompan +
+    """Render a scene segment in a single ffmpeg pass: background motion +
     burned SRT, optionally with N cast cards + mood-driven sound design/post-fx.
     [AC:1,3] [Story 7.1] [Story 7.2 AC:4,5,6,8,9] [Story 8.3 AC:6,7,8,9]
 
@@ -1182,15 +1531,19 @@ async def _render_scene_fast(
     shot-clip plan is a single clip (nothing to cut, the common case).
     [Story 8.11 — ponytail: no concat overhead when there's nothing to concat]
 
-    `camera_shake` (Story 11.3 AC:2): a prebuilt `_camera_shake_filter` chain,
-    inserted after composition and BEFORE post-fx/subtitles — subtitles are
-    screen-space UI and must not shake; vignette/grain are lens-space and must
-    ride the shaken frame. "" attaches nothing (pre-11.3 byte-identical).
+    Story 11.5 AC:8 — the background comes from `motion`, the one seam both this
+    path and `_compose_shot_clip` share; nothing here knows whether it is looping
+    a still plate under zoompan or reading a pre-rendered 2.5D clip.
+
+    `motion.camera_shake` (Story 11.3 AC:2): a prebuilt `_camera_shake_filter`
+    chain, inserted after composition and BEFORE post-fx/subtitles — subtitles
+    are screen-space UI and must not shake; vignette/grain are lens-space and
+    must ride the shaken frame. "" attaches nothing (pre-11.3 byte-identical, and
+    always "" on the 2.5D path where the trajectory already owns the shake).
     """
-    bg_path = shot["image_path"]
-    zp_chain = _zoompan_filter(spec, duration)
+    camera_shake = motion.camera_shake
     shake_head = f"{camera_shake}," if camera_shake else ""   # card branch: before post_label
-    shake_tail = f",{camera_shake}" if camera_shake else ""   # bg-only: after zp_chain
+    shake_tail = f",{camera_shake}" if camera_shake else ""   # bg-only: after bg_chain
     sub = _escape_subtitles_path(Path(subtitle_path).resolve())
     fontsdir = _escape_subtitles_path(_subtitle_fontsdir().resolve())
     # [Story 7.2 AC:4-9] Precomputed fragments, empty when post_fx_enabled=False
@@ -1208,14 +1561,13 @@ async def _render_scene_fast(
         # N-card compositing: bg=0, cards=1..N, narration=N+1. Each card is a
         # looped still like the background; chained overlays far→near, subtitle
         # burn last (Dev Notes "Overlay chain shape").
-        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        inputs = list(motion.bg_input)
         for card in ordered_cards:
             inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
         inputs += ["-i", audio_path]
 
         chain_parts, prev_label = _build_card_chain(
-            zp_chain, ordered_cards, spec, duration, mood,
-            parallax_enabled=parallax_enabled,
+            motion, ordered_cards, duration, mood,
             composite_harmonization_tier=composite_harmonization_tier,
         )
         chain_parts.append(f"[{prev_label}]{shake_head}{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[out]")
@@ -1226,11 +1578,11 @@ async def _render_scene_fast(
         narration_map = f"{num_cards + 1}:a"
     else:
         # Background-only (1.9b): zoompan already emits COMP_W x COMP_H, just burn SRT.
-        inputs = [
-            "-loop", "1", "-framerate", str(FPS), "-i", str(bg_path),
-            "-i", audio_path,
-        ]
-        video_chain = f"[0:v]{zp_chain}{shake_tail}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
+        inputs = [*motion.bg_input, "-i", audio_path]
+        video_chain = (
+            f"[0:v]{motion.bg_chain}{shake_tail}{post_frag},"
+            f"subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
+        )
         video_map = "[vout]"
         narration_label = "[1:a]"
         input_offset = 2
@@ -1267,7 +1619,7 @@ async def _render_scene_fast(
     else:
         # Sound design disabled (AC:8): keep the pre-existing -vf path, still
         # carrying post_frag (empty string when post_fx_enabled=False too).
-        vf = f"{zp_chain}{shake_tail}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'"
+        vf = f"{motion.bg_chain}{shake_tail}{post_frag},subtitles='{sub}':fontsdir='{fontsdir}'"
         ffmpeg_args = [
             "-y", *inputs,
             "-vf", vf,
@@ -1286,15 +1638,13 @@ _SHOT_CLIP_OUTPUT_ARGS = ("-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv
 
 async def _compose_shot_clip(
     shot: ShotData,
-    spec: EffectSpec,
+    motion: MotionSource,
     duration: float,
     out_path: Path,
     *,
     cards: list[dict],
     mood: str | None,
-    parallax_enabled: bool,
     composite_harmonization_tier: int,
-    camera_shake: str = "",
 ) -> None:
     """Render one shot's silent background+cards clip — pass 1 of Story 8.11's
     per-shot cut assembly. No audio, no subtitle burn, no post-fx: those apply
@@ -1306,17 +1656,15 @@ async def _compose_shot_clip(
     adds post-fx/subtitles, so the shake→post→subtitles order holds by
     construction on this path.
     """
-    bg_path = shot["image_path"]
-    zp_chain = _zoompan_filter(spec, duration)
+    camera_shake = motion.camera_shake
     ordered_cards = sorted(cards or [], key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
 
     if ordered_cards:
-        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        inputs = list(motion.bg_input)
         for card in ordered_cards:
             inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
         chain_parts, prev_label = _build_card_chain(
-            zp_chain, ordered_cards, spec, duration, mood,
-            parallax_enabled=parallax_enabled,
+            motion, ordered_cards, duration, mood,
             composite_harmonization_tier=composite_harmonization_tier,
         )
         if camera_shake:
@@ -1330,10 +1678,10 @@ async def _compose_shot_clip(
             *_SHOT_CLIP_OUTPUT_ARGS, str(out_path),
         ]
     else:
-        inputs = ["-loop", "1", "-framerate", str(FPS), "-i", str(bg_path)]
+        inputs = list(motion.bg_input)
         ffmpeg_args = [
             "-y", *inputs,
-            "-vf", f"{zp_chain},{camera_shake}" if camera_shake else zp_chain,
+            "-vf", f"{motion.bg_chain},{camera_shake}" if camera_shake else motion.bg_chain,
             "-t", str(duration),
             *_SHOT_CLIP_OUTPUT_ARGS, str(out_path),
         ]
@@ -1425,6 +1773,7 @@ async def _compose_scene(
     composite_harmonization_tier: int = 0,
     min_shot_clip_sec: float = 2.0,
     camera_noise_enabled: bool = False,
+    renderer_counts: dict[str, int] | None = None,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment. [AC:1,3] [Story 7.1] [Story 7.2] [Story 8.3] [Story 8.11]
 
@@ -1495,19 +1844,27 @@ async def _compose_scene(
             return ""
         return _camera_shake_filter(shot.get("camera_movement"), clip_duration, k=k, trauma=trauma)
 
+    async def _motion(shot: ShotData, clip_duration: float, k: int, trauma: float) -> MotionSource:
+        return await build_motion_source(
+            shot, clip_duration, k=k, trauma=trauma,
+            motion_dir=out_dir / "motion",
+            parallax_enabled=parallax_enabled,
+            camera_shake=_shake(shot, clip_duration, k, trauma),
+            renderer_counts=renderer_counts,
+        )
+
     if len(plan) == 1:
         clip = plan[0]
         cards = cards_by_shot.get(clip.shot["shot_id"], [])
-        spec = select_effect(clip.shot, scene_index)
+        motion = await _motion(clip.shot, duration, scene_index, scene_trauma)
         await _render_scene_fast(
-            clip.shot, spec, duration, seg_path, n,
+            motion, duration, seg_path, n,
             cards=cards, mood=mood, audio_path=audio_path, subtitle_path=subtitle_path,
             sound_design_enabled=sound_design_enabled, post_fx_enabled=post_fx_enabled,
-            parallax_enabled=parallax_enabled, include_stinger=include_stinger,
+            include_stinger=include_stinger,
             composite_harmonization_tier=composite_harmonization_tier,
-            camera_shake=_shake(clip.shot, duration, scene_index, scene_trauma),
         )
-        return seg_path, spec, bool(cards)
+        return seg_path, motion.spec, bool(cards)
 
     shots_dir = out_dir / "shots"
     shots_dir.mkdir(parents=True, exist_ok=True)
@@ -1529,15 +1886,16 @@ async def _compose_scene(
         # comfortably larger than any real per-scene shot count), so it can't
         # divide the pool size and cancel scene_index regardless of pool length.
         k = scene_index * _EFFECT_INDEX_STRIDE + local_i
-        spec = select_effect(clip.shot, k)
-        specs.append(spec)
+        # first clip only: its local t=0 IS scene t=0, the stinger hit (AC:3)
+        motion = await _motion(
+            clip.shot, clip.duration, k, scene_trauma if local_i == 0 else 0.0,
+        )
+        specs.append(motion.spec)
         clip_path = shots_dir / f"scene_{n:03d}_{clip.shot['shot_id']}.mp4"
         await _compose_shot_clip(
-            clip.shot, spec, clip.duration, clip_path,
-            cards=cards, mood=mood, parallax_enabled=parallax_enabled,
+            clip.shot, motion, clip.duration, clip_path,
+            cards=cards, mood=mood,
             composite_harmonization_tier=composite_harmonization_tier,
-            # first clip only: its local t=0 IS scene t=0, the stinger hit (AC:3)
-            camera_shake=_shake(clip.shot, clip.duration, k, scene_trauma if local_i == 0 else 0.0),
         )
         clip_paths.append(clip_path)
 
@@ -1836,6 +2194,9 @@ async def video_node(state: PipelineState) -> dict:
         )
 
         # ── Story 8.3: cast card resolution (replaces 1.13's angle override) ─
+        # Story 11.5 AC:10 — run-level renderer tally, filled per shot by
+        # build_motion_source and reported in the trace below.
+        renderer_counts: dict[str, int] = {}
         cast_cards: dict[str, list[dict]] = {}
         cast_meta: dict = {}
         if _cast_resolver is not None:
@@ -1957,6 +2318,7 @@ async def video_node(state: PipelineState) -> dict:
                 include_stinger=not (chapter_cards_enabled and i > 0),
                 min_shot_clip_sec=s.min_shot_clip_sec,
                 camera_noise_enabled=s.camera_noise_enabled,
+                renderer_counts=renderer_counts,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive
             # [review fix] Scope card/motion metrics to the shots that actually
@@ -2113,7 +2475,12 @@ async def video_node(state: PipelineState) -> dict:
             relit_pairs_computed=relight_stats["computed"],
             relit_pairs_failed=relight_stats["failed"],
             camera_noise_enabled=s.camera_noise_enabled,
+            renderer_counts=renderer_counts,
+            parallax_25d_enabled=s.parallax_25d_enabled,
+            displacement_frac=camera_path.clamp_displacement(s.parallax_displacement_frac),
         )
+        if renderer_counts:
+            logger.info("video_node 2.5D renderers: %s", renderer_counts)
         result = {"current_stage": "video", "video_path": str(output), "error": None}
         if cc_attribution:
             result["ending_credit_error"] = ending_credit_error

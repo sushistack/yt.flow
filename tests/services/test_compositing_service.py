@@ -4,8 +4,10 @@ Pixel-level, fully offline: ComfyUI is a fake client object, depth maps are
 synthetic numpy arrays, and every write goes to tmp_path.
 """
 
+import hashlib
 import io
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -328,11 +330,34 @@ def _scene(scene_num, image, shot_id="S001"):
     return {"scene_num": scene_num, "shots": [{"shot_id": shot_id, "image_path": str(image)}]}
 
 
+def _seed_depth_pair(plate: Path, depth_png: bytes, settings) -> Path:
+    """Seed a VALID image/depth pair — map plus provenance sidecar.
+
+    Story 11.5 AC10 made a sidecar-less map a deliberate cache miss, so a fixture
+    that writes only the PNG silently degrades to _DEFAULT_GROUND and any
+    assertion that happens to hold for the fallback passes for the wrong reason
+    (which is exactly what happened to three tests here). Writing the pair
+    through the production writer means the fixture cannot drift from the
+    contract it is standing in for.
+    """
+    cache = cs.depth_map_cache_path(plate, settings)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_bytes(depth_png)
+    cs._write_depth_sidecar(
+        cache,
+        source_sha=hashlib.sha256(plate.read_bytes()).hexdigest(),
+        depth_bytes=depth_png,
+        contract=cs.depth_contract(settings),
+        source_size=None, depth_size=None,
+    )
+    return cache
+
+
 async def _placements(tmp_path, cards, *, depth_png=None, scenes=None, plate_name="plate.png"):
     plate = tmp_path / plate_name
     Image.new("RGB", (320, 180), (5, 5, 5)).save(plate)
     if depth_png is not None:
-        (tmp_path / f"{plate.stem}.depth.png").write_bytes(depth_png)
+        _seed_depth_pair(plate, depth_png, _settings(tmp_path, mock=True))
     return await cs.resolve_placements(
         scenes or [_scene(1, plate)], {"1:S001": cards}, _settings(tmp_path, mock=True),
     )
@@ -482,3 +507,194 @@ def test_ground_line_survives_a_wide_near_object_high_in_the_band():
     blocked[10:50, :] = 250  # a near object spanning the whole band, high in frame
     got = [cs.ground_line(blocked, "center", d) for d in ("far", "mid", "near")]
     assert got[0] < got[1] < got[2], f"collapsed to {got}"
+
+
+# ── Story 11.5: estimator identity, licensing, provenance (AC2, AC3, AC10) ───
+
+
+def test_small_checkpoint_is_the_default_and_is_apache_licensed():
+    """AC3: the shipped default must be commercially usable. Story 8.16 ran
+    `depth_anything_v2_vitl.pth` (Large, CC-BY-NC-4.0) on a monetized path."""
+    from yt_flow.config import Settings
+
+    assert Settings.model_fields["depth_model_ckpt"].default == "depth_anything_v2_vits.pth"
+    assert cs.DEPTH_MODEL_LICENSES["depth_anything_v2_vits.pth"] == "Apache-2.0"
+    for ckpt in ("vitb", "vitl", "vitg"):
+        assert cs.DEPTH_MODEL_LICENSES[f"depth_anything_v2_{ckpt}.pth"] == "CC-BY-NC-4.0"
+
+
+def test_depth_contract_records_the_full_estimator_identity(tmp_path):
+    c = cs.depth_contract(_settings(tmp_path))
+    assert c == {
+        "estimator": "DepthAnythingV2Preprocessor",
+        "model_ckpt": "depth_anything_v2_vits.pth",
+        "model_license": "Apache-2.0",
+        "resolution": 1024,
+        "preproc_version": cs.DEPTH_PREPROC_VERSION,
+        "convention": "relative-brighter-nearer",
+    }
+
+
+@pytest.mark.parametrize("ckpt", [
+    "depth_anything_v2_vitb.pth", "depth_anything_v2_vitl.pth",
+    "depth_anything_v2_vitg.pth", "some_unvetted_model.pth",
+])
+def test_noncommercial_and_unknown_checkpoints_are_refused(tmp_path, ckpt):
+    """AC3: "not *silently* used" needs a gate, not a log line. An unknown name is
+    refused too — guessing a license is the failure mode."""
+    s = _settings(tmp_path)
+    s.depth_model_ckpt = ckpt
+    with pytest.raises(cs.NonCommercialDepthModel):
+        cs.depth_contract(s)
+
+
+def test_noncommercial_checkpoint_needs_an_explicit_opt_in(tmp_path):
+    s = _settings(tmp_path)
+    s.depth_model_ckpt = "depth_anything_v2_vitl.pth"
+    s.depth_allow_noncommercial_model = True
+    assert cs.depth_contract(s)["model_license"] == "CC-BY-NC-4.0"
+
+
+async def test_refused_checkpoint_estimates_nothing_and_returns_none(tmp_path, caplog):
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    s = _settings(tmp_path)
+    s.depth_model_ckpt = "depth_anything_v2_vitl.pth"
+    client = _FakeClient()
+    assert await cs.depth_map_file(plate, s, comfyui_client=client) is None
+    assert client.submits == []
+    assert "cannot feed a monetized render" in caplog.text
+
+
+def _ws_settings(tmp_path, **kw):
+    """_settings() plus a workspace root, so these tests exercise the real
+    content-addressed cache rather than the no-settings fallback path."""
+    s = _settings(tmp_path)
+    s.workspace_path = str(tmp_path / "ws")
+    for k, v in kw.items():
+        setattr(s, k, v)
+    return s
+
+
+def test_cache_key_covers_the_estimator_contract(tmp_path):
+    """AC2: swapping the checkpoint must invalidate the dependent maps. Under the
+    pre-11.5 key (source bytes alone) it served every Large-model map forever."""
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8), (3, 4, 5)).save(plate)
+    small = cs.depth_map_cache_path(plate, _ws_settings(tmp_path))
+    other = _ws_settings(tmp_path, depth_model_resolution=512)
+    assert cs.depth_map_cache_path(plate, other) != small
+
+
+def test_cache_key_still_collapses_identical_plate_bytes(tmp_path):
+    """8.16's whole reason for a content key: 80 per-shot copies, one estimation."""
+    a, b = tmp_path / "a.png", tmp_path / "b.png"
+    Image.new("RGB", (8, 8), (9, 9, 9)).save(a)
+    shutil.copyfile(a, b)
+    s = _ws_settings(tmp_path)
+    assert cs.depth_map_cache_path(a, s) == cs.depth_map_cache_path(b, s)
+
+
+async def test_depth_estimation_writes_a_provenance_sidecar(tmp_path):
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (16, 9), (1, 2, 3)).save(plate)
+    s = _settings(tmp_path)
+    depth_bytes = _gray_png()
+    cache = await cs.depth_map_file(plate, s, comfyui_client=_FakeClient(depth_bytes))
+    assert cache is not None
+    meta = json.loads(cs.depth_sidecar_path(cache).read_text())
+    assert meta["source_sha256"] == hashlib.sha256(plate.read_bytes()).hexdigest()
+    assert meta["depth_sha256"] == hashlib.sha256(depth_bytes).hexdigest()
+    assert meta["source_size"] == [16, 9]
+    assert meta["model_ckpt"] == "depth_anything_v2_vits.pth"
+    assert meta["convention"] == "relative-brighter-nearer"
+
+
+async def test_config_overrides_the_workflows_checkpoint(tmp_path):
+    """AC3: config is the source of truth, not the JSON — otherwise the cache key
+    records one model and ComfyUI runs another."""
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    client = _FakeClient()
+    await cs.depth_map_file(plate, _settings(tmp_path), comfyui_client=client)
+    submitted = client.submits[-1]
+    assert submitted[cs.DEPTH_MODEL_NODE]["inputs"]["ckpt_name"] == "depth_anything_v2_vits.pth"
+    assert submitted[cs.DEPTH_MODEL_NODE]["inputs"]["resolution"] == 1024
+
+
+async def test_a_valid_pair_costs_zero_inference_on_resume(tmp_path):
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    s = _settings(tmp_path)
+    client = _FakeClient()
+    first = await cs.depth_map_file(plate, s, comfyui_client=client)
+    assert len(client.submits) == 1
+    assert await cs.depth_map_file(plate, s, comfyui_client=client) == first
+    assert len(client.submits) == 1  # AC2: zero depth inference on retry
+
+
+async def test_a_map_without_its_sidecar_is_regenerated(tmp_path):
+    """AC10: legacy artifacts are cache misses. The 42 Large-model maps 8.16 left
+    behind have no sidecar and must not be served."""
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    s = _settings(tmp_path)
+    cache = cs.depth_map_cache_path(plate, s)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_bytes(_gray_png())
+    client = _FakeClient()
+    assert await cs.depth_map_file(plate, s, comfyui_client=client) == cache
+    assert len(client.submits) == 1  # regenerated, not served
+
+
+async def test_a_tampered_map_is_regenerated(tmp_path):
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    s = _settings(tmp_path)
+    cache = await cs.depth_map_file(plate, s, comfyui_client=_FakeClient())
+    assert cache is not None
+    cache.write_bytes(_gray_png(value=7))  # bytes no longer match the sidecar
+    client = _FakeClient()
+    await cs.depth_map_file(plate, s, comfyui_client=client)
+    assert len(client.submits) == 1
+
+
+@pytest.mark.parametrize("body", ["[]", "null", "not json", '{"source_sha256": "x"}'])
+def test_malformed_depth_sidecars_are_misses(tmp_path, body):
+    cache = tmp_path / "d.png"
+    cache.write_bytes(_gray_png())
+    cs.depth_sidecar_path(cache).write_text(body)
+    assert not cs.verify_depth_pair(cache, "abc", {"model_ckpt": "x"})
+
+
+def test_tmp_depth_artifacts_are_never_cache_hits(tmp_path):
+    cache = tmp_path / "d.png.tmp"
+    cache.write_bytes(_gray_png())
+    assert not cs.verify_depth_pair(cache, "abc", {})
+
+
+async def test_a_failed_estimation_leaves_a_valid_pair_untouched(tmp_path):
+    """AC10: no failed render overwrites a previously valid depth map."""
+    plate = tmp_path / "p.png"
+    Image.new("RGB", (8, 8)).save(plate)
+    s = _ws_settings(tmp_path)
+    cache = await cs.depth_map_file(plate, s, comfyui_client=_FakeClient())
+    assert cache is not None
+    good = cache.read_bytes()
+    sidecar = cs.depth_sidecar_path(cache).read_text()
+
+    class _Boom:
+        submits: list = []
+
+        async def upload_image(self, *a, **kw):
+            raise RuntimeError("comfy down")
+
+        async def submit_and_fetch(self, *a, **kw):
+            raise RuntimeError("comfy down")
+
+    # Force a miss by changing the contract, then fail the estimation.
+    other = _ws_settings(tmp_path, depth_model_resolution=512)
+    assert await cs.depth_map_file(plate, other, comfyui_client=_Boom()) is None
+    assert cache.read_bytes() == good
+    assert cs.depth_sidecar_path(cache).read_text() == sidecar
+    assert not list(cache.parent.glob("*.tmp"))

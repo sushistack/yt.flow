@@ -15,6 +15,7 @@ EXPECTED_FIELDS = {
     "ShotData": {
         "shot_id", "sentence_indices", "image_prompt", "negative_prompt",
         "camera_angle", "camera_movement", "image_path", "cast", "location_key",
+        "depth_map_path",  # Story 11.5 — NotRequired, so pre-11.5 checkpoints still load
     },
     "CastMember": {
         "card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy",

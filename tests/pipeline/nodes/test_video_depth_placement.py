@@ -53,6 +53,11 @@ def _settings_ns(tmp_path, *, tier=1):
         composite_harmonization_tier=tier,
         min_shot_clip_sec=2.0,
         camera_noise_enabled=False,
+        # Story 11.5: the 2.5D renderer is never injected in these tests, so the
+        # kill-switch value only has to exist; build_motion_source takes the
+        # legacy zoompan path either way.
+        parallax_25d_enabled=False,
+        parallax_displacement_frac=0.02,
     )
 
 
@@ -253,7 +258,9 @@ async def test_ground_resolver_drives_both_overlay_and_shadow(monkeypatch, tmp_p
     # zoompan's y= has no overlay_h; the shadow's is the card expression plus a
     # constant offset — the card's own is the last.
     feet_expr = [e for e in re.findall(r"y='([^']+)'", fc) if "overlay_h" in e][-1]
-    shadow_expr = fc.split("[sh0]overlay=x=0:y='")[1].split("'")[0]
+    # The shadow's x= is quoted too (Story 11.5 carries the layer term through it),
+    # so match the stage rather than one literal spelling of its x argument.
+    shadow_expr = re.search(r"\[sh0\]overlay=x='?[^:]*?'?:y='([^']+)'", fc).group(1)
     assert "t" in feet_expr
     rows = []
     for t in (0.0, 3.0):

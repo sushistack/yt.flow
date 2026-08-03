@@ -63,6 +63,26 @@ def inject_location_service(fn: Any) -> None:
     global _location_service
     _location_service = fn
 
+
+# ── Depth companion resolution injection (Story 11.5) ──────────────────────
+# Same seam and same reason as the location service above: the depth estimator
+# is a service (it drives ComfyUI and owns the shared content-addressed cache
+# Story 8.16 created), so pipeline/ receives it as a callable [AD-1].
+_depth_resolver: Any = None
+
+
+def inject_depth_resolver(fn: Any) -> None:
+    """Inject the image→depth-companion resolver.
+
+    ``fn`` signature: ``async fn(image_path: str) -> dict`` returning
+    ``{"path": <depth map path> | None, "cached": bool}``. ``path=None`` means no
+    depth is available for that image (mock mode, ComfyUI down, a refused
+    non-commercial checkpoint) — the shot then carries no ``depth_map_path`` and
+    the video stage's renderer ladder degrades visibly (Story 11.5 AC9).
+    """
+    global _depth_resolver
+    _depth_resolver = fn
+
 # Story 5.14: integrity floor for resume — matches the E2E baseline's deterministic
 # image-gate check ("0-byte/placeholder ≤1KB"). ponytail: module constant, no config.
 MIN_VALID_IMAGE_BYTES = 1024
@@ -211,6 +231,7 @@ def _record_trace(
     latency_ms,
     skipped_count=0,
     stock_plate_count=0,
+    depth_counts=None,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -224,6 +245,10 @@ def _record_trace(
                 "skipped_count": skipped_count,
                 "stock_plate_count": stock_plate_count,
                 "latency_ms": latency_ms,
+                # Story 11.5 AC10: depth source/cache behaviour is the only signal
+                # that distinguishes "parallax rendered from a real depth map" from
+                # "parallax silently fell back", so it rides the image span.
+                **({f"depth_{k}": v for k, v in depth_counts.items()} if depth_counts else {}),
                 **({"error": repr(error)} if error is not None else {}),
             },
         )
@@ -302,6 +327,40 @@ async def image_node(state: PipelineState) -> dict:
             )
 
         plate_cache: dict[str, list[dict]] = {}  # one lookup per location_key per run, not per shot
+        depth_counts = {"hit": 0, "miss": 0, "unavailable": 0}
+        depth_memo: dict[str, str | None] = {}  # one resolve per distinct image path per run
+
+        async def _with_depth(shot: ShotData, image_path: str) -> ShotData:
+            """Attach the shot's depth companion (Story 11.5 AC2).
+
+            Runs on ALL three writer paths — resumed, STOCK plate, generated — so
+            a cached image whose depth map is missing or stale regenerates the
+            depth map ONLY, never the image. A valid pair costs zero inference:
+            the resolver's own content+contract cache answers it.
+
+            The STOCK pair comes from one variant by construction: the depth key
+            is the copied file's bytes, which are that variant's bytes.
+            """
+            done: dict = {**shot, "image_path": image_path}
+            if _depth_resolver is None:
+                return done  # type: ignore[return-value]
+            if image_path not in depth_memo:
+                try:
+                    result = await _depth_resolver(image_path) or {}
+                    depth_memo[image_path] = result.get("path")
+                    if result.get("path") is None:
+                        depth_counts["unavailable"] += 1
+                    else:
+                        depth_counts["hit" if result.get("cached") else "miss"] += 1
+                except Exception as exc:  # noqa: BLE001 — AD-10: no depth is a valid outcome
+                    logger.warning("depth resolution failed for %s: %s", image_path, exc)
+                    depth_memo[image_path] = None
+                    depth_counts["unavailable"] += 1
+            depth = depth_memo[image_path]
+            if depth is not None:
+                done["depth_map_path"] = depth
+            return done  # type: ignore[return-value]
+
         new_scenes: list[SceneState] = []
         for scene in state.get("scenes", []):
             new_shots: list[ShotData] = []
@@ -313,7 +372,7 @@ async def image_node(state: PipelineState) -> dict:
                 if existing is not None:
                     skipped_count += 1
                     image_count += 1
-                    new_shots.append({**shot, "image_path": existing})
+                    new_shots.append(await _with_depth(shot, existing))
                     continue
 
                 location_key = shot.get("location_key")
@@ -333,7 +392,7 @@ async def image_node(state: PipelineState) -> dict:
                                 "shot %s using STOCK plate %s variant %s",
                                 shot["shot_id"], location_key, plate["variant"],
                             )
-                            new_shots.append({**shot, "image_path": str(dest)})
+                            new_shots.append(await _with_depth(shot, str(dest)))
                             continue
                         logger.warning(
                             "location_key %r has no approved plates, falling back to generation", location_key,
@@ -370,8 +429,9 @@ async def image_node(state: PipelineState) -> dict:
                 generated_count += 1
                 image_count += 1
                 _write_sidecar(out_dir, scene["scene_num"], shot, seed)
-                # Copy the shot; set only image_path — never mutate the input state. [AD-4]
-                new_shots.append({**shot, "image_path": str(dest)})
+                # Copy the shot; set only image_path/depth_map_path — never mutate the
+                # input state. [AD-4]
+                new_shots.append(await _with_depth(shot, str(dest)))
             new_scenes.append({**scene, "shots": new_shots})
 
         if skipped_count > 0:
@@ -382,7 +442,8 @@ async def image_node(state: PipelineState) -> dict:
         _record_trace(
             comfyui_url=s.comfyui_url, workflow_path=s.comfyui_workflow_path,
             request_count=request_count, image_count=image_count,
-            skipped_count=skipped_count, stock_plate_count=stock_plate_count, latency_ms=_ms(t0),
+            skipped_count=skipped_count, stock_plate_count=stock_plate_count,
+            depth_counts=depth_counts, latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node

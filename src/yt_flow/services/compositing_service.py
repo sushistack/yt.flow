@@ -34,10 +34,76 @@ from yt_flow.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# The workflow's LoadImage interchange node — the only node this module writes
-# to (same posture as image.py's ``_load_workflow``: the estimator graph itself
-# is opaque here).
+# The workflow's interchange nodes — the only ones this module writes to (same
+# posture as image.py's ``_load_workflow``: the estimator graph is otherwise
+# opaque here). The checkpoint/resolution move out of the JSON and into config
+# (Story 11.5 AC3) so the cache key can record the model that made each map.
 DEPTH_IMAGE_NODE = "1"
+DEPTH_MODEL_NODE = "2"
+
+# Bump when the estimator input contract changes (resolution handling, the
+# node's own inputs, or the depth convention below) — it is part of the cache
+# key, so a bump invalidates exactly the dependent maps and nothing else.
+DEPTH_PREPROC_VERSION = "1"
+
+# Sign convention recorded in every sidecar: DepthAnything V2 "Relative" emits
+# brighter = nearer. A downstream consumer that assumes the opposite inverts
+# every parallax layer, so the map carries the convention rather than the reader
+# guessing it (Story 11.5 AC2).
+DEPTH_CONVENTION = "relative-brighter-nearer"
+
+# Depth-Anything-V2 weight licensing, upstream-verified 2026-08-03. Only the
+# Small checkpoint is Apache-2.0; everything larger is CC-BY-NC-4.0 and cannot
+# feed a monetized render (Story 11.5 AC3).
+DEPTH_MODEL_LICENSES: dict[str, str] = {
+    "depth_anything_v2_vits.pth": "Apache-2.0",
+    "depth_anything_v2_vitb.pth": "CC-BY-NC-4.0",
+    "depth_anything_v2_vitl.pth": "CC-BY-NC-4.0",
+    "depth_anything_v2_vitg.pth": "CC-BY-NC-4.0",
+}
+_COMMERCIAL_LICENSE = "Apache-2.0"
+
+
+class NonCommercialDepthModel(RuntimeError):
+    """A CC-BY-NC-4.0 checkpoint was requested without the explicit opt-in."""
+
+
+def depth_contract(settings: Settings) -> dict:
+    """The estimator identity every cache key and sidecar is keyed on (AC2/AC3).
+
+    Raises :class:`NonCommercialDepthModel` for a non-commercially-licensed
+    checkpoint unless ``depth_allow_noncommercial_model`` is set — an unknown
+    checkpoint name is treated as non-commercial, because guessing "probably
+    fine" on a license is exactly the silent use AC3 forbids.
+    """
+    # getattr with the config defaults, same posture as this module's existing
+    # ``getattr(settings, "comfyui_mock", False)``: a partial stub is a valid
+    # caller here, and the *default* is the licensed model, so a stub cannot
+    # accidentally opt into a non-commercial one.
+    ckpt = getattr(settings, "depth_model_ckpt", "depth_anything_v2_vits.pth")
+    license_id = DEPTH_MODEL_LICENSES.get(ckpt, "unknown")
+    if license_id != _COMMERCIAL_LICENSE and not getattr(
+        settings, "depth_allow_noncommercial_model", False
+    ):
+        raise NonCommercialDepthModel(
+            f"depth checkpoint {ckpt!r} is licensed {license_id} and cannot feed a "
+            "monetized render; use depth_anything_v2_vits.pth (Apache-2.0) or set "
+            "YTFLOW_DEPTH_ALLOW_NONCOMMERCIAL_MODEL=true for research renders only"
+        )
+    return {
+        "estimator": "DepthAnythingV2Preprocessor",
+        "model_ckpt": ckpt,
+        "model_license": license_id,
+        "resolution": int(getattr(settings, "depth_model_resolution", 1024)),
+        "preproc_version": DEPTH_PREPROC_VERSION,
+        "convention": DEPTH_CONVENTION,
+    }
+
+
+def _contract_digest(contract: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 # Rule-of-thirds horizontal anchors. Deliberately duplicated from video.py's
 # ``_POSITION_X_FRAC`` because services/ may not import pipeline/ (AD-1) — the
@@ -63,7 +129,16 @@ _DEPTH_TARGET: dict[str, float] = {"far": 0.45, "mid": 0.65, "near": 0.85}
 # DepthAnything V2, centre band). The first values here were guessed at 0.65/0.75/0.85
 # to keep `near` equal to the pre-8.16 hardcoded shadow constant, which made every
 # far/mid fallback shadow move on three numbers nobody had checked.
-_DEFAULT_GROUND: dict[str, float] = {"far": 0.768, "mid": 0.848, "near": 0.931}
+# Story 11.5 re-measurement: the values above were measured against
+# `depth_anything_v2_vitl.pth`, which AC3 replaced with the Apache-2.0 Small
+# checkpoint — so they were re-measured on the SAME 42 plates with the model
+# actually in use (Large -> Small deltas: far -0.005, mid +0.015, near +0.014).
+# Ordering still holds far<=mid<=near on 30/30 plates with a readable floor.
+# Recorded regression, NOT fixed here (it belongs to 8.16's tuning, not 11.5's
+# scope): Small produces flatter maps, so plates with a readable floor dropped
+# 41 -> 30 of 42 — 12 plates now hit _MIN_GROUND_SPREAD and use these medians
+# instead of their own measured floor.
+_DEFAULT_GROUND: dict[str, float] = {"far": 0.763, "mid": 0.863, "near": 0.945}
 
 # A band whose far and near ground lines land closer together than this has no readable
 # floor under the card — a flat wall, a plate whose centre column is one surface, or a
@@ -100,20 +175,31 @@ _MIN_OCCLUDER_FRAC = 0.02
 # from video.py's CHAR_MAX_H = 796.34, _DEPTH_SCALE and an 832x1216 sprite under
 # force_original_aspect_ratio=decrease. tests/pipeline/nodes/test_video_depth_placement
 # re-derives them from video.py's own constants so the two cannot drift.
-_CARD_HEIGHT_FRAC: dict[str, float] = {"far": 0.406, "mid": 0.553, "near": 0.737}
+# Story 11.5 AC7 re-derivation: video.py's motion-safe box now reserves the 2.5D
+# layer-parallax ceiling (46.08px/side) instead of 7.3's 12px, shrinking
+# CHAR_MAX_H 796.34 -> 743.28 — so these three follow. They are NOT independently
+# tunable; the test above recomputes them from video.py's constants.
+_CARD_HEIGHT_FRAC: dict[str, float] = {"far": 0.379, "mid": 0.516, "near": 0.688}
 
 
 # ── Depth map: compute once per plate, cache beside it ───────────────────────
 
 
 def depth_map_cache_path(background_path: str | Path, settings: Settings | None = None) -> Path:
-    """Content-addressed: ``<workspace>/cache/depth/<sha256 of the plate>.png``.
+    """Content-addressed: ``<workspace>/cache/depth/<sha256>.png``.
 
     Keyed on bytes, not path, because image_node ``shutil.copyfile``s an approved
     stock plate into every shot that uses it — a path key estimates the same
     fourteen plates once per shot (80 estimations on an 80-shot run) and again on
     the next run. A content key collapses those to one per distinct plate,
     forever, and cannot serve a stale map after a plate is re-rolled in place.
+
+    Story 11.5 AC2: the key covers the source bytes **and** the estimator
+    contract (:func:`depth_contract`), so swapping the checkpoint invalidates
+    exactly the dependent maps. Under the pre-11.5 key — source bytes alone —
+    changing the model silently served every previously cached Large-model map
+    forever, which is how a CC-BY-NC-4.0 map could outlive the config change
+    that was supposed to replace it.
 
     Falls back to ``<plate>.depth.png`` when no settings are available (the map
     then lives beside the plate, as before).
@@ -123,7 +209,69 @@ def depth_map_cache_path(background_path: str | Path, settings: Settings | None 
     if not workspace:
         return background.with_suffix(".depth.png")
     digest = hashlib.sha256(background.read_bytes()).hexdigest()
-    return Path(workspace) / "cache" / "depth" / f"{digest}.png"
+    key = digest
+    if settings is not None:
+        try:
+            key = hashlib.sha256(
+                f"{digest}:{_contract_digest(depth_contract(settings))}".encode()
+            ).hexdigest()
+        except NonCommercialDepthModel:
+            # A refused checkpoint has no legitimate cache slot; keep the path
+            # stable (callers memo on it) and let depth_map_file do the refusing.
+            pass
+    return Path(workspace) / "cache" / "depth" / f"{key}.png"
+
+
+def depth_sidecar_path(cache_path: str | Path) -> Path:
+    return Path(cache_path).with_suffix(".json")
+
+
+def _write_depth_sidecar(
+    cache: Path, *, source_sha: str, depth_bytes: bytes, contract: dict,
+    source_size: tuple[int, int] | None, depth_size: tuple[int, int] | None,
+) -> None:
+    """Provenance sentinel, written LAST so a half-published pair is a miss (AC10)."""
+    depth_sidecar_path(cache).write_text(
+        json.dumps({
+            "source_sha256": source_sha,
+            "depth_sha256": hashlib.sha256(depth_bytes).hexdigest(),
+            "source_size": list(source_size) if source_size else None,
+            "depth_size": list(depth_size) if depth_size else None,
+            **contract,
+        }, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _image_size(path: Path) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:  # header read only
+            return im.size
+    except Exception:  # noqa: BLE001 — dimensions are provenance, never load-bearing
+        return None
+
+
+def verify_depth_pair(cache: Path, source_sha: str, contract: dict) -> bool:
+    """Strict pair check (AC10): the map exists, its sidecar is a dict, and both
+    the source hash, the estimator contract and the map's own digest match.
+
+    Incomplete, legacy (no sidecar), non-dict, mismatched, undecodable and
+    ``.tmp`` artifacts are all misses — a cache that answers "close enough"
+    serves a map from a different model or a different plate.
+    """
+    try:
+        if not cache.is_file() or cache.name.endswith(".tmp"):
+            return False
+        meta = json.loads(depth_sidecar_path(cache).read_text(encoding="utf-8"))
+        if not isinstance(meta, dict) or meta.get("source_sha256") != source_sha:
+            return False
+        if any(meta.get(k) != v for k, v in contract.items()):
+            return False
+        return meta.get("depth_sha256") == hashlib.sha256(cache.read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return False
 
 
 async def depth_map_file(
@@ -135,15 +283,24 @@ async def depth_map_file(
     """Return the plate's cached depth map, computing it once if absent.
 
     ``None`` on any failure (mock mode, unreachable ComfyUI, missing estimator
-    node/checkpoint, malformed workflow) — the caller then falls back to
-    :data:`_DEFAULT_GROUND`, so depth estimation can never fail a run (AD-10).
+    node/checkpoint, malformed workflow, refused non-commercial checkpoint) — the
+    caller then falls back to :data:`_DEFAULT_GROUND` / a non-parallax renderer,
+    so depth estimation can never fail a run (AD-10).
 
-    The cache key is the plate's bytes (see :func:`depth_map_cache_path`), so the
-    per-shot copies image_node makes of one approved plate cost one estimation.
+    The cache key is the plate's bytes plus the estimator contract (see
+    :func:`depth_map_cache_path`), so the per-shot copies image_node makes of one
+    approved plate cost one estimation, and a valid pair costs zero inference on
+    retry/resume (AC2).
     """
     background = Path(background_path)
     cache = depth_map_cache_path(background, settings)
-    if cache.exists():
+    try:
+        contract = depth_contract(settings)
+    except NonCommercialDepthModel as exc:
+        logger.error("Depth estimation refused for %s: %s", background, exc)
+        return None
+    source_sha = hashlib.sha256(background.read_bytes()).hexdigest()
+    if verify_depth_pair(cache, source_sha, contract):
         return cache
     if getattr(settings, "comfyui_mock", False):
         return None
@@ -157,18 +314,31 @@ async def depth_map_file(
         node = template.get(DEPTH_IMAGE_NODE)
         if not isinstance(node, dict) or node.get("class_type") != "LoadImage":
             raise ValueError(f"depth workflow node {DEPTH_IMAGE_NODE!r} must be a LoadImage node")
+        estimator = template.get(DEPTH_MODEL_NODE)
+        if not isinstance(estimator, dict) or not isinstance(estimator.get("inputs"), dict):
+            raise ValueError(f"depth workflow node {DEPTH_MODEL_NODE!r} must have an 'inputs' dict")
         uploaded = await client.upload_image(
             settings.comfyui_url, background.read_bytes(), background.name,
         )
         workflow = copy.deepcopy(template)
         workflow[DEPTH_IMAGE_NODE]["inputs"]["image"] = uploaded
+        # Config, not the JSON, is the checkpoint's source of truth (AC3) — the
+        # cache key records this exact value, so the two cannot disagree.
+        workflow[DEPTH_MODEL_NODE]["inputs"]["ckpt_name"] = contract["model_ckpt"]
+        workflow[DEPTH_MODEL_NODE]["inputs"]["resolution"] = contract["resolution"]
         image_bytes = await client.submit_and_fetch(settings.comfyui_url, workflow)
         # Atomic publish, same idiom as RelightCache.store: a half-written depth
-        # map would otherwise be read as a valid cache hit forever.
+        # map would otherwise be read as a valid cache hit forever. The sidecar
+        # lands after the map, so a crash between them is a miss, not a lie —
+        # and a failed attempt never touches a previously valid pair (AC10).
         cache.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache.with_name(f"{cache.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_bytes(image_bytes)
         tmp.replace(cache)
+        _write_depth_sidecar(
+            cache, source_sha=source_sha, depth_bytes=image_bytes, contract=contract,
+            source_size=_image_size(background), depth_size=_image_size(cache),
+        )
         return cache
     except Exception as exc:  # noqa: BLE001 — AD-10: estimation failure degrades, never fails
         logger.warning("Depth estimation failed for %s: %s", background, exc)

@@ -1,6 +1,10 @@
+---
+baseline_commit: 3393a2cfea91f4ec576dbe5c5f5e8aa2389a1c83
+---
+
 # Story 11.5: DepthFlow 2.5D Parallax — Background-Plate Motion Renderer
 
-Status: ready-for-dev
+Status: done
 
 <!-- The epic provides draft scope prose but no formal user-story sentence or numbered BDD acceptance criteria. The Story and ACs below are derived implementation contracts grounded in the epic, research, architecture, current code, and completed dependency evidence. -->
 
@@ -137,42 +141,42 @@ so that still-image scenes read as cinematic depth rather than quantized zoom-an
 
 ## Tasks / Subtasks
 
-- [ ] Task 0 — Pin feasibility and license decisions (AC: 3, 5, 11)
-  - [ ] Spike standalone DepthFlow on the target headless/OpenGL host with an explicit depth input; record the immutable revision and command/API contract.
-  - [ ] Record the AGPL compliance/distribution decision before enabling the production backend.
-  - [ ] Pin Depth-Anything-V2-Small and its checksum/revision; reject non-commercial checkpoints from the default path.
-  - [ ] Choose isolated subprocess/environment packaging and update `pyproject.toml`/`uv.lock` or a documented external-runtime manifest without relying on transitive dependencies accidentally.
-- [ ] Task 1 — Establish the image/depth companion contract (AC: 1–3, 10)
-  - [ ] Add optional `ShotData.depth_map_path` and update import/shape fixtures without invalidating legacy checkpoints.
-  - [ ] Add a narrow depth service/injected callable with atomic cache + provenance sidecars.
-  - [ ] Extend STOCK resolution to return image/depth from one variant and validate both hashes.
-  - [ ] Add depth-only, resumable backfill for all 42 approved plates; preserve every approved image byte and lifecycle field.
-  - [ ] Generate depth once for new and cached free backgrounds, including the cached-image/missing-depth repair path.
-- [ ] Task 2 — Add the numeric Story 11.3 trajectory API (AC: 4, 6)
-  - [ ] Implement numeric value-noise/fBm sampling from the existing constants and profiles.
-  - [ ] Define the explicit channel-to-DepthFlow mapping and cap displacement by construction.
-  - [ ] Unit-test determinism, bounds, phase decorrelation, locked behavior, trauma decay, and parity at representative timestamps with the legacy expressions.
-- [ ] Task 3 — Implement the isolated renderer and fallback ladder (AC: 5, 6, 9, 10)
-  - [ ] Add the DepthFlow adapter with timeout, failure classification, FFprobe validation, atomic output, cache, and provenance.
-  - [ ] Add the supersampled float-affine fallback using the same numeric trajectory.
-  - [ ] Preserve legacy zoompan as explicit final fallback/kill-switch behavior only.
-  - [ ] Ensure optional renderer failures are shot-local but exhaustion of all renderers fails honestly.
-- [ ] Task 4 — Integrate layered parallax into video assembly (AC: 7, 8)
-  - [ ] Refactor one shared motion-source seam across fast/multi-clip × card/background-only paths.
-  - [ ] Consume moving background clips while preserving the shared card/harmonization chain and silent-shot assembly contract.
-  - [ ] Map card depth enum to closed 0.60–0.80 trajectory ratios and prove full-excursion bounds.
-  - [ ] Prevent double zoompan, old macro parallax, and post-composite camera shake on a successful DepthFlow path.
-  - [ ] Preserve audio, subtitles, post-FX, transitions, chapter cards, credits, and shot timing.
-- [ ] Task 5 — Add observability and regression coverage (AC: 2, 4–10)
-  - [ ] Trace depth/cache/renderer/fallback/version metrics and log exact shot-local degradation reasons.
-  - [ ] Test pair caching, stale invalidation, depth-only repair, partial crash resume, atomicity, and source-image preservation.
-  - [ ] Test all four video branches, no-zoompan primary behavior, no double motion, layer ratios, on-frame bounds, fallback selection, kill-switch rollback, and ordering through subtitles/post-FX.
-  - [ ] Run targeted tests, Ruff, and `PYTHONPATH=$PWD/src pytest tests/`; real model/OpenGL work stays outside CI.
-- [ ] Task 6 — Execute the target-host live gate (AC: 6, 7, 11)
-  - [ ] Backfill and validate depth maps for 42/42 approved plates.
-  - [ ] Render representative STOCK and free-background clips with and without cards.
-  - [ ] Verify output probe, cache hit, forced primary failure → affine fallback, and forced dual failure → legacy fallback.
-  - [ ] Record performance/quality evidence and Jay's visual verdict before marking the story done.
+- [x] Task 0 — Pin feasibility and license decisions (AC: 3, 5, 11)
+  - [x] Spike standalone DepthFlow on the target headless/OpenGL host with an explicit depth input; record the immutable revision and command/API contract.
+  - [x] Record the AGPL compliance/distribution decision before enabling the production backend.
+  - [x] Pin Depth-Anything-V2-Small and its checksum/revision; reject non-commercial checkpoints from the default path.
+  - [x] Choose isolated subprocess/environment packaging and update `pyproject.toml`/`uv.lock` or a documented external-runtime manifest without relying on transitive dependencies accidentally.
+- [x] Task 1 — Establish the image/depth companion contract (AC: 1–3, 10)
+  - [x] Add optional `ShotData.depth_map_path` and update import/shape fixtures without invalidating legacy checkpoints.
+  - [x] Add a narrow depth service/injected callable with atomic cache + provenance sidecars.
+  - [x] Extend STOCK resolution to return image/depth from one variant and validate both hashes.
+  - [x] Add depth-only, resumable backfill for all 42 approved plates; preserve every approved image byte and lifecycle field.
+  - [x] Generate depth once for new and cached free backgrounds, including the cached-image/missing-depth repair path.
+- [x] Task 2 — Add the numeric Story 11.3 trajectory API (AC: 4, 6)
+  - [x] Implement numeric value-noise/fBm sampling from the existing constants and profiles.
+  - [x] Define the explicit channel-to-DepthFlow mapping and cap displacement by construction.
+  - [x] Unit-test determinism, bounds, phase decorrelation, locked behavior, trauma decay, and parity at representative timestamps with the legacy expressions.
+- [x] Task 3 — Implement the isolated renderer and fallback ladder (AC: 5, 6, 9, 10)
+  - [x] Add the DepthFlow adapter with timeout, failure classification, FFprobe validation, atomic output, cache, and provenance.
+  - [x] Add the supersampled float-affine fallback using the same numeric trajectory.
+  - [x] Preserve legacy zoompan as explicit final fallback/kill-switch behavior only.
+  - [x] Ensure optional renderer failures are shot-local but exhaustion of all renderers fails honestly.
+- [x] Task 4 — Integrate layered parallax into video assembly (AC: 7, 8)
+  - [x] Refactor one shared motion-source seam across fast/multi-clip × card/background-only paths.
+  - [x] Consume moving background clips while preserving the shared card/harmonization chain and silent-shot assembly contract.
+  - [x] Map card depth enum to closed 0.60–0.80 trajectory ratios and prove full-excursion bounds.
+  - [x] Prevent double zoompan, old macro parallax, and post-composite camera shake on a successful DepthFlow path.
+  - [x] Preserve audio, subtitles, post-FX, transitions, chapter cards, credits, and shot timing.
+- [x] Task 5 — Add observability and regression coverage (AC: 2, 4–10)
+  - [x] Trace depth/cache/renderer/fallback/version metrics and log exact shot-local degradation reasons.
+  - [x] Test pair caching, stale invalidation, depth-only repair, partial crash resume, atomicity, and source-image preservation.
+  - [x] Test all four video branches, no-zoompan primary behavior, no double motion, layer ratios, on-frame bounds, fallback selection, kill-switch rollback, and ordering through subtitles/post-FX.
+  - [x] Run targeted tests, Ruff, and `PYTHONPATH=$PWD/src pytest tests/`; real model/OpenGL work stays outside CI.
+- [x] Task 6 — Execute the target-host live gate (AC: 6, 7, 11)
+  - [x] Backfill and validate depth maps for 42/42 approved plates.
+  - [x] Render representative STOCK and free-background clips with and without cards.
+  - [x] Verify output probe, cache hit, forced primary failure → affine fallback, and forced dual failure → legacy fallback.
+  - [x] Record performance/quality evidence and Jay's visual verdict before marking the story done.
 
 ## Dev Notes
 
@@ -320,17 +324,325 @@ so that still-image scenes read as cinematic depth rather than quantized zoom-an
 
 ### Agent Model Used
 
-GPT-5
+GPT-5 (story context) / Claude Opus 5 (implementation)
 
 ### Debug Log References
 
+- `docs/PARALLAX_RUNTIME.md` — licensing decisions, external-runtime install, tunables, ops commands, measured performance table.
+- Live gate evidence is inlined in the Completion Notes below. Review clips for Jay: `~/ytflow-11-5-review/` (A 2.5D+cards, B 2.5D bg-only, C 2.5D free background, D legacy zoompan for comparison, plus four extracted frames).
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
-- Story source, PRD, architecture, UX, quality research, current code, completed dependency artifacts, recent Git history, and current upstream technical/license information were cross-checked.
-- Critical correction captured: Story 8.17 has 42 approved RGB plates but no depth maps; Story 11.5 owns their non-destructive depth backfill.
-- Critical integration guard captured: Story 11.3 exposes FFmpeg expressions, so a deterministic numeric trajectory API is required; successful DepthFlow clips must not receive zoompan/legacy macro parallax/post-composite camera shake again.
+**Two story premises were disproved by repository evidence before coding started.**
+
+1. *"8.17 produced no depth map, no depth path, no depth provenance contract."* Story
+   8.16 (`done`, `depth_placement_enabled=True`) already owned a content-addressed
+   depth cache driven by ComfyUI `DepthAnythingV2Preprocessor`, and all 42 approved
+   plates already had maps. So AC1/AC2 became *extend and correct* the existing
+   contract, not build a parallel one — which is what the Dev Notes asked for
+   ("one reusable depth-companion contract; do not add an 11.5-only convention").
+2. *DepthFlow as the working primary renderer.* It is not installed, needs a
+   GPU/headless-OpenGL spike, and is AGPL-3.0. Jay chose (decision recorded in
+   session) to make the middle rung a **numpy depth-displacement warp** rather than
+   AC9's literal "flat float-affine", so 2.5D depth actually renders today with zero
+   new dependencies, and to keep the DepthFlow adapter as an off-by-default external
+   subprocess runtime.
+
+**A live licensing defect was found and fixed (AC3).** `comfyui_depth_anything_v2_api.json`
+ran `depth_anything_v2_vitl.pth` — Large, **CC-BY-NC-4.0** — on a monetized output
+path, and the depth cache was keyed on the plate's bytes *alone*, so swapping the
+model would have served Large-model maps forever. Both fixed: the checkpoint and
+resolution now come from config and are injected per call, the cache key covers the
+estimator contract, and `depth_contract()` *raises* for any non-Apache-2.0 or
+unrecognised checkpoint unless `depth_allow_noncommercial_model` is set.
+
+**Architecture.** `services/depth_service.py` was NOT created — the Dev Notes'
+"Likely NEW Files" list predated 8.16's existing depth infrastructure, and a second
+depth service would have been the duplication the notes warned against. Depth work
+extends `compositing_service`; `services/parallax_service.py` owns the renderer
+ladder; `pipeline/nodes/camera_path.py` owns the numeric trajectory and the overscan
+margin (single owner, passed to the renderer); `video.py` owns only routing/assembly
+through one `MotionSource` seam.
+
+**AC-by-AC live evidence** (target host: Linux 7.0.0, 16 cores, AMD RX 9060 XT
+13.6GB free, ComfyUI 0.12.3, torch 2.11.0.dev+rocm7.1, ffmpeg 6.1.1, direct
+rendering yes):
+
+- **AC1** 42/42 approved plates backfilled with the Small model, live. Re-run: 42
+  cache hits, **0 inference**. `git status assets/` clean — zero approved RGB bytes,
+  DB rows, statuses or manifest entries touched. Per-plate failure isolation and
+  missing-file reporting both covered by tests.
+- **AC2** `ShotData.depth_map_path` added `NotRequired` (pre-11.5 checkpoints still
+  deserialize). Resolved on all three image_node writer paths, so a cached image with
+  a missing/stale depth map regenerates **only** the depth map. Sidecar carries source
+  SHA-256, depth SHA-256, model ckpt + license, resolution, preproc version, in/out
+  dimensions and the `relative-brighter-nearer` convention.
+- **AC3** default is `depth_anything_v2_vits.pth` / Apache-2.0, enforced not
+  documented. Weights not committed.
+- **AC4** `camera_path.sample_path` proven to be the *same curve* as Story 11.3's
+  ffmpeg expressions — the parity test `eval()`s the generated expression strings
+  against the numeric sampler and matches to **1e-12** across every archetype and
+  trauma value. Byte-stable across processes, no `hash()`, no unseeded randomness.
+- **AC5** Output contract validated by FFprobe before atomic promotion:
+  `1920x1080 / h264 / yuv420p / 25fps / exact frame count`. Verified live on a STOCK
+  plate and a free background. A deliberately 320x180 render is rejected
+  (`validation_failed`) and never promoted. Failure taxonomy distinguishes
+  `unavailable / headless_gl_failure / render_failed / timeout / malformed_output /
+  validation_failed / no_depth_map / disabled`.
+- **AC6** Measured on the real plate + real Small depth map at the 2%-of-width
+  budget (38.4px cap): nearer region displaced **34px**, farther region **23px** —
+  an 11px depth differential, both inside the cap. Zero of 125 frames exposed a
+  black border (worst frame's brightest edge pixel = 238). DOF/vignette/lens
+  distortion are off; post-FX remains the sole owner of vignette/grain/grade.
+- **AC7** Measured with a segmentable sprite through the real filtergraph: card
+  travel **12.0 / 14.0 / 14.0 px** for far/mid/near against the trajectory's actual
+  18.4px travel = ratios **0.65 / 0.76 / 0.76**, inside the 0.60–0.80 band (±1px
+  pixel quantization). Card fully on-frame on every plane and every frame; card width
+  constant per plane (279/381/507px), so no stray scaling. On a successful 2.5D clip
+  `bg_chain == "null"` (no zoompan), `camera_shake == ""` (no post-composite shake)
+  and `parallax_enabled is False` (no 7.3 macro parallax) — motion is owned exactly
+  once. The motion-safe box now reserves the layer ceiling (46.08px/side vs 7.3's
+  12px), which moved `CHAR_MAX_H` 796.34 → 743.28 and `_CARD_HEIGHT_FRAC` with it.
+- **AC8** One `MotionSource` seam feeds all four branches (fast/multi-clip ×
+  card/background-only); a test renders through each and asserts the clip is used and
+  `zoompan` appears nowhere. Narration, sound design, hard cuts, post-FX, subtitle
+  burn-in, chapter cards, credits and dip-to-black joins keep their ownership and
+  ordering. No new stage, gate, API or UI surface.
+- **AC9** Ladder drilled live: forced primary failure → `render_failed`, missing
+  depth → `no_depth_map`, kill switch → `disabled`; every one logs run/scene/shot plus
+  the reason and lands in `parallax_25d.renderer_counts` keyed `fallback_<reason>`.
+  Kill switch off restores the pre-11.5 path (`bg_chain == _zoompan_filter(...)`,
+  11.3 shake and 7.3 parallax both back on).
+- **AC10** Clip sidecar carries image/depth SHA-256, adapter version, depth-edge
+  version, `CAMERA_PATH_VERSION`, sampled-trajectory hash, archetype, k, trauma,
+  duration, fps, geometry, displacement cap, overscan margin, layer-ratio contract
+  and the FFprobe result. Cache hit on identical inputs: **0.01s**, zero rendering.
+  Legacy/non-dict/malformed/`.tmp`/byte-changed artifacts are all misses. A forced
+  failure provably left the previous valid clip and its sidecar byte-identical, with
+  no `.tmp` residue. Re-render with identical inputs is **byte-identical**.
+- **AC11** DepthFlow is documented as an external AGPL-3.0 runtime, never a project
+  dependency (a test asserts `depthflow`/`shaderflow` are absent from
+  `pyproject.toml`); the compliance reasoning is in `docs/PARALLAX_RUNTIME.md` §3.
+  Performance: 250 → **53 ms/frame** warp after row-blocking + 4 threads,
+  **~71 ms/frame** end-to-end including encode (7.1s for a 4s clip; ~14 min of
+  warping for an 8-minute video), which keeps the run inside the PRD two-hour ceiling.
+
+**Two items are explicitly NOT done and are Jay's:**
+
+1. **DepthFlow rung-1 spike** (Task 0 / AC11). Not installed here, and the runner
+   script drives upstream's documented `DepthScene` API *unverified*. `depthflow_enabled`
+   stays `false`. An API mismatch exits 3 → classified `unavailable` → degrades to
+   rung 2 with a warning, so a wrong guess costs a log line.
+2. **Jay's visual verdict** (AC11) on direction, depth cue, rubber edges, borders,
+   card clipping and the 60–80% layer read. Clips are in `~/ytflow-11-5-review/`.
+
+**Recorded regression, deliberately not fixed here (belongs to 8.16, not 11.5).**
+The Small checkpoint produces flatter depth maps than Large: plates with a readable
+floor dropped **41 → 30 of 42**, so 12 plates now hit `_MIN_GROUND_SPREAD` and use the
+fallback medians instead of their own measured floor. Ordering still holds
+far≤mid≤near on 30/30. `_DEFAULT_GROUND` was re-measured on the same 42 plates with
+the model actually in use (deltas far −0.005, mid +0.015, near +0.014) rather than
+left pinned to Large-measured numbers.
+
+**Test-quality finding.** Seeding a depth map without its provenance sidecar became a
+deliberate cache miss under AC10, which silently degraded three existing
+`resolve_placements` tests to `_DEFAULT_GROUND` — and they still passed, because the
+fallback happens to satisfy `far < near`. The fixture now seeds a real pair through the
+production writer, so those three assert what they claim again.
+
+Suite: **1818 passed, 1 skipped** (baseline before this story: 1608 + the 102 this
+work initially broke). Ruff clean.
 
 ### File List
 
-- `_bmad-output/implementation-artifacts/11-5-depthflow-25d-parallax.md` (NEW)
+**NEW**
+- `src/yt_flow/services/parallax_service.py`
+- `scripts/depthflow_render.py`
+- `scripts/backfill_location_depth_maps.py`
+- `docs/PARALLAX_RUNTIME.md`
+- `tests/services/test_parallax_service.py`
+- `tests/pipeline/nodes/test_video_parallax_25d.py`
+- `tests/test_backfill_location_depth_maps.py`
+
+**MODIFIED**
+- `src/yt_flow/config.py`
+- `src/yt_flow/domain/state.py`
+- `src/yt_flow/api/main.py`
+- `src/yt_flow/pipeline/nodes/camera_path.py`
+- `src/yt_flow/pipeline/nodes/image.py`
+- `src/yt_flow/pipeline/nodes/video.py`
+- `src/yt_flow/services/compositing_service.py`
+- `data/workflows/comfyui_depth_anything_v2_api.json`
+- `tests/domain/test_state_imports.py`
+- `tests/pipeline/nodes/test_camera_path.py`
+- `tests/pipeline/nodes/test_image.py`
+- `tests/pipeline/nodes/test_video.py`
+- `tests/pipeline/nodes/test_video_depth_placement.py`
+- `tests/pipeline/nodes/test_video_harmonization.py`
+- `tests/services/test_compositing_service.py`
+- `_bmad-output/implementation-artifacts/11-5-depthflow-25d-parallax.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+**MODIFIED BY REVIEW** (all already listed above except the last)
+- `src/yt_flow/services/parallax_service.py` — `_cover_resize` shared framing, `DEPTH_EDGE_VERSION` 1→2, `warp_frame` is the production kernel, `DEPTHFLOW_RUNNER` anchored to `__file__`
+- `src/yt_flow/pipeline/nodes/video.py` — `_GROUND_Y_MAX` reserve, contact-shadow layer terms, corrected rollback claims
+- `src/yt_flow/api/main.py` — `_resolve_depth` uses `verify_depth_pair` for `cached`
+- `docs/PARALLAX_RUNTIME.md` — §1/§4 kill-switch scope corrected
+- `tests/services/test_parallax_service.py` — depth/plate framing test, `DEPTH_EDGE_VERSION` pin
+- `tests/pipeline/nodes/test_video_parallax_25d.py` — ground-clamp reserve, on-frame excursion, contact-shadow ×2
+- `tests/pipeline/nodes/test_video_depth_placement.py` — shadow-stage parse made spelling-independent
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Jay · **Date:** 2026-08-03 · **Outcome:** Approve (7 findings fixed, 4 recorded)
+**Suite after fixes:** 1826 passed, 1 skipped (1818 + 8 new). Ruff clean.
+
+Every load-bearing claim in the Completion Notes was re-derived from primary
+evidence rather than read. The dev's two explicit requests for independent
+verification — the `MotionSource` seam and the hand-optimised warp math — both
+hold. Seven defects were found and fixed; one of them is a real correctness bug
+the offline tests could not see because every fixture is 1920×1080.
+
+### Independently verified (not taken on trust)
+
+| Claim | Method | Result |
+|---|---|---|
+| Warp direction + depth proportionality | Synthetic plate, two markers, half/half depth map, constant +x ramp, decoded and centroid-tracked | Near plane **+38.0px** vs the 38.4px budget; far plane **+10.0px** vs 9.6px expected (gain 0.25). Positive `dx` moves content right, and the card layer term shares that sign — the depth cue is real and the plate/card directions agree |
+| Warp performance (250 → 53 ms/frame) | Re-benchmarked the kernel on the target host, 15 reps | **45.1 ms/frame** at 4 threads × 32 blocks vs **164.5 ms** whole-frame. End-to-end on a real plate **59 ms/frame**. Better than claimed, not inflated |
+| Output contract | FFprobe on live renders, STOCK plate and a real 1216×832 free background | `1920x1080 / h264 / yuv420p / 25fps / exact frame count` on both |
+| 42-plate backfill non-destructive + reproducible | Re-ran `--dry-run` | **42 cache hits, 0 inference**; `git status assets/` clean |
+| License fix airtight | Read every reachable path; grepped the tree for `vitb/vitl/vitg` | No path can serve a CC-BY-NC map. The new key is `sha256(source:contract)` **and** requires a provenance sidecar, so the 42 pre-11.5 Large-model maps at the old bytes-only paths are permanently unreachable, not merely deprioritised. `depth_contract()` raises for non-Apache-2.0 **and** unknown names |
+| 8.16 regression is real and correctly scoped | Re-measured `ground_plane` across all 42 approved plates with the shipped Small maps | **30/42 readable** (matches 41→30), **0 far≤mid≤near violations on 30/30**, medians **0.7634 / 0.8627 / 0.9453** vs the coded `0.763 / 0.863 / 0.945`. The model swap is forced by AC3; `_MIN_GROUND_SPREAD` tuning is 8.16's constant. Scope call upheld |
+| No double motion, all four branches | Read every branch + adversarial test | `_render_scene_fast`×{cards, bg-only} and `_compose_shot_clip`×{cards, bg-only} all build from `motion.bg_input`/`motion.bg_chain`. On a 2.5D clip `bg_chain=="null"`, `camera_shake==""`, `parallax_enabled is False`. Confirmed |
+| Ladder degrades, `depthflow_enabled=false` shipped | Read `render_motion_clip`'s backend loop | Rung 1 failure `continue`s to rung 2; rung 2 failure returns `path=None` → caller's rung 3 zoompan, which always moves. No silent still frame anywhere. Default confirmed `false` |
+| Suite / lint | `PYTHONPATH=$PWD/src pytest tests/`, `ruff check .` | **1818 passed, 1 skipped** pre-fix (matches the claim); clean after fixes |
+
+### Findings
+
+**HIGH — 1. The depth field was misaligned with the plate on every freely generated background.**
+`_load_overscan_source` cover-crops the plate; `depth_gain_field` plain-`resize`d
+the depth map. Those agree only for an exactly-16:9 source. Stock plates are
+1920×1080 so the bug was invisible there — but `comfyui_sdxl_anime_lora_layered_api`
+generates **1216×832** and every real free background on disk is that size.
+Measured on a matched horizontal split: **27px of misalignment at the 40% row,
+~100px at the frame edges**, i.e. foreground pixels driven by the far-plane gain
+and vice versa, with the disocclusion dilation applied to the wrong boundary.
+Every offline fixture is 1920×1080, so no test could see it.
+*Fixed:* one shared `_cover_resize` framing helper for both, `DEPTH_EDGE_VERSION`
+bumped `1 → 2` to invalidate clips warped against the misaligned field, plus
+`test_depth_field_is_framed_exactly_like_the_plate` parameterised over
+1216×832 / 1344×768 / 1920×1080 / 900×1600. Post-fix misalignment ≤ `DEPTH_DILATE_PX`.
+
+**MEDIUM — 2. `_GROUND_Y_MAX` kept 7.3's 12px pan reserve while cards gained a 46.08px layer term.**
+`CHAR_MAX_W/H` were correctly widened to `_MACRO_PAN_RESERVE_PX`, but the ground
+clamp — the *production* placement path, `depth_placement_enabled=True` — was not.
+Analytic worst case ran **34.1px past the bottom edge at 3% displacement, 18.7px
+at the shipped 2%**. Sampled trajectories only reached ~29px of the 46.08px
+ceiling, so it survived by ~5px of coincidence rather than clipping outright —
+which is the same "only by luck" that comment already warns about, and not a bound
+this module accepts. AC7's "full combined excursion is **proven** not to clip" and
+Task 4's "prove full-excursion bounds" were therefore only half met.
+*Fixed:* clamp uses `_MACRO_PAN_RESERVE_PX`. Two tests: the analytic reserve
+(fails pre-fix) and an observed-value companion sweeping `_PAN_POOL` so the
+downward pans are covered.
+
+**MEDIUM — 3. The contact shadow did not ride the layer translation.**
+8.16's own comment says "the shadow has to slide with them or the card grows a
+detached puddle", and `shadow_y` tracks `ground_expr`'s zoom — but the 2.5D layer
+term was added to the card only. The shadow slid **up to 30.7px out from under the
+character at the shipped 2%** (46.08px at 3%). The shadow is the card's own
+footprint, so it belongs to the card's layer.
+*Fixed:* layer terms applied to the shadow overlay's `x`/`y`, 2.5D path only
+(legacy keeps `x=0`). Idle bob/sway still deliberately excluded — feet lift off a
+stationary shadow, a whole layer does not. Two tests, one per path.
+
+**MEDIUM — 4. `warp_frame` was tested but never shipped.**
+`_render_depth_warp` inlined its own equivalent of `warp_frame`, which was
+referenced only by tests — so the determinism, direction and shape invariants were
+pinned on a copy of the production kernel.
+*Fixed:* `_render_depth_warp` calls `warp_frame`. Output verified
+**byte-identical** (`9687a3cd…` before and after).
+
+**MEDIUM — 5. The trace could report `depth_hit` for a map that was actually re-inferred.**
+`_resolve_depth` derived `cached` from `cache.is_file()`, not `verify_depth_pair` —
+so a map without a valid sidecar (8.16's legacy maps, or a crash between map and
+sidecar) reported a hit while `depth_map_file` re-ran inference. AC10 requires the
+depth cache hit/miss signal to be accurate; this made it lie in exactly the case
+that matters.
+*Fixed:* `cached` asks the same strict question `depth_map_file` asks.
+
+**MEDIUM — 6. Four "byte-identical rollback" claims are false.**
+`_MACRO_PAN_RESERVE_PX` (so `CHAR_MAX_W/H` and `_GROUND_Y_MAX`),
+`compositing_service._CARD_HEIGHT_FRAC`, and `_DEFAULT_GROUND` all moved
+**unconditionally** — not gated on `parallax_25d_enabled`. A kill-switch-off run
+gets ~6.7% shorter cards, a tighter ground clamp and Small-model ground medians.
+The *filtergraph* is unchanged; the output is not. Asserted in
+`inject_motion_renderer`'s comment, `MotionSource`'s docstring, `_legacy_motion`'s
+docstring and `docs/PARALLAX_RUNTIME.md` §1/§4.
+*Fixed:* all five sites now state what is actually true and name the three
+constants. The switch rolls back the renderer, not the render.
+
+**LOW — 7. `DEPTHFLOW_RUNNER` was resolved relative to the process CWD.**
+Rung 1 would report `unavailable` for any server not launched from the repo root —
+the most confusing possible outcome for the Task 0 spike, because "DepthFlow is
+not installed" and "you started uvicorn elsewhere" look identical in the log.
+*Fixed:* anchored via `__file__`.
+
+### Recorded, deliberately not fixed
+
+1. **Rung 2 has no timeout.** AC5's "positive configurable timeout" is satisfied
+   for rung 1 (`depthflow_timeout_sec`). The warp is in-process numpy plus a local
+   ffmpeg pipe; a second timeout knob for a hang that has no observed failure mode
+   is speculative config. Revisit if one ever hangs.
+2. **The "0 of 125 frames exposed a black border" evidence is unfalsifiable.**
+   `_warp_block` clamps sample coordinates into the source, so an undersized
+   overscan smears the edge pixel rather than showing black — the test cannot
+   fail. The overscan *math* is independently sound (margin 0.061–0.071 against a
+   27px observed excursion, large headroom), so the conclusion stands; the evidence
+   just does not support it. A real border test would have to compare against the
+   analytic requirement, not sample the output.
+3. **`xy_gain` crushes the Ken Burns base move on high-energy archetypes.**
+   Capping the *combined* peak means `gain = xy_peak / (|pan| + noise_xy)`, so
+   `shake` at trauma 0.8 with a 3% budget delivers only **1.16% of width**
+   observed — the depth cue is weakest on exactly the shots with the most camera
+   energy. Sound by construction (the cap holds), but a deliberate trade worth
+   Jay's eye at the visual gate. Not a defect.
+4. **42 orphaned Large-model depth maps** remain in `workspace/cache/depth/`
+   (85 `.png` vs 43 `.json`). Unreachable by construction and documented as safe to
+   delete in `docs/PARALLAX_RUNTIME.md` §2. No cleanup written — deletion is
+   Jay's call, not a script's.
+
+### Effect of finding 1 on the recorded live evidence
+
+None of the numbers in the Completion Notes are invalidated. AC6's 34px/23px
+differential and AC7's 0.65/0.76/0.76 ratios were measured on a **1920×1080 stock
+plate**, where the two framings agreed. AC5's free-background evidence validated
+the output *contract* (geometry/codec/frame count), which the misalignment does
+not touch — the depth *cue* on a free background was never separately measured, so
+nothing was measured wrongly. Re-verified live post-fix on a real 1216×832
+background from run `0161138d`: depth estimated (1497×1024), probe
+`1920x1080/h264/yuv420p/25fps/100 frames`, no black border. What remains is that
+free-background depth quality now differs from what is in
+`~/ytflow-11-5-review/` clip C — fold that into the pending visual verdict.
+
+### Still Jay's (unchanged by this review)
+
+1. **DepthFlow rung-1 spike** (Task 0 / AC11) — not installed, runner API
+   unverified, `depthflow_enabled=false`. An API mismatch exits 3 → `unavailable`
+   → rung 2 with a warning, so a wrong guess costs a log line.
+2. **Visual verdict** (AC11) on direction, depth cue, rubber edges, borders, card
+   clipping and the 60–80% layer read. Clips in `~/ytflow-11-5-review/`; clip C
+   (free background) should be re-rendered first — see above.
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-08-03 | Depth companion contract: `ShotData.depth_map_path`, estimator identity in the cache key, atomic provenance sidecar, strict pair verification, `image_node` depth resolution on all three writer paths, non-destructive 42-plate backfill script (run live, 42/42). |
+| 2026-08-03 | AC3 licensing fix: default depth checkpoint Large (CC-BY-NC-4.0) → Small (Apache-2.0), config-pinned and injected per call, with a hard refusal for non-commercial/unknown checkpoints. |
+| 2026-08-03 | `camera_path`: numeric per-frame trajectory sampler sharing Story 11.3's constants (1e-12 expression parity), displacement clamp, xy gain, sample-derived overscan margin. |
+| 2026-08-03 | `parallax_service`: renderer ladder (external DepthFlow → numpy depth warp → legacy), FFprobe validation, atomic promotion, clip cache + provenance, failure taxonomy. Warp optimised 250 → 53 ms/frame. |
+| 2026-08-03 | `video.py`: one `MotionSource` seam across all four render branches; layered card parallax at closed 0.60/0.70/0.80 depth ratios; motion-safe box widened to the layer ceiling; 2.5D trace metadata. |
+| 2026-08-03 | `_DEFAULT_GROUND` re-measured against the Small model; the 41 → 30 readable-floor regression recorded in-code for 8.16. |
+| 2026-08-03 | Docs: `docs/PARALLAX_RUNTIME.md` (AGPL compliance decision, model licensing, external runtime install, tunables, ops, measured performance). |
+| 2026-08-03 | **Review fixes (7).** HIGH: depth gain field was plain-resized while the plate was cover-cropped — ~100px depth/image misalignment on every 1216×832 free background; one shared `_cover_resize`, `DEPTH_EDGE_VERSION` 1→2. MEDIUM: `_GROUND_Y_MAX` reserved 12px not 46.08px (analytic 34.1px bottom-edge overrun); contact shadow did not ride the layer translation (30.7px detached); `warp_frame` was tested but not shipped (now called, byte-identical); `depth_hit` trace could report a hit for a re-inferred map; four false "byte-identical rollback" claims corrected. LOW: `DEPTHFLOW_RUNNER` was CWD-relative. 5 new tests, 1 existing parse updated. |

@@ -74,6 +74,11 @@ def _settings_ns(tmp_path, *, composite_harmonization_tier=0):
         composite_harmonization_tier=composite_harmonization_tier,
         min_shot_clip_sec=2.0,
         camera_noise_enabled=False,  # Story 11.3: off, same as the other feature flags above
+        # Story 11.5: the 2.5D renderer is never injected in these tests, so the
+        # kill-switch value only has to exist; build_motion_source takes the
+        # legacy zoompan path either way.
+        parallax_25d_enabled=False,
+        parallax_displacement_frac=0.02,
     )
 
 

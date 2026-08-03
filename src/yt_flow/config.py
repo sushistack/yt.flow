@@ -186,6 +186,38 @@ class Settings(BaseSettings):
     depth_placement_enabled: bool = True
     depth_comfyui_workflow_path: str = "data/workflows/comfyui_depth_anything_v2_api.json"
 
+    # Depth estimator identity (Story 11.5 AC3). Pinned HERE, not inside the
+    # workflow JSON, because the depth cache key and provenance sidecar have to
+    # record what actually produced a map — a checkpoint swapped inside the JSON
+    # used to serve every previously cached map unchanged.
+    # Depth-Anything-V2 *Small* is Apache-2.0; Base/Large/Giant weights are
+    # CC-BY-NC-4.0 and are refused below on a potentially monetized output path.
+    # Story 8.16 shipped `depth_anything_v2_vitl.pth` (Large, non-commercial);
+    # this default is the AC3 correction.
+    depth_model_ckpt: str = "depth_anything_v2_vits.pth"
+    depth_model_resolution: int = Field(1024, gt=0)
+    # Explicit, logged opt-in for a non-commercial checkpoint (research renders
+    # only). Off means depth estimation refuses to run one at all — AC3's "not
+    # *silently* used" needs a real gate, not a warning nobody reads.
+    depth_allow_noncommercial_model: bool = False
+
+    # ── 2.5D parallax (Story 11.5) ──────────────────────────────────────────
+    # Kill switch (AC9): off → no depth/parallax renderer is called at all and
+    # the Story 7.3/11.3 zoompan behaviour is preserved byte-for-byte.
+    parallax_25d_enabled: bool = True
+    # Visible plate displacement as a fraction of frame WIDTH. AC6 bounds this
+    # to the 1-3% band single-image displacement can hide disocclusion inside;
+    # the Field bounds make an out-of-band env var a startup error, not a
+    # rubber-edged render nobody traces back to config.
+    parallax_displacement_frac: float = Field(0.02, ge=0.01, le=0.03)
+    # DepthFlow (AGPL-3.0) is an EXTERNAL runtime in its own virtualenv, never a
+    # yt.flow dependency — see docs/PARALLAX_RUNTIME.md for the compliance
+    # decision and install steps. Off until spiked on the target host (AC11);
+    # the depth-warp renderer below it in the ladder needs no extra runtime.
+    depthflow_enabled: bool = False
+    depthflow_python: str = ""  # interpreter of the isolated DepthFlow venv
+    depthflow_timeout_sec: float = Field(180.0, gt=0)
+
     # Per-shot cut assembly (Story 8.11): a shot's clip window shorter than this
     # merges into the previous shot's clip (first shot merges forward). 0.0
     # disables merging entirely.

@@ -750,6 +750,15 @@ def _reset_location_service():
     img._location_service = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_depth_resolver():
+    """Story 11.5: no depth resolver by default, so every pre-11.5 test keeps its
+    exact shot dicts (no depth_map_path key at all)."""
+    img._depth_resolver = None
+    yield
+    img._depth_resolver = None
+
+
 def _stock_state(location_key="corridor", **shot_over):
     shot = {
         "shot_id": "S001", "sentence_indices": [0], "image_prompt": "a dark room",
@@ -899,3 +908,118 @@ async def test_no_location_key_shot_unaffected_by_injected_service(monkeypatch, 
 
     out = await img.image_node(_stock_state(location_key=None))
     assert out.get("error") is None
+
+
+# ── Story 11.5: depth companion resolution (AC1, AC2, AC10) ──────────────────
+
+
+def _depth_resolver(calls, *, path="/depth/x.png", cached=False, boom=False):
+    async def resolve(image_path):
+        calls.append(image_path)
+        if boom:
+            raise RuntimeError("estimator down")
+        return {"path": path, "cached": cached}
+
+    return resolve
+
+
+async def test_no_depth_resolver_leaves_shots_exactly_as_before(monkeypatch, tmp_path):
+    """The kill switch / no wiring must not add the key at all — a `None` value
+    would still change every checkpoint and every downstream dict comparison."""
+    _mock_settings(monkeypatch, tmp_path)
+    out = await img.image_node(_state())
+    for scene in out["scenes"]:
+        for shot in scene["shots"]:
+            assert "depth_map_path" not in shot
+
+
+async def test_generated_shot_gets_a_depth_companion(monkeypatch, tmp_path):
+    _mock_settings(monkeypatch, tmp_path)
+    calls: list[str] = []
+    img.inject_depth_resolver(_depth_resolver(calls))
+    out = await img.image_node(_state())
+    shots = [s for sc in out["scenes"] for s in sc["shots"]]
+    assert len(shots) == 3
+    assert all(s["depth_map_path"] == "/depth/x.png" for s in shots)
+    assert calls == [s["image_path"] for s in shots]
+
+
+async def test_stock_plate_shot_gets_a_depth_companion(monkeypatch, tmp_path):
+    """AC2: the STOCK image and its depth come from ONE variant — the depth key is
+    the copied file's bytes, which ARE that variant's bytes."""
+    _mock_settings(monkeypatch, tmp_path)
+    plate = tmp_path / "plate.png"
+    plate.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve_loc(key):
+        return [{"variant": "a", "path": str(plate)}]
+
+    img.inject_location_service(resolve_loc)
+    calls: list[str] = []
+    img.inject_depth_resolver(_depth_resolver(calls))
+    out = await img.image_node(_stock_state())
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["depth_map_path"] == "/depth/x.png"
+    assert calls == [shot["image_path"]]
+
+
+async def test_resumed_shot_with_missing_depth_regenerates_only_the_depth(monkeypatch, tmp_path):
+    """AC2: a cached image whose depth map is missing or stale regenerates the
+    DEPTH ONLY — never the source image."""
+    _mock_settings(monkeypatch, tmp_path)
+    out_dir = tmp_path / "run-img-1" / "images"
+    out_dir.mkdir(parents=True)
+    _write_complete_shot(out_dir, "scene_001_S001", "a dark room", "blurry")
+    _write_complete_shot(out_dir, "scene_001_S002", "an agent", "text")
+    _write_complete_shot(out_dir, "scene_002_S003", "a corridor", "watermark")
+    before = {p.name: p.read_bytes() for p in out_dir.glob("*.png")}
+
+    async def boom(*a, **k):
+        raise AssertionError("a resumed shot must not regenerate its image")
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", boom)
+    calls: list[str] = []
+    img.inject_depth_resolver(_depth_resolver(calls))
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert len(calls) == 3  # depth resolved for every resumed shot
+    assert {p.name: p.read_bytes() for p in out_dir.glob("*.png")} == before
+    assert all(s["depth_map_path"] for sc in out["scenes"] for s in sc["shots"])
+
+
+async def test_unavailable_depth_leaves_the_key_absent_and_the_stage_green(monkeypatch, tmp_path):
+    """AC9: no depth is a valid outcome — the video stage then falls back."""
+    _mock_settings(monkeypatch, tmp_path)
+    img.inject_depth_resolver(_depth_resolver([], path=None))
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert all("depth_map_path" not in s for sc in out["scenes"] for s in sc["shots"])
+
+
+async def test_a_raising_depth_resolver_is_non_fatal(monkeypatch, tmp_path, caplog):
+    _mock_settings(monkeypatch, tmp_path)
+    img.inject_depth_resolver(_depth_resolver([], boom=True))
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert all("depth_map_path" not in s for sc in out["scenes"] for s in sc["shots"])
+    assert "depth resolution failed" in caplog.text
+
+
+async def test_depth_counts_reach_the_trace(monkeypatch, tmp_path):
+    """AC10: hit/miss/unavailable is the only signal that says whether 2.5D had
+    real depth to work from."""
+    _mock_settings(monkeypatch, tmp_path)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+    img.inject_depth_resolver(_depth_resolver([], cached=True))
+    await img.image_node(_state())
+    assert captured["depth_counts"] == {"hit": 3, "miss": 0, "unavailable": 0}
+
+
+async def test_one_resolve_per_distinct_image_path(monkeypatch, tmp_path):
+    _mock_settings(monkeypatch, tmp_path)
+    calls: list[str] = []
+    img.inject_depth_resolver(_depth_resolver(calls))
+    state = _state()
+    await img.image_node(state)
+    assert len(calls) == len(set(calls))
