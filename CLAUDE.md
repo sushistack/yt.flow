@@ -39,6 +39,8 @@ _TBD — fill in after initial project setup_
 
 Any change to a runtime prompt (human or AI session) follows `docs/PROMPT_POLICY.md` — repo file is the source of truth, `production`/`candidate` labels only, no direct edits in the Langfuse UI.
 
+**DEV MODE (2026-08-03): quality gating is OFF.** Prompt edits seed straight to `production` (`uv run python scripts/migrate_prompts.py --label production --source prompts`). No A/B, no golden set, no promotion gate — do not run one or ask for one. Restored when quality tuning starts (Story 6-12).
+
 ---
 
 # BMAD Method v6.0.4

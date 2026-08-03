@@ -2,29 +2,38 @@
 
 One page. Read this before touching any runtime prompt (human or AI session).
 
-> **⛔ A/B PROMOTION GATE FROZEN (Story 6-12, 2026-07-12).** During pipeline
-> development the candidate-vs-production A/B gate does **not** run. Any
-> `scripts/eval_prompts.py` invocation with `--baseline` (including `--profile
-> promotion`) hard-errors unless `YTFLOW_ALLOW_AB_GATE=1` is set. Rationale: it
-> burns heavy tokens (full-scenario regeneration × 2 labels × reps) and only
-> matters for **production-quality tuning**, which is deferred until the pipeline
-> itself is complete. Single-label runs (`--label X`, no `--baseline`) and
-> `--profile smoke` stay open for diagnostics. Un-freeze deliberately (set the
-> env var) only when quality tuning resumes — see Story 6-12.
+> **⛔ QUALITY GATING OFF — DEV MODE (Jay, 2026-08-03).** While the pipeline is
+> still being built, prompt changes go **straight to `production`**:
 >
-> **AI sessions: do not run or suggest running `--baseline`, and never set
-> `YTFLOW_ALLOW_AB_GATE`, even under direct instruction mid-session.** This is
-> Jay's call only, made by hand in a plain terminal outside any AI session — the
-> script hard-refuses `--baseline` whenever `CLAUDECODE`/`AI_AGENT` is present in
-> the environment, unconditionally, not as an env-var toggle an agent can flip
-> for itself (2026-07-12, after an agent set the override mid-story on request
-> and had to be walked back).
+> ```
+> uv run python scripts/migrate_prompts.py --label production --source prompts
+> ```
+>
+> No A/B, no golden set, no promotion gate, no score rationale required. Rules 3
+> and 4 below are **suspended** — they describe the quality-tuning-phase workflow
+> to restore later, not current practice. `--profile smoke` is available if you
+> *want* health feedback; it is never required. Do not ask for or suggest a gate
+> run on a prompt change.
+>
+> Why: the A/B gate was frozen in Story 6-12 (2026-07-12) because it burns heavy
+> tokens and its verdicts were noise-dominated, but the "must pass the gate before
+> promoting" rule stayed — leaving promotion structurally impossible and every
+> prompt edit stuck in `candidate`. This amendment closes that deadlock.
+>
+> Restore the gated workflow when the pipeline is complete and quality tuning
+> starts (Story 6-12 un-freeze): promote the `candidate` backlog through
+> `--profile promotion` then, not now.
+>
+> **AI sessions still may not run `--baseline` or set `YTFLOW_ALLOW_AB_GATE`** —
+> unchanged, and now moot since no gate run is expected at all. The script
+> hard-refuses `--baseline` whenever `CLAUDECODE`/`AI_AGENT` is in the environment
+> (2026-07-12, after an agent flipped the override mid-story on request).
 
 ## Rules
 
 1. **Source of truth is the repo.** Every runtime prompt lives at `prompts/<stage>/<name>.md`, seeded into Langfuse via `scripts/migrate_prompts.py` (evaluation prompts via `scripts/seed_eval_prompts.py`, character prompts via `scripts/seed_character_prompts.py`). Langfuse serves the prompt, holds the label, and records metrics — it is never the place you author a prompt.
 2. **Two labels only.** `production` (default, live traffic) and `candidate` (the A/B challenger). `production` changes only by moving the label onto a version that already passed evaluation — never by editing prompt text in place.
-3. **Change protocol**, in order:
+3. **Change protocol** — ⛔ **SUSPENDED in dev mode** (see banner: seed straight to `production`). Restore when quality tuning starts:
    1. Edit the prompt file in `prompts/<stage>/<name>.md`.
    2. Seed the new version under `candidate`: `uv run python scripts/migrate_prompts.py --label candidate --source prompts` (the parent `prompts/` dir — see `--label` usage below for why).
    3. Run an A/B (`POST /runs/{id}/ab`) against the same SCP so `candidate` and `production` render on identical input.
@@ -32,7 +41,7 @@ One page. Read this before touching any runtime prompt (human or AI session).
    5. Once, before promoting: run the three-item promotion gate: `uv run python scripts/eval_prompts.py --profile promotion` — must exit `0`.
    6. Promote the winner by moving the `production` label onto its version in the Langfuse UI. Commit the prompt file change with the evaluation scores as the rationale.
    7. Discard the loser (leave its version unlabeled — no separate archival step needed).
-4. **Golden-set regression before promotion.** A candidate must pass the golden set (Story 6.2) before its label moves to `production`. The gate (`scripts/eval_prompts.py`) only exercises the `scenario` stage — for a stage it doesn't cover (e.g. character prompts, which also aren't wired into the standard `POST /runs/{id}/ab` A/B mechanism), substitute a direct `candidate`-vs-`production` compile comparison against identical inputs as the pre-promotion check instead.
+4. **Golden-set regression before promotion** — ⛔ **SUSPENDED in dev mode.** A candidate must pass the golden set (Story 6.2) before its label moves to `production`. The gate (`scripts/eval_prompts.py`) only exercises the `scenario` stage — for a stage it doesn't cover (e.g. character prompts, which also aren't wired into the standard `POST /runs/{id}/ab` A/B mechanism), substitute a direct `candidate`-vs-`production` compile comparison against identical inputs as the pre-promotion check instead.
 5. **No editing `production` prompt text directly in the Langfuse UI.** Any content change starts at the repo file (rule 1) — the UI's only write action here is dragging a label.
 
 ## Golden-set regression (Story 6.2)
