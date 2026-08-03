@@ -37,6 +37,19 @@ CharacterMovementPace = Literal["slow", "medium", "fast"]
 
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
 
+# Story 8.19 — controlled role descriptions for the stock cast. Diagnosed cause:
+# cast_decision received *bare* key names, so whenever a sentence mentioned any
+# person it reached for the nearest stock key regardless of fit (villagers ->
+# STOCK-d-class in an orange prison jumpsuit; "지역 경찰" -> STOCK-security as a
+# facility guard). Naming the role makes "no stock role fits -> empty cast" a
+# decidable call. Lives beside the keys so the prompt catalog cannot drift.
+STOCK_CAST_ROLES: dict[str, str] = {
+    "STOCK-d-class": "Foundation D-class test subject — orange prison jumpsuit with a stenciled number. Only ever inside Foundation custody.",
+    "STOCK-researcher": "Foundation research staff — white lab coat, ID badge, clinical posture. Site personnel, never a civilian doctor.",
+    "STOCK-security": "Foundation site security — black tactical vest and cap, alert posture. A facility guard, never civilian police or military.",
+}
+assert set(STOCK_CAST_ROLES) == set(STOCK_CAST_KEYS)  # the prompt catalog must cover every key
+
 # Story 8.5 — closed location key vocabulary for pre-built stock background
 # plates. Closed because an LLM emitting an unknown key degrades to free-text
 # image_prompt generation (parse_location_key), the existing safe behavior.

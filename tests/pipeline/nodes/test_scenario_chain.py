@@ -161,7 +161,7 @@ def test_visual_breakdown_prompt_file_has_required_placeholders():
 def test_cast_decision_prompt_file_has_required_placeholders():
     prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "cast_decision.md"
     content = prompt_path.read_text(encoding="utf-8")
-    for placeholder in ("{{scp_id}}", "{{stock_cast_keys}}", "{{characters_present}}", "{{numbered_sentences}}", "{{sentence_count}}"):
+    for placeholder in ("{{scp_id}}", "{{stock_cast_catalog}}", "{{characters_present}}", "{{numbered_sentences}}", "{{sentence_count}}"):
         assert placeholder in content, f"missing {placeholder} in cast_decision.md"
     assert "pose_hint" in content
 
@@ -2282,3 +2282,233 @@ def test_build_scenes_applies_cast_diversity():
     ]}
     scenes = chain.build_scenes(writing, visual, [{"mood": "dread"}])
     _assert_no_diversity_violations(scenes[0]["shots"])
+
+
+# ── _suppress_cast_on_no_figure_framing (Story 8.19) ───────────────────────────
+#
+# Diagnosed defect (Task 0, run c6be1954): 27/121 cast-bearing shots composited
+# a full-body card over a prompt that framed an object macro or an empty
+# environment. Root cause is ordering, not key choice — cast_decision_step reads
+# the narration only, and visual_breakdown_step invents the framing afterwards,
+# so the prompt's own "object close-up -> cast: []" rule asks the LLM to predict
+# a decision that does not exist yet.
+
+
+def _framing_shot(image_prompt, cast=None, shot_id="S00100", **extra):
+    shot = {
+        "shot_id": shot_id,
+        "image_prompt": image_prompt,
+        "negative_prompt": "",
+        "camera_angle": "close-up",
+        "cast": [_cast_member("SCP-049", "left", "mid")] if cast is None else cast,
+        "location_key": "containment-chamber",
+        "sentence_indices": [0],
+    }
+    shot.update(extra)
+    return shot
+
+
+@pytest.mark.parametrize("prompt", [
+    # Verbatim prompt heads from the diagnosed cases in run c6be1954.
+    "extreme close-up of a ceramic surface texture, the glaze has fine cracks",       # S00113
+    "extreme close-up of a wall-mounted cardiac monitor screen, a green waveform",    # S00406
+    "extreme close-up of a digital wall clock, the second hand stopped at the 12",    # S00409
+    "close-up of the interview table's edge, a steel surface with a faint scratch",   # S00301
+    "close-up on scp-049's mask where it meets the skin",
+    "macro close-up of a stopwatch display, LCD numerals reading 00:00:30",           # S00410
+    "macro shot of a cracked lens",
+    "static wide shot, underground containment chamber, no visible subject",          # S00100
+    # An object framing may still mention a person *part* drawn by the background
+    # prompt itself — the card still has nowhere to stand, so it still goes.
+    "close-up of a computer monitor, one feed shows a cell with a figure's feet visible",  # S00712
+    "close-up of the concrete floor, a pair of bare feet still as stone, dust settling",   # d55a265b S00508
+])
+def test_suppress_cast_drops_cast_on_no_figure_framing(prompt):
+    shots = [_framing_shot(prompt)]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert shots[0]["cast"] == []
+
+
+@pytest.mark.parametrize("prompt", [
+    "wide shot, concrete containment chamber with a single steel table center",
+    "medium shot of a village thoroughfare, left side a low stone wall",
+    "static medium shot, tiled examination room with a central steel table",
+    "high-angle wide shot of the containment cell, a gurney with a folded white sheet",
+    "pull-out wide shot of the containment chamber, the entire room is visible",
+])
+def test_suppress_cast_leaves_normal_framings_untouched(prompt):
+    before = [_framing_shot(prompt)]
+    after = copy.deepcopy(before)
+    chain._suppress_cast_on_no_figure_framing(after)
+    assert after == before
+
+
+def test_suppress_cast_is_case_insensitive():
+    shots = [_framing_shot("EXTREME CLOSE-UP of a ceramic surface")]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert shots[0]["cast"] == []
+
+
+def test_suppress_cast_handles_korean_prompt_without_raising():
+    # Precision-first: a non-English prompt carries no marker, so nothing is dropped.
+    shots = [_framing_shot("좁은 복도의 와이드 샷, 형광등이 깜빡인다")]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert len(shots[0]["cast"]) == 1
+
+
+def test_suppress_cast_empty_cast_is_noop():
+    shots = [_framing_shot("extreme close-up of a floor tile", cast=[])]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert shots[0]["cast"] == []
+
+
+@pytest.mark.parametrize("shots", [
+    [],
+    [{}],
+    [{"shot_id": "S00100"}],                                        # no image_prompt at all
+    [{"shot_id": "S00100", "image_prompt": None, "cast": [1]}],      # non-str prompt
+    [{"shot_id": "S00100", "image_prompt": "extreme close-up", "cast": None}],
+    ["not a dict"],
+])
+def test_suppress_cast_is_total_and_never_raises(shots):
+    chain._suppress_cast_on_no_figure_framing(shots)  # must not raise
+
+
+def test_suppress_cast_preserves_every_non_cast_field():
+    # Mark-targeted (6.11/8.18 lesson): only `cast` changes on a violating shot.
+    shot = _framing_shot("extreme close-up of a floor tile", camera_movement="push-in")
+    before = copy.deepcopy(shot)
+    chain._suppress_cast_on_no_figure_framing([shot])
+    assert shot["cast"] == []
+    for key, value in before.items():
+        if key != "cast":
+            assert shot[key] == value, key
+
+
+def test_suppress_cast_does_not_touch_sibling_shots():
+    shots = [
+        _framing_shot("wide shot of the corridor", shot_id="S00100"),
+        _framing_shot("extreme close-up of a floor tile", shot_id="S00101"),
+        _framing_shot("medium shot of the office desk", shot_id="S00102"),
+    ]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert len(shots[0]["cast"]) == 1
+    assert shots[1]["cast"] == []
+    assert len(shots[2]["cast"]) == 1
+
+
+def test_suppress_cast_never_crosses_into_location_namespace():
+    # AC7: cast suppression must not rewrite the location decision.
+    shots = [_framing_shot("extreme close-up of a floor tile")]
+    chain._suppress_cast_on_no_figure_framing(shots)
+    assert shots[0]["location_key"] == "containment-chamber"
+
+
+def test_suppress_cast_deterministic_and_idempotent():
+    a = [_framing_shot("extreme close-up of a floor tile")]
+    b = copy.deepcopy(a)
+    chain._suppress_cast_on_no_figure_framing(a)
+    chain._suppress_cast_on_no_figure_framing(b)
+    assert a == b
+    chain._suppress_cast_on_no_figure_framing(a)  # second pass changes nothing
+    assert a == b
+
+
+def test_suppress_cast_logs_decision_evidence(caplog):
+    # AC9: namespace, decision, method and reason are recoverable from logs.
+    shots = [_framing_shot("extreme close-up of a floor tile")]
+    with caplog.at_level(logging.INFO):
+        chain._suppress_cast_on_no_figure_framing(shots)
+    record = " ".join(r.message for r in caplog.records)
+    assert "S00100" in record
+    assert "cast" in record
+    assert "extreme close-up" in record
+    assert "SCP-049" in record
+
+
+def test_build_scenes_suppresses_cast_on_no_figure_framing():
+    # Integration through the real merge/parse path, using the diagnosed prompts.
+    writing = {"scenes": [{"scene_num": 1, "narration": "하나. 둘."}]}
+    raw_cast = [{"card_key": "SCP-049", "position": "left", "depth": "mid"}]
+    visual = {0: [
+        {"image_prompt": "wide shot of the containment chamber", "negative_prompt": "",
+         "sentence_start": 1, "sentence_end": 1, "camera_type": "wide", "cast": raw_cast,
+         "location_key": "containment-chamber"},
+        {"image_prompt": "extreme close-up of a ceramic surface texture", "negative_prompt": "",
+         "sentence_start": 2, "sentence_end": 2, "camera_type": "close-up", "cast": raw_cast,
+         "location_key": "containment-chamber"},
+    ]}
+    shots = chain.build_scenes(writing, visual, [{"mood": "dread"}])[0]["shots"]
+    assert len(shots[0]["cast"]) == 1                      # normal framing keeps its card
+    assert shots[1]["cast"] == []                          # macro framing loses it
+    assert shots[1]["location_key"] == "containment-chamber"   # other namespace untouched
+    assert shots[1]["image_prompt"] == "extreme close-up of a ceramic surface texture"
+
+
+def test_build_scenes_suppresses_cast_before_diversity_repair():
+    """The suppress -> diversity order in build_scenes is load-bearing, so pin it.
+
+    R2 caps consecutive identical (position, depth) runs per card_key. If the two
+    passes were swapped, R2 would count a shot whose card is about to be dropped
+    and move a *surviving* sibling off its LLM-chosen slot for a repeat the viewer
+    never sees. Three shots, same slot, middle one an object macro: with the
+    correct order the macro's card is gone before R2 counts, the run is 1-1-1, and
+    nothing is reassigned.
+    """
+    writing = {"scenes": [{"scene_num": 1, "narration": "하나. 둘. 셋."}]}
+    slot = [{"card_key": "SCP-049", "position": "left", "depth": "mid"}]
+    prompts = [
+        "wide shot of the containment chamber",
+        "extreme close-up of a ceramic surface texture",   # suppressed -> breaks the run
+        "medium shot of the containment chamber",
+    ]
+    visual = {0: [
+        {"image_prompt": p, "negative_prompt": "", "sentence_start": i, "sentence_end": i,
+         "camera_type": "medium", "cast": slot}
+        for i, p in enumerate(prompts, start=1)
+    ]}
+    shots = chain.build_scenes(writing, visual, [{"mood": "dread"}])[0]["shots"]
+    assert shots[1]["cast"] == []
+    # Both survivors keep the slot the LLM chose — R2 never saw a 3-shot run.
+    assert [m["position"] for m in shots[0]["cast"]] == ["left"]
+    assert [m["position"] for m in shots[2]["cast"]] == ["left"], (
+        "a surviving sibling was reassigned — _enforce_cast_diversity counted the "
+        "suppressed shot, so the two passes have been reordered"
+    )
+
+
+def test_stock_cast_catalog_covers_every_stock_key():
+    from yt_flow.domain.state import STOCK_CAST_KEYS, STOCK_CAST_ROLES
+    assert set(STOCK_CAST_ROLES) == set(STOCK_CAST_KEYS)
+    assert all(desc.strip() for desc in STOCK_CAST_ROLES.values())
+
+
+def test_cast_decision_prompt_carries_role_catalog_and_no_fit_rule():
+    prompt_path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "cast_decision.md"
+    content = prompt_path.read_text(encoding="utf-8")
+    assert "{{stock_cast_catalog}}" in content
+    # The diagnosed failure was substituting the nearest stock role for a non-Foundation person.
+    assert "cast\": []" in content or "`cast`: []" in content or '"cast": []' in content
+
+
+async def test_cast_decision_step_renders_role_catalog(monkeypatch):
+    from yt_flow.domain.state import STOCK_CAST_ROLES
+    captured = {}
+
+    class CatalogPrompt:
+        def compile(self, **kwargs):
+            captured.update(kwargs)
+            return "rendered"
+
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CatalogPrompt()
+    )
+
+    async def fake(rendered, s):
+        return yaml.safe_dump({"shots": [{"sentence": 1, "cast": []}]}), {}, "stop"
+
+    await chain.cast_decision_step("SCP-049", {}, ["문장 하나."], None, fake)
+    catalog = captured["stock_cast_catalog"]
+    for key, desc in STOCK_CAST_ROLES.items():
+        assert key in catalog
+        assert desc.split(" —")[0].strip() in catalog

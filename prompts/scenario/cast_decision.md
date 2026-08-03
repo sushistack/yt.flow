@@ -7,8 +7,21 @@ what you decide here and will never re-decide it, so get it right now.
 ## Card Vocabulary
 
 - **This run's entity `card_key`**: {{scp_id}}
-- **Fixed stock cast `card_key` values**: {{stock_cast_keys}}
 - A duplicate/offshoot of the entity uses `<scp_id>-<n>`, e.g. `SCP-049-2`.
+- **Fixed stock cast** — these are the ONLY non-entity cards that exist. Each
+  is a specific Foundation role wearing specific clothing, not a generic
+  person:
+
+{{stock_cast_catalog}}
+
+Pick a stock card ONLY when the person in the sentence actually holds that
+role. If the person is anyone else — a villager, a civilian, local police, a
+crowd, a historical figure, a patient outside Foundation custody — then **no
+card fits: emit `"cast": []`** and let the background carry the beat. Never
+substitute the nearest stock role. A wrong card is far worse than no card:
+putting an orange-jumpsuited D-class into a period village, or a tactical
+site guard where the narration said "local police", contradicts the narration
+on screen.
 
 ## Task
 

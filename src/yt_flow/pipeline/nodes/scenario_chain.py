@@ -32,6 +32,7 @@ from yt_flow.domain.state import (
     LOCATION_KEYS,
     LocationKey,
     STOCK_CAST_KEYS,
+    STOCK_CAST_ROLES,
     SceneState,
     ShotData,
 )
@@ -220,6 +221,90 @@ def _reassign_position(member: dict, shot_id: object, rule: str, new_position: s
             member.get("movement_direction", "none"),
             new_position,
         )
+
+
+# Story 8.19 — framings that leave no room for a composited full-body card.
+# Substrings, matched against the lowercased image_prompt. Deliberately only the
+# unambiguous object/macro heads: precision beats recall here, because a false
+# suppression silently deletes a character the beat wanted, which is worse than
+# the status quo. Measured on the diagnosed corpus these fire on 40/193
+# cast-bearing shots, and on 0 shots whose framing gives a full-body card
+# anywhere to stand. A handful of fires do mention a person *part* inside an
+# object framing ("a cell with a figure's feet visible" on a monitor close-up,
+# "a pair of bare feet still as stone" on a floor close-up) — those are drawn by
+# the background prompt, so dropping the card is still the correct call.
+# ponytail: recall ceiling named, not fixed — 25 of the 27 defective shots in
+# c6be1954 fire; the 2 misses are object framings with no marker vocabulary
+# ("high-angle shot looking down at a conference table…", "medium shot tight on
+# a steel instrument tray…"). Widening to "high-angle shot"/"tight on" would
+# start catching legitimate figure framings, so the gap stays until a diagnosed
+# case justifies a marker with better precision.
+_NO_FIGURE_FRAMINGS = (
+    "extreme close-up",
+    "macro close-up",
+    "macro shot",
+    "close-up of",
+    "close-up on",
+    "no visible subject",
+)
+
+
+def _suppress_cast_on_no_figure_framing(shots: list) -> None:
+    """Story 8.19: drop cast from shots whose own framing has no room for a card.
+
+    Diagnosed cause is ORDERING, not key choice. ``cast_decision_step`` reads the
+    narration only, and ``visual_breakdown_step`` invents the shot's framing
+    *afterwards* (it receives the cast as input), so the cast prompt's own "object
+    close-up / empty room -> ``cast: []``" rule asks the LLM to predict a decision
+    that does not exist yet. It cannot comply, and in run c6be1954 it did not:
+    27/121 cast-bearing shots composited a full-body card over an object macro —
+    e.g. S00113 stood SCP-049 beside a macro of an eye, S00406 stood two cards on
+    a cardiac-monitor screen. ``build_scenes`` is the first place the cast and the
+    prompt coexist, so the reconciliation belongs here.
+
+    Not a text matcher: the diagnosis found zero mis-keyed or hallucinated keys
+    (every emitted key was in-vocabulary), so mapping narration text to candidate
+    keys would fix nothing and could only *add* wrong cast. This drops, never adds
+    — and never crosses into ``location_key``.
+
+    Mark-targeted (6.11/8.18 lesson): only a violating shot's ``cast`` changes;
+    sibling shots and every other field stay byte-identical. Pure over the shot
+    dicts build_scenes just created, never an input state object [AD-4]. Total and
+    never raises — a malformed shot is skipped, matching resolve_mood philosophy:
+    the scenario stage degrades, it does not fail.
+
+    Runs BEFORE ``_enforce_cast_diversity`` so placement repair only sees cast
+    that survives. That ordering has one *intended* cross-shot consequence worth
+    naming, since it is the one thing this function does that a sibling shot can
+    observe: emptying a shot's cast opens a gap in R2's consecutive-placement run
+    tracking (see ``test_enforce_cast_diversity_absence_resets_run``), so a later
+    sibling that used to trip the repeat cap now keeps its LLM-chosen position —
+    measured on 5 shots across the diagnosed runs. That is correct, not a
+    displacement: a shot with no card on screen genuinely breaks the visual
+    repetition R2 exists to break. Running the two in the other order would make
+    R2 count cast that is about to vanish, so the order is load-bearing and
+    pinned by ``test_build_scenes_suppresses_cast_before_diversity_repair``.
+    """
+    for shot in shots:
+        if not isinstance(shot, dict):
+            continue
+        cast = shot.get("cast")
+        if not isinstance(cast, list) or not cast:
+            continue
+        prompt = shot.get("image_prompt")
+        if not isinstance(prompt, str):
+            continue
+        prompt_lower = prompt.lower()
+        marker = next((m for m in _NO_FIGURE_FRAMINGS if m in prompt_lower), None)
+        if marker is None:
+            continue
+        dropped = [m.get("card_key") for m in cast if isinstance(m, dict)]
+        # AC9 decision evidence: namespace, decision, method and reason.
+        logger.info(
+            "scenario: shot %s cast namespace -> [] (method=framing-marker, reason=%r, dropped=%s)",
+            shot.get("shot_id"), marker, dropped,
+        )
+        shot["cast"] = []
 
 
 def _enforce_cast_diversity(shots: list) -> None:
@@ -983,7 +1068,11 @@ async def cast_decision_step(
         "scenario/cast_decision",
         {
             "scp_id": scp_id,
-            "stock_cast_keys": ", ".join(STOCK_CAST_KEYS),
+            # 8.19: roles, not bare keys — bare keys made the LLM substitute the
+            # nearest stock card for any person the narration mentioned.
+            "stock_cast_catalog": "\n".join(
+                f"  - `{key}` — {role}" for key, role in STOCK_CAST_ROLES.items()
+            ),
             "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
             "numbered_sentences": numbered,
             "sentence_count": len(sentences),
@@ -1309,6 +1398,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
             raise ValueError(f"scene[{scene_num}]: no shots produced after merge")
 
         _enforce_camera_variety(shots, mood)
+        _suppress_cast_on_no_figure_framing(shots)  # 8.19 before 8.18: drop first, then place
         _enforce_cast_diversity(shots)
 
         scenes.append(
