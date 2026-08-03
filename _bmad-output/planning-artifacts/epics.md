@@ -1327,11 +1327,15 @@ zoompan은 줌+팬만 가능하고(회전·패럴랙스 불가) 좌표 양자화
 
 리서치 Area 1.3(YouTube 리텐션 구조, 실무 합의) + 1.6. 현재 `structure.md`/`writing.md`는 "긴장감 있게", "훅으로 시작" 같은 산문 지시로 리텐션을 요구하고 검증 수단이 없다. 아웃라인 스키마를 확장: **hook type**(질문/충격/미스터리/대비 — `format_guide`의 기존 어휘 재사용), **오픈루프 원장**(씬별 `loops_planted`/`loops_closed` — 심은 루프가 어느 씬에서 닫히는지 추적), **패턴 인터럽트 간격**(연속 서술 톤이 N씬 이상 이어지지 않게), **비트별 단어 예산**(씬 길이 편차를 프롬프트 부탁이 아니라 숫자로). 검증은 LLM 재호출 없는 **결정론적 체크**로 — 8.18/11.2에서 확립된 패턴(`scenario_chain.py` 내부 순수 함수, 위반 시 즉시 재배정 또는 하드 실패). 열린 루프가 끝까지 닫히지 않으면 그 자체가 결함이므로 원장 미청산은 명시적 위반으로 처리. 아웃라인 항목은 형용사가 아닌 **사건 기반**(누가/무엇을/결과)으로 산출하게 프롬프트 수정. 신규 서비스 분리 없음. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
-### Story 12.2: 모델 분리 — DeepSeek 기획 / Claude 한국어 문장 / Gemini judge
+### Story 12.2: 모델 분리 — DeepSeek 기획 / Gemini 한국어 문장 + judge
 
 리서치 Area 1.4 + Phase 3 #17. 현재 `_call_deepseek` 하나가 research→structure→writing→review→critic→visual_breakdown→cast_decision→tts_normalize 전 스테이지와 **평가 judge까지** 담당한다. 두 개의 독립된 문제: ① DeepSeek은 구조 설계에는 강하지만 한국어 자연스러움에 문서화된 약점이 있음(5.22 나레이션 문체 스토리가 프롬프트로 싸웠지만 AC6 median 임계값 미달로 끝난 것이 이 한계의 증상), ② writer와 judge가 동일 모델이면 self-preference bias가 재현적으로 관측됨 — 자기 문장을 후하게 채점하므로 게이트가 품질 보증 기능을 상실.
 
-**2026-08-03 Jay 결정 — 3계열 분리**: 기획/구조/파싱 스테이지는 **DeepSeek 유지**(비용, 스키마 순응도, 캐시 히트 최적화 6.3 자산 보존), 최종 한국어 문장 패스는 **Claude급**, 평가 judge는 **Gemini**. judge를 Gemini로 두면 writer(Claude)와도 planner(DeepSeek)와도 다른 계열이라 bias가 구조적으로 차단된다(제3자 판정). 배선은 5.13 선례(character vision 프로바이더 교체 — 메시지 구성/예외 처리 무변경, HTTP 타겟과 config 필드만 교체)를 따르되, 각 프로바이더의 요청/응답 스키마가 다르므로 순수 엔드포인트 스왑은 아님. `config.py`에 스테이지별 모델/키 필드 신설, 4.2 `eval_service` judge 호출을 Gemini로 전환. **비용·의존성 결정 사항**: 신규 유료 API 2개 추가 — 에피소드당 최종 문장 패스 1회 + 골든셋 채점이므로 총량은 작지만 판단 근거를 스토리에 기록. 주의: `tts_normalize`(5.4/5.18 이중 트랙)와 `writing`은 출력 계약이 얽혀 있어 어느 스테이지까지를 Claude로 넘길지 경계를 스토리에서 확정할 것. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+**2026-08-03 Jay 결정 — 2계열 분리**: 기획/구조/파싱 스테이지는 **DeepSeek 유지**(비용, 스키마 순응도, 캐시 히트 최적화 6.3 자산 보존), **최종 한국어 문장 패스와 평가 judge는 둘 다 Gemini**. 신규 의존성이 1개로 줄고(초안의 Claude+Gemini 2개 안 폐기), 한국어 판정에도 한국어 문장을 쓰는 모델의 감각이 붙는다.
+
+**의도적으로 수용한 트레이드오프(기록 필수)**: 이 구성에서는 Gemini가 자기가 쓴 문장을 채점하므로 **self-preference bias가 남는다** — 리서치 Area 1.2/Phase 3 #17이 지목한 문제(현재 writer=judge=DeepSeek)의 형태가 DeepSeek에서 Gemini로 옮겨가는 것이며 제거되지는 않는다. Jay가 이를 알고 채택. 완전 독립이 필요해지면 **0-비용 대안**이 남아 있다: 문장만 Gemini로 넘기고 런타임 `review`/`critic` + 4.2 eval judge는 **DeepSeek에 유지** — 그러면 writer(Gemini)와 judge(DeepSeek)가 서로 다른 계열이 되고 신규 API도 그대로 1개다. 승격 게이트 판정이 의심스러워지는 실측이 나오면 이 옵션으로 전환할 것(6.10 median 게이트의 신뢰도가 judge 독립성에 직접 의존하므로 13.4 게이트 해제 시점에 재검토 필수).
+
+배선은 5.13 선례(character vision 프로바이더 교체 — 메시지 구성/예외 처리 무변경, HTTP 타겟과 config 필드만 교체)를 따르되, 요청/응답 스키마가 다르므로 순수 엔드포인트 스왑은 아님. `config.py`에 스테이지별 모델/키 필드 신설, 4.2 `eval_service` judge 호출을 Gemini로 전환. 주의: `tts_normalize`(5.4/5.18 이중 트랙)와 `writing`은 출력 계약이 얽혀 있어 어느 스테이지까지를 Gemini로 넘길지 경계를 스토리에서 확정할 것. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
 ### Story 12.3: pass-2 판정 활용 + 접지(grounded) 모순 검사
 
