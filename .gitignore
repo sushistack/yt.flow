@@ -46,3 +46,4 @@ server-live.log
 # eval-prompts debug artifacts (Story 8.4a)
 tmp/
 .claude/.story-automator-active
+.serena
