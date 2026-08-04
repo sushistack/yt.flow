@@ -376,7 +376,7 @@ async def image_node(state: PipelineState) -> dict:
                     continue
 
                 location_key = shot.get("location_key")
-                if location_key and _location_service is not None:
+                if s.stock_plate_substitution_enabled and location_key and _location_service is not None:
                     try:
                         if location_key not in plate_cache:
                             plate_cache[location_key] = await _location_service(location_key)

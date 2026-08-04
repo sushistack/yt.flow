@@ -161,6 +161,14 @@ class Settings(BaseSettings):
     # back by the seed script as the ControlNet hint. Same shape as the anchor dir
     # above so tests and operators can redirect it with one env var.
     location_refs_dir: str = "data/refs/locations"
+    # Gate for the Story 8.17 STOCK plate substitution in image_node. OFF: the
+    # substitution discards the shot's image_prompt entirely and is keyed on
+    # scene_num, so every shot of a scene gets ONE identical background —
+    # measured run-wide collapse from 155 distinct backgrounds to 41 (85% of
+    # shots; scene 5's containment chamber went 21 shots -> 1 image). Stays off
+    # until a plate-vs-prompt reconciliation story makes plate reuse per-shot and
+    # prompt-aware. ON reproduces 8.17 behaviour exactly.
+    stock_plate_substitution_enabled: bool = False
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
     # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,

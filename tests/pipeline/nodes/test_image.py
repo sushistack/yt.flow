@@ -31,7 +31,9 @@ class FakeSettings:
     def __init__(
         self, *, mock, workflow_path,
         health_poll_every_n_shots=20, crash_recovery_poll_sec=15.0, crash_recovery_timeout_sec=300.0,
+        stock_plate_substitution=False,  # mirrors the real Settings default
     ):
+        self.stock_plate_substitution_enabled = stock_plate_substitution
         self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
         self.comfyui_url = "http://comfy.test:8188"
         self.comfyui_workflow_path = workflow_path
@@ -161,14 +163,14 @@ def test_load_workflow_rejects_missing_prompt_nodes(tmp_path):
 
 # ── Mock mode (AC4) ─────────────────────────────────────────────────────────
 
-def _mock_settings(monkeypatch, tmp_path):
+def _mock_settings(monkeypatch, tmp_path, **over):
     """Wire mock mode: chdir to tmp so workspace/ is isolated, point fixtures at tmp."""
     monkeypatch.chdir(tmp_path)
     fixtures = tmp_path / "fixtures"
     fixtures.mkdir()
     (fixtures / "mock.png").write_bytes(b"\x89PNG\r\n\x1a\n fake image bytes")
     monkeypatch.setattr(img, "MOCK_FIXTURES_DIR", fixtures)
-    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=True, workflow_path="unused"))
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=True, workflow_path="unused", **over))
 
 
 async def test_mock_mode_sets_every_image_path_to_existing_file(monkeypatch, tmp_path):
@@ -779,7 +781,8 @@ def _stock_state(location_key="corridor", **shot_over):
 
 async def test_stock_plate_hit_copies_file_and_skips_generation(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
     plate_src = tmp_path / "plate.png"
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
@@ -802,9 +805,43 @@ async def test_stock_plate_hit_copies_file_and_skips_generation(monkeypatch, tmp
     assert shot["image_path"] and (tmp_path / shot["image_path"]).is_file()
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_stock_plate_substitution_flag_gates_the_plate_path(monkeypatch, tmp_path, enabled):
+    """Approved plates exist for the location_key, so the ONLY thing deciding
+    plate-copy vs generation is the flag. Off (the default) must render
+    image_prompt — 8.17's substitution discarded it and collapsed background
+    variety run-wide."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=enabled))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    prompts = []
+
+    async def fake_fetch(url, workflow):
+        prompts.append(workflow["6"]["inputs"]["text"])
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    rendered = (tmp_path / out["scenes"][0]["shots"][0]["image_path"]).read_bytes()
+    if enabled:
+        assert prompts == []
+        assert rendered == plate_src.read_bytes()
+    else:
+        assert prompts == ["a dark room"]
+
+
 async def test_stock_plate_miss_falls_through_to_generation(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
 
     async def resolve(location_key):
         return []
@@ -838,7 +875,7 @@ async def test_stock_plate_no_service_injected_falls_through_to_generation(monke
 
 
 async def test_stock_plate_hit_in_mock_mode_still_copies_plate(monkeypatch, tmp_path):
-    _mock_settings(monkeypatch, tmp_path)
+    _mock_settings(monkeypatch, tmp_path, stock_plate_substitution=True)
     plate_src = tmp_path / "plate.png"
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
@@ -855,7 +892,8 @@ async def test_stock_plate_hit_in_mock_mode_still_copies_plate(monkeypatch, tmp_
 async def test_stock_variant_selection_matches_plate_bytes(monkeypatch, tmp_path):
     """AC5: variant-select via hash(run_id:scene_num:location_key) % count."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
     plates = []
     for v, marker in (("a", b"AAAA"), ("b", b"BBBB"), ("c", b"CCCC")):
         p = tmp_path / f"plate_{v}.png"
@@ -875,7 +913,8 @@ async def test_stock_variant_selection_matches_plate_bytes(monkeypatch, tmp_path
 
 async def test_stock_plate_count_recorded_in_trace(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
     plate_src = tmp_path / "plate.png"
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
@@ -947,7 +986,7 @@ async def test_generated_shot_gets_a_depth_companion(monkeypatch, tmp_path):
 async def test_stock_plate_shot_gets_a_depth_companion(monkeypatch, tmp_path):
     """AC2: the STOCK image and its depth come from ONE variant — the depth key is
     the copied file's bytes, which ARE that variant's bytes."""
-    _mock_settings(monkeypatch, tmp_path)
+    _mock_settings(monkeypatch, tmp_path, stock_plate_substitution=True)
     plate = tmp_path / "plate.png"
     plate.write_bytes(RGB_PNG + b"\x00" * 1200)
 
