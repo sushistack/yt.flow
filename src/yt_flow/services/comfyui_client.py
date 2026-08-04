@@ -10,9 +10,12 @@ so no new dependency is added. [Ponytail]
 """
 
 import asyncio
+import math
 import mimetypes
 
 import httpx
+
+from yt_flow.config import Settings
 
 # Story 5.14: bounded retry for connection-class failures only (DNS, refused,
 # transport timeout). Any non-2xx response (validation rejection, 5xx) and
@@ -24,6 +27,21 @@ CONNECT_RETRY_DELAY = 2.0
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
+
+
+def _poll_budget(poll_interval: float | None, max_polls: int | None) -> tuple[float, int]:
+    """Resolve (interval, polls) from Settings unless the caller overrode them.
+
+    ponytail: Settings() per call — construction is cheap next to a ~400s
+    generation, and this keeps the seam monkeypatchable in tests.
+    """
+    if poll_interval is not None and max_polls is not None:
+        return poll_interval, max_polls
+    s = Settings()  # type: ignore[call-arg]
+    interval = poll_interval if poll_interval is not None else s.comfyui_poll_interval_sec
+    if max_polls is not None:
+        return interval, max_polls
+    return interval, max(1, math.ceil(s.comfyui_generation_timeout_sec / interval))
 
 
 async def _request_with_retry(request_coro):
@@ -65,14 +83,16 @@ async def submit_and_fetch(
     base_url: str,
     workflow: dict,
     *,
-    poll_interval: float = 1.0,
-    max_polls: int = 180,
+    poll_interval: float | None = None,
+    max_polls: int | None = None,
 ) -> bytes:
     """Run one workflow and return the first output image's bytes.
 
     Raises :class:`ComfyUIError` on validation (`error`/`node_errors`), HTTP
-    failure, or if no image appears within ``max_polls * poll_interval`` seconds.
+    failure, or if no image appears within the poll budget. The budget defaults
+    to ``comfyui_generation_timeout_sec`` / ``comfyui_poll_interval_sec``.
     """
+    poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
         prompt_id = await _submit(client, workflow)
         image_ref = await _await_image(client, prompt_id, poll_interval, max_polls)
@@ -96,8 +116,8 @@ async def submit_and_fetch_outputs(
     workflow: dict,
     output_node_ids: list[str],
     *,
-    poll_interval: float = 1.0,
-    max_polls: int = 180,
+    poll_interval: float | None = None,
+    max_polls: int | None = None,
 ) -> dict[str, bytes]:
     """Run one workflow and return bytes keyed by output node ID.
 
@@ -106,6 +126,7 @@ async def submit_and_fetch_outputs(
     is available. Missing node IDs are absent from the returned dict — callers
     decide if an absent output is an error or background-only mode.
     """
+    poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
         prompt_id = await _submit(client, workflow)
         node_refs = await _await_outputs(client, prompt_id, output_node_ids, poll_interval, max_polls)

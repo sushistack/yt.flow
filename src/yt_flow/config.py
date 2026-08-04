@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     comfyui_crash_recovery_poll_sec: float = Field(15.0, gt=0)
     comfyui_crash_recovery_timeout_sec: float = Field(300.0, gt=0)
 
+    # Per-generation poll budget for submit_and_fetch*. Measured 2026-08-04 on
+    # RX 9060 XT / ROCm: a cold character card (SDXL + LoRA + IPAdapter +
+    # CLIPVision + InspyrenetRembg) completes at ~400s. The old hardcoded 180s
+    # budget timed out mid-generation, the caller retried, and each retry
+    # enqueued another prompt — queue 3 -> 6 pending with 0 completed history.
+    comfyui_generation_timeout_sec: float = Field(900.0, gt=0)
+    comfyui_poll_interval_sec: float = Field(1.0, gt=0)
+
     # Runtime artifact root; stage nodes write under workspace/{run_id}/. [AD-10]
     workspace_path: str = "./workspace"
 

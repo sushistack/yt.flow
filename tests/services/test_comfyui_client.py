@@ -85,6 +85,36 @@ async def test_await_image_retries_transient_http_error():
         assert calls["n"] == 2  # retried past the transient error
 
 
+async def test_poll_budget_comes_from_settings(monkeypatch):
+    """The generation budget is config-driven, not the old hardcoded 180 polls.
+
+    A 20s timeout at a 4s interval must yield 5 polls, and submit_and_fetch must
+    hand exactly that to the poller; explicit caller values still win.
+    """
+    monkeypatch.setenv("YTFLOW_COMFYUI_GENERATION_TIMEOUT_SEC", "20")
+    monkeypatch.setenv("YTFLOW_COMFYUI_POLL_INTERVAL_SEC", "4")
+
+    assert cc._poll_budget(None, None) == (4.0, 5)
+    assert cc._poll_budget(0.0, 2) == (0.0, 2)  # caller override untouched
+
+    seen = {}
+
+    async def fake_await_image(client, prompt_id, interval, max_polls):
+        seen["budget"] = (interval, max_polls)
+        return {"filename": "f.png"}
+
+    monkeypatch.setattr(cc, "_submit", lambda c, w: _done("pid"))
+    monkeypatch.setattr(cc, "_await_image", fake_await_image)
+    monkeypatch.setattr(cc, "_download", lambda c, ref: _done(b"PNG"))
+
+    assert await cc.submit_and_fetch("http://comfy.test", {}) == b"PNG"
+    assert seen["budget"] == (4.0, 5)
+
+
+async def _done(value):
+    return value
+
+
 async def test_download_returns_bytes():
     async def handler(req):
         assert req.url.path == "/view"
