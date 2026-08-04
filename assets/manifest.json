@@ -1458,6 +1458,114 @@
       "status": "approved",
       "variant": "c"
     },
+    "pose_guide/creature_prone_lunge": {
+      "aliases": [],
+      "anatomy": "non_humanoid",
+      "approved_at": "2026-08-04T11:49:33.760386+00:00",
+      "control_type": "scribble",
+      "created_at": "2026-08-04T11:49:33.758836+00:00",
+      "guide_key": "creature_prone_lunge",
+      "path": "pose_guides/creature_prone_lunge.png",
+      "schema": "silhouette",
+      "sha256": "90d506a0462be3bd700d8b3214207bf2458b065e1ac79ef4e24cda2e3b187043",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
+    "pose_guide/creature_rearing": {
+      "aliases": [],
+      "anatomy": "non_humanoid",
+      "approved_at": "2026-08-04T11:49:33.763540+00:00",
+      "control_type": "scribble",
+      "created_at": "2026-08-04T11:49:33.761975+00:00",
+      "guide_key": "creature_rearing",
+      "path": "pose_guides/creature_rearing.png",
+      "schema": "silhouette",
+      "sha256": "7846e6cf860346eb631dd85549d9b618e94743b4b67c924509b329c2e58b64ca",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
+    "pose_guide/humanoid_collapsed": {
+      "aliases": [],
+      "anatomy": "humanoid",
+      "approved_at": "2026-08-04T11:49:33.757261+00:00",
+      "control_type": "openpose",
+      "created_at": "2026-08-04T11:49:33.755652+00:00",
+      "guide_key": "humanoid_collapsed",
+      "path": "pose_guides/humanoid_collapsed.png",
+      "schema": "coco18",
+      "sha256": "0dec077da4a7ecf81d08b75a4786a0ba56aee0391dda3a008c769bddf262b541",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
+    "pose_guide/humanoid_kneeling": {
+      "aliases": [],
+      "anatomy": "humanoid",
+      "approved_at": "2026-08-04T11:49:33.754067+00:00",
+      "control_type": "openpose",
+      "created_at": "2026-08-04T11:49:33.752152+00:00",
+      "guide_key": "humanoid_kneeling",
+      "path": "pose_guides/humanoid_kneeling.png",
+      "schema": "coco18",
+      "sha256": "1b9304ec63a0882d137b88fc462c0cba8761aa8034e0e760ec2329efe9f2a5a2",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
+    "pose_guide/humanoid_lying_supine": {
+      "aliases": [],
+      "anatomy": "humanoid",
+      "approved_at": "2026-08-04T11:49:33.750528+00:00",
+      "control_type": "openpose",
+      "created_at": "2026-08-04T11:49:33.749008+00:00",
+      "guide_key": "humanoid_lying_supine",
+      "path": "pose_guides/humanoid_lying_supine.png",
+      "schema": "coco18",
+      "sha256": "fbeb030b07535be8f645dd06594554514f9ae807144a2235ab95d72f28926520",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
+    "pose_guide/humanoid_reaching_forward": {
+      "aliases": [],
+      "anatomy": "humanoid",
+      "approved_at": "2026-08-04T11:49:33.747281+00:00",
+      "control_type": "openpose",
+      "created_at": "2026-08-04T11:49:33.745340+00:00",
+      "guide_key": "humanoid_reaching_forward",
+      "path": "pose_guides/humanoid_reaching_forward.png",
+      "schema": "coco18",
+      "sha256": "59fc1ccd228698d7fbe4ed48069491fd31e987c5690dceb118f26c2359c8bcc6",
+      "source": {
+        "generator": "scripts/render_pose_guides.py",
+        "license": "CC0-1.0",
+        "proportion_reference": "ComfyUI_VNCCS presets/poses (MIT) — limb ratios only, no pose data",
+        "type": "authored_diagram"
+      },
+      "status": "approved"
+    },
     "server-room/a": {
       "approved_at": "2026-08-02T09:05:18.027278+00:00",
       "created_at": "2026-08-02T07:11:44.299429+00:00",

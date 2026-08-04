@@ -5,6 +5,7 @@ Architecture: services/ imports domain/ and db/. Must NOT import api/ or pipelin
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,9 +14,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from yt_flow.db.models import LocationPlate
+from yt_flow.domain.pose import POSE_GUIDE_KEYS, canonical_guide_key, guide_compatible
+
+logger = logging.getLogger(__name__)
 
 _MANIFEST_NAME = "manifest.json"
-_SUBDIRS = ("characters", "locations", "anchors")
+_SUBDIRS = ("characters", "locations", "anchors", "pose_guides")
+
+# Story 8.20: pose-guide manifest keys are namespaced so a guide can never
+# collide with a character card key ("SCP-049/standing_front") or a location
+# plate key ("control_room/variant_1") in the one shared manifest.
+_GUIDE_PREFIX = "pose_guide/"
 
 
 class AssetService:
@@ -124,6 +133,71 @@ class AssetService:
         manifest["style_epoch"] += 1
         self.save_manifest(manifest)
         return manifest["style_epoch"]
+
+    # ── Pose guides (Story 8.20) ─────────────────────────────────────────
+    # Guides reuse this manifest's provenance/integrity/lifecycle authority
+    # rather than getting a registry of their own (AC5: one manifest). They are
+    # library assets exactly like cards and plates — curated once, reused
+    # across runs, and never written by a run.
+
+    def add_pose_guide(
+        self, guide_key: str, path: str, *,
+        schema: str, anatomy: str, control_type: str,
+        source: dict, aliases: tuple[str, ...] | list[str] = (),
+    ) -> None:
+        """Register a structural pose guide. Lands as ``draft`` like every asset.
+
+        ``schema``/``anatomy``/``control_type`` are what make a guide safely
+        routable: ``resolve_pose_guide`` refuses to hand a ``coco18`` human
+        skeleton to a creature profile, so these three fields are recorded at
+        registration time instead of being re-derived from the filename later.
+        """
+        if guide_key not in POSE_GUIDE_KEYS:
+            raise ValueError(f"pose guide key outside the closed catalog: {guide_key}")
+        self.add_asset(
+            _GUIDE_PREFIX + guide_key, path, source=source,
+            guide_key=guide_key, schema=schema, anatomy=anatomy,
+            control_type=control_type, aliases=list(aliases),
+        )
+
+    def approve_pose_guide(self, guide_key: str) -> None:
+        self.approve_asset(_GUIDE_PREFIX + guide_key)
+
+    def resolve_pose_guide(self, raw_key: object, profile: str) -> dict | None:
+        """Return the usable guide entry for ``raw_key`` under ``profile``, else ``None``.
+
+        Fails closed to ``None`` (the caller's edit_only fallback, AC5) on every
+        rejection path, each logged with its reason: unspellable key, absent
+        entry, unapproved/retired status, integrity mismatch, or a
+        schema/anatomy incompatible with the character's profile.
+
+        Returns a copy with ``abs_path`` resolved so callers never re-join the
+        asset root and never mutate the manifest entry in place.
+        """
+        key = canonical_guide_key(raw_key)
+        if key is None:
+            logger.warning("resolve_pose_guide: key outside the approved catalog: %r", raw_key)
+            return None
+        manifest_key = _GUIDE_PREFIX + key
+        entry = self.get_asset(manifest_key)
+        if entry is None:
+            logger.warning(
+                "resolve_pose_guide: %s is missing or not approved -> edit_only fallback", manifest_key,
+            )
+            return None
+        if not self.verify_asset(manifest_key):
+            logger.warning(
+                "resolve_pose_guide: %s failed integrity verification -> edit_only fallback", manifest_key,
+            )
+            return None
+        if not guide_compatible(profile, entry.get("schema", ""), entry.get("anatomy", "")):
+            logger.warning(
+                "resolve_pose_guide: guide %s (schema=%r anatomy=%r) is incompatible with "
+                "conditioning profile %r -> edit_only fallback",
+                key, entry.get("schema"), entry.get("anatomy"), profile,
+            )
+            return None
+        return {**entry, "abs_path": str(self._root / entry["path"])}
 
     # ── LocationPlate (8-5 consumes; defined here) ──────────────────────
 

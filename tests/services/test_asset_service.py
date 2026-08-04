@@ -245,3 +245,134 @@ def test_location_plate_unique_constraint_rolls_back_failed_transaction(svc, tmp
     # in a failed-transaction state and this next call would raise PendingRollbackError.
     plate = svc.add_location_plate("isolation-cell", "close", "locations/isolation-cell/close.png")
     assert plate.id
+
+
+# ── Pose guides (Story 8.20, AC5) ───────────────────────────────────────────
+
+
+def _add_guide(svc, root, key="humanoid_kneeling", *, schema="coco18", anatomy="humanoid",
+               control_type="openpose", data=PNG_BYTES):
+    _write(root, f"pose_guides/{key}.png", data)
+    svc.add_pose_guide(
+        key, f"pose_guides/{key}.png",
+        schema=schema, anatomy=anatomy, control_type=control_type,
+        source={"type": "authored_diagram", "license": "CC0-1.0"},
+        aliases=("kneeling",),
+    )
+    return key
+
+
+def test_add_pose_guide_records_routing_metadata_and_lands_as_draft(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    entry = svc.load_manifest()["assets"][f"pose_guide/{key}"]
+    assert entry["status"] == "draft"
+    assert (entry["schema"], entry["anatomy"], entry["control_type"]) == ("coco18", "humanoid", "openpose")
+    assert entry["aliases"] == ["kneeling"]
+    assert entry["sha256"] == hashlib.sha256(PNG_BYTES).hexdigest()
+    assert entry["source"]["license"] == "CC0-1.0"
+
+
+def test_add_pose_guide_rejects_a_key_outside_the_closed_catalog(svc, tmp_path):
+    _write(tmp_path, "pose_guides/humanoid_backflip.png")
+    with pytest.raises(ValueError, match="closed catalog"):
+        svc.add_pose_guide(
+            "humanoid_backflip", "pose_guides/humanoid_backflip.png",
+            schema="coco18", anatomy="humanoid", control_type="openpose", source={},
+        )
+
+
+def test_pose_guide_keys_are_namespaced_away_from_card_and_plate_keys(svc, tmp_path):
+    """One shared manifest: a guide key must not be able to collide with
+    "SCP-049/standing_front" or a location plate key."""
+    key = _add_guide(svc, tmp_path)
+    assert f"pose_guide/{key}" in svc.load_manifest()["assets"]
+    assert key not in svc.load_manifest()["assets"]
+
+
+def test_resolve_pose_guide_returns_an_approved_compatible_guide_with_abs_path(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    entry = svc.resolve_pose_guide(key, "openpose")
+    assert entry is not None
+    assert entry["abs_path"] == str(tmp_path / "pose_guides" / f"{key}.png")
+    assert Path(entry["abs_path"]).read_bytes() == PNG_BYTES
+
+
+def test_resolve_pose_guide_accepts_an_alias(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    assert svc.resolve_pose_guide("kneeling", "openpose") is not None
+
+
+def test_resolve_pose_guide_rejects_an_unapproved_draft(svc, tmp_path):
+    """AC5: unapproved -> edit_only fallback, never a silent draft render."""
+    key = _add_guide(svc, tmp_path)
+    assert svc.resolve_pose_guide(key, "openpose") is None
+
+
+def test_resolve_pose_guide_rejects_a_retired_guide(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    svc.retire_asset(f"pose_guide/{key}")
+    assert svc.resolve_pose_guide(key, "openpose") is None
+
+
+def test_resolve_pose_guide_rejects_an_integrity_mismatch(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    (tmp_path / "pose_guides" / f"{key}.png").write_bytes(PNG_BYTES + b"tampered")
+    assert svc.resolve_pose_guide(key, "openpose") is None
+
+
+def test_resolve_pose_guide_rejects_a_missing_file(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    (tmp_path / "pose_guides" / f"{key}.png").unlink()
+    assert svc.resolve_pose_guide(key, "openpose") is None
+
+
+def test_resolve_pose_guide_refuses_a_human_skeleton_on_a_creature_profile(svc, tmp_path):
+    """AC6's core safety rule, enforced at the resolver so no caller can bypass it."""
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    assert svc.resolve_pose_guide(key, "scribble") is None
+
+
+def test_resolve_pose_guide_refuses_a_creature_silhouette_on_openpose(svc, tmp_path):
+    key = _add_guide(
+        svc, tmp_path, key="creature_prone_lunge",
+        schema="silhouette", anatomy="non_humanoid", control_type="scribble",
+    )
+    svc.approve_pose_guide(key)
+    assert svc.resolve_pose_guide(key, "openpose") is None
+    assert svc.resolve_pose_guide(key, "scribble") is not None
+
+
+def test_resolve_pose_guide_refuses_any_guide_under_edit_only(svc, tmp_path):
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    assert svc.resolve_pose_guide(key, "edit_only") is None
+
+
+def test_resolve_pose_guide_rejects_an_unspellable_key(svc):
+    assert svc.resolve_pose_guide("humanoid_backflip", "openpose") is None
+    assert svc.resolve_pose_guide(None, "openpose") is None
+
+
+def test_resolve_pose_guide_does_not_mutate_the_manifest_entry(svc, tmp_path):
+    """abs_path is a caller convenience; leaking it back into the manifest would
+    write a machine-specific absolute path into the committed audit trail (AC12)."""
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    svc.resolve_pose_guide(key, "openpose")
+    assert "abs_path" not in svc.load_manifest()["assets"][f"pose_guide/{key}"]
+
+
+def test_pose_guide_lifecycle_does_not_disturb_other_assets(svc, tmp_path):
+    _write(tmp_path, "characters/SCP-049/front.png")
+    svc.add_asset("SCP-049/standing_front", "characters/SCP-049/front.png", source={})
+    svc.approve_asset("SCP-049/standing_front")
+    key = _add_guide(svc, tmp_path)
+    svc.approve_pose_guide(key)
+    assert svc.get_asset("SCP-049/standing_front") is not None
+    assert svc.verify_all() == []

@@ -18,6 +18,7 @@ from typing import Any, cast
 
 import yaml
 
+from yt_flow.domain.pose import canonical_guide_key
 from yt_flow.domain.state import (
     CAMERA_ARCHETYPES,
     CastDepth,
@@ -112,6 +113,30 @@ def _parse_pose_hint(raw: object) -> str | None:
         return None
     hint = raw.strip()
     return hint if 0 < len(hint) <= _POSE_HINT_MAX_CHARS else None
+
+
+def _parse_pose_guide_key(raw: object, pose_hint: str | None) -> str | None:
+    """Story 8.20: validate an explicit structural-guide key from the closed catalog.
+
+    Same omit-on-invalid philosophy as ``_parse_pose_hint``, plus two rules the
+    other cast fields don't need:
+
+    - A guide without a ``pose_hint`` is meaningless (the guide constrains
+      geometry for a requested action; with no action there is nothing to
+      constrain), so it is dropped.
+    - An out-of-catalog key warns rather than passing through. Unlike
+      ``card_key``, there is no downstream DB resolution that could rescue it —
+      the service layer would only degrade it to edit_only silently.
+    """
+    if raw is None:
+        return None
+    if pose_hint is None:
+        logger.warning("parse_cast: dropping pose_guide_key %r with no pose_hint", raw)
+        return None
+    key = canonical_guide_key(raw)
+    if key is None:
+        logger.warning("parse_cast: dropping pose_guide_key outside the approved catalog: %r", raw)
+    return key
 
 
 def _normalize_enum(raw: object, valid: set[str], fallback: str) -> str:
@@ -469,6 +494,9 @@ def parse_cast(raw: object) -> list[CastMember]:
         pose_hint = _parse_pose_hint(entry.get("pose_hint"))
         if pose_hint is not None:
             member["pose_hint"] = pose_hint
+        pose_guide_key = _parse_pose_guide_key(entry.get("pose_guide_key"), pose_hint)
+        if pose_guide_key is not None:
+            member["pose_guide_key"] = pose_guide_key
         motion_style = _parse_motion_field(entry, "motion_style", _VALID_MOTION_STYLES, "breath")
         if motion_style is not None:
             member["motion_style"] = cast(CharacterMotionStyle, motion_style)

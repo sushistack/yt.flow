@@ -1460,6 +1460,85 @@ def test_parse_cast_pose_hint_survives_when_other_fields_default():
     }
 
 
+# ── pose_guide_key (Story 8.20, AC5) ───────────────────────────────────────
+
+
+def _cast_entry(**extra):
+    return [{"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing", **extra}]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("humanoid_kneeling", "humanoid_kneeling"),
+        ("  HUMANOID-KNEELING ", "humanoid_kneeling"),
+        ("kneeling", "humanoid_kneeling"),                 # documented operator alias
+        ("creature_prone_lunge", "creature_prone_lunge"),
+        ("humanoid_backflip", None),                        # outside the closed catalog
+        ("kneeling over a corpse", None),                   # a pose_hint is not a guide key
+        ("", None),
+        (42, None),
+        (["humanoid_kneeling"], None),
+    ],
+)
+def test_parse_cast_pose_guide_key_leniency_table(raw, expected):
+    member = chain.parse_cast(_cast_entry(pose_hint="kneeling over a corpse", pose_guide_key=raw))[0]
+    if expected is None:
+        assert "pose_guide_key" not in member
+    else:
+        assert member["pose_guide_key"] == expected
+
+
+def test_parse_cast_drops_pose_guide_key_without_a_pose_hint(caplog):
+    """A guide constrains geometry for a requested action; with no action there is
+    nothing to constrain, so it is dropped rather than silently conditioning the
+    base pose."""
+    with caplog.at_level(logging.WARNING):
+        member = chain.parse_cast(_cast_entry(pose_guide_key="humanoid_kneeling"))[0]
+    assert "pose_guide_key" not in member
+    assert any("no pose_hint" in r.message for r in caplog.records)
+
+
+def test_parse_cast_drops_pose_guide_key_when_the_hint_itself_was_rejected():
+    """An over-long hint is dropped by _parse_pose_hint; the guide must not
+    survive it and condition a pose nobody requested."""
+    member = chain.parse_cast(_cast_entry(pose_hint="x" * 81, pose_guide_key="humanoid_kneeling"))[0]
+    assert "pose_hint" not in member
+    assert "pose_guide_key" not in member
+
+
+def test_parse_cast_warns_on_an_out_of_catalog_pose_guide_key(caplog):
+    with caplog.at_level(logging.WARNING):
+        chain.parse_cast(_cast_entry(pose_hint="doing a backflip", pose_guide_key="humanoid_backflip"))
+    assert any("approved catalog" in r.message for r in caplog.records)
+
+
+def test_parse_cast_absent_pose_guide_key_is_silent(caplog):
+    """Absence is the normal case (most hints need no guide) — it must not warn."""
+    with caplog.at_level(logging.WARNING):
+        member = chain.parse_cast(_cast_entry(pose_hint="head bowed"))[0]
+    assert "pose_guide_key" not in member
+    assert not [r for r in caplog.records if "pose_guide_key" in r.message]
+
+
+def test_pose_guide_key_does_not_disturb_existing_cast_fields():
+    """AC15: pose_guide_key is additive — no existing placement/motion semantics move."""
+    entry = _cast_entry(
+        pose_hint="reaching toward camera", pose_guide_key="humanoid_reaching_forward",
+        motion_style="pulse", motion_energy="high",
+        movement_mode="approach", movement_direction="left", movement_pace="fast",
+    )
+    member = chain.parse_cast(entry)[0]
+    assert member["pose_guide_key"] == "humanoid_reaching_forward"
+    assert member["motion_style"] == "pulse"
+    assert member["motion_energy"] == "high"
+    assert member["movement_mode"] == "approach"
+    assert member["movement_direction"] == "in"   # 8.9 repair table, unchanged
+    assert member["movement_pace"] == "fast"
+    assert member["pose"] == "standing"
+    assert member["position"] == "left"
+
+
 def test_parse_cast_drops_non_dict_entry(caplog):
     with caplog.at_level(logging.WARNING):
         result = chain.parse_cast(["not-a-dict", {"card_key": "SCP-049", "position": "left", "depth": "near", "pose": "standing"}])

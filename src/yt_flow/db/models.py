@@ -4,6 +4,8 @@ from uuid import uuid4
 from sqlalchemy import UniqueConstraint
 from sqlmodel import JSON, Column, Field, SQLModel
 
+from yt_flow.domain.pose import DEFAULT_POSE_CONDITIONING
+
 
 class Run(SQLModel, table=True):
     id: str = Field(primary_key=True)  # UUID v4
@@ -36,6 +38,11 @@ class Character(SQLModel, table=True):
     angle_back_path: str | None = None
     angle_side_path: str | None = None
     angle_three_quarter_path: str | None = None
+    # Story 8.20: durable morphology catalog data — which structural guide route
+    # a pose request may use. Closed vocabulary (domain.pose.PoseConditioning);
+    # every creation path gets the safe "edit_only" default so an uncurated
+    # character can never have a human skeleton applied to a non-human body.
+    pose_conditioning: str = DEFAULT_POSE_CONDITIONING
     created_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
 

@@ -51,6 +51,20 @@ Each cast entry needs these fields:
   toward the camera"`. Most cast entries MUST omit it. Even when you include
   `pose_hint`, still set `pose` to the nearest base pose so rendering can
   fall back cleanly.
+- optional `pose_guide_key`: ONLY valid alongside a `pose_hint`. Names the
+  structural reference used to build that pose. Pick the single closest entry
+  from this closed list, or omit the field entirely:
+  - `"humanoid_reaching_forward"` — an arm extended toward the viewer
+  - `"humanoid_lying_supine"` — lying on their back, horizontal
+  - `"humanoid_kneeling"` — kneeling or crouched over something low
+  - `"humanoid_collapsed"` — slumped, sitting/fallen against the ground
+  - `"creature_prone_lunge"` — a NON-humanoid entity low and lunging
+  - `"creature_rearing"` — a NON-humanoid entity reared up tall
+
+  Omit it when the hint is about the head or gaze only (`"head bowed"`,
+  `"looking at camera"`, `"shaking head"`) — those need no body geometry.
+  Use a `creature_*` value only for a genuinely non-human body, and a
+  `humanoid_*` value only for a human-shaped one. Never invent a key.
 - `motion_style`: `"hold"` | `"breath"` | `"sway"` | `"tremble"` | `"pulse"` |
   `"glitch"` — how this card moves on screen. Choose sparingly:
   - `"breath"` (default) for ordinary standing/sitting figures — a small
@@ -169,6 +183,7 @@ shots:
         depth: "near"
         pose: "standing"
         pose_hint: "reaching toward camera"
+        pose_guide_key: "humanoid_reaching_forward"
         motion_style: "pulse"
         motion_energy: "high"
   - sentence: 5

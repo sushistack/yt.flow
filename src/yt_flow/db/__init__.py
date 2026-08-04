@@ -1,6 +1,8 @@
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from yt_flow.domain.pose import DEFAULT_POSE_CONDITIONING
+
 _engine = None
 
 
@@ -26,6 +28,7 @@ def init(db_url: str) -> None:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
     SQLModel.metadata.create_all(_engine)
     _ensure_card_columns(_engine)
+    _ensure_character_columns(_engine)
 
 
 def _ensure_card_columns(engine) -> None:
@@ -43,6 +46,33 @@ def _ensure_card_columns(engine) -> None:
             conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN status TEXT DEFAULT 'draft'")
         if "style_epoch" not in cols:
             conn.exec_driver_sql("ALTER TABLE character_cards ADD COLUMN style_epoch INTEGER DEFAULT 1")
+        conn.commit()
+
+
+def _ensure_character_columns(engine) -> None:
+    """Additive ALTER TABLE for characters.pose_conditioning (Story 8.20).
+
+    Same self-healing contract as ``_ensure_card_columns`` and the same reason:
+    ``create_all`` never adds a column to an existing table, so without this a
+    pre-8.20 DB raises "no such column: pose_conditioning" on the first
+    character read.
+
+    The column default backfills existing rows to the safe ``edit_only`` route,
+    which is deliberately NOT the curated per-character mapping — that is
+    ``scripts/backfill_pose_conditioning.py``'s job. Migration must never guess
+    a character's anatomy (AC4), so it opts everyone out of structural
+    conditioning until an operator curates them in.
+    """
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(characters)")}
+        if "pose_conditioning" not in cols:
+            conn.exec_driver_sql(
+                f"ALTER TABLE characters ADD COLUMN pose_conditioning TEXT DEFAULT '{DEFAULT_POSE_CONDITIONING}'",
+            )
+            conn.exec_driver_sql(
+                f"UPDATE characters SET pose_conditioning = '{DEFAULT_POSE_CONDITIONING}' "
+                "WHERE pose_conditioning IS NULL",
+            )
         conn.commit()
 
 

@@ -79,6 +79,10 @@ class CastMember(TypedDict):
     depth: CastDepth        # distance plane: drives scale, parallax amplitude, and stacking
     pose: CastPose          # body stance: selects which pose entry of the card library
     pose_hint: NotRequired[str]  # Story 8.4 on-demand key-art pose; advisory, falls back to `pose`
+    pose_guide_key: NotRequired[str]  # Story 8.20 structural guide for the hint, from the closed
+                                      # domain.pose.POSE_GUIDE_KEYS catalog. Absent == reference-only
+                                      # editing. Never inferred from `pose_hint` — the hint stays the
+                                      # action instruction, this names the geometry source.
     motion_style: NotRequired[CharacterMotionStyle]  # Story 8.8; absent == parser/resolver default "breath"
     motion_energy: NotRequired[CharacterMotionEnergy]  # Story 8.8; absent == parser/resolver default "medium"
     movement_mode: NotRequired[CharacterMovementMode]  # Story 8.9; absent == parser/resolver default "anchored"

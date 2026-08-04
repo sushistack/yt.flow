@@ -18,7 +18,17 @@ related:
 
 # Story 8.20: OpenPose-Conditioned Action Poses
 
-Status: ready-for-dev
+Status: in-progress
+
+> **Not `review`.** Tasks 1-2 are complete and green, but Tasks 3-7 are not started, so
+> the definition of done is not met and marking this ready-for-review would be false.
+> Two blockers, in order of severity:
+> 1. **The adopted technique was rejected by its own live gate** (Task 1). AC6 says the
+>    story stays incomplete rather than passing reference-only editing off as
+>    conditioned success. A technique re-decision is needed before Tasks 3-7 mean
+>    anything — see `8-20-live-validation/DECISION-RECORD.md` §6.
+> 2. **Story 13.3 is still `ready-for-dev`**, and AC3/AC9 require its canonical
+>    `ytflow:*` resolver and environment snapshot.
 
 ## Story
 
@@ -68,20 +78,32 @@ This story primarily replaces that generation mechanism and adds only the catalo
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Run the adoption spike and freeze the operational contract (AC: 1, 2, 6, 12, 14)
-  - [ ] Inspect and pin the current VNCCS revision; verify that the selected path does not use FaceID/InsightFace identity embedding.
-  - [ ] Run a minimal one-pose VNCCS/Qwen workflow on the target 16 GB ROCm host; measure Q4 first and Q5 only if memory allows.
-  - [ ] Prove or reject a non-humanoid depth/lineart/scribble path instead of assuming Qwen-Edit ControlNet compatibility.
-  - [ ] Write a decision record with hashes, licenses, VRAM/time evidence, adopted route, and rejected alternatives.
-  - [ ] Commit only the minimal API workflow(s), required model manifest/README, and reproducible parameter map.
+- [x] Task 1 — Run the adoption spike and freeze the operational contract (AC: 1, 2, 6, 12, 14)
+  - [x] Inspect and pin the current VNCCS revision; verify that the selected path does not use FaceID/InsightFace identity embedding.
+  - [x] Run a minimal one-pose VNCCS/Qwen workflow on the target 16 GB ROCm host; measure Q4 first and Q5 only if memory allows.
+  - [x] Prove or reject a non-humanoid depth/lineart/scribble path instead of assuming Qwen-Edit ControlNet compatibility.
+  - [x] Write a decision record with hashes, licenses, VRAM/time evidence, adopted route, and rejected alternatives.
+  - [x] Commit only the minimal API workflow(s), required model manifest/README, and reproducible parameter map.
 
-- [ ] Task 2 — Add explicit morphology metadata and pose-guide registry (AC: 4, 5, 6, 9, 12)
-  - [ ] Add the closed `Character.pose_conditioning` field, an idempotent `db.init()` additive column migration, and `scripts/backfill_pose_conditioning.py`; do not introduce a separate Alembic system for one column.
-  - [ ] Seed the complete current mapping: `STOCK-d-class`, `STOCK-researcher`, `STOCK-security`, `SCP-049`, `SCP-049-2`, and `SCP-096` -> `openpose`; `SCP-682` -> adopted non-human route; ambiguous `SCP-1471` -> `edit_only` until separately approved. Unknown future characters default to `edit_only`.
-  - [ ] Add `pose_guide_key` to the cast contract, state/parser/artifact serialization, and production prompt using the closed approved catalog; preserve free-text `pose_hint`.
-  - [ ] Store the smallest approved humanoid/non-humanoid guide set under `assets/pose_guides/` through the existing AssetService manifest and lifecycle.
-  - [ ] Resolve only explicit guide keys; verify hash, lifecycle status, anatomy, and control-type/schema compatibility.
-  - [ ] Include every AC9 input in the pose-generation fingerprint, using Story 13.3's environment snapshot hash.
+- [x] Task 2 — Add explicit morphology metadata and pose-guide registry (AC: 4, 5, 6, 9, 12)
+  - [x] Add the closed `Character.pose_conditioning` field, an idempotent `db.init()` additive column migration, and `scripts/backfill_pose_conditioning.py`; do not introduce a separate Alembic system for one column.
+  - [x] Seed the complete current mapping: `STOCK-d-class`, `STOCK-researcher`, `STOCK-security`, `SCP-049`, `SCP-049-2`, and `SCP-096` -> `openpose`; `SCP-682` -> adopted non-human route; ambiguous `SCP-1471` -> `edit_only` until separately approved. Unknown future characters default to `edit_only`.
+  - [x] Add `pose_guide_key` to the cast contract, state/parser/artifact serialization, and production prompt using the closed approved catalog; preserve free-text `pose_hint`.
+  - [x] Store the smallest approved humanoid/non-humanoid guide set under `assets/pose_guides/` through the existing AssetService manifest and lifecycle.
+  - [x] Resolve only explicit guide keys; verify hash, lifecycle status, anatomy, and control-type/schema compatibility.
+  - [~] Include every AC9 input in the pose-generation fingerprint, using Story 13.3's environment snapshot hash. — **PARTIAL:** `domain.pose.pose_fingerprint()` implements the complete AC9 field set and *requires* `env_snapshot_sha256`, but Story 13.3 does not exist so nothing can supply that value yet. No production caller (that is Task 3/4).
+
+> **Tasks 3-7 are NOT STARTED and deliberately so.** Two independent reasons, both
+> recorded before any of it was attempted:
+> 1. This story's own Context says "Story 13.3 must be complete ... If it is not
+>    complete, stop after the technology spike; do not create a second resolver."
+>    13.3 is still `ready-for-dev` and no `ytflow:*` resolver exists in `src/`.
+>    Jay's scope decision on 2026-08-04 was explicitly **Task 1 + Task 2, then stop**.
+> 2. Task 1's measurements then **rejected the candidate route outright** (see
+>    `8-20-live-validation/DECISION-RECORD.md`). Building Tasks 3-7 against a route
+>    that does not condition geometry and does not fit 16 GB would be building the
+>    wrong thing. AC6 explicitly says the story stays incomplete in this case rather
+>    than reporting reference-only editing as conditioned success.
 
 - [ ] Task 3 — Implement the narrow PoseService (AC: 2, 3, 5-7, 10-12)
   - [ ] Add `src/yt_flow/services/pose_service.py` with typed request/result/provenance values.
@@ -266,22 +288,159 @@ No repository `project-context.md` file exists. The controlling project sources 
 
 ### Agent Model Used
 
-OpenAI Codex (GPT-5)
+OpenAI Codex (GPT-5) — story context authoring, 2026-08-03
+Claude Opus 5 (1M context) — Task 1 + Task 2 implementation, 2026-08-04
 
 ### Debug Log References
 
 - Story context generated from exhaustive planning, architecture, current-code, previous-story, Git, and current primary-source research on 2026-08-03.
+- 2026-08-04 dev attempt 2 (attempt 1's tmux session was lost mid-download on 2026-08-03).
+  Live spike log: `8-20-live-validation/measurements.jsonl`.
+  Decision record: `8-20-live-validation/DECISION-RECORD.md`.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+
+#### 2026-08-04 — Task 1 + Task 2 delivered; route REJECTED; Tasks 3-7 not started
+
+**Scope.** Jay chose "Task 1 + Task 2, then stop" when told 13.3 was incomplete and
+that the story itself mandates stopping after the spike. Tasks 3-7 untouched.
+
+**Task 1 verdict: ⛔ NO ADOPTION.** The candidate route (native Qwen-Image-Edit-2511
+with the structural guide passed as `image2` of `TextEncodeQwenImageEditPlus`) runs on
+the target host but fails two independent hard gates. Full evidence, hashes, licences
+and per-run numbers in the decision record. Headlines:
+
+- 🔴 **The guide does not condition geometry — it injects content.** `image2` is a
+  *reference* image, so Qwen-Edit composites it as subject matter. A COCO-18 skeleton
+  guide produced a literal articulated skeleton lying in frame
+  (`049_openpose_kneel.png`); a creature silhouette guide produced a literal white
+  bear-like animal overlaying SCP-682 (`682_scribble_lunge.png`). Identical failure for
+  both schemas, so it is the mechanism, not the guide art.
+- 🔴 **The pose effect is fully confounded.** The no-guide `edit_only` baseline
+  (`049_editonly.png`) already produced the requested action from text alone. There is
+  therefore **no evidence** the guide contributes structure. Per AC6 this may not be
+  reported as conditioned success.
+- 🔴 **Does not fit 16 GB.** 2 of 5 runs died of CUDA OOM; peak VRAM 15.20-16.18 GB
+  against 15.92 GB usable. The OOM is at `InspyrenetRembg`, *after* sampling succeeds:
+  the 13.24 GB GGUF stays resident (11.85 GiB allocated) and the cutout then asks for
+  4.50 GiB. The node exposes only `torchscript_jit` — no device/resolution knob — so
+  AC2's "cutout inside the workflow" is unsatisfiable at this model size. Q5 excluded
+  outright (Q4 already at the ceiling).
+- 🔴 **Budget not demonstrated (AC14).** 97-345 s warm per card, 1115.8 s cold start,
+  with a 40% retry rate. No conservative calculation closes the 2-hour whole-run NFR.
+- ✅ **Identity preservation is excellent** and vindicates the story's core technique
+  correction: SCP-049's plague-doctor mask, hood, coat and boots survived, as did
+  SCP-682's reptile body — precisely where FaceID/InstantID/PuLID/InsightFace fail.
+- ✅ VNCCS rejection re-verified first-hand at pinned rev `1bb732eb` (MIT): all 5
+  workflows are 1-5 node shells over monolithic nodes, ~28.9k LOC builds graphs in
+  Python via `nodes.common_ksampler`, `requirements.txt` pins `llama-cpp-python`, and
+  models auto-download via `huggingface_hub` — AC2 forbids all of it. Its Qwen use is a
+  VL *captioner*. Grep for `faceid|insightface|instantid|pulid|antelopev2|buffalo_l`
+  returns 0 hits, so AC7's ban premise holds.
+- ⛔ **VNCCS's poseset is unusable as a guide source** — rendered and inspected all 12
+  poses: every one is a standing character-sheet A-pose variant. Using one would
+  restate the pose the approved card already has, which AC5 forbids. Only its
+  limb-length *ratios* were reused for the Task 2 authored guides.
+
+**Corrections to inherited claims** (attempt 1's notes, which were pre-measurement):
+- "AC6 got SIMPLER than the story assumed ... ONE path, different guide raster ... which
+  dissolves the Edit-2511 × ControlNet Union compatibility risk" — **disproven**. The
+  ControlNet question is the only remaining structural candidate, and Q4_K_M already
+  peaks at the ceiling *without* a ControlNet loaded, so it likely will not fit either.
+  `data/workflows/README-qwen-pose-edit.md` has been corrected in place rather than
+  left asserting it.
+- The non-humanoid base-card defect was **confirmed independently**:
+  `SCP-682/standing_front` and `SCP-1471/standing_front` are `status=approved` but are
+  1664×928 **opaque RGB, no alpha**; the 6 humanoid cards are correct 832×1216 RGBA.
+  Because the workflow takes its latent from `VAEEncode` of the reference, output
+  resolution equals reference resolution — which is exactly why the non-humanoid run
+  emitted 1664×928 and violated AC10. Regenerating those base cards is outside Task
+  1/2 and needs its own story.
+
+**Task 2 delivered (all subtasks except the fingerprint's 13.3 dependency).**
+- `Character.pose_conditioning` (closed vocabulary) + idempotent additive migration in
+  `db.init()` following the existing `_ensure_card_columns` precedent. Proven against a
+  genuine hand-built pre-8.20 table, not just a fresh DB.
+- `scripts/backfill_pose_conditioning.py` applied to the live dev DB: 7 changed, 1
+  unchanged, re-run reports `changed=0`. Migration deliberately backfills everyone to
+  safe `edit_only`; the curated anatomy mapping is the script's job because AC4 forbids
+  inferring anatomy from card keys.
+- `pose_guide_key` added to `CastMember`, `parse_cast`, and the production prompt as a
+  closed catalog. Two rules beyond the other cast fields: a guide with no `pose_hint`
+  is dropped (nothing to constrain), and an out-of-catalog key warns.
+- 6 guides authored, rendered, registered and approved through the **existing**
+  AssetService manifest (namespaced `pose_guide/*`, no second registry): 4 humanoid
+  COCO-18 + 2 creature silhouette. Guide set is demand-driven from real production
+  data — 2075 checkpoints scanned yielded 8 distinct `pose_hint` values ("lying on
+  floor" 24, "reaching toward camera" 24, "collapsed"/"extending hand"/"head
+  bowed"/"shaking head"/"looking at camera"/"kneeling over a corpse" 12 each). The
+  three head/gaze-only hints intentionally get **no** guide.
+- Poses are authored as joint **angles** resolved by forward kinematics from one
+  limb-length table, so limb lengths are correct by construction; a hand-typed (x, y)
+  table can silently grow a 400px femur. Guide PNGs are gitignored per repo policy
+  (manifest is the audit trail) but are deterministic, so their sha256 values are
+  pinned in `tests/test_render_pose_guides.py` — that is what holds the content in git.
+- `domain/pose.py` also carries the complete AC9 fingerprint field set. It *requires*
+  `env_snapshot_sha256` so Story 13.3's wiring cannot be silently forgotten; it has no
+  production caller yet (Task 3/4).
+
+**Measured trap worth carrying forward:** InSPyReNet saturates subject alpha at **254,
+not 255** (only 2.07% of the frame is exactly 255). An AC10 validator requiring
+`alpha == 255` for subject pixels would reject every card this workflow produces.
+
+**Tests:** 110 new tests. Full suite **1936 passed, 1 skipped, 0 failed** (clean-tree
+control: 1826 passed). Ruff clean on all touched files. One transient
+`test_e2e_stub_run.py` failure was investigated rather than assumed: it is the
+documented timing-sensitive `_drain_bg_tasks` 10 s timeout — it passes on both a clean
+tree and this tree in the same full-suite context, and is unrelated to this story.
 - Story statement and acceptance criteria were synthesized because `epics.md` contains a draft rationale rather than a canonical user-story/BDD block.
 - Key design ambiguities resolved: durable character-level conditioning profile; explicit closed `pose_guide_key`; one AssetService authority; safe `edit_only` fallback; transaction-safe fingerprinted replacement; one freshness lookup; no anatomy keyword inference; live proof required for non-humanoid conditioning and 16 GB ROCm fit.
 
 ### File List
 
+**New — source**
+- `src/yt_flow/domain/pose.py`
+
+**New — scripts**
+- `scripts/render_pose_guides.py`
+- `scripts/backfill_pose_conditioning.py`
+
+**New — tests**
+- `tests/domain/test_pose.py`
+- `tests/test_render_pose_guides.py`
+- `tests/test_backfill_pose_conditioning.py`
+
+**New — workflow + evidence (Task 1 spike; workflow is a rejected-route artifact)**
+- `data/workflows/comfyui_qwen_pose_edit_api.json`
+- `data/workflows/README-qwen-pose-edit.md`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/DECISION-RECORD.md`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/measurements.jsonl`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/049_editonly.png`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/049_openpose_kneel.png`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/682_scribble_lunge.png`
+- `_bmad-output/implementation-artifacts/8-20-live-validation/pose-guides-contact.png`
+
+**Modified**
+- `src/yt_flow/db/models.py` — `Character.pose_conditioning`
+- `src/yt_flow/db/__init__.py` — `_ensure_character_columns()` additive migration
+- `src/yt_flow/domain/state.py` — `CastMember.pose_guide_key`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py` — `_parse_pose_guide_key()` + wiring
+- `src/yt_flow/services/asset_service.py` — pose-guide registry/resolution + `pose_guides` subdir
+- `prompts/scenario/cast_decision.md` — closed `pose_guide_key` catalog rule
+- `tests/domain/test_state_imports.py` — declared `CastMember` keys
+- `tests/services/test_asset_service.py` — pose-guide coverage
+- `tests/pipeline/nodes/test_scenario_chain.py` — `pose_guide_key` parser coverage
 - `_bmad-output/implementation-artifacts/8-20-openpose-conditioned-action-poses.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+**Generated, gitignored (repo policy: `assets/*` binaries out, manifest is the audit trail)**
+- `assets/pose_guides/{humanoid_reaching_forward,humanoid_lying_supine,humanoid_kneeling,humanoid_collapsed,creature_prone_lunge,creature_rearing}.png`
+  — reproduce byte-identically with `uv run python scripts/render_pose_guides.py`
+- `assets/manifest.json` — 6 approved `pose_guide/*` entries (also gitignored)
 
 ## Change Log
 
 - 2026-08-03: Created implementation-ready Story 8.20 with conditioned-pose adoption gate, deterministic routing and guide contracts, Story 8.4 preservation requirements, cache freshness, live GPU evidence, and disaster-prevention guardrails.
+- 2026-08-04: Task 1 adoption spike completed with live measurement on the RX 9060 XT — **route REJECTED** (guide injects content instead of conditioning geometry; 2/5 runs CUDA OOM at 15.20-16.18 GB against 15.92 GB usable). VNCCS rejection re-verified first-hand; its poseset rejected as standing-only. Task 2 delivered: `Character.pose_conditioning` + idempotent migration + applied curated backfill, closed `pose_guide_key` cast field through state/parser/prompt, 6 authored pose guides registered and approved via the existing AssetService manifest, and the complete AC9 fingerprint contract. Corrected `README-qwen-pose-edit.md`'s pre-measurement claims in place. Tasks 3-7 deliberately not started (13.3 blocker + Jay's scope decision + the route rejection). 110 new tests; suite 1936 passed / 1 skipped; Ruff clean.

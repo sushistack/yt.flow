@@ -18,7 +18,8 @@ EXPECTED_FIELDS = {
         "depth_map_path",  # Story 11.5 — NotRequired, so pre-11.5 checkpoints still load
     },
     "CastMember": {
-        "card_key", "position", "depth", "pose", "pose_hint", "motion_style", "motion_energy",
+        "card_key", "position", "depth", "pose", "pose_hint", "pose_guide_key",
+        "motion_style", "motion_energy",
         "movement_mode", "movement_direction", "movement_pace",
         "ground_y", "occlusion_mask",
     },
