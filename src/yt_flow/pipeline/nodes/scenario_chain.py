@@ -814,15 +814,26 @@ async def _parse_with_retry(
     usage_sink: list[dict] | None = None,
 ):
     """Bounded self-correcting retry for a stage's parse+validate step. A YAML
-    *syntax* failure is repaired deterministically — the single free-text line
-    PyYAML flagged is rewritten as a block literal and re-parsed, bounded by the
-    line count (Story 6.11, no LLM call); a *semantic* validation failure feeds
-    the error back into the original stage prompt for exactly one retry. A
-    failure the repair can't fix propagates unchanged — never an LLM fallback,
-    never an unbounded retry loop.
+    *syntax* failure is repaired deterministically first — the single free-text
+    line PyYAML flagged is rewritten as a block literal and re-parsed, bounded by
+    the line count (Story 6.11, no LLM call). Anything the repair can't fix —
+    syntax OR semantic — feeds the error back into the ORIGINAL stage prompt via
+    ``parse_error`` for exactly one retry. Never a second corrective call, never
+    an unbounded loop, and never a dedicated repair prompt: this is the one
+    generic self-correction, not 6.11's deleted ``scenario/yaml_syntax_repair``.
+
+    The syntax fall-through exists because a response can miss the output
+    contract entirely: live run 23ce9a6a (SCP-999) got a chatty reply — prose
+    about an invented ``1_0|260|640|760`` marker, finish_reason=stop, not
+    truncation — from ``scenario/visual_breakdown``. No line was repairable, so
+    the run died, even though feeding "that wasn't YAML" back is exactly the fix.
+
+    Truncation short-circuits ahead of all of this: ``_call_stage`` raises
+    ``TruncationError`` before any parse, so it reaches the re-roll in
+    ``_call_stage_with_retry`` and is never treated as a syntax failure.
 
     ``usage_sink``, when given, collects each underlying DeepSeek call's raw
-    ``usage`` dict (one entry normally, two if the semantic retry fires) —
+    ``usage`` dict (one entry normally, two if the corrective retry fires) —
     Story 6.3's token/cache observability seam, additive to every existing
     caller. The deterministic YAML repair adds no DeepSeek call, so it appends
     nothing.
@@ -839,29 +850,33 @@ async def _parse_with_retry(
         try:
             return _reparse_repairing_freetext(raw, parse, exc)
         except yaml.YAMLError as exc2:
-            # The flagged line isn't the free-text-colon class this repairs. Dump
-            # the raw so the novel class can be characterized, then propagate.
+            # Not the free-text-colon class. Dump the raw for characterization,
+            # then fall through to the one corrective retry below.
             try:
                 dump = _dump_bad_output("unfixed", prompt_name, raw)
                 logger.warning(
                     "%s YAML parse failed and deterministic normalization did not fix it "
-                    "(%s); broken raw -> %s",
+                    "(%s); retrying once with the error fed back; broken raw -> %s",
                     prompt_name, " ".join(str(exc2).split())[:160], dump,
                 )
             except OSError:  # capture must never mask the real failure
                 pass
-            raise
+            parse_error = (
+                f"Previous output was not valid YAML: {' '.join(str(exc2).split())[:500]}. "
+                "Your ENTIRE response must be the YAML document itself — no prose, no "
+                "commentary, no markdown code fences, no backticks. Start at the first key."
+            )
     except ValueError as exc:
-        error_text = " ".join(str(exc).split())[:500]
-        retry_variables = {
-            **variables,
-            "parse_error": f"Previous output failed validation: {error_text}. "
-            "Output ONLY valid YAML, no prose, no markdown code fences.",
-        }
-        raw, usage = await _call_stage(prompt_name, retry_variables, s, call_deepseek, label=label)
-        if usage_sink is not None:
-            usage_sink.append(usage)
-        return parse(raw)
+        parse_error = (
+            f"Previous output failed validation: {' '.join(str(exc).split())[:500]}. "
+            "Output ONLY valid YAML, no prose, no markdown code fences."
+        )
+    raw, usage = await _call_stage(
+        prompt_name, {**variables, "parse_error": parse_error}, s, call_deepseek, label=label
+    )
+    if usage_sink is not None:
+        usage_sink.append(usage)
+    return parse(raw)
 
 
 async def reroll_on_truncation(what: str, call):

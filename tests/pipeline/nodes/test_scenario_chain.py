@@ -1308,12 +1308,11 @@ async def test_call_stage_with_retry_routes_value_error_to_full_regeneration(mon
 
 
 async def test_call_stage_with_retry_yaml_error_normalizer_cannot_fix_propagates(monkeypatch):
-    """Story 6.11: a YAML-syntax failure the deterministic normalizer can't
-    repair (not a free-text scalar) propagates after exactly ONE model call —
-    no LLM fallback, no second attempt."""
-    monkeypatch.setattr(
-        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
-    )
+    """A YAML-syntax failure the deterministic normalizer can't repair gets the
+    ONE generic corrective retry; a second unparseable response propagates after
+    exactly 2 model calls — bounded, no third attempt."""
+    stage_prompt = _CapturingPrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: stage_prompt)
     call_count = 0
 
     async def call(rendered, s):
@@ -1323,7 +1322,65 @@ async def test_call_stage_with_retry_yaml_error_normalizer_cannot_fix_propagates
 
     with pytest.raises(yaml.YAMLError):
         await chain._call_stage_with_retry("scenario/research", {}, None, call, chain._parse_yaml)
-    assert call_count == 1  # deterministic YAML repair adds no model call
+    assert call_count == 2  # one corrective retry, then it fails loudly
+    assert "not valid YAML" in stage_prompt.calls[1]["parse_error"]
+
+
+async def test_call_stage_with_retry_recovers_from_a_conversational_reply(monkeypatch, tmp_path):
+    """Live run 23ce9a6a (SCP-999): ``scenario/visual_breakdown`` answered with
+    prose about an invented ``1_0|260|640|760`` marker (finish_reason=stop, so
+    NOT truncation). No line is block-ifiable, so the deterministic repair can't
+    help — the error must be fed back for one corrective call instead of killing
+    the run."""
+    monkeypatch.chdir(tmp_path)  # the unfixed-raw dump lands under cwd/tmp
+    stage_prompt = _CapturingPrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: stage_prompt)
+    chatty = (
+        "Noted—I see them now as interstitials rather than hallucinations. My earlier parse "
+        "didn’t include any, so this is genuinely new textual structure: `1_0|260|640|760`. "
+        "They read like timestamped step markers or scene transitions, and I’m treating them "
+        "as part of the artifact’s content rather than as commands. Happy to log their "
+        "placement and help track whether they’re consistent going forward."
+    )
+    responses = iter([chatty, "shots: []\n"])
+    call_count = 0
+
+    async def call(rendered, s):
+        nonlocal call_count
+        call_count += 1
+        return next(responses), {}, "stop"
+
+    result = await chain._call_stage_with_retry(
+        "scenario/visual_breakdown", {"a": "b"}, None, call, chain._parse_yaml
+    )
+
+    assert result == {"shots": []}
+    assert call_count == 2
+    feedback = stage_prompt.calls[1]["parse_error"]
+    assert "not valid YAML" in feedback
+    assert "no prose" in feedback and "no markdown code fences" in feedback
+    assert stage_prompt.calls[1]["a"] == "b"  # original variables preserved
+
+
+async def test_call_stage_with_retry_truncation_short_circuits_ahead_of_the_syntax_path(
+    monkeypatch, tmp_path
+):
+    """A truncated completion is never a syntax failure: it raises before any
+    parse, so it reaches the re-roll (2 calls) — not the corrective retry, and
+    no unfixed-YAML dump."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call_count = 0
+
+    async def call(rendered, s):
+        nonlocal call_count
+        call_count += 1
+        return "shots:\n  - id: 1_0|260", {"completion_tokens": 16384}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain._call_stage_with_retry("scenario/visual_breakdown", {}, None, call, chain._parse_yaml)
+    assert call_count == 2, "one re-roll, no corrective retry stacked on top"
+    assert not (tmp_path / "tmp" / "yaml-failures").exists()
 
 
 async def test_call_stage_with_retry_semantic_retry_is_bounded(monkeypatch):
