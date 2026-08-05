@@ -9,6 +9,7 @@ exception handling here: every failure propagates to ``scenario_node``, which
 converts it into ``PipelineState.error`` exactly as before.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -611,12 +612,18 @@ async def _call_stage(
         # evidence needed to root-cause runaway generation (Story 6.9/6.10).
         # Delete this dump once the runaway is characterized.
         dump = Path("tmp/truncations") / f"{prompt_name.replace('/', '_')}-{time.time_ns()}.txt"
+        body = raw or ""
         try:
             dump.parent.mkdir(parents=True, exist_ok=True)
-            dump.write_text(raw or "")
+            # Always write the header: every truncation dump from the 2026-08-05 runs
+            # was 0 bytes while the log claimed "full runaway raw -> <path>", so there
+            # was no way to tell an empty response from a failed capture. `raw_chars`
+            # in the log says which one it is. (Root cause of the empty body was
+            # scenario._call_deepseek dropping `reasoning_content` — fixed there.)
+            dump.write_text(f"# {prompt_name} completion_tokens={completion_tokens} raw_chars={len(body)}\n{body}")
             logger.warning(
-                "%s truncated (completion_tokens=%s); full runaway raw -> %s",
-                prompt_name, completion_tokens, dump,
+                "%s truncated (completion_tokens=%s, raw_chars=%d); full runaway raw -> %s",
+                prompt_name, completion_tokens, len(body), dump,
             )
         except OSError:  # capture must never mask the real TruncationError
             logger.warning("%s truncated (completion_tokens=%s); raw dump failed", prompt_name, completion_tokens)
@@ -815,6 +822,34 @@ async def _call_stage_with_retry(
         return parse(raw)
 
 
+async def reroll_on_truncation(what: str, call):
+    """Story 6.9's truncation fallback, extended to the INITIAL generations.
+
+    Before this, only the *scoped repair* write could survive a
+    ``TruncationError`` (``scenario_node`` routed it to a full rewrite); a
+    truncation in the initial structure or writing generation killed the whole
+    run — 6 of 6 live attempts on 2026-08-05 died exactly there.
+
+    Recovery is one independent re-roll of the same call, because truncation
+    here is VARIANCE, not a deterministic capacity wall: 6.9's AC3/AC4 finding,
+    and directly confirmed on 2026-08-05 when ``scenario/structure`` — truncating
+    4/4 at 16384 — passed cleanly the moment the budget doubled. A second
+    truncation is a genuine shortfall and propagates, so the run still fails
+    loudly rather than silently degrading twice.
+
+    ``call`` must be a zero-arg factory returning a fresh coroutine (a coroutine
+    object can only be awaited once).
+    """
+    try:
+        return await call()
+    except TruncationError as exc:
+        logger.warning(
+            "scenario: %s truncated (completion_tokens=%s); re-rolling once. runaway preview: %r",
+            what, exc.completion_tokens, (exc.raw or "")[:300],
+        )
+        return await call()
+
+
 async def research_step(
     scp_id: str,
     scp_text: str,
@@ -906,6 +941,37 @@ async def structure_step(
     )
 
 
+def _writing_scene_brief(structure: list[dict], idx: int) -> str:
+    """The ``scene_structure`` variable for ONE scene's writing call.
+
+    Carries the minimum cross-scene context narration continuity needs — the
+    neighbours' compact ``act / beat: synopsis`` line (``_scene_role_text``, the
+    same one-line summary ``visual_breakdown_step`` already gets) — and nothing
+    else. With no context at all a per-scene call re-tells the previous scene's
+    beat or resolves what a later scene exists to reveal; with the siblings' full
+    narration we would be back to the payload size batching exists to avoid.
+
+    The steering sentence lives in this variable rather than in the prompt
+    template because ``scene_structure`` is free text: no Langfuse prompt version
+    has to move for the batching to take effect.
+    """
+    total = len(structure)
+    scene = structure[idx] if isinstance(structure[idx], dict) else {}
+    payload = {
+        "write_only_this_scene": {**scene, "scene_num": idx + 1},
+        "previous_scene_context": _scene_role_text(structure[idx - 1]) if idx else None,
+        "next_scene_context": _scene_role_text(structure[idx + 1]) if idx + 1 < total else None,
+    }
+    return (
+        f"You are writing SCENE {idx + 1} OF {total} ONLY. Output a `scenes` list holding "
+        "exactly ONE scene object: the one under `write_only_this_scene`. "
+        "`previous_scene_context` / `next_scene_context` exist only so your narration "
+        "connects to its neighbours — never write narration for them, and never resolve "
+        "what a later scene is there to reveal.\n"
+        + json.dumps(payload, ensure_ascii=False)
+    )
+
+
 async def writing_step(
     scp_id: str,
     structure: list[dict],
@@ -918,35 +984,76 @@ async def writing_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    def parse(raw: str) -> dict:
-        data = _parse_yaml(raw)
-        scenes = data.get("scenes") if isinstance(data, dict) else None
-        if not isinstance(scenes, list) or not scenes:
-            raise ValueError("writing: payload must contain a non-empty 'scenes' list")
-        for scene in scenes:
+    """Write every scene's narration — ONE DeepSeek call per scene, concurrently.
+
+    Batched 2026-08-05 after 6 live run attempts proved the single all-scenes call
+    unusable: with 8-12 scenes in one completion, ``YTFLOW_DEEPSEEK_MAX_TOKENS``
+    16384 and 32768 both truncated (``finish_reason=length``), and at 65536 one
+    call was still outstanding after 29 minutes (0.3% CPU, open HTTPS connection,
+    zero artifacts). Raising the budget only trades truncation for unusable
+    latency; splitting the call removes the volume instead. Each scene's
+    completion is small and the calls overlap, so wall-clock is roughly one scene.
+
+    # ponytail: one scene per call, no group-size knob — a group re-introduces the
+    # exact variable that broke, and per-scene is already the smallest unit the
+    # positional scene contract allows.
+
+    Returns the same ``{"scp_id", "scenes": [...]}`` shape the single call did.
+    Order is ``structure``'s order (``asyncio.gather`` returns results in argument
+    order, not completion order) and each scene's ``scene_num`` is *forced* to its
+    1-based position — see the assembly comment.
+    """
+    if not structure:
+        raise ValueError("writing: structure has no scenes")
+
+    async def _write_one(idx: int) -> dict:
+        def parse(raw: str) -> dict:
+            data = _parse_yaml(raw)
+            scenes = data.get("scenes") if isinstance(data, dict) else None
+            if not isinstance(scenes, list) or len(scenes) != 1:
+                raise ValueError(
+                    f"writing: scene {idx + 1} call must return exactly 1 scene, got "
+                    f"{len(scenes) if isinstance(scenes, list) else 'non-list'}"
+                )
+            scene = scenes[0]
             if not isinstance(scene, dict):
                 raise ValueError(f"writing: malformed scene {scene!r}")
             if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
-                raise ValueError(f"writing: scene[{scene.get('scene_num')}] has empty narration")
+                raise ValueError(f"writing: scene[{idx + 1}] has empty narration")
             scene["narration"] = _normalize_freetext(scene["narration"])
-        return data
+            return scene
 
-    return await _call_stage_with_retry(
-        "scenario/writing",
-        {
-            "scp_id": scp_id,
-            "scene_structure": json.dumps(structure, ensure_ascii=False),
-            "scp_visual_reference": frozen_descriptor,
-            "format_guide": format_guide,
-            "glossary_section": "",
-            "quality_feedback": quality_feedback,
-        },
-        s,
-        call_deepseek,
-        parse,
-        label=label,
-        usage_sink=usage_sink,
-    )
+        # Per-scene re-roll: a truncated scene costs one small re-call, not the
+        # whole stage — the finest granularity the batching makes available.
+        return await reroll_on_truncation(
+            f"writing scene {idx + 1}",
+            lambda: _call_stage_with_retry(
+                "scenario/writing",
+                {
+                    "scp_id": scp_id,
+                    "scene_structure": _writing_scene_brief(structure, idx),
+                    "scp_visual_reference": frozen_descriptor,
+                    "format_guide": format_guide,
+                    "glossary_section": "",
+                    "quality_feedback": quality_feedback,
+                },
+                s,
+                call_deepseek,
+                parse,
+                label=label,
+                usage_sink=usage_sink,
+            ),
+        )
+
+    scenes = await asyncio.gather(*(_write_one(idx) for idx in range(len(structure))))
+    # scene_num is positional, never the model's. ``build_scenes`` reads mood/title/
+    # kicker from ``structure[idx]`` and ``scenario._retry_scope`` maps a reviewer's
+    # scene_num back with ``idx = raw - 1`` and then asserts
+    # ``scenes[idx]["scene_num"] == raw`` (the 6.5/6.6 mismatch guard). A per-scene
+    # call has no way to know its own index — asked in isolation the model answers
+    # "1" every time — so position is now the only source of scene_num rather than
+    # something that guard has to catch drifting.
+    return {"scp_id": scp_id, "scenes": [{**scene, "scene_num": idx + 1} for idx, scene in enumerate(scenes)]}
 
 
 async def writing_scene_repair_step(

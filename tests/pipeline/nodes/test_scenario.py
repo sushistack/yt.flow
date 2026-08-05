@@ -214,6 +214,121 @@ def test_retry_scope_rejects_scene_num_position_mismatch():
     assert rejected == [{"source": "review", "scene_num": 2, "reason": "scene_num-mismatch"}]
 
 
+async def test_batched_writing_output_satisfies_the_retry_scope_scene_num_guard(monkeypatch):
+    """The real (per-scene batched) writing_step feeding the real _retry_scope.
+
+    Each writing call now sees exactly one scene, so the model answers
+    ``scene_num: 1`` for every scene — if writing_step passed that through, the
+    6.5/6.6 mismatch guard would reject every reviewer reference past scene 1 and
+    the scoped repair would silently degrade to a full rewrite forever. Position
+    is therefore the sole source of scene_num.
+    """
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    structure = [{"scene_num": i + 1, "act": "act", "synopsis": f"syn{i + 1}", "mood": "dread"} for i in range(4)]
+
+    async def call(rendered, s):
+        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n", {}, "stop"
+
+    writing = await sc.writing_step("SCP-173", structure, "desc", "guide", "", FakeSettings(), call)
+    assert [scene["scene_num"] for scene in writing["scenes"]] == [1, 2, 3, 4]
+
+    review = {"issues": [{"scene_num": 3, "description": "bad", "correction": "fix"}]}
+    indexes, rejected = sc._retry_scope(review, {"scene_notes": [{"scene_num": 4}]}, writing["scenes"])
+    assert indexes == [2, 3]
+    assert rejected == []
+
+
+async def test_structure_truncation_rerolls_instead_of_failing_the_run(monkeypatch):
+    """Story 6.9's fallback extended to the INITIAL structure generation: this is
+    where 6 of 6 live attempts on 2026-08-05 died."""
+    calls = _stub_chain(monkeypatch)
+    attempts = {"n": 0}
+
+    async def truncating_structure(*a, **k):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise sc.TruncationError(
+                "scenario/structure response truncated (finish_reason=length); raise max_tokens",
+                prompt_name="scenario/structure", completion_tokens=16384, raw="runaway",
+            )
+        calls["structure"] += 1
+        return STRUCTURE
+
+    monkeypatch.setattr(sc, "structure_step", truncating_structure)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert attempts["n"] == 2
+
+
+async def test_structure_truncating_twice_still_fails_the_run(monkeypatch):
+    _stub_chain(monkeypatch)
+    attempts = {"n": 0}
+
+    async def always_truncating(*a, **k):
+        attempts["n"] += 1
+        raise sc.TruncationError("truncated", prompt_name="scenario/structure", completion_tokens=32768)
+
+    monkeypatch.setattr(sc, "structure_step", always_truncating)
+    out = await sc.scenario_node(_state())
+    assert "truncated" in out["error"]
+    assert attempts["n"] == 2, "recovery is exactly one re-roll, not a retry loop"
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHttpClient:
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, **kwargs):
+        return _FakeResponse(self._payload)
+
+
+async def test_call_deepseek_falls_back_to_reasoning_content_when_truncated(monkeypatch):
+    """Root cause of the 0-byte truncation dumps: a reasoning model cut off
+    mid-reasoning returns content="" with every token in reasoning_content, so
+    returning only `content` threw the runaway evidence away."""
+    payload = {
+        "choices": [{
+            "finish_reason": "length",
+            "message": {"content": "", "reasoning_content": "runaway chain of thought"},
+        }],
+        "usage": {"completion_tokens": 32768},
+    }
+    monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: _FakeHttpClient(payload))
+    raw, usage, finish_reason = await sc._call_deepseek("rendered", FakeSettings())
+    assert (raw, finish_reason) == ("runaway chain of thought", "length")
+    assert usage["completion_tokens"] == 32768
+
+
+async def test_call_deepseek_ignores_reasoning_content_on_a_complete_response(monkeypatch):
+    payload = {
+        "choices": [{
+            "finish_reason": "stop",
+            "message": {"content": "scenes: []", "reasoning_content": "thinking out loud"},
+        }],
+        "usage": {},
+    }
+    monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: _FakeHttpClient(payload))
+    raw, _, finish_reason = await sc._call_deepseek("rendered", FakeSettings())
+    assert (raw, finish_reason) == ("scenes: []", "stop")
+
+
 async def test_scene_retry_repairs_only_flagged_position_and_reuses_other_objects(monkeypatch):
     calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS)
     original_scene = WRITING["scenes"][0]

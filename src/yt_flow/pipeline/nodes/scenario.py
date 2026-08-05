@@ -27,6 +27,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     cast_decision_step,
     critic_step,
     research_step,
+    reroll_on_truncation,
     review_step,
     split_sentences,
     structure_step,
@@ -82,7 +83,18 @@ async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | N
     resp.raise_for_status()
     data = resp.json()
     choice = data["choices"][0]
-    return choice["message"]["content"], data.get("usage", {}), choice.get("finish_reason")
+    message = choice["message"]
+    content = message.get("content") or ""
+    finish_reason = choice.get("finish_reason")
+    if finish_reason == "length" and not content:
+        # A reasoning model spends its token budget in `reasoning_content`, so a
+        # completion cut off mid-reasoning carries an EMPTY `content`. Returning
+        # only `content` is why every truncation dump from the 2026-08-05 runs was
+        # 0 bytes — the evidence was in the field we threw away. Safe to substitute:
+        # `_call_stage` raises TruncationError on finish_reason=length before any
+        # parser sees this string, so it is read only by the diagnostic dump.
+        content = message.get("reasoning_content") or ""
+    return content, data.get("usage", {}), finish_reason
 
 
 def _record_trace(*, stages: list[dict], total_latency_ms: int, error: Exception | None = None) -> None:
@@ -336,8 +348,14 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
 
         t0 = time.perf_counter()
         usage = []
-        structure = await structure_step(
-            state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        # Truncation here killed 6 of 6 live runs on 2026-08-05 and structure has no
+        # cheaper path to degrade to, so it re-rolls once (see reroll_on_truncation).
+        # writing re-rolls per scene inside writing_step.
+        structure = await reroll_on_truncation(
+            "structure",
+            lambda: structure_step(
+                state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+            ),
         )
         stages.append({"name": "structure", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
 

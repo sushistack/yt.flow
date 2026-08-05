@@ -58,8 +58,14 @@ async def api_env(tmp_path, monkeypatch, stub_profile):
     db._engine = None
 
 
-async def _drain_bg_tasks(timeout: float = 10) -> None:
-    """Await whatever run_service.spawn() just scheduled before making assertions."""
+async def _drain_bg_tasks(timeout: float = 60) -> None:
+    """Await whatever run_service.spawn() just scheduled before making assertions.
+
+    60s, not 10: the stub cassettes now run 2 scenes end-to-end (writing follows
+    structure's scene count since writing_step was batched per scene), so each
+    drain does real whisperx + ffmpeg work for two scenes. 10s was already
+    load-dependent at one scene.
+    """
     tasks = list(run_service._bg_tasks)
     if tasks:
         await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=timeout)

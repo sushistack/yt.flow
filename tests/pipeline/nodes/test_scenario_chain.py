@@ -1,6 +1,8 @@
+import asyncio
 import copy
 import json
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -256,6 +258,190 @@ async def test_writing_step_collapses_embedded_newlines_in_narration(monkeypatch
 
     result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
     assert result["scenes"][0]["narration"] == "첫 문장. 둘째 문장."
+
+
+# ── writing_step per-scene batching (2026-08-05) ───────────────────────────────
+
+
+class EchoPrompt:
+    """Compiles to its variables so a fake DeepSeek can see which scene it was asked for."""
+
+    def compile(self, **variables):
+        return json.dumps(variables, ensure_ascii=False)
+
+
+def _structure(n: int) -> list[dict]:
+    return [
+        {"scene_num": i + 1, "act": f"act{i + 1}", "emotional_beat": f"beat{i + 1}",
+         "synopsis": f"syn{i + 1}", "mood": "dread"}
+        for i in range(n)
+    ]
+
+
+def _requested_scene(rendered: str) -> int:
+    """The 1-based scene index ``_writing_scene_brief`` steered this call to."""
+    match = re.search(r"SCENE (\d+) OF", rendered)
+    assert match is not None, f"brief carries no scene steer: {rendered[:200]}"
+    return int(match.group(1))
+
+
+async def test_writing_step_makes_one_call_per_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    calls = []
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        calls.append(n)
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n", {}, "stop"
+
+    result = await chain.writing_step("SCP-173", _structure(8), "desc", "guide", "", None, call)
+    assert sorted(calls) == list(range(1, 9))
+    assert len(result["scenes"]) == 8
+
+
+async def test_writing_step_preserves_scene_order_when_calls_finish_out_of_order(monkeypatch):
+    """The batched calls run concurrently, so completion order is not argument
+    order — assembly must key on position, never on arrival."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    structure = _structure(5)
+    completed = []
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        await asyncio.sleep((len(structure) - n) * 0.01)  # the LAST scene answers first
+        completed.append(n)
+        # a model answering one scene in isolation has no idea of its index — it
+        # says "1" (or anything); the position it was asked for is the truth
+        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n", {}, "stop"
+
+    result = await chain.writing_step("SCP-173", structure, "desc", "guide", "", None, call)
+    assert completed == [5, 4, 3, 2, 1], "test is void unless the calls really finished out of order"
+    assert [s["narration"] for s in result["scenes"]] == [f"narr {n}." for n in range(1, 6)]
+    assert [s["scene_num"] for s in result["scenes"]] == [1, 2, 3, 4, 5]
+
+
+async def test_writing_step_passes_neighbour_context_but_only_one_scene_to_write(monkeypatch):
+    """Continuity context is the neighbours' one-line role, not their narration —
+    a per-scene call with no context repeats or pre-empts an adjacent beat."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    seen = {}
+
+    async def call(rendered, s):
+        variables = json.loads(rendered)
+        brief = variables["scene_structure"]
+        n = _requested_scene(brief)
+        seen[n] = json.loads(brief.split("\n", 1)[1])
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n", {}, "stop"
+
+    await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
+
+    assert seen[2]["write_only_this_scene"]["synopsis"] == "syn2"
+    assert seen[2]["previous_scene_context"] == "act1 / beat1: syn1"
+    assert seen[2]["next_scene_context"] == "act3 / beat3: syn3"
+    assert seen[1]["previous_scene_context"] is None  # nothing before the hook
+    assert seen[3]["next_scene_context"] is None
+    # the whole point of batching: one scene's worth of payload per call
+    assert set(seen[2]) == {"write_only_this_scene", "previous_scene_context", "next_scene_context"}
+
+
+async def test_writing_step_rejects_a_call_that_answers_more_than_its_own_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    attempts = []
+
+    async def call(rendered, s):
+        attempts.append(_requested_scene(rendered))
+        return "scenes:\n  - narration: a.\n  - narration: b.\n", {}, "stop"
+
+    with pytest.raises(ValueError, match="exactly 1 scene"):
+        await chain.writing_step("SCP-173", _structure(1), "desc", "guide", "", None, call)
+    assert attempts == [1, 1], "the existing semantic self-correction retry must still fire"
+
+
+async def test_writing_step_still_rejects_empty_narration_per_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        narration = "" if n == 2 else f"narr {n}."
+        return f"scenes:\n  - scene_num: {n}\n    narration: '{narration}'\n", {}, "stop"
+
+    with pytest.raises(ValueError, match=r"scene\[2\] has empty narration"):
+        await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
+
+
+async def test_writing_step_rerolls_only_the_truncated_scene(monkeypatch, tmp_path):
+    """Story 6.9's fallback, extended to the initial writing generation: a
+    truncated scene costs one small re-call, not the run."""
+    monkeypatch.chdir(tmp_path)  # the truncation dump lands under cwd/tmp
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    attempts = {}
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        attempts[n] = attempts.get(n, 0) + 1
+        if n == 2 and attempts[n] == 1:
+            return "scenes:\n  - narration: runaway", {"completion_tokens": 32768}, "length"
+        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n", {}, "stop"
+
+    result = await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
+    assert attempts == {1: 1, 2: 2, 3: 1}
+    assert [s["narration"] for s in result["scenes"]] == ["narr 1.", "narr 2.", "narr 3."]
+    assert [s["scene_num"] for s in result["scenes"]] == [1, 2, 3]
+
+
+async def test_writing_step_propagates_a_second_truncation(monkeypatch, tmp_path):
+    """Recovery stays one re-roll: truncation is variance, and a scene that
+    truncates twice is a real capacity shortfall that must fail loudly."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+
+    async def call(rendered, s):
+        return "runaway", {"completion_tokens": 32768}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain.writing_step("SCP-173", _structure(2), "desc", "guide", "", None, call)
+
+
+async def test_reroll_on_truncation_reraises_a_non_truncation_error():
+    async def call():
+        raise ValueError("semantic")
+
+    with pytest.raises(ValueError, match="semantic"):
+        await chain.reroll_on_truncation("structure", call)
+
+
+async def test_truncation_dump_records_the_raw_response(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return "scenes:\n  - narration: 잘린 응답", {"completion_tokens": 16384}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain._call_stage("scenario/structure", {}, None, call)
+
+    dump = next((tmp_path / "tmp" / "truncations").glob("scenario_structure-*.txt"))
+    text = dump.read_text(encoding="utf-8")
+    assert "잘린 응답" in text
+    assert "completion_tokens=16384" in text
+
+
+async def test_truncation_dump_is_never_zero_bytes(monkeypatch, tmp_path):
+    """Every dump from the 2026-08-05 runs was 0 bytes while the log claimed
+    "full runaway raw -> <path>" — the evidence was destroyed on every failure
+    and an empty response was indistinguishable from a failed capture."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return "", {"completion_tokens": 32768}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain._call_stage("scenario/structure", {}, None, call)
+
+    dump = next((tmp_path / "tmp" / "truncations").glob("scenario_structure-*.txt"))
+    assert dump.stat().st_size > 0
+    assert "raw_chars=0" in dump.read_text(encoding="utf-8")
 
 
 async def test_writing_scene_repair_requires_exact_ordered_coverage(monkeypatch):
@@ -1078,11 +1264,22 @@ async def test_tts_normalize_step_rewrites_narration(monkeypatch):
                 "characters_present": ["SCP-173"],
                 "color_palette": "cold gray",
                 "atmosphere": "dread",
-            }
+            },
+            {
+                # The cassette carries 2 scenes because the stub chain now writes one
+                # scene per call and therefore follows the structure cassette's count.
+                "scene_num": 2,
+                "narration": "그리고 그날 밤. 복도의 조명이 깜빡였습니다. (정적) 그게 마지막이었습니다.",
+                "location": "corridor",
+                "characters_present": ["SCP-173"],
+                "color_palette": "cold gray",
+                "atmosphere": "dread",
+            },
         ],
     }
     result = await chain.tts_normalize_step(writing, "guide", None, call)
     assert result["scenes"][0]["narration"].startswith("열네 명.")
+    assert result["scenes"][1]["narration"].startswith("그리고 그날 밤.")
     # non-narration fields are preserved unchanged
     assert result["scenes"][0]["location"] == "underground containment chamber"
     assert result["scenes"][0]["characters_present"] == ["SCP-173"]

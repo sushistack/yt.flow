@@ -25,7 +25,15 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
-    deepseek_max_tokens: int = 8192
+    # Measured 2026-08-05 over 6 live run attempts (SCP-999, SCP-049): 8192 was the
+    # shipped default while .env already carried 16384, and 16384 truncates
+    # scenario/structure 4/4 (finish_reason=length). 32768 passes structure cleanly.
+    # 65536 stops truncation everywhere, but the all-scenes scenario/writing call was
+    # still outstanding after 29 minutes with zero artifacts — so the fix for writing
+    # was batching it one scene per call (scenario_chain.writing_step), not more
+    # budget. This value is sized for the largest single call that remains,
+    # structure, with headroom over its measured 16384 failure / 32768 pass.
+    deepseek_max_tokens: int = 32768
     # A/B evaluation judge (Story 4.2). Same OpenAI-compatible endpoint; the model is
     # config-pinned so the judge can be swapped independently of the content generator.
     deepseek_judge_model: str = "deepseek-v4-flash"
