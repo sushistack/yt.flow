@@ -238,29 +238,12 @@ async def test_batched_writing_output_satisfies_the_retry_scope_scene_num_guard(
     assert rejected == []
 
 
-async def test_structure_truncation_rerolls_instead_of_failing_the_run(monkeypatch):
-    """Story 6.9's fallback extended to the INITIAL structure generation: this is
-    where 6 of 6 live attempts on 2026-08-05 died."""
-    calls = _stub_chain(monkeypatch)
-    attempts = {"n": 0}
-
-    async def truncating_structure(*a, **k):
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise sc.TruncationError(
-                "scenario/structure response truncated (finish_reason=length); raise max_tokens",
-                prompt_name="scenario/structure", completion_tokens=16384, raw="runaway",
-            )
-        calls["structure"] += 1
-        return STRUCTURE
-
-    monkeypatch.setattr(sc, "structure_step", truncating_structure)
-    out = await sc.scenario_node(_state())
-    assert out["error"] is None
-    assert attempts["n"] == 2
-
-
-async def test_structure_truncating_twice_still_fails_the_run(monkeypatch):
+async def test_a_truncation_the_chain_cannot_absorb_still_fails_the_run(monkeypatch):
+    """The re-roll lives inside `_call_stage_with_retry` (tested in
+    test_scenario_chain.py, which drives the real stage against a truncating
+    DeepSeek). Here the step is stubbed, so the escaping TruncationError stands
+    for a stage that already re-rolled and truncated again: the run must fail
+    loudly, and scenario_node must not add a re-roll of its own."""
     _stub_chain(monkeypatch)
     attempts = {"n": 0}
 
@@ -271,7 +254,7 @@ async def test_structure_truncating_twice_still_fails_the_run(monkeypatch):
     monkeypatch.setattr(sc, "structure_step", always_truncating)
     out = await sc.scenario_node(_state())
     assert "truncated" in out["error"]
-    assert attempts["n"] == 2, "recovery is exactly one re-roll, not a retry loop"
+    assert attempts["n"] == 1, "scenario_node no longer wraps structure — the chain owns the re-roll"
 
 
 class _FakeResponse:

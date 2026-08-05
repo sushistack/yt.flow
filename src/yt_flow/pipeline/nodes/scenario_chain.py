@@ -770,6 +770,36 @@ async def _call_stage_with_retry(
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
+    what: str | None = None,
+):
+    """Every scenario-chain DeepSeek call goes through here, so the truncation
+    re-roll is wired ONCE, here, rather than per stage. Truncation is stochastic
+    reasoning-token exhaustion, so any stage can be the next victim: live run
+    ce0a455a (2026-08-05) died at ``scenario/cast_decision``, which is already
+    per-scene — batching wasn't the gap, coverage was.
+
+    The re-roll wraps the whole parse+validate attempt, so a truncation in
+    either the initial call or the semantic retry costs one independent re-roll
+    and a second truncation propagates (see ``reroll_on_truncation``). ``what``
+    only labels the re-roll log line — writing names the individual scene.
+    """
+    return await reroll_on_truncation(
+        what or prompt_name,
+        lambda: _parse_with_retry(
+            prompt_name, variables, s, call_deepseek, parse, label=label, usage_sink=usage_sink
+        ),
+    )
+
+
+async def _parse_with_retry(
+    prompt_name: str,
+    variables: dict,
+    s,
+    call_deepseek,
+    parse,
+    *,
+    label: str | None = None,
+    usage_sink: list[dict] | None = None,
 ):
     """Bounded self-correcting retry for a stage's parse+validate step. A YAML
     *syntax* failure is repaired deterministically — the single free-text line
@@ -823,7 +853,8 @@ async def _call_stage_with_retry(
 
 
 async def reroll_on_truncation(what: str, call):
-    """Story 6.9's truncation fallback, extended to the INITIAL generations.
+    """Story 6.9's truncation fallback, now applied to EVERY scenario stage —
+    it is wired once inside ``_call_stage_with_retry``, not at call sites.
 
     Before this, only the *scoped repair* write could survive a
     ``TruncationError`` (``scenario_node`` routed it to a full rewrite); a
@@ -1024,25 +1055,26 @@ async def writing_step(
             return scene
 
         # Per-scene re-roll: a truncated scene costs one small re-call, not the
-        # whole stage — the finest granularity the batching makes available.
-        return await reroll_on_truncation(
-            f"writing scene {idx + 1}",
-            lambda: _call_stage_with_retry(
-                "scenario/writing",
-                {
-                    "scp_id": scp_id,
-                    "scene_structure": _writing_scene_brief(structure, idx),
-                    "scp_visual_reference": frozen_descriptor,
-                    "format_guide": format_guide,
-                    "glossary_section": "",
-                    "quality_feedback": quality_feedback,
-                },
-                s,
-                call_deepseek,
-                parse,
-                label=label,
-                usage_sink=usage_sink,
-            ),
+        # whole stage — the finest granularity the batching makes available. The
+        # re-roll itself lives in `_call_stage_with_retry`; because writing calls
+        # it once per scene, that IS per-scene granularity. `what` keeps the log
+        # naming the scene.
+        return await _call_stage_with_retry(
+            "scenario/writing",
+            {
+                "scp_id": scp_id,
+                "scene_structure": _writing_scene_brief(structure, idx),
+                "scp_visual_reference": frozen_descriptor,
+                "format_guide": format_guide,
+                "glossary_section": "",
+                "quality_feedback": quality_feedback,
+            },
+            s,
+            call_deepseek,
+            parse,
+            label=label,
+            usage_sink=usage_sink,
+            what=f"writing scene {idx + 1}",
         )
 
     scenes = await asyncio.gather(*(_write_one(idx) for idx in range(len(structure))))

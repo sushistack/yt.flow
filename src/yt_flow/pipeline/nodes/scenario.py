@@ -27,7 +27,6 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     cast_decision_step,
     critic_step,
     research_step,
-    reroll_on_truncation,
     review_step,
     split_sentences,
     structure_step,
@@ -348,14 +347,11 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
 
         t0 = time.perf_counter()
         usage = []
-        # Truncation here killed 6 of 6 live runs on 2026-08-05 and structure has no
-        # cheaper path to degrade to, so it re-rolls once (see reroll_on_truncation).
-        # writing re-rolls per scene inside writing_step.
-        structure = await reroll_on_truncation(
-            "structure",
-            lambda: structure_step(
-                state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
-            ),
+        # Truncation here killed 6 of 6 live runs on 2026-08-05; structure_step's
+        # single `_call_stage_with_retry` call re-rolls it whole, which is where
+        # every stage's re-roll now lives (see reroll_on_truncation).
+        structure = await structure_step(
+            state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
         stages.append({"name": "structure", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
 

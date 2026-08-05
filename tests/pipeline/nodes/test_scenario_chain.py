@@ -402,6 +402,113 @@ async def test_writing_step_propagates_a_second_truncation(monkeypatch, tmp_path
         await chain.writing_step("SCP-173", _structure(2), "desc", "guide", "", None, call)
 
 
+def _truncatable_stages():
+    """(stage, valid payload, invoker) for EVERY scenario stage that issues a
+    DeepSeek call. The re-roll is wired once in `_call_stage_with_retry`, so this
+    is the list of stages that must inherit it — `scenario/cast_decision` is the
+    one live run ce0a455a died at (already per-scene, so batching was never the
+    gap). `scenario/writing` is covered by the per-scene tests above.
+    """
+    scene = {"scene_num": 1, "location": "site19", "color_palette": "cold",
+             "atmosphere": "dread", "characters_present": [], "narration": "문장 하나."}
+    writing = {"scp_id": "SCP-173", "scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
+    return [
+        ("research", "frozen_descriptor: desc\n",
+         lambda call: chain.research_step("SCP-173", "text", "guide", None, call)),
+        ("structure", "scenes:\n  - scene_num: 1\n",
+         lambda call: chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)),
+        ("cast_decision", "shots:\n  - sentence: 1\n    cast: []\n",
+         lambda call: chain.cast_decision_step("SCP-173", scene, ["문장 하나."], None, call)),
+        ("visual_breakdown", "visual_descriptions:\n  - sentence_start: 1\n    image_prompt: p\n",
+         lambda call: chain.visual_breakdown_step(
+             "SCP-173", scene, ["문장 하나."], {1: []}, "desc", "sheet", "log", scene, None, call)),
+        ("review", "overall_pass: true\n",
+         lambda call: chain.review_step("text", writing, {}, "desc", "guide", None, call)),
+        ("critic_agent", "verdict: pass\n",
+         lambda call: chain.critic_step(writing, {}, "guide", None, call)),
+        ("writing_scene_repair", "scenes:\n  - scene_num: 1\n    narration: 고친 문장.\n",
+         lambda call: chain.writing_scene_repair_step(
+             "SCP-173", writing["scenes"], "feedback", "desc", "guide", None, call)),
+        ("tts_normalize", "scenes:\n  - scene_num: 1\n    narration: 읽는 문장.\n",
+         lambda call: chain.tts_normalize_step(writing, "guide", None, call)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload,invoke",
+    [(payload, invoke) for _, payload, invoke in _truncatable_stages()],
+    ids=[name for name, _, _ in _truncatable_stages()],
+)
+async def test_every_stage_rerolls_once_on_truncation(monkeypatch, tmp_path, payload, invoke):
+    """Truncation is stochastic reasoning-token exhaustion, so recovery must be a
+    property of the whole chain, not of whichever stage last blew up in a live run."""
+    monkeypatch.chdir(tmp_path)  # the truncation dump lands under cwd/tmp
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return "runaway", {"completion_tokens": 32768}, "length"
+        return payload, {}, "stop"
+
+    await invoke(call)
+    assert attempts["n"] == 2, "one truncation, one re-roll"
+
+
+async def test_cast_decision_propagates_a_second_truncation(monkeypatch, tmp_path):
+    """The stage live run ce0a455a died at: it re-rolls once, and a second
+    truncation is a real shortfall that must still fail the run loudly."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        return "runaway", {"completion_tokens": 32768}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain.cast_decision_step("SCP-173", {"characters_present": []}, ["문장 하나."], None, call)
+    assert attempts["n"] == 2, "recovery is exactly one re-roll, not a retry loop"
+
+
+async def test_structure_and_writing_are_not_double_rerolled(monkeypatch, tmp_path):
+    """Both carried their own re-roll wrapper before it moved into
+    `_call_stage_with_retry` — a leftover wrapper would show up as 4 attempts."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        return "runaway", {"completion_tokens": 32768}, "length"
+
+    with pytest.raises(chain.TruncationError):
+        await chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)
+    assert attempts["n"] == 2
+
+    attempts["n"] = 0
+    with pytest.raises(chain.TruncationError):
+        await chain.writing_step("SCP-173", _structure(1), "desc", "guide", "", None, call)
+    assert attempts["n"] == 2
+
+
+async def test_a_non_truncation_stage_failure_never_rerolls(monkeypatch, tmp_path):
+    """Only truncation re-rolls. A semantic failure keeps its existing single
+    self-correcting retry (2 calls), not a re-roll on top of it (4)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        return "shots: []\n", {}, "stop"  # wrong sentence count → ValueError, forever
+
+    with pytest.raises(ValueError):
+        await chain.cast_decision_step("SCP-173", {"characters_present": []}, ["문장 하나."], None, call)
+    assert attempts["n"] == 2, "the pre-existing semantic retry, and nothing more"
+
+
 async def test_reroll_on_truncation_reraises_a_non_truncation_error():
     async def call():
         raise ValueError("semantic")
