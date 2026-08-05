@@ -1324,6 +1324,91 @@ async def visual_breakdown_step(
 
 
 _VALID_VERDICTS = {"pass", "retry", "accept_with_notes"}
+# Worst verdict wins when aggregating per-scene critics: one scene demanding a
+# rewrite is enough to send the whole script back.
+_VERDICT_RANK = ("pass", "accept_with_notes", "retry")
+
+
+def _scene_review_brief(idx: int, total: int) -> str:
+    """Steering prefix for a single-scene review/critic call.
+
+    Lives in the stage's free-text variable (``narration_script`` /
+    ``scenario_json``) rather than in the prompt template, so no Langfuse prompt
+    version has to move for the batching to take effect — the same trick
+    ``_writing_scene_brief`` uses for ``scene_structure``.
+    """
+    opening = "" if idx == 0 else (
+        " This is NOT the opening scene, so checks written for Scene 1 only (hook "
+        "strength, opening line) do not apply — skip them."
+    )
+    return (
+        f"You are reviewing SCENE {idx + 1} OF {total} ONLY. The payload below holds that one "
+        f"scene and nothing else; judge it as part of a {total}-scene script, not as a "
+        f"standalone piece.{opening} Report every `scene_num` as {idx + 1}.\n"
+    )
+
+
+def _stamped(items: object, idx: int) -> list:
+    """Force ``scene_num`` to the call's own 1-based position on every entry.
+
+    A per-scene call cannot know its index — asked in isolation the model answers
+    "1" every time (the ``writing_step`` lesson) — and ``scenario._retry_scope``
+    maps ``scene_num`` back to a position and then asserts the scene at that
+    position agrees. Position is therefore the only source of ``scene_num`` here
+    too, exactly as it is for ``writing_step``. Non-dict entries pass through
+    untouched so ``_retry_scope`` still records them as rejected evidence.
+    """
+    entries = items if isinstance(items, list) else []
+    return [{**item, "scene_num": idx + 1} if isinstance(item, dict) else item for item in entries]
+
+
+def _aggregate_review(reports: list[dict]) -> dict:
+    """Merge per-scene review reports into the single report ``scenario.py`` consumes."""
+    merged: dict = {
+        "overall_pass": all(bool(report.get("overall_pass")) for report in reports),
+        "issues": [],
+        "corrections": [],
+        "storytelling_issues": [],
+    }
+    coverages: list[float] = []
+    scores: list[float] = []
+    for idx, report in enumerate(reports):
+        for key in ("issues", "corrections", "storytelling_issues"):
+            merged[key].extend(_stamped(report.get(key), idx))
+        for sink, key in ((coverages, "coverage_pct"), (scores, "storytelling_score")):
+            value = report.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                sink.append(float(value))
+    # coverage_pct is a whole-script "% of the source facts that appear" metric, but a
+    # per-scene call sees only its own scene against the full fact sheet, so it reports
+    # what THAT scene covers. max() is the closest honest whole-script figure (a lower
+    # bound: a fact covered anywhere counts once); a mean would report roughly 1/N of
+    # reality. storytelling_score is a per-scene quality rating by construction, so the
+    # mean means the same thing it always did. Neither is read by production code today.
+    if coverages:
+        merged["coverage_pct"] = max(coverages)
+    if scores:
+        merged["storytelling_score"] = round(sum(scores) / len(scores), 1)
+    return merged
+
+
+def _aggregate_critic(reports: list[dict]) -> dict:
+    """Merge per-scene critic reports into the single verdict ``scenario.py`` consumes."""
+    return {
+        "verdict": max((report["verdict"] for report in reports), key=_VERDICT_RANK.index),
+        # Scene-prefixed so `_format_feedback`'s whole-script rewrite brief keeps
+        # scene identity — a per-scene critic writes "이 장면은…" with no number.
+        "feedback": "\n".join(
+            f"Scene {idx + 1}: {text}"
+            for idx, report in enumerate(reports)
+            if (text := str(report.get("feedback") or "").strip())
+        ),
+        "scene_notes": [
+            note for idx, report in enumerate(reports) for note in _stamped(report.get("scene_notes"), idx)
+        ],
+    }
+    # ponytail: hook_effective / retention_risk / ending_impact are dropped — the
+    # prompt emits them, nothing reads them. Aggregate when a consumer appears.
 
 
 async def review_step(
@@ -1338,6 +1423,24 @@ async def review_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
+    """Fact-check + quality review — ONE DeepSeek call per scene, concurrently.
+
+    Batched 2026-08-05 for the same reason ``writing_step`` was: live run 370666ba
+    (SCP-999, 9 scenes) truncated this stage twice, so even the central re-roll in
+    ``_call_stage_with_retry`` couldn't save it. The dump proves the shape of the
+    failure — ``completion_tokens=32765``, ``raw_chars=99629``, all of it
+    ``reasoning_content`` ("Need inspect script vs source facts… Need check…") and
+    zero emitted content. Reasoning over a whole-script input exhausts the budget
+    before the report starts. Raising ``max_tokens`` only defers it; one scene per
+    call removes the volume.
+
+    Returns the same aggregated report shape the single call did — see
+    ``_aggregate_review`` for how each field is combined.
+    """
+    scenes = writing.get("scenes") or []
+    if not scenes:
+        raise ValueError("review: writing has no scenes")
+
     def parse(raw: str) -> dict:
         data = _parse_yaml(raw)
         if isinstance(data, dict):
@@ -1359,23 +1462,31 @@ async def review_step(
             raise ValueError("review: payload missing boolean 'overall_pass'")
         return data
 
-    return await _call_stage_with_retry(
-        "scenario/review",
-        {
-            "scp_id": writing.get("scp_id", ""),
-            "scp_fact_sheet": scp_text,
-            "narration_script": json.dumps(writing, ensure_ascii=False),
-            "visual_descriptions": json.dumps(visual_by_scene, ensure_ascii=False),
-            "scp_visual_reference": frozen_descriptor,
-            "format_guide": format_guide,
-            "glossary_section": "",
-        },
-        s,
-        call_deepseek,
-        parse,
-        label=label,
-        usage_sink=usage_sink,
-    )
+    async def _review_one(idx: int, scene: dict) -> dict:
+        return await _call_stage_with_retry(
+            "scenario/review",
+            {
+                "scp_id": writing.get("scp_id", ""),
+                "scp_fact_sheet": scp_text,
+                "narration_script": _scene_review_brief(idx, len(scenes))
+                + json.dumps({**writing, "scenes": [scene]}, ensure_ascii=False),
+                "visual_descriptions": json.dumps(visual_by_scene.get(idx, []), ensure_ascii=False),
+                "scp_visual_reference": frozen_descriptor,
+                "format_guide": format_guide,
+                "glossary_section": "",
+            },
+            s,
+            call_deepseek,
+            parse,
+            label=label,
+            usage_sink=usage_sink,
+            what=f"review scene {idx + 1}",
+        )
+
+    # gather returns results in ARGUMENT order, not completion order — the index
+    # each report is stamped with in `_aggregate_review` is its own scene's.
+    reports = await asyncio.gather(*(_review_one(idx, scene) for idx, scene in enumerate(scenes)))
+    return _aggregate_review(list(reports))
 
 
 async def critic_step(
@@ -1388,7 +1499,14 @@ async def critic_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    scenario_json = {"writing": writing, "visual_descriptions": visual_by_scene}
+    """Viewer-perspective critique — ONE DeepSeek call per scene, concurrently.
+
+    Same whole-script input shape as ``review_step``, so the same reasoning-token
+    exhaustion was next in line; batched pre-emptively alongside it.
+    """
+    scenes = writing.get("scenes") or []
+    if not scenes:
+        raise ValueError("critic_agent: writing has no scenes")
 
     def parse(raw: str) -> dict:
         data = _parse_yaml(raw)
@@ -1407,18 +1525,28 @@ async def critic_step(
             raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
         return data
 
-    return await _call_stage_with_retry(
-        "scenario/critic_agent",
-        {
-            "format_guide": format_guide,
-            "scenario_json": json.dumps(scenario_json, ensure_ascii=False),
-        },
-        s,
-        call_deepseek,
-        parse,
-        label=label,
-        usage_sink=usage_sink,
-    )
+    async def _critique_one(idx: int, scene: dict) -> dict:
+        scenario_json = {
+            "writing": {**writing, "scenes": [scene]},
+            "visual_descriptions": visual_by_scene.get(idx, []),
+        }
+        return await _call_stage_with_retry(
+            "scenario/critic_agent",
+            {
+                "format_guide": format_guide,
+                "scenario_json": _scene_review_brief(idx, len(scenes))
+                + json.dumps(scenario_json, ensure_ascii=False),
+            },
+            s,
+            call_deepseek,
+            parse,
+            label=label,
+            usage_sink=usage_sink,
+            what=f"critic_agent scene {idx + 1}",
+        )
+
+    reports = await asyncio.gather(*(_critique_one(idx, scene) for idx, scene in enumerate(scenes)))
+    return _aggregate_critic(list(reports))
 
 
 async def tts_normalize_step(

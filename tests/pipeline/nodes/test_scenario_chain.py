@@ -33,6 +33,11 @@ class FakePrompt:
         return "rendered"
 
 
+# review/critic are batched per scene, so a `writing` with no scenes issues no call
+# at all — every single-call test needs exactly one scene.
+_ONE_SCENE = {"scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
+
+
 def test_split_sentences_basic():
     assert chain.split_sentences("격리 절차가 시작된다. 요원들이 진입한다.") == [
         "격리 절차가 시작된다.",
@@ -881,7 +886,7 @@ async def test_review_step_rejects_missing_overall_pass(monkeypatch):
         return json.dumps({"coverage_pct": 50.0}), {}, "stop"
 
     with pytest.raises(ValueError, match="overall_pass"):
-        await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+        await chain.review_step("t", _ONE_SCENE, {}, "desc", "guide", None, call)
 
 
 async def test_review_step_retries_non_boolean_overall_pass(monkeypatch):
@@ -892,7 +897,7 @@ async def test_review_step_retries_non_boolean_overall_pass(monkeypatch):
     async def call(rendered, s):
         return next(responses), {}, "stop"
 
-    result = await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+    result = await chain.review_step("t", _ONE_SCENE, {}, "desc", "guide", None, call)
     assert result["overall_pass"] is False
     assert len(prompt.calls) == 2
 
@@ -918,7 +923,7 @@ async def test_critic_step_collapses_embedded_newlines_in_feedback(monkeypatch):
 
     writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
     result = await chain.critic_step(writing, {1: []}, "guide", None, call)
-    assert result["feedback"] == "첫 줄. 둘째 줄."
+    assert result["feedback"] == "Scene 1: 첫 줄. 둘째 줄."
 
 
 async def test_review_step_normalizes_nested_freetext_fields(monkeypatch):
@@ -935,7 +940,7 @@ async def test_review_step_normalizes_nested_freetext_fields(monkeypatch):
             "    correction: |\n      제안 한 줄.\n      제안 두 줄.\n"
         ), {}, "stop"
 
-    result = await chain.review_step("t", {"scenes": []}, {}, "desc", "guide", None, call)
+    result = await chain.review_step("t", _ONE_SCENE, {}, "desc", "guide", None, call)
 
     assert result["issues"][0]["description"] == "첫 줄. 둘째 줄."
     assert result["issues"][0]["correction"] == 42
@@ -956,7 +961,7 @@ async def test_critic_step_normalizes_scene_note_freetext_fields(monkeypatch):
             "  - scene_num: 2\n    issue: 7\n"
         ), {}, "stop"
 
-    result = await chain.critic_step({"scenes": []}, {}, "guide", None, call)
+    result = await chain.critic_step(_ONE_SCENE, {}, "guide", None, call)
 
     assert result["scene_notes"][0]["issue"] == "문제 한 줄. 문제 두 줄."
     assert result["scene_notes"][0]["suggestion"] == "제안 한 줄. 제안 두 줄."
@@ -973,7 +978,171 @@ async def test_critic_step_rejects_unknown_verdict(monkeypatch):
         return json.dumps({"verdict": "maybe", "feedback": "x", "scene_notes": []}), {}, "stop"
 
     with pytest.raises(ValueError, match="verdict"):
-        await chain.critic_step({"scenes": []}, {}, "guide", None, call)
+        await chain.critic_step(_ONE_SCENE, {}, "guide", None, call)
+
+
+# --- review/critic per-scene batching (live run 370666ba truncation) ------------
+
+def _writing(count):
+    return {
+        "scp_id": "SCP-999",
+        "scenes": [{"scene_num": i + 1, "narration": f"장면 {i + 1} 문장."} for i in range(count)],
+    }
+
+
+def _scene_num_of(rendered):
+    """The 1-based scene the steering prefix claims this call is reviewing."""
+    return int(re.search(r"SCENE (\d+) OF", rendered).group(1))
+
+
+class _SceneAwarePrompt:
+    """Renders the compiled variables so the fake DeepSeek can tell scenes apart."""
+
+    def __init__(self):
+        self.calls = []
+
+    def compile(self, **variables):
+        self.calls.append(variables)
+        return json.dumps(variables, ensure_ascii=False)
+
+
+async def test_review_step_calls_once_per_scene(monkeypatch):
+    prompt = _SceneAwarePrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    async def call(rendered, s):
+        return "overall_pass: true\n", {}, "stop"
+
+    result = await chain.review_step("facts", _writing(4), {}, "desc", "guide", None, call)
+
+    assert len(prompt.calls) == 4
+    assert sorted(_scene_num_of(c["narration_script"]) for c in prompt.calls) == [1, 2, 3, 4]
+    # Each call carries exactly its own scene, never the whole script.
+    for c in prompt.calls:
+        payload = json.loads(c["narration_script"].split("\n", 1)[1])
+        assert [s["scene_num"] for s in payload["scenes"]] == [_scene_num_of(c["narration_script"])]
+    assert result["overall_pass"] is True
+
+
+async def test_review_step_overall_pass_is_and_across_scenes(monkeypatch):
+    prompt = _SceneAwarePrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    async def call(rendered, s):
+        passed = _scene_num_of(json.loads(rendered)["narration_script"]) != 2
+        return f"overall_pass: {str(passed).lower()}\n", {}, "stop"
+
+    result = await chain.review_step("facts", _writing(3), {}, "desc", "guide", None, call)
+    assert result["overall_pass"] is False
+
+
+async def test_review_step_aggregates_scene_indexed_issues_out_of_order(monkeypatch):
+    """Scene 3 answers first and every scene reports `scene_num: 1` — the position,
+    not the model, must decide the aggregated scene_num."""
+    prompt = _SceneAwarePrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    async def call(rendered, s):
+        num = _scene_num_of(json.loads(rendered)["narration_script"])
+        await asyncio.sleep((3 - num) * 0.01)  # scene 3 completes first
+        return (
+            "overall_pass: false\ncoverage_pct: {}\nstorytelling_score: {}\n"
+            "issues:\n  - scene_num: 1\n    description: 문제 {}\n    correction: 수정 {}\n"
+            "corrections:\n  - scene_num: 1\n    original: 원 {}\n    corrected: 정 {}\n"
+            "storytelling_issues:\n  - scene_num: 1\n    description: 이야기 {}\n"
+        ).format(num * 10, num * 20, num, num, num, num, num), {}, "stop"
+
+    result = await chain.review_step("facts", _writing(3), {}, "desc", "guide", None, call)
+
+    assert [(i["scene_num"], i["description"]) for i in result["issues"]] == [
+        (1, "문제 1"), (2, "문제 2"), (3, "문제 3"),
+    ]
+    assert [(c["scene_num"], c["original"]) for c in result["corrections"]] == [
+        (1, "원 1"), (2, "원 2"), (3, "원 3"),
+    ]
+    assert [i["scene_num"] for i in result["storytelling_issues"]] == [1, 2, 3]
+    assert result["coverage_pct"] == 30.0  # max — a fact covered anywhere counts once
+    assert result["storytelling_score"] == 40.0  # mean of 20/40/60
+
+
+@pytest.mark.parametrize(
+    "verdicts,expected",
+    [
+        (["pass", "pass"], "pass"),
+        (["pass", "accept_with_notes"], "accept_with_notes"),
+        (["accept_with_notes", "retry"], "retry"),
+        (["retry", "pass", "pass"], "retry"),
+    ],
+)
+async def test_critic_step_aggregates_worst_verdict(monkeypatch, verdicts, expected):
+    prompt = _SceneAwarePrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    async def call(rendered, s):
+        num = _scene_num_of(json.loads(rendered)["scenario_json"])
+        return f"verdict: {verdicts[num - 1]}\nfeedback: 의견 {num}\nscene_notes: []\n", {}, "stop"
+
+    result = await chain.critic_step(_writing(len(verdicts)), {}, "guide", None, call)
+
+    assert len(prompt.calls) == len(verdicts)
+    assert result["verdict"] == expected
+    assert result["feedback"] == "\n".join(f"Scene {i + 1}: 의견 {i + 1}" for i in range(len(verdicts)))
+
+
+async def test_critic_step_stamps_scene_notes_by_position(monkeypatch):
+    prompt = _SceneAwarePrompt()
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: prompt)
+
+    async def call(rendered, s):
+        num = _scene_num_of(json.loads(rendered)["scenario_json"])
+        await asyncio.sleep((3 - num) * 0.01)
+        return (
+            f"verdict: retry\nfeedback: f{num}\n"
+            f"scene_notes:\n  - scene_num: 1\n    issue: 문제 {num}\n    suggestion: 제안 {num}\n"
+        ), {}, "stop"
+
+    result = await chain.critic_step(_writing(3), {}, "guide", None, call)
+    assert [(n["scene_num"], n["issue"]) for n in result["scene_notes"]] == [
+        (1, "문제 1"), (2, "문제 2"), (3, "문제 3"),
+    ]
+
+
+async def test_aggregated_reports_feed_retry_scope_and_feedback():
+    """The aggregated shape must still drive the REAL repair-loop consumers."""
+    from yt_flow.pipeline.nodes import scenario
+
+    reports = [
+        {"overall_pass": False, "coverage_pct": 40.0, "storytelling_score": 60,
+         "issues": [{"scene_num": 1, "description": f"d{n}", "correction": f"c{n}"}]}
+        for n in (1, 2, 3)
+    ]
+    review = chain._aggregate_review(reports)
+    critic = chain._aggregate_critic([
+        {"verdict": "pass", "feedback": "좋다", "scene_notes": []},
+        {"verdict": "retry", "feedback": "고쳐라", "scene_notes": [{"scene_num": 1, "issue": "x"}]},
+        {"verdict": "pass", "feedback": "", "scene_notes": []},
+    ])
+    scenes = _writing(3)["scenes"]
+
+    indexes, rejected = scenario._retry_scope(review, critic, scenes)
+    assert indexes == [0, 1, 2]  # review scenes 1-3, critic scene 2 dedupes
+    assert [r["reason"] for r in rejected] == ["duplicate"]
+
+    feedback = scenario._format_feedback(review, critic)
+    assert feedback.splitlines() == [
+        "Scene 1: 좋다",
+        "Scene 2: 고쳐라",
+        "- Scene 1: d1 -> c1",
+        "- Scene 2: d2 -> c2",
+        "- Scene 3: d3 -> c3",
+    ]
+    # The critic note reaches scene 2's repair brief. (Its text is empty because
+    # `_format_scene_feedback` reads feedback/note/description while the critic
+    # prompt emits issue/suggestion — a pre-existing gap, unchanged by batching.)
+    assert scenario._format_scene_feedback(review, critic, [1]).splitlines() == [
+        "Review scene 2: d2 -> c2",
+        "Critic scene 2: ",
+    ]
 
 
 async def test_call_stage_uses_get_prompt_when_label_is_none(monkeypatch):
