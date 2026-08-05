@@ -1203,6 +1203,48 @@ def test_parse_yaml_strips_json_fence():
     assert chain._parse_yaml('```json\n{"key": "value"}\n```') == {"key": "value"}
 
 
+def test_parse_yaml_strips_fence_preceded_by_prose():
+    """Live run 64b6d9a8 (scenario/visual_breakdown): the model emitted a
+    markdown heading first, so the fence opened on line 3 and ``re.match``
+    stripped nothing — the backticks reached safe_load."""
+    raw = "# Scene 7 — YAML Output\n\n```yaml\nscene_num: 7\n```\n\nDone."
+    assert chain._parse_yaml(raw) == {"scene_num": 7}
+
+
+def test_parse_yaml_takes_first_fenced_block():
+    assert chain._parse_yaml("intro\n```yaml\nkey: a\n```\nmore\n```yaml\nkey: b\n```") == {"key": "a"}
+
+
+def test_parse_yaml_strips_bare_fence_after_prose():
+    assert chain._parse_yaml("here you go:\n```\nkey: value\n```") == {"key": "value"}
+
+
+def test_parse_yaml_unterminated_fence_takes_the_remainder():
+    assert chain._parse_yaml("blah\n```yaml\nkey: value") == {"key": "value"}
+
+
+def test_yaml_text_without_fence_is_only_stripped():
+    raw = "  key: value\nother: 1  "
+    assert chain._yaml_text(raw) == "key: value\nother: 1"
+
+
+def test_repair_alignment_holds_for_fence_after_prose():
+    """Story 6.11 contract: ``problem_mark.line`` indexes the de-fenced text the
+    repair rewrites. With prose before the fence the two must still agree —
+    they do because both go through ``_yaml_text``."""
+    broken = (
+        "# Scene 7 — YAML Output\n\n"
+        "```yaml\n"
+        "scenes:\n"
+        "  - scene_num: 1\n"
+        "    narration: 박사가 말했다: 위험해\n"
+        "```\n"
+    )
+    data = _repair(broken)
+    assert data["scenes"][0]["narration"] == "박사가 말했다: 위험해"
+    assert data["scenes"][0]["scene_num"] == 1  # sibling untouched, not shifted by the prose
+
+
 def test_parse_yaml_raises_yaml_error_on_malformed_input():
     with pytest.raises(yaml.YAMLError):
         chain._parse_yaml("key: [unterminated")

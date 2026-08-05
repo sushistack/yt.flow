@@ -636,7 +636,12 @@ async def _call_stage(
     return raw, usage
 
 
-_YAML_FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n(.*?)\n?```$", re.DOTALL)
+# MULTILINE so the opening fence may start on any line (a model that writes a
+# markdown heading first — live run 64b6d9a8); the `\Z` branch takes everything
+# after an unterminated fence rather than failing to match at all.
+_YAML_FENCE_RE = re.compile(
+    r"^```[a-zA-Z]*[ \t]*\n(.*?)(?:\n?[ \t]*```|\Z)", re.DOTALL | re.MULTILINE
+)
 
 
 def _parse_yaml(raw: str) -> Any:
@@ -657,9 +662,16 @@ def _parse_yaml(raw: str) -> Any:
 def _yaml_text(raw: str) -> str:
     """The exact string handed to ``yaml.safe_load`` — stripped and de-fenced.
     Shared with the free-text repair path so a ``YAMLError``'s ``problem_mark``
-    line index aligns with the text the repair rewrites (Story 6.11)."""
+    line index aligns with the text the repair rewrites (Story 6.11) — it stays
+    aligned because both paths call this one pure function, so prose dropped
+    before the fence is dropped identically on both sides.
+
+    ``search``, not ``match``: the fence need not open at position 0 (the model
+    may narrate or emit a markdown heading first). The first fenced block wins;
+    anything before the opening fence or after the closing one is prose.
+    """
     text = raw.strip()
-    match = _YAML_FENCE_RE.match(text)
+    match = _YAML_FENCE_RE.search(text)
     return match.group(1) if match else text
 
 
