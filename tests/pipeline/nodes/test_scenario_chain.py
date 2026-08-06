@@ -3811,3 +3811,342 @@ async def test_cast_decision_step_renders_role_catalog(monkeypatch):
     for key, desc in STOCK_CAST_ROLES.items():
         assert key in catalog
         assert desc.split(" —")[0].strip() in catalog
+
+
+# ── Story 12.3: deterministic rule metrics (AC5) ──────────────────────────────
+
+
+def test_rule_metrics_counts_non_whitespace_chars_and_sentences():
+    writing = {"scenes": [{"narration": "첫 문장 입니다. 둘째 문장."}]}
+    m = chain.compute_rule_metrics(writing)
+    # 8 non-whitespace chars in scene 1's first sentence + 6 in the second = 14
+    assert m["aggregate"]["character_count"] == len("첫문장입니다.둘째문장.")
+    assert m["aggregate"]["sentence_count"] == 2
+    assert m["scenes"] == [{
+        "scene_num": 1, "character_count": len("첫문장입니다.둘째문장."), "sentence_count": 2,
+        "duplicate_sentence_count": 0, "repeated_4gram_count": 0,
+    }]
+
+
+def test_rule_metrics_scene_num_is_positional_not_model_supplied():
+    writing = {"scenes": [{"scene_num": 7, "narration": "가."}, {"scene_num": 7, "narration": "나."}]}
+    m = chain.compute_rule_metrics(writing)
+    assert [s["scene_num"] for s in m["scenes"]] == [1, 2]
+
+
+def test_rule_metrics_duplicate_sentences_ignore_nfkc_whitespace_case_and_terminal_punctuation():
+    # ｇｏｏｄ (fullwidth) NFKC-folds to "good"; the trailing '!' vs '.' and the
+    # doubled space must not make these three read as distinct sentences.
+    writing = {"scenes": [{"narration": "It is ｇｏｏｄ. It  is good! IT IS GOOD."}]}
+    m = chain.compute_rule_metrics(writing)
+    assert m["aggregate"]["sentence_count"] == 3
+    assert m["aggregate"]["duplicate_sentence_count"] == 2  # occurrences beyond the first
+
+
+def test_rule_metrics_duplicate_detection_spans_scenes():
+    writing = {"scenes": [{"narration": "같은 문장."}, {"narration": "같은 문장."}]}
+    m = chain.compute_rule_metrics(writing)
+    assert [s["duplicate_sentence_count"] for s in m["scenes"]] == [0, 0]  # unique within each scene
+    assert m["aggregate"]["duplicate_sentence_count"] == 1  # but recycled across the script
+
+
+def test_rule_metrics_4gram_threshold_is_three_occurrences():
+    twice = {"scenes": [{"narration": "가 나 다 라 마. 가 나 다 라 바."}]}
+    assert chain.compute_rule_metrics(twice)["aggregate"]["repeated_4gram_count"] == 0
+    thrice = {"scenes": [{"narration": "가 나 다 라 마. 가 나 다 라 바. 가 나 다 라 사."}]}
+    metrics = chain.compute_rule_metrics(thrice)
+    assert metrics["aggregate"]["repeated_4gram_count"] == 1
+    assert metrics["repeated_ngrams"] == [{"phrase": "가 나 다 라", "count": 3}]
+
+
+def test_rule_metrics_4grams_never_straddle_a_scene_boundary():
+    """[review fix] The aggregate pools per-scene token RUNS, not one flat token list.
+
+    Flattened, these six 3-token scenes manufacture three 4-grams ("가 나 다. 라", …)
+    that occur nowhere in the script — phantom evidence the operator is asked to act
+    on at the gate. A phrase repeated WITHIN a scene must still be caught (below).
+    """
+    alternating = {"scenes": [{"narration": "가 나 다."}, {"narration": "라 마 바."}] * 3}
+    metrics = chain.compute_rule_metrics(alternating)
+    assert metrics["repeated_ngrams"] == []
+    assert metrics["aggregate"]["repeated_4gram_count"] == 0
+
+    # The cross-scene signal the pooling exists for is unaffected: a 4-gram recycled
+    # between scenes still counts, because the runs are pooled (just not concatenated).
+    recycled = {"scenes": [{"narration": "가 나 다 라."}] * 3}
+    assert chain.compute_rule_metrics(recycled)["repeated_ngrams"] == [
+        {"phrase": "가 나 다 라.", "count": 3}
+    ]
+
+
+def test_rule_metrics_slop_hits_are_exact_normalized_matches_with_scene_evidence():
+    phrase = chain.KOREAN_SLOP_PHRASES[0]
+    writing = {"scenes": [{"narration": "평범한 문장."}, {"narration": f"{phrase} 그리고 {phrase}."}]}
+    m = chain.compute_rule_metrics(writing)
+    assert m["slop_phrase_hits"] == [{"scene_num": 2, "phrase": phrase, "count": 2}]
+    assert m["slop_vocabulary_version"] == chain.SLOP_VOCABULARY_VERSION
+
+
+def test_rule_metrics_slop_vocabulary_is_small_and_versioned():
+    assert 0 < len(chain.KOREAN_SLOP_PHRASES) <= 16
+    assert len(set(chain.KOREAN_SLOP_PHRASES)) == len(chain.KOREAN_SLOP_PHRASES)
+    assert isinstance(chain.SLOP_VOCABULARY_VERSION, int)
+
+
+def test_rule_metrics_tolerates_missing_and_malformed_narration():
+    writing = {"scenes": [{}, {"narration": None}, "not-a-dict"]}
+    m = chain.compute_rule_metrics(writing)
+    assert m["aggregate"] == {
+        "character_count": 0, "sentence_count": 0,
+        "duplicate_sentence_count": 0, "repeated_4gram_count": 0,
+    }
+    assert len(m["scenes"]) == 3
+
+
+def test_rule_metrics_empty_writing_is_all_zero():
+    m = chain.compute_rule_metrics({})
+    assert m["scenes"] == []
+    assert m["aggregate"]["sentence_count"] == 0
+    assert m["repeated_ngrams"] == []
+    assert m["slop_phrase_hits"] == []
+
+
+# ── Story 12.3: grounded contradictions in review (AC4) ───────────────────────
+
+
+def _contradiction(**over) -> dict:
+    base = {
+        "scene_num": 1,
+        "narration_quote": "개체는 파란 눈을 가지고 있습니다",
+        "grounding_source": "entity_sheet",
+        "grounding_quote": "눈은 검은색이다",
+        "explanation": "눈 색이 접지 자료와 반대다",
+        "correction": "개체는 검은 눈을 가지고 있습니다",
+    }
+    base.update(over)
+    return base
+
+
+def _review_yaml(**over) -> str:
+    payload = {"overall_pass": True, "issues": [], "corrections": [], "storytelling_issues": []}
+    payload.update(over)
+    return yaml.safe_dump(payload, allow_unicode=True)
+
+
+def _yaml_caller(*payloads):
+    """A call_llm seam returning each payload in turn (the semantic retry gets the next)."""
+    remaining = list(payloads)
+
+    async def call(rendered, s):
+        return remaining.pop(0), {}, "stop"
+
+    return call
+
+
+async def test_review_step_renders_entity_sheet(monkeypatch):
+    captured = {}
+
+    class CapturePrompt:
+        def compile(self, **kwargs):
+            captured.update(kwargs)
+            return "rendered"
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CapturePrompt())
+    await chain.review_step(
+        "facts", _ONE_SCENE, {}, "desc", "guide", None, _yaml_caller(_review_yaml()),
+        entity_sheet="개체 시트 본문",
+    )
+    assert captured["entity_sheet"] == "개체 시트 본문"
+    assert captured["scp_visual_reference"] == "desc"  # frozen_descriptor preserved
+    assert captured["scp_fact_sheet"] == "facts"       # scp_text preserved
+
+
+async def test_review_step_keeps_valid_grounded_contradiction(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[_contradiction()])),
+    )
+    assert len(result["grounded_contradictions"]) == 1
+    assert result["grounded_contradictions"][0]["grounding_quote"] == "눈은 검은색이다"
+
+
+async def test_review_step_forces_overall_pass_false_on_contradiction(monkeypatch):
+    """The model claimed a pass while reporting a contradiction — code decides."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(overall_pass=True, grounded_contradictions=[_contradiction()])),
+    )
+    assert result["overall_pass"] is False
+
+
+async def test_review_step_synthesizes_matching_issue_for_contradiction(monkeypatch):
+    """AC4: the contradiction must participate in the pass-1 repair decision, so it
+    has to exist in issues[] even when the prompt forgot to emit it there."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[_contradiction()])),
+    )
+    grounded = [i for i in result["issues"] if i["type"] == "grounded_contradiction"]
+    assert len(grounded) == 1
+    assert "눈은 검은색이다" in grounded[0]["description"]
+    assert grounded[0]["correction"] == "개체는 검은 눈을 가지고 있습니다"
+    assert grounded[0]["scene_num"] == 1  # positional stamp, feeds _retry_scope
+
+
+async def test_review_step_does_not_duplicate_model_supplied_contradiction_issue(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    model_issue = {"scene_num": 1, "type": "grounded_contradiction", "severity": "critical",
+                   "description": "모델이 직접 쓴 설명", "correction": "고쳐라"}
+    other_issue = {"scene_num": 1, "type": "fact_error", "severity": "warning",
+                   "description": "다른 문제", "correction": "고쳐라"}
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(issues=[model_issue, other_issue],
+                                  grounded_contradictions=[_contradiction()])),
+    )
+    grounded = [i for i in result["issues"] if i["type"] == "grounded_contradiction"]
+    assert len(grounded) == 1                              # exactly one per contradiction
+    assert any(i["type"] == "fact_error" for i in result["issues"])  # siblings untouched
+
+
+@pytest.mark.parametrize("missing", [
+    "narration_quote", "grounding_source", "grounding_quote", "explanation", "correction",
+])
+async def test_review_step_rejects_contradiction_missing_required_evidence(monkeypatch, missing):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _contradiction()
+    del bad[missing]
+    # The FIRST payload is rejected outright, which buys the one prompt-level
+    # correction. (What a second bad payload does is pinned separately below.)
+    with pytest.raises(ValueError, match="grounded_contradiction"):
+        chain._validate_grounded_contradictions({"grounded_contradictions": [bad]})
+
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[bad]),
+                     _review_yaml(grounded_contradictions=[_contradiction()])),
+    )
+    assert len(result["grounded_contradictions"]) == 1  # the correction landed
+
+
+async def test_review_step_rejects_blank_evidence(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _contradiction(grounding_quote="   ")
+    with pytest.raises(ValueError, match="grounded_contradiction"):
+        chain._validate_grounded_contradictions({"grounded_contradictions": [bad]})
+
+
+@pytest.mark.parametrize("source", ["my own knowledge of SCP-096", "", "entity sheet"])
+def test_contradiction_grounding_source_must_be_a_supplied_artifact(source):
+    """[review fix] An evidence bar that accepts any source name lets the model grade
+    the narration against its own SCP knowledge — the one thing the prompt forbids."""
+    with pytest.raises(ValueError, match="grounded_contradiction"):
+        chain._validate_grounded_contradictions(
+            {"grounded_contradictions": [_contradiction(grounding_source=source)]}
+        )
+    for ok in chain.GROUNDING_SOURCES:
+        entries = chain._validate_grounded_contradictions(
+            {"grounded_contradictions": [_contradiction(grounding_source=ok)]}
+        )
+        assert entries[0]["grounding_source"] == ok
+
+
+@pytest.mark.parametrize("bad", [
+    [{"scene_num": 1, "narration_quote": "근거 없는 주장"}],  # missing every other field
+    "없음",                                                    # not even a list
+])
+async def test_unevidenced_contradiction_is_dropped_not_fatal_after_the_retry(monkeypatch, bad, caplog):
+    """[review fix] AD-10: a DIAGNOSTIC field must not be able to kill a scenario that
+    is otherwise fine. The claim is still rejected — by dropping it, with a WARNING —
+    once the model has had its one correction. Required contract fields still fail hard
+    (see test_review_step_missing_overall_pass...)."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    with caplog.at_level(logging.WARNING):
+        result = await chain.review_step(
+            "t", _ONE_SCENE, {}, "desc", "guide", None,
+            _yaml_caller(_review_yaml(overall_pass=True, grounded_contradictions=bad),
+                         _review_yaml(overall_pass=True, grounded_contradictions=bad)),
+        )
+    assert result["grounded_contradictions"] == []
+    assert result["overall_pass"] is True   # no unevidenced claim may fail the review
+    assert any("grounded_contradiction" in r.getMessage() for r in caplog.records)
+
+
+async def test_lenient_retry_state_is_per_scene_not_shared(monkeypatch):
+    """Every scene gets its OWN parser, so its own attempt counter.
+
+    Both scenes here need their one correction. With a single shared counter, scene 2's
+    first attempt would already be in lenient mode and its contradiction would be
+    dropped instead of corrected — a silently weaker evidence check for every scene
+    after the first one that stumbled.
+    """
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    writing = {"scenes": [{"scene_num": 1, "narration": "가."}, {"scene_num": 2, "narration": "나."}]}
+    bad = {"scene_num": 1, "narration_quote": "근거 없음"}
+    good = _review_yaml(grounded_contradictions=[_contradiction()])
+    result = await chain.review_step(
+        "t", writing, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[bad]), good,
+                     _review_yaml(grounded_contradictions=[bad]), good),
+    )
+    assert len(result["grounded_contradictions"]) == 2
+    assert sorted(c["scene_num"] for c in result["grounded_contradictions"]) == [1, 2]
+
+
+async def test_review_step_retry_recovers_evidenced_contradiction(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _contradiction()
+    del bad["grounding_quote"]
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[bad]),
+                     _review_yaml(grounded_contradictions=[_contradiction()])),
+    )
+    assert len(result["grounded_contradictions"]) == 1
+    assert result["overall_pass"] is False
+
+
+async def test_review_step_absent_or_null_contradictions_is_clean(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    for payload in (_review_yaml(), _review_yaml(grounded_contradictions=None)):
+        result = await chain.review_step("t", _ONE_SCENE, {}, "desc", "guide", None, _yaml_caller(payload))
+        assert result["grounded_contradictions"] == []
+        assert result["overall_pass"] is True
+
+
+def test_review_rejects_malformed_contradictions_container():
+    with pytest.raises(ValueError, match="grounded_contradiction"):
+        chain._validate_grounded_contradictions({"grounded_contradictions": "없음"})
+
+
+async def test_review_step_normalizes_contradiction_freetext(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    result = await chain.review_step(
+        "t", _ONE_SCENE, {}, "desc", "guide", None,
+        _yaml_caller(_review_yaml(grounded_contradictions=[
+            _contradiction(explanation="첫 줄\n둘째  줄"),
+        ])),
+    )
+    assert result["grounded_contradictions"][0]["explanation"] == "첫 줄 둘째 줄"
+
+
+async def test_review_step_stamps_contradiction_scene_num_positionally(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    writing = {"scenes": [{"scene_num": 1, "narration": "가."}, {"scene_num": 2, "narration": "나."}]}
+    # Both per-scene calls report scene_num 1 (the isolated-call habit) — position wins.
+    result = await chain.review_step(
+        "t", writing, {}, "desc", "guide", None,
+        _yaml_caller(*[_review_yaml(grounded_contradictions=[_contradiction(scene_num=1)])] * 2),
+    )
+    assert sorted(c["scene_num"] for c in result["grounded_contradictions"]) == [1, 2]
+
+
+def test_review_prompt_documents_entity_sheet_and_evidence_rules():
+    content = (Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "review.md").read_text(encoding="utf-8")
+    assert "{{entity_sheet}}" in content
+    assert "grounded_contradictions" in content
+    for field in ("narration_quote", "grounding_source", "grounding_quote", "explanation", "correction"):
+        assert field in content

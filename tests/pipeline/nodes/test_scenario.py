@@ -1364,3 +1364,266 @@ async def test_a_gemini_outage_surfaces_as_a_scenario_error_not_a_deepseek_rewri
     out = await sc.scenario_node(_state())
     assert out["error"] and "503" in out["error"]
     assert "scenes" not in out
+
+
+# ── Story 12.3: pass-2 verdict surfaced as scenario_quality (AC1-3, 5) ────────
+
+CRITIC_NOTES = {"verdict": "accept_with_notes", "feedback": "사소한 지적", "scene_notes": []}
+CONTRADICTION = {
+    "scene_num": 1,
+    "narration_quote": "개체는 파란 눈을 가지고 있습니다",
+    "grounding_source": "entity_sheet",
+    "grounding_quote": "눈은 검은색이다",
+    "explanation": "눈 색이 접지 자료와 반대다",
+    "correction": "개체는 검은 눈을 가지고 있습니다",
+}
+
+
+async def test_review_receives_entity_sheet_on_both_passes(monkeypatch):
+    """AC4 wiring: the grounding source must reach review on the initial write AND
+    on the scoped repair — a repair pass judged without it is the pass that ships."""
+    seen: list[str] = []
+
+    async def capturing_review(*a, **k):
+        seen.append(k.get("entity_sheet"))
+        return REVIEW_FAIL if len(seen) == 1 else REVIEW_PASS
+
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "review_step", capturing_review)
+    out = await sc.scenario_node(_state())
+
+    assert out.get("error") is None
+    assert seen == ["entity sheet", "entity sheet"]
+
+
+async def test_clean_pass1_records_quality_without_warning(monkeypatch):
+    _stub_chain(monkeypatch)
+    out = await sc.scenario_node(_state())
+    quality = out["scenario_quality"]
+    assert "warning" not in quality
+    assert quality["final_pass_index"] == 1
+    assert quality["retry_scope"] == "none"
+    assert quality["review_overall_pass"] is True
+    assert quality["critic_verdict"] == "pass"
+
+
+def _sequenced(monkeypatch, attr, *values):
+    """Replace a chain step with one yielding each value in turn (the last repeats).
+
+    `_stub_chain`'s own `*_retry` arguments key off the WRITING count, so they only
+    fire on the full-rewrite path — the scoped-repair path needs a per-call seam.
+    """
+    state = {"n": 0}
+
+    async def fake(*a, **k):
+        state["n"] += 1
+        return values[min(state["n"], len(values)) - 1]
+
+    monkeypatch.setattr(sc, attr, fake)
+    return state
+
+
+async def test_pass2_that_resolves_carries_no_warning(monkeypatch):
+    _stub_chain(monkeypatch, review=REVIEW_FAIL)
+    _sequenced(monkeypatch, "review_step", REVIEW_FAIL, REVIEW_PASS)  # scoped repair fixed it
+    out = await sc.scenario_node(_state())
+    quality = out["scenario_quality"]
+    assert "warning" not in quality
+    assert quality["final_pass_index"] == 2
+    assert quality["retry_scope"] == "scene"
+
+
+async def test_unresolved_pass2_critic_retry_warns_but_run_succeeds(monkeypatch):
+    """AC1+AC2: the bounded retry is unchanged and the stage still reaches the gate."""
+    # REVIEW_FAIL carries a mappable scene_num, so the bounded retry is the SCOPED
+    # repair; the critic still says "retry" once it is done.
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=CRITIC_RETRY)
+    out = await sc.scenario_node(_state())
+
+    assert out.get("error") is None            # non-fatal: the human still decides
+    assert len(out["scenes"]) == 1
+    assert calls["writing"] == 1 and calls["repair"] == 1  # no third pass
+    assert calls["review"] == 2 and calls["critic"] == 2
+    assert calls["tts_normalize"] == 1
+    quality = out["scenario_quality"]
+    assert quality["warning"]["code"] == "unresolved_pass2"
+    assert quality["warning"]["message"]
+    assert quality["critic_verdict"] == "retry"
+    assert quality["critic_feedback"] == "다시 써주세요"
+
+
+async def test_critic_feedback_keeps_its_per_scene_lines(monkeypatch):
+    """[review fix] `_aggregate_critic` joins per-scene feedback with newlines and the
+    UI renders the field `whitespace-pre-wrap`. Collapsing ALL whitespace turned that
+    into one unreadable paragraph at the exact moment the operator has to read it."""
+    multiline = {**CRITIC_RETRY, "feedback": "Scene 1: 훅이  약합니다.\n\nScene 2:  늘어집니다."}
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=multiline)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert quality["critic_feedback"] == "Scene 1: 훅이 약합니다.\nScene 2: 늘어집니다."
+
+
+async def test_critic_feedback_stays_bounded_across_lines(monkeypatch):
+    long_critic = {**CRITIC_RETRY, "feedback": "\n".join(["가" * 200] * 40)}  # ~8k chars
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=long_critic)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert len(quality["critic_feedback"]) == sc._MAX_FEEDBACK_CHARS
+    assert quality["critic_feedback"].endswith("…")
+
+
+async def test_unresolved_pass2_failed_review_warns(monkeypatch):
+    _stub_chain(monkeypatch, review=REVIEW_FAIL)  # overall_pass still false after repair
+    out = await sc.scenario_node(_state())
+    quality = out["scenario_quality"]
+    assert quality["warning"]["code"] == "unresolved_pass2"
+    assert quality["review_overall_pass"] is False
+    assert [i["description"] for i in quality["review_issues"]] == ["bad"]
+
+
+async def test_accept_with_notes_alone_neither_retries_nor_warns(monkeypatch):
+    calls = _stub_chain(monkeypatch, critic=CRITIC_NOTES)
+    out = await sc.scenario_node(_state())
+    assert calls["writing"] == 1 and calls["repair"] == 0  # AC3: not a retry trigger
+    assert "warning" not in out["scenario_quality"]
+
+
+async def test_accept_with_notes_after_a_pass1_failure_is_clean(monkeypatch):
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=CRITIC_RETRY)
+    _sequenced(monkeypatch, "review_step", REVIEW_FAIL, REVIEW_PASS)
+    _sequenced(monkeypatch, "critic_step", CRITIC_RETRY, CRITIC_NOTES)
+    out = await sc.scenario_node(_state())
+    assert calls["repair"] == 1
+    assert out["scenario_quality"]["final_pass_index"] == 2
+    assert "warning" not in out["scenario_quality"]
+
+
+async def test_unresolved_warning_records_full_fallback_scope(monkeypatch):
+    # No mappable scene_num → the full-rewrite fallback; still unresolved afterwards.
+    unmappable = {**REVIEW_PASS, "overall_pass": False,
+                  "issues": [{"scene_num": 99, "description": "bad", "correction": "fix"}]}
+    calls = _stub_chain(monkeypatch, review=unmappable)
+    out = await sc.scenario_node(_state())
+    assert calls["writing"] == 2 and calls["repair"] == 0
+    quality = out["scenario_quality"]
+    assert quality["retry_scope"] == "full-fallback"
+    assert quality["warning"]["code"] == "unresolved_pass2"
+
+
+async def test_unresolved_warning_records_truncation_fallback_scope(monkeypatch):
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL)
+
+    async def truncating_repair(*a, **k):
+        calls["repair"] += 1
+        raise sc.TruncationError(
+            "scenario/writing_scene_repair response truncated (finish_reason=length)",
+            prompt_name="scenario/writing_scene_repair", completion_tokens=16000, raw="가" * 10,
+        )
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", truncating_repair)
+    out = await sc.scenario_node(_state())
+    assert out.get("error") is None
+    assert out["scenario_quality"]["retry_scope"] == "scene-repair-truncated-fallback"
+    assert out["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+
+
+async def test_quality_carries_grounded_contradiction_evidence(monkeypatch):
+    review = {**REVIEW_FAIL, "grounded_contradictions": [CONTRADICTION]}
+    _stub_chain(monkeypatch, review=review)
+    out = await sc.scenario_node(_state())
+    evidence = out["scenario_quality"]["grounded_contradictions"]
+    assert len(evidence) == 1
+    assert evidence[0]["grounding_quote"] == "눈은 검은색이다"
+    assert evidence[0]["scene_num"] == 1
+
+
+async def test_rule_metrics_are_code_derived_and_unspoofable(monkeypatch):
+    """AC5: metrics are merged AFTER review parsing, so a model that reports its
+    own flattering numbers cannot overwrite them."""
+    review = {**REVIEW_PASS, "rule_metrics": {"aggregate": {"character_count": 999999}}}
+    writing = {**WRITING, "scenes": [{**WRITING["scenes"][0], "narration": "같은 문장. 같은 문장."}]}
+
+    async def fake_writing(*a, **k):
+        return writing
+
+    _stub_chain(monkeypatch, review=review)
+    monkeypatch.setattr(sc, "writing_step", fake_writing)
+    out = await sc.scenario_node(_state())
+
+    metrics = out["scenario_quality"]["rule_metrics"]
+    assert metrics["aggregate"]["character_count"] == len("같은문장.같은문장.")
+    assert metrics["aggregate"]["duplicate_sentence_count"] == 1
+    assert metrics["scenes"][0]["scene_num"] == 1
+    assert metrics["slop_vocabulary_version"] == chain.SLOP_VOCABULARY_VERSION
+
+
+async def test_rule_metrics_measure_pre_normalization_writing(monkeypatch):
+    """The review/critic judged the writing text, so the metrics must describe the
+    same text — not the TTS-normalized rewrite that follows."""
+    normalized = {**WRITING, "scenes": [{**WRITING["scenes"][0], "narration": "가나다라마바사아자차." * 5}]}
+    _stub_chain(monkeypatch, tts_normalize=normalized)
+    out = await sc.scenario_node(_state())
+    assert out["scenario_quality"]["rule_metrics"]["aggregate"]["character_count"] == len("문장.")
+
+
+async def test_quality_is_json_and_checkpoint_safe(monkeypatch):
+    _stub_chain(monkeypatch, review={**REVIEW_FAIL, "grounded_contradictions": [CONTRADICTION]},
+                critic=CRITIC_RETRY)
+    out = await sc.scenario_node(_state())
+    round_tripped = json.loads(json.dumps(out["scenario_quality"], ensure_ascii=False))
+    assert round_tripped == out["scenario_quality"]
+
+
+async def test_quality_bounds_runaway_feedback_and_issue_lists(monkeypatch, caplog):
+    huge_issues = [{"scene_num": 1, "type": "fact_error", "severity": "warning",
+                    "description": "가" * 5000, "correction": "나"} for _ in range(50)]
+    review = {**REVIEW_PASS, "overall_pass": False, "issues": huge_issues}
+    _stub_chain(monkeypatch, review=review)
+    with caplog.at_level("WARNING"):
+        out = await sc.scenario_node(_state())
+    quality = out["scenario_quality"]
+    assert len(quality["review_issues"]) == sc._MAX_QUALITY_ITEMS
+    assert all(len(i["description"]) <= sc._MAX_QUALITY_TEXT for i in quality["review_issues"])
+    # No silent caps: the drop is logged, not hidden behind a full-looking list.
+    assert "review issues" in caplog.text
+
+
+async def test_failed_scenario_returns_no_quality(monkeypatch):
+    _stub_chain(monkeypatch)
+
+    async def boom(*a, **k):
+        raise ValueError("structure blew up")
+
+    monkeypatch.setattr(sc, "structure_step", boom)
+    out = await sc.scenario_node(_state())
+    assert out["error"]
+    assert "scenario_quality" not in out
+
+
+async def test_unresolved_warning_records_coverage_fallback_scope(monkeypatch):
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL)
+
+    async def mismatching_repair(*a, **k):
+        calls["repair"] += 1
+        raise sc.SceneCoverageError(
+            "writing_scene_repair: scene coverage mismatch; expected [1] got [2]",
+            prompt_name="scenario/writing_scene_repair",
+        )
+
+    monkeypatch.setattr(sc, "writing_scene_repair_step", mismatching_repair)
+    out = await sc.scenario_node(_state())
+    assert out.get("error") is None
+    quality = out["scenario_quality"]
+    assert quality["retry_scope"] == "scene-repair-coverage-fallback"
+    assert quality["final_pass_index"] == 2
+    assert quality["warning"]["code"] == "unresolved_pass2"
+
+
+async def test_quality_survives_a_langgraph_checkpoint_round_trip(monkeypatch, tmp_path):
+    """The gate reads this out of a checkpoint, so the whole object has to survive
+    the checkpointer's serializer, not just json.dumps."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    _stub_chain(monkeypatch, review={**REVIEW_FAIL, "grounded_contradictions": [CONTRADICTION]},
+                critic=CRITIC_RETRY)
+    out = await sc.scenario_node(_state())
+    serde = JsonPlusSerializer()
+    assert serde.loads_typed(serde.dumps_typed(out["scenario_quality"])) == out["scenario_quality"]

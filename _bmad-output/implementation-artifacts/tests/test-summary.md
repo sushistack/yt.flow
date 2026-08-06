@@ -284,3 +284,138 @@ validation, no code review. All discovered gaps auto-applied per Jay's instructi
   to `status="complete"`. Verified directly, not inferred. The API gate endpoint does
   return 409 on a failed run (asserted by the new outage test), so the exposure is
   service-level — anything calling `resume_run` without going through the route.
+
+---
+
+# Story 12.3 — Pass-2 Verdict Grounded Gate
+
+Workflow: `bmad-qa-generate-e2e-tests`, 2026-08-06. Test generation only — no story
+validation, no code review. All discovered gaps auto-applied per Jay's instruction.
+Existing frameworks only (pytest 9.1.1 + pytest-asyncio, Vitest 3.2.6 + RTL); no new
+dependency, file, or fixture layer. No Playwright spec: this story's UI change is a
+block inside `ArtifactPanel`, and the project's user-workflow UI tests live in Vitest/RTL.
+
+## Gaps Found and Closed
+
+Story 12.3 shipped dense coverage (+62 backend, +12 frontend), so this pass only looked
+for what was **structurally** untested. Three gaps, all at the product's own surfaces.
+
+1. **No test drove the real `scenario_node` through the HTTP API.** Every 12.3 backend
+   test either injects a fake scenario node (`quality_scenario`) or mocks the graph
+   snapshot (`_mock_graph`) — every one of them would still pass if production wiring
+   never built a quality object at all.
+2. **The real SSE encoder was never exercised with a quality payload.** Service tests
+   assert against a fake registry that stores the dict it was handed, so `api/sse.py`'s
+   `json.dumps` framing — the wire the frontend actually reads — was untested for AC6's
+   "the same JSON-safe warning is available through each path".
+3. **Nobody clicked approve/reject with the warning on screen.** The frontend tests
+   asserted the buttons *exist* beside a warning; AC2's "the human can still approve or
+   reject normally" was never performed as an action.
+
+## Generated Tests
+
+### E2E (API-driven, offline) — `tests/api/test_e2e_stub_run.py`
+
+- [x] `test_clean_stub_run_publishes_code_derived_quality_with_no_warning` — `POST /runs`
+  through the **real** `scenario_node` (stub cassettes), then `GET
+  /runs/{id}/stages/scenario/artifacts`: `scenario_quality` is present with **non-zero**
+  code-derived metrics, positional `scene_num`, `aggregate.sentence_count` equal to the
+  sum of the per-scene counts, `slop_vocabulary_version == 1`, and **no** `warning`
+  (AC3/AC5/AC6). The `gate_pending` frame equals the artifact payload and survives a
+  `json.dumps`/`loads` round trip. An all-zero metrics payload — the realistic failure,
+  meaning metrics ran over the wrong object or the TTS rewrite — fails here.
+- [x] `test_unresolved_pass2_reaches_an_api_client_and_stays_approvable` — forces a
+  negative review verdict on both passes by wrapping the Gemini stub seam. Asserts the
+  run is `awaiting_approval` with `error is None` (AC2: non-fatal), the warning reaches
+  **both** artifacts and SSE, `final_pass_index/retry_scope == (2, "full-fallback")`, and
+  exactly **two** passes of writing/review/critic ran (per-scene batching from Story 6.6
+  → `2 × scene_count` calls each — AC1's one-retry limit), then `POST …/gate {approve}` →
+  **202** and the run advances to `image` (AC2).
+  *Why the full-rewrite branch:* a scene-scoped issue would route to scoped repair, and
+  the offline cassette set has no `scenario/writing_scene_repair` entry — an omission of
+  the stub fixtures, not of this story.
+
+### API (SSE wire) — `tests/api/test_sse.py`
+
+- [x] `test_sse_gate_pending_carries_scenario_quality_intact` — a full Korean quality
+  payload, **including a newline inside `critic_feedback`**, published through the real
+  `SSEQueueRegistry` and read back over HTTP: one `data:` line, payload identical after
+  `json.loads`. A raw newline would terminate the SSE data field mid-payload; `_clip`
+  collapses whitespace today, so this pins the encoder rather than the producer.
+- [x] `test_sse_gate_pending_without_quality_is_unchanged_on_the_wire` — a pre-12.3
+  checkpoint / non-scenario gate frame is byte-identical to before (AC6 compatibility).
+
+### E2E (UI workflow) — `frontend/src/components/ArtifactPanel.test.tsx`
+
+- [x] `the operator can still approve|reject at a warned gate` (`it.each`) — clicks the
+  real control with the warning rendered: correct `POST /runs/r1/stages/scenario/gate`
+  body, `onGateStateChange` fires with the new state, and the evidence stays on screen
+  afterwards — it is the record of what was approved (AC2, AC7).
+- [x] `the retry confirmation is announced without swallowing the warning alert` — the
+  standing warning and the retry confirmation coexist as two live regions. A
+  single-alert assumption anywhere here would mean the operator loses the reason they
+  were retrying, mid-confirmation (AC7 "existing retry behaviour preserved").
+
+## Coverage
+
+| Surface | Before | After |
+|---|---|---|
+| Quality verdict produced by the **real** node, read through the API | none — injected node / mocked graph | ✅ clean + unresolved runs |
+| Unresolved pass 2 still approvable through the gate endpoint | none | ✅ 202 → advances to `image` |
+| One-retry limit observed end to end | node-level only | ✅ `2 × scene_count` calls per stage |
+| `scenario_quality` over the real SSE encoder | none | ✅ Korean + newline round trip |
+| Approve/reject **performed** at a warned gate | button presence only | ✅ both actions |
+| Warning + retry confirmation as two live regions | none | ✅ |
+
+- 12.3 ACs with an API/E2E-level test: **AC1, AC2, AC3, AC5, AC6, AC7**.
+- Endpoints touching 12.3 — `POST /runs`, `GET /runs/{id}`,
+  `GET /runs/{id}/stages/{stage}/artifacts`, `POST /runs/{id}/stages/{stage}/gate`,
+  `GET /runs/{id}/progress` — all 5 now exercised with a quality payload present.
+- Suite totals: backend **2242** (was 2238, +4), frontend **117** (was 114, +3).
+
+## Verification
+
+- `PYTHONPATH=$PWD/src uv run pytest -q` → **2242 passed, 1 skipped, 0 failed**.
+- Focused: `test_e2e_stub_run.py test_sse.py test_stage_artifacts.py
+  test_run_service_gate.py tests/pipeline` → **1308 passed, 1 skipped**.
+- `uv run ruff check .` → **All checks passed!**
+- `npx vitest run` → **117 passed** (17 files); `npx tsc -b` → clean.
+- Mutation check: removing `"scenario_quality": quality` from `scenario_node`'s return
+  fails **both** new API E2E tests (`production wiring returned no quality object at
+  all`) and nothing else in the file; source restored byte-identical.
+
+## Checklist
+
+| Item | |
+|---|---|
+| API tests generated | ✅ artifact + gate + progress endpoints with a quality payload |
+| E2E tests generated | ✅ 2 API-driven pipeline runs + 3 UI workflow tests |
+| Standard framework APIs | ✅ pytest / monkeypatch / Vitest / RTL only |
+| Happy path covered | ✅ clean run reports metrics with no warning |
+| Critical error cases covered | ✅ unresolved pass 2 (non-fatal), newline in the SSE payload, absent/legacy quality |
+| All generated tests pass | ✅ |
+| Proper locators | ✅ `getByRole` heading/button/alert; no test ids, no class selectors |
+| Clear descriptions | ✅ each names the defect it prevents and its AC |
+| No hardcoded waits/sleeps | ✅ `waitFor`/`findBy*` and the suite's `_drain_bg_tasks()` |
+| Tests independent | ✅ own run id / own render; all seam changes via `monkeypatch` |
+| Summary includes coverage metrics | ✅ above |
+
+## Not Covered (deliberate)
+
+- **AC4 end to end.** No run drives a *grounded contradiction* through the real chain: a
+  contradiction forces a scene-scoped `issues[]` entry → scoped repair → a
+  `scenario/writing_scene_repair` cassette that does not exist offline. Adding one is a
+  stub-fixture story. The path stays covered piecewise — `review_step` unit tests
+  (evidence validation, forced `overall_pass=false`, mirrored issue), `scenario_node`
+  tests (evidence reaches `scenario_quality`), artifact-endpoint tests (evidence reaches
+  the client).
+- **Live model behaviour.** Whether Gemini emits well-evidenced contradictions at a
+  useful rate is still the open live question the story already flags for one
+  `--profile smoke --scp-id SCP-049` run. No test here makes a real model call.
+
+## Next Steps
+
+- Consider a `scenario/writing_scene_repair` cassette in `tests/stubs/fakes.py`: it would
+  make the scoped-repair branch (the *common* retry path in production) reachable
+  offline, closing the AC4 E2E gap above and covering `retry_scope == "scene"` end to end.
+- Unchanged from the story: Jay's live contradiction-signal check.

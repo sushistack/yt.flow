@@ -161,3 +161,83 @@ async def test_retry_reruns_stage_node(tmp_path, monkeypatch, stub_stage_nodes):
         assert result["__interrupt__"][0].value == {"stage": "image"}  # paused at gate_image again
     finally:
         await saver.conn.close()
+
+
+# ── Story 12.3: scenario gate carries the pass-2 quality verdict ──────────────
+
+_QUALITY = {
+    "final_pass_index": 2,
+    "retry_scope": "scene",
+    "review_overall_pass": False,
+    "critic_verdict": "retry",
+    "critic_feedback": "장면 2가 아직 늘어집니다",
+    "rule_metrics": {
+        "aggregate": {"character_count": 120, "sentence_count": 8,
+                      "duplicate_sentence_count": 1, "repeated_4gram_count": 0},
+        "scenes": [], "repeated_ngrams": [], "slop_phrase_hits": [], "slop_vocabulary_version": 1,
+    },
+    "grounded_contradictions": [],
+    "review_issues": [],
+    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+}
+
+
+async def test_scenario_gate_interrupt_carries_quality(tmp_path, stub_stage_nodes):
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke({**_state(run_id), "scenario_quality": _QUALITY}, config)
+        value = result["__interrupt__"][0].value
+        assert value["stage"] == "scenario"
+        assert value["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+    finally:
+        await saver.conn.close()
+
+
+async def test_other_gates_stay_stage_only_even_with_quality_in_state(tmp_path, stub_stage_nodes):
+    """Backward compatibility: only the scenario interrupt value grew (AC6)."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        await graph.ainvoke({**_state(run_id), "scenario_quality": _QUALITY}, config)
+        result = await graph.ainvoke(Command(resume="approved"), config)
+        assert result["__interrupt__"][0].value == {"stage": "image"}
+    finally:
+        await saver.conn.close()
+
+
+async def test_scenario_gate_omits_quality_key_when_absent(tmp_path, stub_stage_nodes):
+    """A pre-12.3 checkpoint has no such field — the payload must stay byte-identical."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke(_state(run_id), config)
+        assert result["__interrupt__"][0].value == {"stage": "scenario"}
+    finally:
+        await saver.conn.close()
+
+
+async def test_scenario_gate_omits_quality_key_when_cleared(tmp_path, stub_stage_nodes):
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke({**_state(run_id), "scenario_quality": None}, config)
+        assert result["__interrupt__"][0].value == {"stage": "scenario"}
+    finally:
+        await saver.conn.close()
+
+
+async def test_quality_does_not_change_decision_validation(tmp_path, stub_stage_nodes):
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        await graph.ainvoke({**_state(run_id), "scenario_quality": _QUALITY}, config)
+        with pytest.raises(ValueError, match="expected one of"):
+            await graph.ainvoke(Command(resume="maybe"), config)
+    finally:
+        await saver.conn.close()

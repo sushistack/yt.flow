@@ -43,6 +43,32 @@ EXPECTED_FIELDS = {
     "PipelineState": {
         "run_id", "scp_id", "scp_text", "scenes", "video_path", "current_stage",
         "gate_states", "prompt_variant", "error", "ending_credit_error",
+        "scenario_quality",  # Story 12.3 — NotRequired, so pre-12.3 checkpoints still load
+    },
+    # Story 12.3 quality contract — checkpoint- AND interrupt-serialized, so its shape
+    # is as much a compatibility surface as PipelineState's.
+    "RuleCounts": {
+        "character_count", "sentence_count", "duplicate_sentence_count", "repeated_4gram_count",
+    },
+    "SceneRuleCounts": {
+        "scene_num",
+        "character_count", "sentence_count", "duplicate_sentence_count", "repeated_4gram_count",
+    },
+    "RepeatedPhrase": {"phrase", "count"},
+    "SlopPhraseHit": {"scene_num", "phrase", "count"},
+    "RuleMetrics": {
+        "aggregate", "scenes", "repeated_ngrams", "slop_phrase_hits", "slop_vocabulary_version",
+    },
+    "GroundedContradiction": {
+        "scene_num", "narration_quote", "grounding_source", "grounding_quote",
+        "explanation", "correction",
+    },
+    "ReviewIssue": {"scene_num", "type", "severity", "description", "correction"},
+    "ScenarioWarning": {"code", "message"},
+    "ScenarioQuality": {
+        "final_pass_index", "retry_scope", "review_overall_pass", "critic_verdict",
+        "critic_feedback", "rule_metrics", "grounded_contradictions", "review_issues",
+        "warning",
     },
 }
 
@@ -50,7 +76,7 @@ EXPECTED_FIELDS = {
 def test_typeddicts_import():
     for name in ("PipelineState", "SceneState", "ShotData", "WordTiming",
                   "SearchResult", "ReferenceImage", "Character", "CharacterCandidate", "AngleName",
-                  "CastMember"):
+                  "CastMember", "ScenarioQuality", "RuleMetrics", "GroundedContradiction"):
         assert hasattr(state, name), name
 
 

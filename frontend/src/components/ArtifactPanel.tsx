@@ -7,6 +7,7 @@ import {
   rejectGate,
   retryStage,
   videoDownloadUrl,
+  type ScenarioQuality,
   type StageArtifacts,
 } from "@/lib/api"
 import type { GateState, StageName } from "@/lib/types"
@@ -113,9 +114,109 @@ export function ArtifactPanel({
         <PanelBody runId={runId} stage={stage} data={data} onOpenImage={onOpenImage} onDirtyChange={onDirtyChange} />
       </div>
 
+      {data?.stage === "scenario" && data.scenario_quality?.warning && (
+        <ScenarioQualityWarning quality={data.scenario_quality} />
+      )}
+
       {gateState === "pending" && (
         <GateControls runId={runId} stage={stage} onGateStateChange={onGateStateChange} />
       )}
+    </section>
+  )
+}
+
+// Story 12.3: the scenario script is still degraded after its one allowed repair
+// pass. Rendered directly above the approve/reject controls — the operator has to
+// see it to make the decision, which is why this is not a toast and not a
+// separate page. Signalled by icon + heading text as well as colour.
+function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
+  const { rule_metrics: metrics, grounded_contradictions: contradictions, review_issues: issues } = quality
+  return (
+    <section
+      role="alert"
+      aria-live="polite"
+      className="rounded-md border border-status-awaiting bg-card p-4 text-[12px] text-foreground"
+    >
+      <h2 className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
+        <span aria-hidden="true">⚠</span>
+        2차 검토 경고
+      </h2>
+      <p className="mb-2 leading-[1.6]">{quality.warning?.message}</p>
+      {/* AC8: an inline narration edit does not re-run review, so the evidence stays
+          on screen and is labelled as of its generation time rather than silently
+          re-read as a verdict on the edited text. */}
+      <p className="mb-3 text-subtle-foreground">
+        대본 생성 시점의 자동 검토 결과입니다. 이후 직접 수정한 내용은 재검토되지 않았습니다.
+      </p>
+
+      <p className="mb-3 font-mono text-[11px] text-subtle-foreground">
+        pass {quality.final_pass_index} · retry_scope {quality.retry_scope} · critic{" "}
+        {quality.critic_verdict} · review {quality.review_overall_pass ? "pass" : "fail"}
+      </p>
+
+      {quality.critic_feedback && (
+        <div className="mb-3">
+          <h3 className="mb-1 font-semibold">비평 요약</h3>
+          <p className="whitespace-pre-wrap leading-[1.6]" style={{ maxWidth: "65ch" }}>
+            {quality.critic_feedback}
+          </p>
+        </div>
+      )}
+
+      {contradictions.length > 0 && (
+        <div className="mb-3">
+          <h3 className="mb-1 font-semibold">접지 모순 {contradictions.length}건</h3>
+          <ul className="flex flex-col gap-2">
+            {contradictions.map((c, i) => (
+              <li key={`${c.scene_num}-${i}`} className="border-l-2 border-status-awaiting pl-2">
+                <span className="font-mono text-[11px] text-subtle-foreground">씬 {c.scene_num}</span>
+                <p className="leading-[1.6]">대본: “{c.narration_quote}”</p>
+                <p className="leading-[1.6]">
+                  <span className="font-mono text-[11px]">{c.grounding_source}</span>: “{c.grounding_quote}”
+                </p>
+                <p className="leading-[1.6] text-muted-foreground">{c.explanation}</p>
+                <p className="leading-[1.6]">제안: {c.correction}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {issues.length > 0 && (
+        <div className="mb-3">
+          <h3 className="mb-1 font-semibold">미해결 지적 {issues.length}건</h3>
+          <ul className="flex flex-col gap-1">
+            {issues.map((issue, i) => (
+              <li key={`${issue.scene_num}-${i}`} className="leading-[1.6]">
+                <span className="font-mono text-[11px] text-subtle-foreground">
+                  씬 {issue.scene_num} · {issue.type}
+                </span>{" "}
+                {issue.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div>
+        <h3 className="mb-1 font-semibold">기계 측정</h3>
+        <p className="font-mono text-[11px] text-subtle-foreground">
+          {metrics.aggregate.character_count}자 · {metrics.aggregate.sentence_count}문장 · 중복 문장{" "}
+          {metrics.aggregate.duplicate_sentence_count} · 반복 4-그램{" "}
+          {metrics.aggregate.repeated_4gram_count} · 상투구{" "}
+          {metrics.slop_phrase_hits.reduce((n, h) => n + h.count, 0)}
+        </p>
+        {metrics.repeated_ngrams.length > 0 && (
+          <p className="mt-1 leading-[1.6]">
+            반복 표현: {metrics.repeated_ngrams.map((n) => `“${n.phrase}” ×${n.count}`).join(", ")}
+          </p>
+        )}
+        {metrics.slop_phrase_hits.length > 0 && (
+          <p className="mt-1 leading-[1.6]">
+            상투구: {metrics.slop_phrase_hits.map((h) => `씬 ${h.scene_num} “${h.phrase}” ×${h.count}`).join(", ")}
+          </p>
+        )}
+      </div>
     </section>
   )
 }

@@ -122,6 +122,92 @@ async def test_sse_gate_pending():
     assert "gate_pending" in received_events
 
 
+# ── Story 12.3 AC6: the scenario gate warning survives the real SSE encoder ───
+#
+# Every other 12.3 SSE test asserts against a fake registry that stores the dict
+# it was handed. This one goes through the actual `subscribe()` encoder and an
+# HTTP client, which is where two things can go wrong that a dict comparison can
+# never see: a newline in the model's critic summary would terminate the `data:`
+# field mid-payload, and Korean evidence has to come back out unescaped.
+_QUALITY_ON_THE_WIRE = {
+    "final_pass_index": 2,
+    "retry_scope": "full-fallback",
+    "review_overall_pass": False,
+    "critic_verdict": "retry",
+    # The newline is the point: raw, it would split the SSE data field in two.
+    "critic_feedback": "장면 2의 긴장이 풀립니다.\n결말 임팩트가 약합니다.",
+    "rule_metrics": {
+        "aggregate": {"character_count": 412, "sentence_count": 18,
+                      "duplicate_sentence_count": 2, "repeated_4gram_count": 1},
+        "scenes": [{"scene_num": 1, "character_count": 412, "sentence_count": 18,
+                    "duplicate_sentence_count": 2, "repeated_4gram_count": 1}],
+        "repeated_ngrams": [{"phrase": "그 누구도 알지 못했습니다", "count": 3}],
+        "slop_phrase_hits": [{"scene_num": 1, "phrase": "충격적인 사실", "count": 2}],
+        "slop_vocabulary_version": 1,
+    },
+    "grounded_contradictions": [{
+        "scene_num": 1,
+        "narration_quote": "개체는 파란 눈을 가지고 있습니다",
+        "grounding_source": "entity_sheet",
+        "grounding_quote": "눈은 검은색이다",
+        "explanation": "눈 색이 접지 자료와 반대다",
+        "correction": "개체는 검은 눈을 가지고 있습니다",
+    }],
+    "review_issues": [],
+    "warning": {"code": "unresolved_pass2", "message": "재검토 후에도 품질 문제가 남아 있습니다."},
+}
+
+
+async def test_sse_gate_pending_carries_scenario_quality_intact():
+    run_id = _seed_run()
+    registry: SSEQueueRegistry = app.state.sse_registry
+
+    async def _publish():
+        await asyncio.sleep(0.02)
+        await registry.publish(run_id, {"event": "gate_pending", "data": {
+            "run_id": run_id, "stage": "scenario", "scenario_quality": _QUALITY_ON_THE_WIRE,
+        }})
+        await registry.publish(run_id, {"event": "run_failed", "data": {"run_id": run_id, "stage": "unknown", "error": "done"}})
+
+    events, payloads = [], []
+    async with _asgi_client() as c:
+        asyncio.create_task(_publish())
+        async with c.stream("GET", f"/runs/{run_id}/progress") as resp:
+            async for line in resp.aiter_lines():
+                if line.startswith("event:"):
+                    events.append(line.split(":", 1)[1].strip())
+                elif line.startswith("data:"):
+                    # One `data:` line per event — a raw newline in the payload would
+                    # land here as an unparseable fragment instead.
+                    payloads.append(json.loads(line.split(":", 1)[1].strip()))
+
+    assert events == ["gate_pending", "run_failed"]
+    assert payloads[0] == {
+        "run_id": run_id, "stage": "scenario", "scenario_quality": _QUALITY_ON_THE_WIRE,
+    }
+
+
+async def test_sse_gate_pending_without_quality_is_unchanged_on_the_wire():
+    """A pre-12.3 checkpoint (or any other stage's gate) sends exactly what it always did."""
+    run_id = _seed_run()
+    registry: SSEQueueRegistry = app.state.sse_registry
+
+    async def _publish():
+        await asyncio.sleep(0.02)
+        await registry.publish(run_id, {"event": "gate_pending", "data": {"run_id": run_id, "stage": "image"}})
+        await registry.publish(run_id, {"event": "run_failed", "data": {"run_id": run_id, "stage": "unknown", "error": "done"}})
+
+    payloads = []
+    async with _asgi_client() as c:
+        asyncio.create_task(_publish())
+        async with c.stream("GET", f"/runs/{run_id}/progress") as resp:
+            async for line in resp.aiter_lines():
+                if line.startswith("data:"):
+                    payloads.append(json.loads(line.split(":", 1)[1].strip()))
+
+    assert payloads[0] == {"run_id": run_id, "stage": "image"}
+
+
 # ── AC 4: run_failed received and stream closes ───────────────────────────────
 
 async def test_sse_run_failed_closes_stream():

@@ -190,6 +190,91 @@ class CharacterCandidate(TypedDict):
     updated_at: str
 
 
+# ── Story 12.3: scenario quality contract carried to the human gate ───────────
+# Every field below is a plain JSON scalar/list/dict so the whole object survives
+# a LangGraph checkpoint round-trip AND a `interrupt()` value AND the artifact
+# endpoint's JSON encoding. No exceptions, prompt objects, or raw completions.
+
+
+class RuleCounts(TypedDict):
+    """Deterministic, code-derived measurements. Raw counts only — this story
+    deliberately defines no failure threshold on them (Story 12.1 owns calibrated
+    word budgets)."""
+    character_count: int          # non-whitespace code points after NFKC
+    sentence_count: int           # split_sentences() result count
+    duplicate_sentence_count: int  # occurrences beyond the first, normalized
+    repeated_4gram_count: int     # distinct 4-grams occurring >= 3 times
+
+
+class SceneRuleCounts(RuleCounts):
+    scene_num: int
+
+
+class RepeatedPhrase(TypedDict):
+    """Script-wide n-gram repeat evidence — counted across the whole script, so a
+    phrase recycled between two scenes shows up (the actual slop signal)."""
+    phrase: str
+    count: int
+
+
+class SlopPhraseHit(TypedDict):
+    scene_num: int
+    phrase: str
+    count: int
+
+
+class RuleMetrics(TypedDict):
+    aggregate: RuleCounts          # pooled over every scene: character/sentence counts are
+                                   # exactly the per-scene sums, while duplicates and repeated
+                                   # n-grams additionally catch phrases recycled BETWEEN scenes
+    scenes: list[SceneRuleCounts]
+    repeated_ngrams: list[RepeatedPhrase]
+    slop_phrase_hits: list[SlopPhraseHit]
+    slop_vocabulary_version: int   # bump when the phrase tuple changes, so an old
+                                   # checkpoint's hits stay interpretable
+
+
+class GroundedContradiction(TypedDict):
+    """A narration/grounding conflict backed by quoted evidence. Every field is
+    required — an unevidenced claim is rejected at parse time (AC4)."""
+    scene_num: int
+    narration_quote: str
+    grounding_source: str   # which grounding artifact conflicts (entity_sheet / frozen_descriptor / scp_text)
+    grounding_quote: str
+    explanation: str
+    correction: str
+
+
+class ReviewIssue(TypedDict):
+    scene_num: int
+    type: str
+    severity: str
+    description: str
+    correction: str
+
+
+class ScenarioWarning(TypedDict):
+    code: str      # "unresolved_pass2" — the stable identifier the UI keys on
+    message: str   # Korean operator copy
+
+
+class ScenarioQuality(TypedDict):
+    """The scenario stage's final review/critic verdict, kept for the human gate.
+
+    Written once per successful scenario run. ``warning`` is absent for a clean
+    result — its presence IS the "approve knowingly" signal (AC2/AC3).
+    """
+    final_pass_index: int
+    retry_scope: str
+    review_overall_pass: bool
+    critic_verdict: str
+    critic_feedback: str
+    rule_metrics: RuleMetrics
+    grounded_contradictions: list[GroundedContradiction]
+    review_issues: list[ReviewIssue]
+    warning: NotRequired[ScenarioWarning]
+
+
 class PipelineState(TypedDict):
     run_id: str
     scp_id: str
@@ -201,3 +286,7 @@ class PipelineState(TypedDict):
     prompt_variant: PromptVariant | None
     error: str | None
     ending_credit_error: NotRequired[str | None]  # Story 5.20 — absent unless the run attempted the ending credit (cc_attribution=True); presence signals attempted
+    scenario_quality: NotRequired[ScenarioQuality | None]  # Story 12.3 — final review/critic
+                                   # verdict + deterministic metrics, read by the scenario gate.
+                                   # NotRequired so pre-12.3 checkpoints still deserialize;
+                                   # None == cleared by a retry/restart (never "clean").

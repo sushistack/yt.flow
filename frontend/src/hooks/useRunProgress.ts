@@ -1,10 +1,15 @@
 import { useEffect } from "react"
+import type { ScenarioQuality } from "@/lib/api"
 import type { StageName } from "@/lib/types"
 
 export type ProgressEventData = {
   run_id: string
   stage?: StageName
   error?: string
+  // Story 12.3: only `gate_pending` for the scenario stage carries this, and only
+  // as acceleration — the artifact endpoint is the durable authority, so a client
+  // that missed the frame recovers by fetching artifacts.
+  scenario_quality?: ScenarioQuality | null
 }
 
 export type RunProgressHandlers = {

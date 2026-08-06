@@ -21,7 +21,16 @@ def _gate(stage: StageName):
         # `pending`. Making `pending` observable requires a pre-gate writer (e.g. the stage
         # node) — an architecture reconciliation deferred to the story that consumes
         # gate_states. No consumer exists in this stub. [see deferred-work.md]
-        decision = interrupt({"stage": stage})
+        # Story 12.3: the scenario gate — and only it — carries the stage's final
+        # review/critic verdict, so an operator approving a degraded script does so
+        # knowingly [AD-10]. Read straight from persisted state with no side effect,
+        # because LangGraph re-runs this node from the top on resume. Absent/None
+        # keeps the payload byte-identical to a pre-12.3 one; every other gate is
+        # untouched, so their consumers stay compatible.
+        payload: dict = {"stage": stage}
+        if stage == "scenario" and (quality := state.get("scenario_quality")):
+            payload["scenario_quality"] = quality
+        decision = interrupt(payload)
         if decision not in GATE_DECISIONS:
             raise ValueError(
                 f"gate {stage}: expected one of {GATE_DECISIONS}, got {decision!r}"

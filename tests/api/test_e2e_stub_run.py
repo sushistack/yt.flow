@@ -13,6 +13,7 @@ the seams by hand — only a run driven through POST /runs proves production wir
 picks the same providers.
 """
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -361,3 +362,118 @@ async def test_a_gemini_outage_fails_the_run_visibly_instead_of_completing_on_de
 
     failed = [e for e in app.state.sse_registry.events if e["event"] == "run_failed"]
     assert [e["data"]["stage"] for e in failed] == ["scenario"]
+
+
+# ── Story 12.3: the pass-2 verdict, seen through the product's own surfaces ────
+#
+# Every other 12.3 backend test either injects a fake scenario node or mocks the
+# graph snapshot, so all of them would still pass if production never built a
+# quality object at all. These two drive the REAL scenario_node (stub cassettes)
+# through POST /runs and read the verdict back the way the frontend does: off the
+# artifact endpoint and the gate_pending frame.
+_REVIEW_NEGATIVE = (
+    "overall_pass: false\n"
+    "coverage_pct: 71.0\n"
+    # Deliberately no scene-scoped issue: with nothing for `_retry_scope` to map,
+    # the retry takes the full-rewrite branch, which the offline cassettes cover
+    # (there is no `scenario/writing_scene_repair` cassette).
+    "issues: []\n"
+    "corrections: []\n"
+    "storytelling_score: 48\n"
+    "storytelling_issues: []\n"
+)
+
+
+def _patch_gemini(monkeypatch, *, review_content: str | None = None) -> list[str]:
+    """Record every Gemini-owned stage marker a run reaches, optionally forcing the
+    review verdict. Wraps the stub fake rather than replacing it, so every other
+    stage still replays its real cassette through the real parser."""
+    import yt_flow.pipeline.nodes.scenario as scenario
+
+    inner = scenario._call_gemini
+    seen: list[str] = []
+
+    async def fake(rendered, s):
+        stage = rendered.removeprefix("__STAGE__:")
+        seen.append(stage)
+        if review_content is not None and stage == "scenario/review":
+            return review_content, {}, "stop"
+        return await inner(rendered, s)
+
+    monkeypatch.setattr(scenario, "_call_gemini", fake)
+    return seen
+
+
+def _gate_frame(stage: str) -> dict:
+    return next(e["data"] for e in app.state.sse_registry.events
+                if e["event"] == "gate_pending" and e["data"]["stage"] == stage)
+
+
+async def test_clean_stub_run_publishes_code_derived_quality_with_no_warning(api_env):
+    """AC3/AC5/AC6 in production wiring: a clean run still reports measurements."""
+    async with _asgi_client() as c:
+        run_id = (await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})).json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        assert run["error"] is None, run["error"]
+        assert (run["status"], run["current_stage"]) == ("awaiting_approval", "scenario")
+
+        body = (await c.get(f"/runs/{run_id}/stages/scenario/artifacts")).json()
+
+    quality = body["scenario_quality"]
+    assert quality is not None, "production wiring returned no quality object at all"
+    assert "warning" not in quality  # the cassettes pass review and critic (AC3)
+    assert (quality["final_pass_index"], quality["retry_scope"]) == (1, "none")
+
+    metrics = quality["rule_metrics"]
+    # An all-zero payload is the realistic failure here: metrics computed over the
+    # wrong object (or the TTS rewrite) rather than the narration the judge saw.
+    assert metrics["aggregate"]["character_count"] > 0
+    assert metrics["aggregate"]["sentence_count"] > 0
+    assert [s["scene_num"] for s in metrics["scenes"]] == list(range(1, len(body["scenes"]) + 1))
+    assert metrics["aggregate"]["sentence_count"] == sum(s["sentence_count"] for s in metrics["scenes"])
+    assert metrics["slop_vocabulary_version"] == 1
+
+    # SSE and the durable artifact agree, and the frame is JSON-safe as published.
+    frame = _gate_frame("scenario")
+    assert frame["scenario_quality"] == quality
+    assert json.loads(json.dumps(frame)) == frame
+
+
+async def test_unresolved_pass2_reaches_an_api_client_and_stays_approvable(api_env, monkeypatch):
+    """AC1/AC2/AC6: an unresolved retry is a warning at the gate, not a failed run,
+    not a third attempt, and not a blocked approval."""
+    seen = _patch_gemini(monkeypatch, review_content=_REVIEW_NEGATIVE)
+
+    async with _asgi_client() as c:
+        run_id = (await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})).json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        # AC2: the stage SUCCEEDED. A degraded script is a human decision, not an error.
+        assert run["error"] is None, run["error"]
+        assert (run["status"], run["current_stage"]) == ("awaiting_approval", "scenario")
+
+        body = (await c.get(f"/runs/{run_id}/stages/scenario/artifacts")).json()
+        quality = body["scenario_quality"]
+        assert quality["warning"]["code"] == "unresolved_pass2"
+        assert quality["warning"]["message"]  # non-empty Korean operator copy
+        assert (quality["final_pass_index"], quality["retry_scope"]) == (2, "full-fallback")
+        assert quality["review_overall_pass"] is False
+        assert quality["rule_metrics"]["aggregate"]["character_count"] > 0
+        assert _gate_frame("scenario")["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+
+        # AC1: exactly two passes over the whole chain — the fix is visibility, not
+        # a third review/critic/rewrite. Per-scene batching (Story 6.6) makes the
+        # expected count one call per scene per pass.
+        scene_count = len(body["scenes"])
+        assert scene_count > 0
+        for stage in ("scenario/writing", "scenario/review", "scenario/critic_agent"):
+            assert seen.count(stage) == 2 * scene_count, (stage, seen)
+
+        # AC2: approval works exactly as it does for a clean script.
+        assert (await c.post(f"/runs/{run_id}/stages/scenario/gate", json={"action": "approve"})).status_code == 202
+        await _drain_bg_tasks()
+        advanced = (await c.get(f"/runs/{run_id}")).json()
+        assert (advanced["status"], advanced["current_stage"]) == ("awaiting_approval", "image")

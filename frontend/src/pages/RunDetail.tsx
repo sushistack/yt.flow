@@ -25,6 +25,10 @@ export function RunDetail({ runId }: { runId: string }) {
   const [artifacts, setArtifacts] = useState<StageArtifacts | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [hasDirtyEdit, setHasDirtyEdit] = useState(false)
+  // Story 12.3: bumped when a scenario gate opens, to re-read the artifacts the
+  // gate warning lives in. Explicit rather than relying on the `run` object's
+  // identity changing, so the refresh can't be lost to a later state-update tweak.
+  const [artifactRefresh, setArtifactRefresh] = useState(0)
   const mainRef = useRef<HTMLElement>(null)
 
   // Fetch run metadata; default the selected stage to the furthest one reached.
@@ -63,7 +67,7 @@ export function RunDetail({ runId }: { runId: string }) {
       alive = false
     }
     // reachedIdx captures run status/current_stage changes that flip reachability.
-  }, [runId, selected, run, reachedIdx])
+  }, [runId, selected, run, reachedIdx, artifactRefresh])
 
   const setStageGateState = useCallback((stage: StageName, gateState: GateState) => {
     setRun((r) => {
@@ -91,7 +95,12 @@ export function RunDetail({ runId }: { runId: string }) {
         if (stage) setRun((r) => (r ? { ...r, status: "running", current_stage: stage } : r))
       },
       onGatePending: ({ stage }: { stage?: StageName }) => {
-        if (stage) setStageGateState(stage, "pending")
+        if (!stage) return
+        setStageGateState(stage, "pending")
+        // The scenario gate payload may carry a fresh quality warning. Re-read the
+        // artifact endpoint instead of trusting this frame to be the record — SSE is
+        // acceleration, the checkpoint is the authority (Story 12.3 AC6).
+        if (stage === "scenario") setArtifactRefresh((n) => n + 1)
       },
       onRunFailed: ({ stage, error: err }: { stage?: StageName; error?: string }) => {
         setRun((r) => {

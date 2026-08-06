@@ -19,6 +19,8 @@ import json
 import logging
 import re
 import time
+import unicodedata
+from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
@@ -37,11 +39,17 @@ from yt_flow.domain.state import (
     CharacterMovementMode,
     CharacterMovementPace,
     LOCATION_KEYS,
+    GroundedContradiction,
     LocationKey,
     STOCK_CAST_KEYS,
     STOCK_CAST_ROLES,
+    RepeatedPhrase,
+    RuleCounts,
+    RuleMetrics,
+    SceneRuleCounts,
     SceneState,
     ShotData,
+    SlopPhraseHit,
 )
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
@@ -561,6 +569,133 @@ def split_sentences(text: str) -> list[str]:
     if not text:
         return []
     return [p.strip() for p in _SENTENCE_BOUNDARY.split(text) if p.strip()]
+
+
+# ── Story 12.3: deterministic quality metrics (no LLM call) ───────────────────
+#
+# These are MEASUREMENTS, not a verdict. They exist because the review/critic
+# judge is the same kind of model that wrote the text, so "is this repetitive?"
+# is exactly the question it is worst at and code is best at. Nothing here fails
+# a run or sets a threshold — Story 12.1 owns calibrated word budgets; this pass
+# only puts unambiguous repeat/slop evidence in front of the human at the gate.
+#
+# Bump SLOP_VOCABULARY_VERSION whenever KOREAN_SLOP_PHRASES changes, so hits
+# recorded in an old checkpoint stay interpretable against the tuple that
+# produced them.
+SLOP_VOCABULARY_VERSION = 1
+
+# ponytail: an exact-match tuple, deliberately NOT a semantic classifier. Each
+# entry is documentary-narration hype filler that survives review because it
+# *sounds* like atmosphere — a diagnostic list, so a false positive costs the
+# operator one glance, never a failed run.
+KOREAN_SLOP_PHRASES = (
+    "상상해 보십시오",
+    "충격적인 사실",
+    "믿을 수 없는 일",
+    "소름 돋는",
+    "말로 설명할 수 없는",
+    "그 누구도 알지 못했습니다",
+    "과연 무엇일까요",
+    "지금부터 함께",
+)
+
+_NGRAM_SIZE = 4
+_NGRAM_MIN_OCCURRENCES = 3  # "at least three times" — twice is ordinary Korean cohesion
+_TERMINAL_PUNCTUATION = ".?!"
+
+
+def _metric_text(text: object) -> str:
+    """NFKC-normalized, whitespace-collapsed narration. A non-string (absent /
+    null / malformed scene) measures as empty rather than raising — metrics are
+    diagnostics and must never be the thing that fails a run [AD-10]."""
+    if not isinstance(text, str):
+        return ""
+    return " ".join(unicodedata.normalize("NFKC", text).split())
+
+
+def _sentence_key(sentence: str) -> str:
+    """Comparison key for duplicate detection: terminal ``.?!`` stripped and
+    case folded, so "It is good." / "It is good!" / "IT IS GOOD." are one
+    sentence. Terminal punctuation is ignored HERE ONLY — the n-gram tokens
+    below keep it (AC5)."""
+    return sentence.rstrip(_TERMINAL_PUNCTUATION).strip().casefold()
+
+
+def _rule_counts(
+    keys: list[str], token_runs: list[list[str]], chars: int
+) -> tuple[RuleCounts, list[RepeatedPhrase]]:
+    """Counts + n-gram evidence over already-normalized sentence keys and tokens.
+
+    Called once per scene and once with every scene's keys/tokens pooled — which
+    is why the aggregate is exact rather than a re-split of a concatenation: the
+    pooled sentence count IS the sum of the per-scene counts, while duplicates
+    and repeated n-grams additionally catch phrases recycled BETWEEN scenes.
+
+    ``token_runs`` is a list of per-scene token sequences, NOT one flat list: a
+    window may never straddle a scene boundary, or the aggregate reports phrases
+    ("…end-of-scene-1 start-of-scene-2…") that appear nowhere in the script as
+    evidence the operator is asked to act on.
+    """
+    grams = Counter(
+        " ".join(tokens[i:i + _NGRAM_SIZE])
+        for tokens in token_runs
+        for i in range(len(tokens) - _NGRAM_SIZE + 1)
+    )
+    repeated: list[RepeatedPhrase] = sorted(
+        ({"phrase": phrase, "count": count} for phrase, count in grams.items()
+         if count >= _NGRAM_MIN_OCCURRENCES),
+        key=lambda hit: (-hit["count"], hit["phrase"]),
+    )
+    counts: RuleCounts = {
+        # `chars` is counted on the un-keyed text: `_sentence_key` strips terminal
+        # punctuation for duplicate comparison only, and those characters are real.
+        "character_count": chars,
+        "sentence_count": len(keys),
+        "duplicate_sentence_count": sum(n - 1 for n in Counter(keys).values() if n > 1),
+        "repeated_4gram_count": len(repeated),
+    }
+    return counts, repeated
+
+
+def compute_rule_metrics(writing: object) -> RuleMetrics:
+    """Pure-Python quality measurements over a writing payload (Story 12.3 AC5).
+
+    Merged into the quality object AFTER review parsing by ``scenario._build_quality``,
+    so a model that reports flattering metrics of its own cannot overwrite these.
+    """
+    scenes = writing.get("scenes") if isinstance(writing, dict) else None
+    scenes = scenes if isinstance(scenes, list) else []
+    scene_counts: list[SceneRuleCounts] = []
+    slop_hits: list[SlopPhraseHit] = []
+    all_keys: list[str] = []
+    all_token_runs: list[list[str]] = []
+    total_chars = 0
+
+    for idx, scene in enumerate(scenes):
+        text = _metric_text(scene.get("narration") if isinstance(scene, dict) else None)
+        # Positional scene_num, never the model's own — the same rule `_stamped`
+        # and `_retry_scope` apply, because duplicate/reordered scene_num is a
+        # tested failure mode of this chain.
+        keys = [_sentence_key(sentence) for sentence in split_sentences(text)]
+        tokens = text.split()
+        chars = len(text.replace(" ", ""))  # `text` is already whitespace-collapsed
+        counts, _ = _rule_counts(keys, [tokens], chars)
+        scene_counts.append(cast(SceneRuleCounts, {"scene_num": idx + 1, **counts}))
+        all_keys.extend(keys)
+        all_token_runs.append(tokens)
+        total_chars += chars
+        for phrase in KOREAN_SLOP_PHRASES:
+            if hits := text.count(phrase):
+                slop_hits.append({"scene_num": idx + 1, "phrase": phrase, "count": hits})
+
+    aggregate, repeated = _rule_counts(all_keys, all_token_runs, total_chars)
+    return {
+        "aggregate": aggregate,
+        "scenes": scene_counts,
+        "repeated_ngrams": repeated,
+        "slop_phrase_hits": slop_hits,
+        "slop_vocabulary_version": SLOP_VOCABULARY_VERSION,
+    }
 
 
 class TruncationError(ValueError):
@@ -1624,6 +1759,122 @@ def _stamped(items: object, idx: int) -> list:
     return [{**item, "scene_num": idx + 1} if isinstance(item, dict) else item for item in entries]
 
 
+_CONTRADICTION_EVIDENCE = (
+    "narration_quote", "grounding_source", "grounding_quote", "explanation", "correction",
+)
+# The only three grounding artifacts the review is given. An unlisted source name
+# means the model graded the narration against its own knowledge of the SCP — the
+# exact failure the prompt's grounding section forbids — so it is not evidence.
+GROUNDING_SOURCES = ("entity_sheet", "frozen_descriptor", "scp_text")
+
+
+def _validated_contradiction(item: object, position: int) -> GroundedContradiction:
+    """One entry, held to the evidence bar. Raises ``ValueError`` if it fails."""
+    if not isinstance(item, dict):
+        raise ValueError(f"review: grounded_contradiction #{position} is not a mapping: {item!r}")
+    for field in _CONTRADICTION_EVIDENCE:
+        value = item.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"review: grounded_contradiction #{position} needs a non-empty {field!r} — "
+                "quote the exact narration and the exact conflicting grounding text, or omit "
+                "the contradiction entirely"
+            )
+        item[field] = _normalize_freetext(value)
+    if item["grounding_source"] not in GROUNDING_SOURCES:
+        raise ValueError(
+            f"review: grounded_contradiction #{position} has grounding_source "
+            f"{item['grounding_source']!r} — must be one of {GROUNDING_SOURCES}; the narration "
+            "may only be contradicted by a source that was actually supplied"
+        )
+    return cast(GroundedContradiction, item)
+
+
+def _validate_grounded_contradictions(data: dict, *, strict: bool = True) -> list[GroundedContradiction]:
+    """Story 12.3 AC4 — evidence-or-nothing, decided in code.
+
+    An unevidenced "this contradicts the source" claim is worse than silence: it
+    sends the scoped repair after a scene with no quote to fix and no way for the
+    operator to check the call. So on the first parse a malformed claim raises
+    ``ValueError``, which buys exactly one prompt-level correction inside
+    ``_parse_with_retry`` — the same bound every other semantic failure gets.
+
+    ``strict=False`` is that retry: the claim is still rejected, but by DROPPING it
+    with a WARNING rather than by killing the run. This field is a diagnostic the
+    story added on top of a working pipeline; a model that cannot quote its evidence
+    twice must not be able to fail a scenario that is otherwise fine [AD-10]. The
+    required-contract fields (``overall_pass`` and friends) keep failing hard, as
+    they must — the pipeline cannot proceed without those.
+
+    Absent / ``None`` is the normal clean case and stays clean; only a *claimed*
+    contradiction is held to the evidence bar.
+    """
+    raw = data.get("grounded_contradictions")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        if not strict:
+            logger.warning(
+                "review: dropping 'grounded_contradictions' — expected a list, got %s (after the "
+                "one allowed correction)", type(raw).__name__,
+            )
+            return []
+        raise ValueError(
+            f"review: 'grounded_contradictions' must be a list of grounded_contradiction "
+            f"entries, got {type(raw).__name__}"
+        )
+    entries: list[GroundedContradiction] = []
+    for position, item in enumerate(raw, start=1):
+        try:
+            entries.append(_validated_contradiction(item, position))
+        except ValueError:
+            if strict:
+                raise
+            logger.warning(
+                "review: dropping unevidenced grounded_contradiction #%d after the one allowed "
+                "correction — the claim is rejected, the run is not. entry: %.300r", position, item,
+            )
+    return entries
+
+
+def _apply_grounded_contradictions(data: dict, entries: list[GroundedContradiction]) -> None:
+    """Force the consequences of a contradiction rather than trusting the prompt.
+
+    Two things the model is asked to do and demonstrably may not: fail the review,
+    and mirror the contradiction into ``issues[]`` so ``scenario._retry_scope``
+    picks the scene up. Both are re-derived here from the evidence — the mirrored
+    issues are rebuilt from scratch (any model-authored ``grounded_contradiction``
+    issue is dropped first) so the mapping stays exactly 1:1.
+    """
+    # Write the VALIDATED list back: it is what `_aggregate_review` merges and what
+    # reaches the gate, so a claim the validator dropped must not survive in the raw
+    # payload. (It is also the only reason the two functions must stay paired.)
+    if "grounded_contradictions" in data or entries:
+        data["grounded_contradictions"] = entries
+    if not entries:
+        return
+    data["overall_pass"] = False
+    existing = data.get("issues")
+    kept = [
+        issue for issue in (existing if isinstance(existing, list) else [])
+        if not (isinstance(issue, dict) and issue.get("type") == "grounded_contradiction")
+    ]
+    data["issues"] = kept + [
+        {
+            "scene_num": entry.get("scene_num") if type(entry.get("scene_num")) is int else 1,
+            "type": "grounded_contradiction",
+            "severity": "critical",
+            "description": (
+                f"narration contradicts {entry['grounding_source']}: "
+                f"\"{entry['narration_quote']}\" vs \"{entry['grounding_quote']}\" — "
+                f"{entry['explanation']}"
+            ),
+            "correction": entry["correction"],
+        }
+        for entry in entries
+    ]
+
+
 def _aggregate_review(reports: list[dict]) -> dict:
     """Merge per-scene review reports into the single report ``scenario.py`` consumes."""
     merged: dict = {
@@ -1631,11 +1882,12 @@ def _aggregate_review(reports: list[dict]) -> dict:
         "issues": [],
         "corrections": [],
         "storytelling_issues": [],
+        "grounded_contradictions": [],
     }
     coverages: list[float] = []
     scores: list[float] = []
     for idx, report in enumerate(reports):
-        for key in ("issues", "corrections", "storytelling_issues"):
+        for key in ("issues", "corrections", "storytelling_issues", "grounded_contradictions"):
             merged[key].extend(_stamped(report.get(key), idx))
         for sink, key in ((coverages, "coverage_pct"), (scores, "storytelling_score")):
             value = report.get(key)
@@ -1682,6 +1934,7 @@ async def review_step(
     s,
     call_llm,
     *,
+    entity_sheet: str = "",
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
@@ -1698,6 +1951,13 @@ async def review_step(
     before the report starts. Raising ``max_tokens`` only defers it; one scene per
     call removes the volume.
 
+    ``entity_sheet`` is Story 12.3's third grounding source, alongside the
+    ``scp_text`` fact sheet and the ``frozen_descriptor`` visual profile: the
+    review could not previously catch narration that contradicts the cast/entity
+    roster because it never saw it. Keyword-only with an empty default so every
+    existing positional call site stays valid; ``scenario.py`` passes it at both
+    call sites (initial write and scoped repair).
+
     Returns the same aggregated report shape the single call did — see
     ``_aggregate_review`` for how each field is combined.
     """
@@ -1705,26 +1965,44 @@ async def review_step(
     if not scenes:
         raise ValueError("review: writing has no scenes")
 
-    def parse(raw: str) -> dict:
-        data = _parse_yaml(raw)
-        if isinstance(data, dict):
-            for collection, fields in (
-                ("issues", ("description", "correction")),
-                ("corrections", ("original", "corrected")),
-                ("storytelling_issues", ("description", "correction")),
-            ):
-                items = data.get(collection)
-                if not isinstance(items, list):
-                    continue
-                for item in items:
-                    if not isinstance(item, dict):
+    def _make_parse():
+        """One parser per scene call, because it counts ITS OWN attempts — the scenes
+        are reviewed concurrently, so a shared counter would leak between them."""
+        attempts = 0
+
+        def parse(raw: str) -> dict:
+            nonlocal attempts
+            data = _parse_yaml(raw)
+            if isinstance(data, dict):
+                for collection, fields in (
+                    ("issues", ("description", "correction")),
+                    ("corrections", ("original", "corrected")),
+                    ("storytelling_issues", ("description", "correction")),
+                ):
+                    items = data.get(collection)
+                    if not isinstance(items, list):
                         continue
-                    for field in fields:
-                        if isinstance(item.get(field), str):
-                            item[field] = _normalize_freetext(item[field])
-        if not isinstance(data, dict) or type(data.get("overall_pass")) is not bool:
-            raise ValueError("review: payload missing boolean 'overall_pass'")
-        return data
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        for field in fields:
+                            if isinstance(item.get(field), str):
+                                item[field] = _normalize_freetext(item[field])
+            if not isinstance(data, dict) or type(data.get("overall_pass")) is not bool:
+                raise ValueError("review: payload missing boolean 'overall_pass'")
+            # Counted only once the payload is structurally sound, so the YAMLError
+            # branch's deterministic re-parse (Story 6.11) does not spend the attempt.
+            attempts += 1
+            # Validate BEFORE applying: a claim without evidence must not be able to
+            # fail the review on the strength of a sentence nobody can check (AC4).
+            # First attempt is strict (buys the model its one correction); after that
+            # the unevidenced claim is dropped rather than failing the whole run.
+            _apply_grounded_contradictions(
+                data, _validate_grounded_contradictions(data, strict=attempts == 1)
+            )
+            return data
+
+        return parse
 
     async def _review_one(idx: int, scene: dict) -> dict:
         return await _call_stage_with_retry(
@@ -1736,12 +2014,13 @@ async def review_step(
                 + json.dumps({**writing, "scenes": [scene]}, ensure_ascii=False),
                 "visual_descriptions": json.dumps(visual_by_scene.get(idx, []), ensure_ascii=False),
                 "scp_visual_reference": frozen_descriptor,
+                "entity_sheet": entity_sheet,
                 "format_guide": format_guide,
                 "glossary_section": "",
             },
             s,
             call_llm,
-            parse,
+            _make_parse(),
             label=label,
             usage_sink=usage_sink,
             what=f"review scene {idx + 1}",

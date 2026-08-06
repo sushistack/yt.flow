@@ -282,3 +282,66 @@ def test_invalid_run_id_404(client, monkeypatch):
 def test_invalid_stage_422(client, monkeypatch):
     _mock_graph(monkeypatch, _COMPLETE)
     assert client.get(f"/runs/{RUN_ID}/stages/render/artifacts").status_code == 422
+
+
+# ── Story 12.3: scenario_quality on the artifact endpoint (AC6) ───────────────
+
+_QUALITY = {
+    "final_pass_index": 2,
+    "retry_scope": "scene",
+    "review_overall_pass": False,
+    "critic_verdict": "retry",
+    "critic_feedback": "장면 2가 늘어집니다",
+    "rule_metrics": {
+        "aggregate": {"character_count": 120, "sentence_count": 8,
+                      "duplicate_sentence_count": 1, "repeated_4gram_count": 0},
+        "scenes": [{"scene_num": 1, "character_count": 120, "sentence_count": 8,
+                    "duplicate_sentence_count": 1, "repeated_4gram_count": 0}],
+        "repeated_ngrams": [{"phrase": "가 나 다 라", "count": 3}],
+        "slop_phrase_hits": [{"scene_num": 1, "phrase": "충격적인 사실", "count": 2}],
+        "slop_vocabulary_version": 1,
+    },
+    "grounded_contradictions": [{
+        "scene_num": 1, "narration_quote": "파란 눈", "grounding_source": "entity_sheet",
+        "grounding_quote": "눈은 검은색이다", "explanation": "반대다", "correction": "검은 눈",
+    }],
+    "review_issues": [],
+    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+}
+
+
+def test_scenario_artifacts_carry_quality_warning(client, monkeypatch):
+    _mock_graph(monkeypatch, {**_SCENARIO_ONLY, "scenario_quality": _QUALITY})
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+    assert body["scenario_quality"]["grounded_contradictions"][0]["grounding_quote"] == "눈은 검은색이다"
+    assert body["scenario_quality"]["rule_metrics"]["slop_phrase_hits"][0]["count"] == 2
+    assert body["scenes"][0]["narration"] == "narration 1"  # existing payload intact
+
+
+def test_scenario_artifacts_pre_12_3_checkpoint_quality_is_null(client, monkeypatch):
+    _mock_graph(monkeypatch, _SCENARIO_ONLY)  # no such key at all
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenario_quality"] is None
+
+
+def test_scenario_artifacts_cleared_quality_is_null(client, monkeypatch):
+    _mock_graph(monkeypatch, {**_SCENARIO_ONLY, "scenario_quality": None})
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert body["scenario_quality"] is None
+
+
+def test_clean_run_scenario_artifacts_have_no_warning(client, monkeypatch):
+    clean = {k: v for k, v in _QUALITY.items() if k != "warning"}
+    clean.update(final_pass_index=1, retry_scope="none", review_overall_pass=True,
+                 critic_verdict="pass", grounded_contradictions=[])
+    _mock_graph(monkeypatch, {**_SCENARIO_ONLY, "scenario_quality": clean})
+    body = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()
+    assert "warning" not in body["scenario_quality"]
+
+
+def test_other_stage_artifacts_do_not_gain_quality(client, monkeypatch):
+    _mock_graph(monkeypatch, {**_COMPLETE, "scenario_quality": _QUALITY})
+    for stage in ("image", "tts", "subtitle", "video"):
+        body = client.get(f"/runs/{RUN_ID}/stages/{stage}/artifacts").json()
+        assert "scenario_quality" not in body

@@ -54,9 +54,46 @@ export const getRun = (id: string) => json<Run>(`/runs/${id}`)
 
 // Per-stage artifact DTOs mirror run_service.get_stage_artifacts(). They carry
 // server filesystem paths; fileUrl() turns those into /files URLs the browser loads.
+// Story 12.3: the scenario stage's final (post-retry) review/critic verdict plus
+// code-derived repetition metrics. `warning` is present ONLY when the one allowed
+// retry left the script degraded — so gate the alert on `warning`, never on the
+// object, which is also present for clean runs.
+export type RuleCounts = {
+  character_count: number
+  sentence_count: number
+  duplicate_sentence_count: number
+  repeated_4gram_count: number
+}
+export type GroundedContradiction = {
+  scene_num: number
+  narration_quote: string
+  grounding_source: string
+  grounding_quote: string
+  explanation: string
+  correction: string
+}
+export type ScenarioQuality = {
+  final_pass_index: number
+  retry_scope: string
+  review_overall_pass: boolean
+  critic_verdict: string
+  critic_feedback: string
+  rule_metrics: {
+    aggregate: RuleCounts
+    scenes: (RuleCounts & { scene_num: number })[]
+    repeated_ngrams: { phrase: string; count: number }[]
+    slop_phrase_hits: { scene_num: number; phrase: string; count: number }[]
+    slop_vocabulary_version: number
+  }
+  grounded_contradictions: GroundedContradiction[]
+  review_issues: { scene_num: number; type: string; severity: string; description: string; correction: string }[]
+  warning?: { code: string; message: string }
+}
 export type ScenarioArtifacts = {
   stage: "scenario"
   scenes: { scene_num: number; narration: string }[]
+  // Optional AND nullable: absent on a pre-12.3 checkpoint, null once a retry cleared it.
+  scenario_quality?: ScenarioQuality | null
 }
 export type ImageArtifacts = {
   stage: "image"

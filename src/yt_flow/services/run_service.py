@@ -82,7 +82,10 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     if stage == "scenario":
         if not scenes:
             raise LookupError("Stage not reached")
-        return {"stage": "scenario", "scenes": [
+        # Story 12.3: always present, `null` for a pre-12.3 checkpoint or after a
+        # retry cleared it — the durable path for the gate warning, so a reload or a
+        # missed SSE frame still shows it.
+        return {"stage": "scenario", "scenario_quality": values.get("scenario_quality") or None, "scenes": [
             {
                 "scene_num": s["scene_num"],
                 "narration": s["narration"],
@@ -221,6 +224,8 @@ def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any 
         "gate_states": {},
         "prompt_variant": prompt_variant,
         "error": None,
+        "scenario_quality": None,  # Story 12.3 — a full restart must not inherit the
+                                   # prior draft's review verdict (AC8)
     }
 
 
@@ -262,10 +267,18 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
     terminal_failed = False
     async for event in stream:  # stream_mode="updates": {node: update} | {"__interrupt__": (...)}
         if "__interrupt__" in event:
-            stage = event["__interrupt__"][0].value["stage"]
+            value = event["__interrupt__"][0].value
+            stage = value["stage"]
             await asyncio.to_thread(_write_run, run_id, status="awaiting_approval", current_stage=stage)
             await asyncio.to_thread(_mirror_gate_state, run_id, stage, "pending")
-            await _publish(sse_registry, run_id, "gate_pending", {"run_id": run_id, "stage": stage})
+            data = {"run_id": run_id, "stage": stage}
+            # Story 12.3: forward the scenario gate's quality context as-is (it is
+            # already JSON-safe by construction). SSE is acceleration only — the
+            # artifact endpoint is the durable authority, and `gate_states` in the DB
+            # stays a flat stage→string projection.
+            if quality := value.get("scenario_quality"):
+                data["scenario_quality"] = quality
+            await _publish(sse_registry, run_id, "gate_pending", data)
             return "awaiting"
         for node, update in event.items():
             if node in _STAGES:
@@ -748,7 +761,11 @@ def _nullify(stage: str, scenes: list) -> dict:
     """Checkpoint update that zeroes `stage` + all downstream outputs (AD-9 cascade)."""
     i = _STAGES.index(stage)
     if stage == "scenario":  # scenes carry every downstream artifact → wipe wholesale
-        return {"scenes": [], "video_path": None}
+        # Story 12.3 AC8: the quality verdict describes the draft being discarded, so
+        # it goes with it. Leaving it would label the NEXT script with the old
+        # script's warning — worse than no warning at all. Only the scenario branch
+        # clears it: a downstream retry does not invalidate the scenario review.
+        return {"scenes": [], "video_path": None, "scenario_quality": None}
     new = deepcopy(scenes)
     for scene in new:
         if i <= 1:  # image + downstream

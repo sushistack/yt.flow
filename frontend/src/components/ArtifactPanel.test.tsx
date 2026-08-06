@@ -255,4 +255,154 @@ describe("ArtifactPanel", () => {
       expect.objectContaining({ method: "PATCH", body: JSON.stringify({ body: "수정본" }) }),
     )
   })
+
+  // ── Story 12.3: pass-2 verdict warning at the scenario gate (AC7, AC8) ─────
+
+  const QUALITY = {
+    final_pass_index: 2,
+    retry_scope: "scene",
+    review_overall_pass: false,
+    critic_verdict: "retry",
+    critic_feedback: "장면 2의 긴장이 풀립니다",
+    rule_metrics: {
+      aggregate: { character_count: 120, sentence_count: 8, duplicate_sentence_count: 1, repeated_4gram_count: 1 },
+      scenes: [{ scene_num: 1, character_count: 120, sentence_count: 8, duplicate_sentence_count: 1, repeated_4gram_count: 1 }],
+      repeated_ngrams: [{ phrase: "가 나 다 라", count: 3 }],
+      slop_phrase_hits: [{ scene_num: 2, phrase: "충격적인 사실", count: 2 }],
+      slop_vocabulary_version: 1,
+    },
+    grounded_contradictions: [{
+      scene_num: 3,
+      narration_quote: "개체는 파란 눈을 가지고 있습니다",
+      grounding_source: "entity_sheet",
+      grounding_quote: "눈은 검은색이다",
+      explanation: "눈 색이 접지 자료와 반대다",
+      correction: "개체는 검은 눈을 가지고 있습니다",
+    }],
+    review_issues: [{ scene_num: 2, type: "missing_fact", severity: "warning", description: "사망자 수 누락", correction: "14명을 명시" }],
+    warning: { code: "unresolved_pass2", message: "재검토 후에도 품질 문제가 남아 있습니다." },
+  }
+
+  const scenarioData = (quality?: unknown) => ({
+    stage: "scenario" as const,
+    scenes: [{ scene_num: 1, narration: "초안" }],
+    ...(quality === undefined ? {} : { scenario_quality: quality }),
+  })
+
+  it("renders the pass-2 warning above the gate controls with icon + semantic alert (AC7)", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+
+    const alert = screen.getByRole("alert")
+    expect(alert).toHaveAttribute("aria-live", "polite")
+    // Icon AND text, not colour alone.
+    expect(alert.textContent).toContain("⚠")
+    expect(screen.getByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(alert.textContent).toContain("재검토 후에도 품질 문제가 남아 있습니다.")
+
+    // Above the decision, not below it.
+    const approve = screen.getByRole("button", { name: /승인/ })
+    expect(alert.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("warning shows the critic summary, scene evidence and code metrics (AC7)", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("장면 2의 긴장이 풀립니다")
+    expect(alert.textContent).toContain("씬 3")
+    expect(alert.textContent).toContain("개체는 파란 눈을 가지고 있습니다")
+    expect(alert.textContent).toContain("눈은 검은색이다")
+    expect(alert.textContent).toContain("entity_sheet")
+    expect(alert.textContent).toContain("사망자 수 누락")
+    expect(alert.textContent).toContain("가 나 다 라")
+    expect(alert.textContent).toContain("충격적인 사실")
+    expect(alert.textContent).toContain("critic retry")
+  })
+
+  it("labels the warning as generation-time review evidence (AC8)", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("alert").textContent).toContain("이후 직접 수정한 내용은 재검토되지 않았습니다")
+  })
+
+  it("warning survives an inline narration edit — review did not rerun (AC8)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ text: "수정본" }) })
+    vi.stubGlobal("fetch", fetchMock)
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+
+    fireEvent.click(screen.getByRole("button", { name: "편집" }))
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "수정본" } })
+    fireEvent.click(screen.getByRole("button", { name: "저장" }))
+    await waitFor(() => expect(screen.getByText("수정본")).toBeInTheDocument())
+
+    expect(screen.getByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /승인/ })).toBeInTheDocument()
+  })
+
+  it("a clean run renders no warning (AC3)", () => {
+    const clean = { ...QUALITY, final_pass_index: 1, retry_scope: "none", review_overall_pass: true, critic_verdict: "pass", grounded_contradictions: [] }
+    delete (clean as { warning?: unknown }).warning
+    renderPanel({ data: scenarioData(clean) as StageArtifacts, gateState: "pending" })
+    expect(screen.queryByRole("heading", { name: /2차 검토 경고/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /승인/ })).toBeInTheDocument()
+  })
+
+  it.each([["absent (pre-12.3 checkpoint)", undefined], ["null (cleared by retry)", null]])(
+    "scenario_quality %s renders no warning and does not crash",
+    (_label, quality) => {
+      renderPanel({ data: scenarioData(quality) as StageArtifacts, gateState: "pending" })
+      expect(screen.queryByRole("heading", { name: /2차 검토 경고/ })).not.toBeInTheDocument()
+      expect(screen.getByText("초안")).toBeInTheDocument()
+    },
+  )
+
+  it("warning stays visible after the gate is decided (retry decisions need it too)", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "approved" })
+    expect(screen.getByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "재시도" })).toBeInTheDocument()
+  })
+
+  it("a non-scenario stage never renders the warning block", () => {
+    renderPanel({
+      data: { stage: "tts", audio: [{ scene_num: 1, audio_path: "workspace/r1/a.wav", duration_sec: 1 }] },
+      gateState: "pending",
+    })
+    expect(screen.queryByRole("heading", { name: /2차 검토 경고/ })).not.toBeInTheDocument()
+  })
+
+  // The decision itself, taken with the warning on screen (AC2, AC7). The tests
+  // above prove the buttons EXIST next to a warning; these drive them, because
+  // "the human can still approve or reject normally" is the acceptance criterion
+  // and the warning block sits inside the same gate footer's subtree.
+  it.each([
+    ["approve", "승인", "approved"],
+    ["reject", "반려", "rejected"],
+  ])("the operator can still %s at a warned gate", async (action, label, nextState) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, text: async () => "" })
+    vi.stubGlobal("fetch", fetchMock)
+    const onGateStateChange = vi.fn()
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending", onGateStateChange })
+
+    fireEvent.click(screen.getByRole("button", { name: label }))
+
+    await waitFor(() => expect(onGateStateChange).toHaveBeenCalledWith("scenario", nextState))
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/runs/r1/stages/scenario/gate",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ action }) }),
+    )
+    // The evidence stays on screen after the call — it is the record of what was approved.
+    expect(screen.getByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+  })
+
+  it("the retry confirmation is announced without swallowing the warning alert (AC7)", async () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "approved" })
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "재시도" }))
+    })
+
+    // Two live regions now: the standing warning and the confirmation. Neither
+    // replaces the other — a single-alert assumption anywhere here would mean the
+    // operator loses the reason they were retrying mid-confirmation.
+    const alerts = screen.getAllByRole("alert")
+    expect(alerts.some((a) => a.textContent?.includes("이 스테이지를 다시 실행합니까?"))).toBe(true)
+    expect(alerts.some((a) => a.textContent?.includes("재검토 후에도 품질 문제가 남아 있습니다."))).toBe(true)
+  })
 })

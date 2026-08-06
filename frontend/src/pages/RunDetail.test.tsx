@@ -201,4 +201,67 @@ describe("RunDetail", () => {
     expect(confirm).toHaveBeenCalledWith("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")
     expect(screen.getByRole("textbox")).toHaveValue("수정 중")
   })
+
+  // ── Story 12.3: the gate warning survives reload and arrives on gate_pending ──
+
+  const QUALITY_WARNING = {
+    final_pass_index: 2,
+    retry_scope: "scene",
+    review_overall_pass: false,
+    critic_verdict: "retry",
+    critic_feedback: "장면 2의 긴장이 풀립니다",
+    rule_metrics: {
+      aggregate: { character_count: 120, sentence_count: 8, duplicate_sentence_count: 1, repeated_4gram_count: 0 },
+      scenes: [], repeated_ngrams: [], slop_phrase_hits: [], slop_vocabulary_version: 1,
+    },
+    grounded_contradictions: [],
+    review_issues: [],
+    warning: { code: "unresolved_pass2", message: "재검토 후에도 품질 문제가 남아 있습니다." },
+  }
+
+  function mockScenarioGate(quality: unknown | null) {
+    const run = { ...RUN, current_stage: "scenario", status: "awaiting_approval", gate_states: JSON.stringify({ scenario: "pending" }) }
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
+      if (url.includes("/stages/scenario/artifacts"))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ stage: "scenario", scenes: [{ scene_num: 1, narration: "초안" }], scenario_quality: quality }),
+        })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("a fresh load recovers the gate warning from artifacts, not from SSE (AC6)", async () => {
+    mockScenarioGate(QUALITY_WARNING)
+    render(<RunDetail runId="r1" />)
+    // No SSE event is ever emitted here — the artifact endpoint is the authority.
+    expect(await screen.findByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(screen.getByRole("alert").textContent).toContain("재검토 후에도 품질 문제가 남아 있습니다.")
+    expect(await screen.findByRole("button", { name: "승인" })).toBeInTheDocument()
+  })
+
+  it("a legacy run with no quality context renders the gate normally (AC6)", async () => {
+    mockScenarioGate(null)
+    render(<RunDetail runId="r1" />)
+    expect(await screen.findByRole("button", { name: "승인" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: /2차 검토 경고/ })).not.toBeInTheDocument()
+  })
+
+  it("scenario gate_pending re-reads artifacts so a new warning appears without reload", async () => {
+    const fetchMock = mockScenarioGate(null)
+    render(<RunDetail runId="r1" />)
+    await screen.findByRole("button", { name: "승인" })
+    const before = fetchMock.mock.calls.filter(([url]) => String(url).includes("/stages/scenario/artifacts")).length
+
+    // The retried scenario now carries a warning; the SSE frame only triggers the re-read.
+    mockScenarioGate(QUALITY_WARNING)
+    act(() => MockEventSource.instances[0].emit("gate_pending", { run_id: "r1", stage: "scenario", scenario_quality: QUALITY_WARNING }))
+
+    expect(await screen.findByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(before).toBeGreaterThan(0)
+  })
 })

@@ -6,8 +6,11 @@ runs table. A fake SSE registry records fan-out without needing a live subscribe
 """
 
 import asyncio
+import copy
 import json
 import uuid
+
+import pytest
 
 import pytest_asyncio
 from sqlmodel import Session
@@ -479,3 +482,141 @@ async def test_stage_failure_marks_run_failed(env, monkeypatch, tmp_path):
         assert run_id not in run_service._configs
     finally:
         await saver.conn.close()
+
+
+# ── Story 12.3: pass-2 quality context through SSE + artifacts + clearing ─────
+
+_QUALITY = {
+    "final_pass_index": 2,
+    "retry_scope": "scene",
+    "review_overall_pass": False,
+    "critic_verdict": "retry",
+    "critic_feedback": "장면 2가 늘어집니다",
+    "rule_metrics": {
+        "aggregate": {"character_count": 120, "sentence_count": 8,
+                      "duplicate_sentence_count": 1, "repeated_4gram_count": 0},
+        "scenes": [], "repeated_ngrams": [], "slop_phrase_hits": [], "slop_vocabulary_version": 1,
+    },
+    "grounded_contradictions": [],
+    "review_issues": [],
+    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+}
+
+_SCENE = {
+    "scene_num": 1, "narration": "문장.", "shots": [], "audio_path": None,
+    "audio_duration": None, "word_timings": [], "subtitle_path": None,
+    "mood": "escalation", "title": "", "kicker": "", "display_narration": "문장.",
+}
+
+
+@pytest.fixture
+def quality_scenario(monkeypatch):
+    """A scenario stage that reports an unresolved pass-2 on its FIRST execution and a
+    clean result on every later one.
+
+    Tests using it must list `stub_stage_nodes, quality_scenario, env` in that order:
+    `build_graph` binds node callables at build time, so this has to land after the
+    blanket stub and before `env` compiles the graph.
+
+    The "clean on re-run" half is what makes the clearing assertion meaningful — the
+    second update omits `scenario_quality` entirely, so only an explicit clear can
+    turn it back to None.
+    """
+    from yt_flow.pipeline import nodes
+
+    runs = {"n": 0}
+
+    async def node(state):
+        runs["n"] += 1
+        update = {"current_stage": "scenario", "error": None, "scenes": [dict(_SCENE)]}
+        if runs["n"] == 1:
+            update["scenario_quality"] = copy.deepcopy(_QUALITY)
+        return update
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "scenario", node)
+    return runs
+
+
+async def test_gate_pending_forwards_scenario_quality(stub_stage_nodes, quality_scenario, env):
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+
+    await run_service.start_run(run_id, "SCP-096", "scp text", reg)
+
+    event = _kinds(reg, "gate_pending")[0]["data"]
+    assert event["stage"] == "scenario"
+    assert event["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+    # DB projection stays a flat stage→string map — no schema change (AC6).
+    assert json.loads(_load(run_id).gate_states) == {"scenario": "pending"}
+
+
+async def test_gate_pending_omits_quality_when_absent(env):
+    """Pre-12.3 scenario output: the payload is byte-identical to before."""
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    assert _kinds(reg, "gate_pending")[0]["data"] == {"run_id": run_id, "stage": "scenario"}
+
+
+async def test_downstream_gate_pending_never_carries_quality(stub_stage_nodes, quality_scenario, env):
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+    reg.events.clear()
+
+    await run_service.resume_run(run_id, "scenario", "approve", reg)
+
+    assert _kinds(reg, "gate_pending")[0]["data"] == {"run_id": run_id, "stage": "image"}
+
+
+async def test_artifacts_are_the_durable_authority_for_the_warning(stub_stage_nodes, quality_scenario, env):
+    """AC6: a client that missed the SSE frame (or reloaded) still gets the warning."""
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    await run_service.start_run(run_id, "SCP-096", "t", None)  # no SSE registry at all
+
+    artifacts = await run_service.get_stage_artifacts(run_id, "scenario")
+    assert artifacts["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+    # Repeated reads are stable — nothing consumed the warning.
+    again = await run_service.get_stage_artifacts(run_id, "scenario")
+    assert again["scenario_quality"] == artifacts["scenario_quality"]
+
+
+async def test_retry_scenario_clears_stale_quality(stub_stage_nodes, quality_scenario, env):
+    """AC8: the verdict describes the discarded draft, so it must not outlive it."""
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    await run_service.start_run(run_id, "SCP-096", "t", None)
+    await run_service.resume_run(run_id, "scenario", "reject", None)  # → failed, retryable
+
+    await run_service.retry_stage(run_id, "scenario", None)
+    await asyncio.gather(*list(run_service._bg_tasks))  # the retry re-runs in the background
+
+    assert quality_scenario["n"] == 2  # the clean re-run happened
+    artifacts = await run_service.get_stage_artifacts(run_id, "scenario")
+    assert artifacts["scenario_quality"] is None
+
+
+async def test_full_restart_clears_stale_quality(stub_stage_nodes, quality_scenario, env):
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    await run_service.start_run(run_id, "SCP-096", "t", None)
+
+    await run_service.full_restart_run(run_id, None)
+
+    assert quality_scenario["n"] == 2
+    artifacts = await run_service.get_stage_artifacts(run_id, "scenario")
+    assert artifacts["scenario_quality"] is None
+
+
+def test_nullify_clears_quality_only_for_scenario():
+    assert run_service._nullify("scenario", [])["scenario_quality"] is None
+    assert "scenario_quality" not in run_service._nullify("image", [dict(_SCENE)])
+    assert "scenario_quality" not in run_service._nullify("video", [dict(_SCENE)])
+
+
+def test_initial_state_starts_with_no_quality():
+    assert run_service._initial_state("r", "SCP-096", "t")["scenario_quality"] is None

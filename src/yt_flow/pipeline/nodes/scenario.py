@@ -36,6 +36,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     TruncationError,
     build_scenes,
     cast_decision_step,
+    compute_rule_metrics,
     critic_step,
     research_step,
     review_step,
@@ -272,6 +273,98 @@ def _trace_fields(pass_index: int, retry_scope: str, indexes: list[int], rejecte
     return fields
 
 
+# ── Story 12.3: the final review/critic verdict, kept for the human gate ──────
+#
+# The defect: pass-2's recomputed `review`/`critic` overwrote pass-1's locals and
+# were then never read — `tts_normalize` ran next and the stage returned only
+# `scenes`. A script that was still "retry" after its one repair pass reached the
+# human gate looking identical to a clean one, which is exactly the silent
+# degradation AD-10 forbids. The fix is visibility, NOT a third pass: Story 6.5's
+# one-retry limit is deliberate.
+_UNRESOLVED_PASS2_MESSAGE = (
+    "재검토 후에도 품질 문제가 남아 있습니다. 아래 근거를 확인한 뒤 승인 또는 반려하세요."
+)
+_MAX_FEEDBACK_CHARS = 2000
+_MAX_QUALITY_TEXT = 600
+_MAX_QUALITY_ITEMS = 20
+_ISSUE_KEYS = ("type", "severity", "description", "correction")
+_CONTRADICTION_KEYS = (
+    "narration_quote", "grounding_source", "grounding_quote", "explanation", "correction",
+)
+
+
+def _clip(value: object, limit: int) -> str:
+    """Whitespace-collapsed, length-bounded text. The gate payload travels through
+    a checkpoint, an interrupt value and an SSE frame, so an unbounded model
+    string is a real cost — but it must never be silently *empty*."""
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _clip_lines(value: object, limit: int) -> str:
+    """Same bound, but line structure survives. ``_aggregate_critic`` joins its
+    per-scene feedback with newlines ("Scene 1: …\\nScene 2: …"); collapsing those
+    into one paragraph would hand the operator a wall of text at the exact moment
+    they have to read it — and the UI renders this field ``whitespace-pre-wrap``."""
+    lines = [" ".join(line.split()) for line in str(value or "").splitlines()]
+    text = "\n".join(line for line in lines if line)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _bounded(items: object, keys: tuple[str, ...], what: str) -> list[dict]:
+    """Whitelist + clip + cap a list of model-authored evidence entries.
+
+    Whitelisted keys only: whatever else the prompt emitted is not part of the
+    contract and would ride along into the checkpoint unbounded. A cap that drops
+    entries is LOGGED — a silently truncated list reads as "that was everything".
+    """
+    entries = [item for item in (items if isinstance(items, list) else []) if isinstance(item, dict)]
+    if len(entries) > _MAX_QUALITY_ITEMS:
+        logger.warning(
+            "scenario: %s bounded for the gate payload — keeping %d of %d entries",
+            what, _MAX_QUALITY_ITEMS, len(entries),
+        )
+        entries = entries[:_MAX_QUALITY_ITEMS]
+    out: list[dict] = []
+    for entry in entries:
+        scene_num = entry.get("scene_num")
+        row: dict = {"scene_num": scene_num if type(scene_num) is int else 0}
+        row.update({key: _clip(entry.get(key), _MAX_QUALITY_TEXT) for key in keys})
+        out.append(row)
+    return out
+
+
+def _build_quality(
+    pass_index: int, retry_scope: str, review: dict, critic: dict, writing: dict
+) -> dict:
+    """The scenario stage's quality verdict, JSON/checkpoint-safe by construction.
+
+    ``warning`` is present ONLY when the FINAL pass is negative and that pass was
+    the retry — a pass-1 failure that the repair fixed is a success story, and
+    ``accept_with_notes`` is not a failure at all (AC3).
+    """
+    verdict = str(critic.get("verdict") or "")
+    overall_pass = bool(review.get("overall_pass"))
+    quality: dict = {
+        "final_pass_index": pass_index,
+        "retry_scope": retry_scope,
+        "review_overall_pass": overall_pass,
+        "critic_verdict": verdict,
+        "critic_feedback": _clip_lines(critic.get("feedback"), _MAX_FEEDBACK_CHARS),
+        # Computed here, from the writing the review actually judged, and merged
+        # AFTER review parsing — so a model reporting its own flattering metrics
+        # cannot overwrite them (AC5).
+        "rule_metrics": compute_rule_metrics(writing),
+        "grounded_contradictions": _bounded(
+            review.get("grounded_contradictions"), _CONTRADICTION_KEYS, "grounded contradictions",
+        ),
+        "review_issues": _bounded(review.get("issues"), _ISSUE_KEYS, "review issues"),
+    }
+    if pass_index == 2 and (verdict == "retry" or not overall_pass):
+        quality["warning"] = {"code": "unresolved_pass2", "message": _UNRESOLVED_PASS2_MESSAGE}
+    return quality
+
+
 async def _write_and_review(
     scp_id: str,
     scp_text: str,
@@ -336,7 +429,7 @@ async def _write_and_review(
     usage = []
     review = await review_step(
         scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_gemini,
-        label=label, usage_sink=usage,
+        entity_sheet=entity_sheet, label=label, usage_sink=usage,
     )
     stages.append({
         "name": "review", "latency_ms": _ms(t0),
@@ -411,7 +504,7 @@ async def _repair_and_review(
     usage = []
     next_review = await review_step(
         scp_text, merged_writing, merged_visuals, frozen_descriptor, format_guide, s, _call_gemini,
-        label=label, usage_sink=usage,
+        entity_sheet=entity_sheet, label=label, usage_sink=usage,
     )
     stages.append({
         "name": "review", "latency_ms": _ms(t0),
@@ -563,6 +656,18 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
                     "full-fallback", [{"reason": "no-valid-scene", "rejected": rejected}]
                 )
 
+        # Read the FINAL review/critic here, before tts_normalize rewrites
+        # `writing` and both locals go out of scope unread (Story 12.3). Metrics
+        # describe the text the judge saw, not the pronunciation rewrite.
+        quality = _build_quality(final_pass_index, final_retry_scope, review, critic, writing)
+        if warning := quality.get("warning"):
+            logger.warning(
+                "scenario: %s after pass %d (retry_scope=%s, critic=%s, review_pass=%s) — "
+                "surfacing at the human gate, not failing the run",
+                warning["code"], final_pass_index, final_retry_scope,
+                quality["critic_verdict"], quality["review_overall_pass"],
+            )
+
         t0 = time.perf_counter()
         usage = []
         writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
@@ -573,7 +678,10 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
 
         scenes = build_scenes(writing, visual_by_scene, structure)
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total))
-        return {"scenes": scenes, "current_stage": "scenario", "error": None}
+        return {
+            "scenes": scenes, "current_stage": "scenario", "error": None,
+            "scenario_quality": quality,
+        }
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total), error=exc)
         return {"current_stage": "scenario", "error": f"stage=scenario run_id={run_id}: {exc}"}

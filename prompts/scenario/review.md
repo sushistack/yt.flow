@@ -8,6 +8,15 @@ You are an SCP Foundation fact-checker reviewing a video narration script for {{
 ## Visual Identity Profile
 {{scp_visual_reference}}
 
+## Entity Sheet (Grounding Source)
+
+The cast/entity roster established for this SCP. Together with **Source Facts** and the
+**Visual Identity Profile**, these three are the ONLY grounding sources. Never judge the
+narration against your own knowledge of the SCP — if a claim is not in one of the three,
+it is unsupported, not "wrong".
+
+{{entity_sheet}}
+
 {{glossary_section}}
 
 ## Storytelling Format Guide (Review Reference)
@@ -66,6 +75,25 @@ Calculate `storytelling_score` as the average of these four sub-scores.
 - No 반말 and no full colloquial-register (구어체) drift — the documentary 존댓말 base (합니다/입니다체) must be preserved throughout.
 Flag any violation of these three checks as an `issue` with `type: "ending_monotony"` or `type: "designation_violation"` (severity `critical` if it recurs 2+ times in the script, else `warning`). These affect `overall_pass` like any other issue — they are not advisory.
 
+### 9. Grounded Contradiction Check
+
+Report a narration statement that **directly conflicts** with a grounding source — the
+Entity Sheet, the Visual Identity Profile (Frozen Descriptor), or the Source Facts.
+
+A contradiction is only reportable with **quoted evidence on both sides**. Every entry MUST carry:
+
+- `narration_quote`: the offending narration text, quoted exactly as written
+- `grounding_source`: which source it conflicts with (`entity_sheet`, `frozen_descriptor`, or `scp_text`)
+- `grounding_quote`: the conflicting text from that source, quoted exactly
+- `explanation`: why the two cannot both be true
+- `correction`: the replacement narration text
+
+If you cannot quote both sides, **omit the contradiction** — an unquotable claim is rejected
+by the parser and costs the whole review a retry. Absence of evidence is not a contradiction:
+a detail the narration adds that no source mentions is `invented_content`, not this.
+
+Any grounded contradiction fails the review. Do not report `overall_pass: true` alongside one.
+
 ## Task
 
 {{parse_error}}
@@ -76,7 +104,7 @@ overall_pass: true
 coverage_pct: 85.0
 issues:
   - scene_num: 3
-    type: "fact_error|missing_fact|descriptor_violation|invented_content|ending_monotony|designation_violation"
+    type: "fact_error|missing_fact|descriptor_violation|invented_content|ending_monotony|designation_violation|grounded_contradiction"
     severity: "critical|warning|info"
     description: |
       What is wrong
@@ -89,6 +117,17 @@ corrections:
       original text snippet
     corrected: |
       corrected text
+grounded_contradictions:
+  - scene_num: 3
+    narration_quote: |
+      exact narration text that conflicts
+    grounding_source: "entity_sheet|frozen_descriptor|scp_text"
+    grounding_quote: |
+      exact conflicting text from that grounding source
+    explanation: |
+      why the two cannot both be true
+    correction: |
+      replacement narration text
 storytelling_score: 75
 storytelling_issues:
   - scene_num: 1
@@ -100,7 +139,9 @@ storytelling_issues:
       Suggested improvement
 ```
 
-Use YAML block literals (`|`) for every `description`, `correction`, `original`, and `corrected` free-text value exactly as shown. Only report actual issues found. If the script is accurate, return an empty issues array. Storytelling issues are advisory — they do NOT affect `overall_pass`.
+Use YAML block literals (`|`) for every `description`, `correction`, `original`, `corrected`,
+`narration_quote`, `grounding_quote`, and `explanation` free-text value exactly as shown.
+Omit `grounded_contradictions` entirely when there are none. Only report actual issues found. If the script is accurate, return an empty issues array. Storytelling issues are advisory — they do NOT affect `overall_pass`.
 
 ## Generated Narration Script (from Stage 3)
 {{narration_script}}
