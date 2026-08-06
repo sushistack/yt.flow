@@ -261,7 +261,10 @@ async def test_variant_b_completion_triggers_ab_eval(env, monkeypatch):
 
 async def test_ab_eval_failure_does_not_affect_run_status(env, monkeypatch, caplog):
     async def boom(run_a_id, run_b_id):
-        raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
+        # Story 12.2: the judge runs on Gemini, so this is the key whose absence
+        # actually stops an A/B evaluation now. Kept as the realistic failure this
+        # test is named for rather than a generic RuntimeError.
+        raise RuntimeError("YTFLOW_GEMINI_API_KEY is not configured")
 
     monkeypatch.setattr(run_service.eval_service, "evaluate_ab", boom)
     source_id = str(uuid.uuid4())

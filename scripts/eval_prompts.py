@@ -32,7 +32,7 @@ from langfuse import Evaluation  # noqa: E402
 
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.pipeline.nodes import scenario as scenario_module  # noqa: E402
-from yt_flow.pipeline.nodes.scenario import _call_deepseek, scenario_node  # noqa: E402
+from yt_flow.pipeline.nodes.scenario import _call_deepseek, _call_gemini, scenario_node  # noqa: E402
 from yt_flow.pipeline.nodes.scenario_chain import (  # noqa: E402
     cast_decision_step,
     research_step,
@@ -191,12 +191,17 @@ def seed_dataset(client, dataset_name: str = DATASET_NAME) -> None:
 # entries only grow when a prompt's rendered text actually changes).
 
 
-def _cache_key(rendered: str, model: str, max_tokens: int) -> str:
-    # max_tokens is part of the actual request body (scenario.py's _call_deepseek)
+def _cache_key(rendered: str, provider: str, model: str, max_tokens: int) -> str:
+    # max_tokens is part of the actual request body (scenario.py's provider calls)
     # and directly governs truncation (_RISKY_DEFAULT_MAX_TOKENS below) — omitting
     # it would let a max-tokens bump meant to fix a truncated response instead
     # silently replay the old truncated cache entry.
-    return hashlib.sha256(f"{rendered}\0{model}\0{max_tokens}".encode()).hexdigest()
+    #
+    # `provider` is in the key even though model names already differ between
+    # DeepSeek and Gemini (Story 12.2 AC9): the rendered prompt text is identical
+    # across providers for a stage, so an operator pinning both to the same model
+    # string would otherwise collide two providers' answers into one entry.
+    return hashlib.sha256(f"{rendered}\0{provider}\0{model}\0{max_tokens}".encode()).hexdigest()
 
 
 def _cache_get(key: str) -> tuple[str, dict, str | None] | None:
@@ -221,20 +226,30 @@ def _cache_put(key: str, raw: str, usage: dict, finish_reason: str | None) -> No
     tmp.replace(path)  # atomic on POSIX — a reader never observes a partially-written file
 
 
-def _cached_call_deepseek(call_deepseek):
-    """Wraps a ``call_deepseek(rendered, s) -> (raw, usage, finish_reason)`` callable
+def _cached_call(provider: str, call):
+    """Wraps a ``call(rendered, s) -> (raw, usage, finish_reason)`` provider callable
     with the stage cache. Model name + max_tokens come from the ``s`` argument each
     call already carries (AC1) — never constructs its own ``Settings()``. Caches the
     real call's result unconditionally, including a truncated (finish_reason ==
     "length") one, so a cached truncation replays the same downstream
-    ``TruncationError`` deterministically."""
+    ``TruncationError`` deterministically.
+
+    ``provider`` is "deepseek" or "gemini" and selects which pinned model/token
+    settings identify the entry — the same two values the real request body carries.
+    """
+
+    def _identity(s) -> tuple[str, int]:
+        if provider == "gemini":
+            return s.gemini_writing_model, s.gemini_writing_max_tokens
+        return s.deepseek_model, s.deepseek_max_tokens
 
     async def wrapper(rendered, s):
-        key = _cache_key(rendered, s.deepseek_model, s.deepseek_max_tokens)
+        model, max_tokens = _identity(s)
+        key = _cache_key(rendered, provider, model, max_tokens)
         cached = _cache_get(key)
         if cached is not None:
             return cached
-        raw, usage, finish_reason = await call_deepseek(rendered, s)
+        raw, usage, finish_reason = await call(rendered, s)
         _cache_put(key, raw, usage, finish_reason)
         return raw, usage, finish_reason
 
@@ -263,12 +278,14 @@ async def _run_scenario(
     }
     stages: list[dict] = []
     # scenario_node's internal *_step calls reference scenario.py's module-level
-    # `_call_deepseek` by name directly (no injectable parameter) — the only seam
-    # available without touching scenario.py/scenario_chain.py (AC5, AC6).
+    # `_call_deepseek` / `_call_gemini` by name directly (no injectable parameter) —
+    # the only seam available without touching scenario.py/scenario_chain.py (AC5, AC6).
+    # Story 12.2: BOTH seams are wrapped, so the cache covers the whole run and
+    # production's provider routing is unchanged by the caching.
     #
     # evaluate_label() runs several _run_scenario calls concurrently
-    # (max_concurrency), all sharing this one module attribute. Set/restore
-    # always relative to the fixed `_call_deepseek` imported at module load
+    # (max_concurrency), all sharing these module attributes. Set/restore
+    # always relative to the fixed callables imported at module load
     # (never whatever the attribute currently holds) so an overlapping task's
     # finally-restore can never leave the module stuck on a stale wrapper —
     # worst case under interleaving is an occasional missed cache hit (a wasted
@@ -276,13 +293,15 @@ async def _run_scenario(
     # ponytail: doesn't eliminate every interleaving race, just its unsafe
     # outcomes; add a lock around the patch window if a real bug surfaces.
     if not no_cache:
-        scenario_module._call_deepseek = _cached_call_deepseek(_call_deepseek)
+        scenario_module._call_deepseek = _cached_call("deepseek", _call_deepseek)
+        scenario_module._call_gemini = _cached_call("gemini", _call_gemini)
     try:
         out = await asyncio.wait_for(scenario_node(state, trace_sink=stages), timeout=timeout)
     except TimeoutError:
         out = {"scenes": [], "current_stage": "scenario", "error": f"timeout after {timeout:.0f}s"}
     finally:
         scenario_module._call_deepseek = _call_deepseek
+        scenario_module._call_gemini = _call_gemini
     return {**out, "stages": stages}
 
 
@@ -451,22 +470,36 @@ async def _run_stage_chain(
     scp_id: str, scp_text: str, label: str, stage: str, s: Settings, timeout: float, *, no_cache: bool = False
 ) -> tuple[bool, str, str | None, str | None, str | None]:
     """Returns (failed, actual_stage, error, finish_reason, raw_output) — finish_reason/raw_output
-    come from the last DeepSeek call made before failure (AC3)."""
+    come from the last provider call made before failure (AC3).
+
+    Story 12.2: each stage gets the provider that owns it in production, so an
+    isolated ``writing`` run reproduces a real writing failure (Gemini) rather than
+    a DeepSeek one. Earlier stages still run for real as prerequisites, which means
+    a ``writing`` run does make DeepSeek research/structure calls — the *writing
+    call itself* is the one that must never reach DeepSeek.
+    """
     chain_label = "candidate" if label == "candidate" else None
     last_raw: str | None = None
     last_finish_reason: str | None = None
     current_stage = "format_guide"
-    # `_call_deepseek` resolves the module global at this call's entry (not at
-    # import time), so a test's monkeypatch.setattr(ep, "_call_deepseek", ...) done
-    # before invoking _run_stage_chain is honored (AC7); it is then fixed for the
-    # duration of this one run, not re-resolved per stage.
-    deepseek_call = _call_deepseek if no_cache else _cached_call_deepseek(_call_deepseek)
+    # `_call_deepseek`/`_call_gemini` resolve the module globals at this call's entry
+    # (not at import time), so a test's monkeypatch.setattr(ep, "_call_gemini", ...)
+    # done before invoking _run_stage_chain is honored (AC7); they are then fixed for
+    # the duration of this one run, not re-resolved per stage.
+    deepseek_call = _call_deepseek if no_cache else _cached_call("deepseek", _call_deepseek)
+    gemini_call = _call_gemini if no_cache else _cached_call("gemini", _call_gemini)
 
-    async def _recording_call(rendered, settings):
-        nonlocal last_raw, last_finish_reason
-        raw, usage, finish_reason = await deepseek_call(rendered, settings)
-        last_raw, last_finish_reason = raw, finish_reason
-        return raw, usage, finish_reason
+    def _recorder(call):
+        async def _recording_call(rendered, settings):
+            nonlocal last_raw, last_finish_reason
+            raw, usage, finish_reason = await call(rendered, settings)
+            last_raw, last_finish_reason = raw, finish_reason
+            return raw, usage, finish_reason
+
+        return _recording_call
+
+    _recording_call = _recorder(deepseek_call)
+    _recording_gemini_call = _recorder(gemini_call)
 
     async def _inner() -> None:
         nonlocal current_stage
@@ -481,7 +514,8 @@ async def _run_stage_chain(
         structure = await structure_step(scp_id, research, format_guide, s, _recording_call, label=chain_label)
         current_stage = "writing"
         writing = await writing_step(
-            scp_id, structure, research["frozen_descriptor"], format_guide, "", s, _recording_call, label=chain_label
+            scp_id, structure, research["frozen_descriptor"], format_guide, "", s,
+            _recording_gemini_call, label=chain_label,
         )
         if stage == "writing":
             return
@@ -855,12 +889,21 @@ def main(argv=None) -> int:
             "Single-label runs (--label X, no --baseline) and --profile smoke remain available."
         )
 
-    if args.profile == "promotion" and Settings().deepseek_max_tokens < _MIN_MAX_TOKENS_FOR_PROMOTION:
-        ap.error(
-            f"--profile promotion requires YTFLOW_DEEPSEEK_MAX_TOKENS >= {_MIN_MAX_TOKENS_FOR_PROMOTION} "
-            f"(currently {Settings().deepseek_max_tokens}) — anything below that truncates visual_breakdown "
-            "and can masquerade as a prompt regression (AC5)"
-        )
+    # Story 12.2: the chain spans two providers, so the preflight has to check BOTH
+    # budgets. Checking only DeepSeek's would leave writing/review/critic — the three
+    # stages with the live truncation history — governed by an unvalidated knob.
+    if args.profile == "promotion":
+        s = Settings()
+        for env_var, value in (
+            ("YTFLOW_DEEPSEEK_MAX_TOKENS", s.deepseek_max_tokens),
+            ("YTFLOW_GEMINI_WRITING_MAX_TOKENS", s.gemini_writing_max_tokens),
+        ):
+            if value < _MIN_MAX_TOKENS_FOR_PROMOTION:
+                ap.error(
+                    f"--profile promotion requires {env_var} >= {_MIN_MAX_TOKENS_FOR_PROMOTION} "
+                    f"(currently {value}) — anything below that truncates a scenario stage "
+                    "and can masquerade as a prompt regression (AC5)"
+                )
 
     client = build_client()
 

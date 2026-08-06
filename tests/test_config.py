@@ -161,3 +161,56 @@ def test_observe_is_noop_when_flag_off():
     with c.start_as_current_observation(name="x", as_type="chain"):
         pass
     c.create_score(name="n", value=1.0)  # arbitrary tracing call → silent no-op
+
+
+# ── Story 12.2: Gemini block (model split) ──────────────────────────────────
+
+
+def test_gemini_defaults_are_pinned_stable_ids(monkeypatch):
+    _base_env(monkeypatch)
+    for key in (
+        "YTFLOW_GEMINI_API_KEY", "YTFLOW_GEMINI_BASE_URL",
+        "YTFLOW_GEMINI_WRITING_MODEL", "YTFLOW_GEMINI_JUDGE_MODEL",
+        "YTFLOW_GEMINI_WRITING_MAX_TOKENS", "YTFLOW_GEMINI_JUDGE_MAX_TOKENS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+
+    # Empty key by default so Settings() stays constructible offline; the call
+    # sites fail fast with a provider-specific error instead.
+    assert s.gemini_api_key == ""
+    assert s.gemini_base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert s.gemini_writing_model == "gemini-3.6-flash"
+    assert s.gemini_judge_model == "gemini-3.6-flash"
+    assert s.gemini_writing_max_tokens == 16384
+    assert s.gemini_judge_max_tokens == 8192
+    # A hot-swappable alias would silently change generation quality between runs.
+    for model in (s.gemini_writing_model, s.gemini_judge_model):
+        assert "latest" not in model and "preview" not in model and "exp" not in model
+
+
+def test_gemini_models_and_budgets_are_independently_overridable(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YTFLOW_GEMINI_WRITING_MODEL", "gemini-3.6-pro")
+    monkeypatch.setenv("YTFLOW_GEMINI_JUDGE_MAX_TOKENS", "4096")
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.gemini_writing_model == "gemini-3.6-pro"
+    assert s.gemini_judge_model == "gemini-3.6-flash"     # untouched by the writing override
+    assert s.gemini_judge_max_tokens == 4096
+    assert s.gemini_writing_max_tokens == 16384
+
+
+def test_deepseek_settings_survive_the_split(monkeypatch):
+    """The DeepSeek block — including the now-dormant judge model kept as the
+    documented zero-new-provider fallback — must not be removed."""
+    _base_env(monkeypatch)
+    for key in ("YTFLOW_DEEPSEEK_MODEL", "YTFLOW_DEEPSEEK_MAX_TOKENS", "YTFLOW_DEEPSEEK_JUDGE_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.deepseek_base_url == "https://api.deepseek.com"
+    assert s.deepseek_model == "deepseek-v4-flash"
+    assert s.deepseek_max_tokens == 32768
+    assert s.deepseek_judge_model == "deepseek-v4-flash"

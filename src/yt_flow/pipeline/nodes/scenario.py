@@ -9,7 +9,18 @@ fields, returns only the changed ones (``scenes``, ``current_stage``, and
 behaviour stays in ``gates.py``. [AD-4, AD-3]
 
 DeepSeek is OpenAI-compatible, so we POST to ``/chat/completions`` with the
-already-installed ``httpx`` client instead of adding the ``openai`` SDK.
+already-installed ``httpx`` client instead of adding the ``openai`` SDK. Gemini
+exposes the same OpenAI-compatible shape, so Story 12.2's model split needed a
+second base URL + key, not a second transport or an SDK.
+
+Story 12.2 provider ownership (``_GEMINI_STAGES`` below is the single source of
+truth): Gemini writes and judges prose — ``writing``, ``writing_scene_repair``,
+``review``, ``critic_agent``. DeepSeek keeps planning, visual metadata and the
+Qwen-tuned pronunciation pass — ``research``, ``structure``, ``cast_decision``,
+``visual_breakdown``, ``tts_normalize``. There is deliberately NO fallback
+between them: a provider outage is a visible failure, because a run that quietly
+completed on the wrong provider would look compliant with the split while
+invalidating every quality attribution drawn from it [AD-10].
 """
 
 import asyncio
@@ -54,8 +65,12 @@ _USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "prompt_cache_hit_tokens"
 
 
 def _usage_totals(usage_list: list[dict]) -> dict[str, int]:
-    """Sum DeepSeek `usage` dicts collected for one stage. A missing/absent/
-    non-numeric field degrades to 0 rather than raising [AD-10]."""
+    """Sum provider `usage` dicts collected for one stage. A missing/absent/
+    non-numeric field degrades to 0 rather than raising [AD-10].
+
+    Gemini reports only prompt/completion tokens, so the two DeepSeek
+    context-cache fields stay 0 on a Gemini-owned stage — absent, never
+    fabricated (Story 12.2 AC4)."""
     totals: dict[str, int] = dict.fromkeys(_USAGE_FIELDS, 0)
     for usage in usage_list:
         if not isinstance(usage, dict):
@@ -94,6 +109,74 @@ async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | N
         # parser sees this string, so it is read only by the diagnostic dump.
         content = message.get("reasoning_content") or ""
     return content, data.get("usage", {}), finish_reason
+
+
+# Gemini's OpenAI-compatibility layer reports a token-limit stop as "length", but
+# has also been observed passing the native MAX_TOKENS reason through. Both mean
+# the same thing to us: map them onto the one signal `_call_stage` turns into a
+# TruncationError, so the chain's bounded re-roll keeps working (Story 12.2).
+_GEMINI_TRUNCATION_REASONS = frozenset({"length", "MAX_TOKENS", "max_tokens"})
+
+
+async def _call_gemini(rendered: str, s: Settings) -> tuple[str, dict, str | None]:
+    """Return (content, usage, finish_reason) — same tuple contract as
+    ``_call_deepseek``, so ``scenario_chain._call_stage`` stays provider-agnostic
+    and no HTTP/SDK object leaks past this function (Story 12.2 AC3).
+
+    Never falls back to DeepSeek: every error propagates to the caller.
+    """
+    if not s.gemini_api_key:
+        raise RuntimeError("YTFLOW_GEMINI_API_KEY is not configured")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        resp = await client.post(
+            f"{s.gemini_base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {s.gemini_api_key}"},
+            json={
+                "model": s.gemini_writing_model,
+                "messages": [{"role": "user", "content": rendered}],
+                "max_tokens": s.gemini_writing_max_tokens,
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    choices = data.get("choices") or []
+    if not choices:
+        # A blocked prompt can come back 200-with-no-choices; parsing "" as YAML
+        # downstream would read as a content failure of the wrong stage.
+        raise RuntimeError(f"gemini: response carried no choices (model={s.gemini_writing_model})")
+    choice = choices[0]
+    content = (choice.get("message") or {}).get("content") or ""
+    finish_reason = choice.get("finish_reason")
+    if finish_reason in _GEMINI_TRUNCATION_REASONS:
+        # NOTE for the next person debugging a truncated Gemini stage: `content` is
+        # normally "" here, and unlike `_call_deepseek` there is no
+        # `reasoning_content` to substitute — Gemini's compatibility layer does not
+        # return its thoughts, so the diagnostic dump for a Gemini truncation IS
+        # 0 bytes and that is not a bug in the dump. Diagnose from `usage`
+        # (completion_tokens vs total_tokens shows the thinking spend, measured at
+        # ~2-5k/call on 2026-08-06) and from the max-tokens setting instead.
+        return content, data.get("usage") or {}, "length"
+    if not content:
+        # Safety-filtered / recitation-blocked / otherwise empty. Loud failure,
+        # never an empty-success that masquerades as unparseable model output.
+        raise RuntimeError(
+            f"gemini: empty content (model={s.gemini_writing_model}, finish_reason={finish_reason!r})"
+        )
+    return content, data.get("usage") or {}, finish_reason
+
+
+# The ownership table, as code. Keyed by the stage names used in `stages` trace
+# entries; `_provider_fields` and the routing helper both read it, so a stage can
+# never be traced as one provider while being called on another.
+_GEMINI_STAGES = frozenset({"writing", "writing_scene_repair", "review", "critic_agent"})
+
+
+def _provider_fields(stage: str, s: Settings) -> dict:
+    """Trace fields naming the provider + configured model that served a stage
+    (AC8). Credentials are never included."""
+    if stage in _GEMINI_STAGES:
+        return {"provider": "gemini", "model": s.gemini_writing_model}
+    return {"provider": "deepseek", "model": s.deepseek_model}
 
 
 def _record_trace(*, stages: list[dict], total_latency_ms: int, error: Exception | None = None) -> None:
@@ -211,10 +294,13 @@ async def _write_and_review(
     t0 = time.perf_counter()
     usage: list[dict] = []
     writing = await writing_step(
-        scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_deepseek,
+        scp_id, structure, frozen_descriptor, format_guide, quality_feedback, s, _call_gemini,
         label=label, usage_sink=usage,
     )
-    stages.append({"name": "writing", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "writing", "latency_ms": _ms(t0),
+        **_provider_fields("writing", s), **trace, **_usage_totals(usage),
+    })
 
     t0 = time.perf_counter()
     breakdown_usage: list[dict] = []
@@ -243,23 +329,29 @@ async def _write_and_review(
     visual_by_scene = dict(results)
     stages.append({
         "name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(visual_by_scene),
-        **trace, **_usage_totals(breakdown_usage),
+        **_provider_fields("visual_breakdown", s), **trace, **_usage_totals(breakdown_usage),
     })
 
     t0 = time.perf_counter()
     usage = []
     review = await review_step(
-        scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_deepseek,
+        scp_text, writing, visual_by_scene, frozen_descriptor, format_guide, s, _call_gemini,
         label=label, usage_sink=usage,
     )
-    stages.append({"name": "review", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "review", "latency_ms": _ms(t0),
+        **_provider_fields("review", s), **trace, **_usage_totals(usage),
+    })
 
     t0 = time.perf_counter()
     usage = []
     critic = await critic_step(
-        scp_text, writing, visual_by_scene, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        scp_text, writing, visual_by_scene, format_guide, s, _call_gemini, label=label, usage_sink=usage,
     )
-    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "critic_agent", "latency_ms": _ms(t0),
+        **_provider_fields("critic_agent", s), **trace, **_usage_totals(usage),
+    })
 
     return writing, visual_by_scene, review, critic
 
@@ -281,9 +373,12 @@ async def _repair_and_review(
     usage: list[dict] = []
     repaired = await writing_scene_repair_step(
         scp_id, originals, subset_structure, _format_scene_feedback(review, critic, indexes), frozen_descriptor,
-        format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        format_guide, s, _call_gemini, label=label, usage_sink=usage,
     )
-    stages.append({"name": "writing_scene_repair", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "writing_scene_repair", "latency_ms": _ms(t0),
+        **_provider_fields("writing_scene_repair", s), **trace, **_usage_totals(usage),
+    })
 
     merged_scenes = list(writing["scenes"])
     for idx, scene in zip(indexes, repaired, strict=True):
@@ -307,21 +402,30 @@ async def _repair_and_review(
     repaired_visuals = await asyncio.gather(*(_breakdown_for(idx) for idx in indexes))
     merged_visuals = dict(visual_by_scene)
     merged_visuals.update(repaired_visuals)
-    stages.append({"name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(indexes), **trace, **_usage_totals(breakdown_usage)})
+    stages.append({
+        "name": "visual_breakdown", "latency_ms": _ms(t0), "scene_count": len(indexes),
+        **_provider_fields("visual_breakdown", s), **trace, **_usage_totals(breakdown_usage),
+    })
 
     t0 = time.perf_counter()
     usage = []
     next_review = await review_step(
-        scp_text, merged_writing, merged_visuals, frozen_descriptor, format_guide, s, _call_deepseek,
+        scp_text, merged_writing, merged_visuals, frozen_descriptor, format_guide, s, _call_gemini,
         label=label, usage_sink=usage,
     )
-    stages.append({"name": "review", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "review", "latency_ms": _ms(t0),
+        **_provider_fields("review", s), **trace, **_usage_totals(usage),
+    })
     t0 = time.perf_counter()
     usage = []
     next_critic = await critic_step(
-        scp_text, merged_writing, merged_visuals, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        scp_text, merged_writing, merged_visuals, format_guide, s, _call_gemini, label=label, usage_sink=usage,
     )
-    stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
+    stages.append({
+        "name": "critic_agent", "latency_ms": _ms(t0),
+        **_provider_fields("critic_agent", s), **trace, **_usage_totals(usage),
+    })
     return merged_writing, merged_visuals, next_review, next_critic
 
 
@@ -334,6 +438,11 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         s = _settings()
         if not s.deepseek_api_key:
             raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
+        # Every scenario path reaches a Gemini-owned stage (writing), so check the
+        # key up front rather than burning the DeepSeek research/structure calls
+        # first (Story 12.2 AC2).
+        if not s.gemini_api_key:
+            raise RuntimeError("YTFLOW_GEMINI_API_KEY is not configured")
         if s.content_language != "ko":
             raise NotImplementedError(
                 f"content_language={s.content_language!r} not supported yet; scenario prompts, "
@@ -350,7 +459,10 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         research = await research_step(
             state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
-        stages.append({"name": "research", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
+        stages.append({
+            "name": "research", "latency_ms": _ms(t0),
+            **_provider_fields("research", s), **_trace_fields(1, "none", []), **_usage_totals(usage),
+        })
 
         t0 = time.perf_counter()
         usage = []
@@ -360,7 +472,10 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         structure = await structure_step(
             state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
-        stages.append({"name": "structure", "latency_ms": _ms(t0), **_trace_fields(1, "none", []), **_usage_totals(usage)})
+        stages.append({
+            "name": "structure", "latency_ms": _ms(t0),
+            **_provider_fields("structure", s), **_trace_fields(1, "none", []), **_usage_totals(usage),
+        })
 
         writing, visual_by_scene, review, critic = await _write_and_review(
             state["scp_id"], state["scp_text"], structure, research["frozen_descriptor"],
@@ -452,7 +567,7 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         usage = []
         writing = await tts_normalize_step(writing, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
         stages.append({
-            "name": "tts_normalize", "latency_ms": _ms(t0),
+            "name": "tts_normalize", "latency_ms": _ms(t0), **_provider_fields("tts_normalize", s),
             **_trace_fields(final_pass_index, final_retry_scope, final_indexes), **_usage_totals(usage),
         })
 

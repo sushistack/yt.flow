@@ -20,6 +20,23 @@ os.environ.setdefault("YTFLOW_LANGFUSE_ENABLED", "false")
 # Questions #2) — off by default in the suite so real-Settings() smoke/e2e tests
 # stay offline instead of hitting validate_mood_assets' fail-fast FileNotFoundError.
 os.environ.setdefault("YTFLOW_SOUND_DESIGN_ENABLED", "false")
+# Story 12.2: scenario_node and the A/B judge both fail fast on a missing Gemini
+# key. A non-secret dummy satisfies those guards while every provider seam stays
+# faked — and because os.environ outranks .env in pydantic-settings, it also stops
+# a real developer key from reaching a test that mis-wires a seam. Never a real key.
+os.environ["YTFLOW_GEMINI_API_KEY"] = "gm-test-offline-dummy"
+# ...and the same for DeepSeek, for the same two reasons. Without this, the offline
+# E2E profile is only hermetic on a machine that happens to have a `.env`: scenario_node
+# checks `deepseek_api_key` BEFORE any (faked) provider call, so on a `.env`-less
+# checkout — a fresh clone, CI, or a git worktree — every stub-profile run failed at
+# `stage=scenario: YTFLOW_DEEPSEEK_API_KEY is not configured`. That failed loudly in
+# tests/api/test_e2e_stub_run.py, but SILENTLY in
+# tests/pipeline/test_stub_profile_smoke.py::test_graph_reaches_terminal_state, which
+# asserted only the final status and still saw 'complete' — so the one test cited as
+# the offline proof that a run traverses both provider seams was passing without ever
+# reaching either. Unconditional, like Gemini's: a developer's real key must not
+# decide whether the offline suite is real.
+os.environ["YTFLOW_DEEPSEEK_API_KEY"] = "sk-test-offline-dummy"
 
 import pytest
 
@@ -31,6 +48,7 @@ def stub_profile(monkeypatch, tmp_path):
     """Wire the external seams to offline fakes (zero network/subprocess).
 
     Patches: Langfuse Prompt Hub (`scenario.get_prompt`), DeepSeek (`scenario._call_deepseek`),
+    Gemini (`scenario._call_gemini`),
     Qwen TTS (`tts._synthesize`), ComfyUI (`comfyui_client.submit_and_fetch*`), ffmpeg
     (`video._run_ffmpeg`), and the character-reference search/generation seams (Story 5.8's
     `run_service._ensure_character_reference`, which now fires from every `start_run` for a
@@ -56,7 +74,11 @@ def stub_profile(monkeypatch, tmp_path):
     # attribute (`from yt_flow.services import prompt_service`), which needs
     # its own patch target.
     monkeypatch.setattr(prompt_service, "get_prompt", fakes.fake_get_prompt_for_chain)
+    # Story 12.2: two provider seams, each fake scoped to the stages its provider
+    # owns — so a routing mistake fails the offline suite instead of silently
+    # replaying the right cassette from the wrong provider.
     monkeypatch.setattr(scenario, "_call_deepseek", fakes.deepseek_stage_aware())
+    monkeypatch.setattr(scenario, "_call_gemini", fakes.gemini_stage_aware())
     monkeypatch.setattr(tts, "_synthesize", fakes.fake_synthesize)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)

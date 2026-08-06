@@ -1,7 +1,7 @@
 """Boot the real FastAPI app with all 5 external seams stubbed, for Playwright E2E only.
 
-pytest's ``stub_profile`` fixture (tests/conftest.py) monkeypatches DeepSeek/Qwen/
-ComfyUI/ffmpeg/Langfuse-Prompt-Hub, but that only works in-process — Playwright
+pytest's ``stub_profile`` fixture (tests/conftest.py) monkeypatches DeepSeek/Gemini/
+Qwen/ComfyUI/ffmpeg/Langfuse-Prompt-Hub, but that only works in-process — Playwright
 drives a real browser against a real server process, so in-process monkeypatch
 doesn't reach it. This script applies the exact same monkeypatch (reusing
 ``tests/stubs/fakes.py``, zero duplication) as plain attribute assignment, then
@@ -9,9 +9,9 @@ boots uvicorn. The patch happens from outside, before the ASGI app ever runs —
 no new stub flag or branch added to ``src/yt_flow/``.
 
 NEVER use this for production. E2E/local testing only — zero real network or
-subprocess calls (DeepSeek/Qwen/ComfyUI/ffmpeg all stubbed; the A/B evaluation
-judge has no stub seam, so its own ``eval_service._settings()`` seam is patched
-below to force its API key empty instead).
+subprocess calls (DeepSeek/Gemini/Qwen/ComfyUI/ffmpeg all stubbed; the A/B
+evaluation judge has no stub seam, so its own ``eval_service._settings()`` seam is
+patched below to force its API keys empty instead).
 
 Usage:
     uv run python scripts/run_e2e_stub_server.py             # http://127.0.0.1:8000
@@ -40,8 +40,24 @@ probe request inside it; ``tests/stubs/fakes.py`` itself is untouched, so pytest
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+# Story 12.2: scenario_node fails fast on a missing Gemini key before it ever
+# reaches the (fully stubbed) provider seams. A non-secret dummy satisfies that
+# guard; set unconditionally so a real .env key can never be loaded into a
+# process whose whole purpose is to make zero real calls. Must precede any
+# Settings() construction below.
+os.environ["YTFLOW_GEMINI_API_KEY"] = "gm-e2e-stub-dummy"
+# Same for DeepSeek, whose identical guard sits one line above Gemini's in
+# scenario_node. Until this line, the guard was satisfied by whatever real key
+# `.env` happened to hold (see the eval_service note in __main__), so the stub
+# server booted "with zero real calls" only on a machine that already had a live
+# DeepSeek key — and failed every run's scenario stage on one that didn't. A dummy
+# satisfies the guard, needs no credential, and cannot be spent: every DeepSeek
+# call is rebound to a cassette fake in apply_stub_profile() below.
+os.environ["YTFLOW_DEEPSEEK_API_KEY"] = "sk-e2e-stub-dummy"
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))  # repo root, for `tests.stubs.fakes`
@@ -63,7 +79,7 @@ async def _delayed_submit_and_fetch_outputs(*args, **kwargs):
 
 
 def apply_stub_profile() -> None:
-    """Same 5 seams as tests/conftest.py::stub_profile, applied without pytest.
+    """Same seams as tests/conftest.py::stub_profile, applied without pytest.
 
     Plus 2 more seams for the character management flow (Story 1.11/3.7):
     DuckDuckGo image search and its download step both do real HTTP otherwise —
@@ -86,7 +102,9 @@ def apply_stub_profile() -> None:
     # under pytest/monkeypatch.
     scenario.get_prompt = fakes.fake_get_prompt_for_chain
     prompt_service.get_prompt = fakes.fake_get_prompt_for_chain
+    # Story 12.2: both provider seams, each scoped to the stages its provider owns.
     scenario._call_deepseek = fakes.deepseek_stage_aware()
+    scenario._call_gemini = fakes.gemini_stage_aware()
     tts._synthesize = fakes.fake_synthesize
     comfyui_client.submit_and_fetch = _delayed_submit_and_fetch
     comfyui_client.submit_and_fetch_outputs = _delayed_submit_and_fetch_outputs
@@ -101,9 +119,9 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
-    # eval_service.evaluate_ab() (Story 4.2/4.3) is not stubbed above — its DeepSeek
+    # eval_service.evaluate_ab() (Story 4.2/4.3) is not stubbed above — its Gemini
     # judge calls go through raw httpx, not a seam fakes.py can monkeypatch cleanly.
-    # A real YTFLOW_DEEPSEEK_API_KEY in .env would otherwise make the A/B-completion
+    # A real YTFLOW_GEMINI_API_KEY in .env would otherwise make the A/B-completion
     # trigger (run_service._trigger_ab_eval_if_variant_b) hit the live API during
     # Playwright runs. Found during Task 12 verification: blanking the *global* env
     # var (the previous approach) also fails scenario_node's own identical
@@ -114,12 +132,17 @@ if __name__ == "__main__":
     # (a local ``_settings()`` returning ``Settings()``), so patch that seam
     # directly instead: eval_service sees a forced-empty key (same deterministic,
     # zero-network "no key configured" RuntimeError the trigger already treats as
-    # non-fatal, AD-10) while scenario_node's own Settings() keeps the real
-    # .env-derived value it needs to pass its guard.
+    # non-fatal, AD-10) while scenario_node's own Settings() sees the module-top
+    # dummies, which satisfy its guards without a credential.
+    #
+    # Story 12.2: the judge now runs on Gemini, so the key to force empty is the
+    # Gemini one (the module-top dummy is what keeps scenario_node's own Gemini
+    # guard satisfied). Both keys are blanked here so neither provider can be
+    # reached even if the judge is later re-pointed at DeepSeek.
     import yt_flow.services.eval_service as eval_service
     from yt_flow.config import Settings
 
-    eval_service._settings = lambda: Settings(deepseek_api_key="")
+    eval_service._settings = lambda: Settings(deepseek_api_key="", gemini_api_key="")
 
     apply_stub_profile()
 

@@ -156,3 +156,131 @@ absent. Each was verified by mutation: break the behavior → the new test fails
   5 mutations. The two defects found were both in test-side fixtures.
 - The 3 `test_e2e_stub_run.py` failures remain open and predate Story 12.1
   (`_drain_bg_tasks` timeout, per the project's recorded gotcha). Out of scope here.
+
+---
+
+# Story 12.2 — Model Split (DeepSeek planning / Gemini prose + judge)
+
+Workflow: `bmad-qa-generate-e2e-tests`, 2026-08-06. Test generation only — no story
+validation, no code review. All discovered gaps auto-applied per Jay's instruction.
+
+## Generated Tests
+
+### E2E Tests (API-driven, offline)
+
+- [x] `tests/api/test_e2e_stub_run.py::test_scenario_substages_reach_the_provider_the_ownership_table_assigns`
+  — a run created through `POST /runs` records `(stage, provider)` for every LLM call
+  and checks it against the story's ownership table. The unit tests inject the seams by
+  hand, so they only prove the routing helper works; this proves **production wiring
+  calls it**. Also names the stages that must appear on each side, so a run that
+  skipped `tts_normalize` or judged nothing can't pass by touching both providers.
+- [x] `tests/api/test_e2e_stub_run.py::test_a_gemini_outage_fails_the_run_visibly_instead_of_completing_on_deepseek`
+  — Gemini returns 429 `RESOURCE_EXHAUSTED`: the run reaches the API client as
+  `status: "failed"`, its scenario gate refuses approval with 409, `run_failed` fans
+  out for the scenario stage, and DeepSeek is confirmed to have served only
+  `research`/`structure` — it never covered for the prose stage (AC1, AD-10).
+- [x] `tests/test_run_e2e_stub_server.py` (new file) —
+  `scripts/run_e2e_stub_server.py` had **zero** coverage despite carrying AC9's
+  "the stub server reaches no provider" claim. Two tests: both provider keys are
+  non-secret dummies set unconditionally, and each scenario seam replays only its own
+  provider's stages (handing it the other provider's stage marker raises).
+
+### API / service tests
+
+- [x] `tests/services/test_eval_service.py::test_the_whole_evaluation_talks_only_to_gemini`
+  — AC7 **composed** rather than per-function. Only `httpx.AsyncClient` is faked, so a
+  complete `evaluate_ab` (3 axes × 3 samples × 2 runs + pairwise) is checked in
+  aggregate: every request lands on Gemini's endpoint with the Gemini judge model,
+  budget, bearer key and JSON mode; no request carries the DeepSeek base URL or key.
+  The pre-existing Gemini tests stub `_post_chat`, which left "does some path inside
+  the evaluation still reach DeepSeek?" unanswered.
+
+## Gaps Found and Fixed
+
+1. **The offline E2E profile was only hermetic on a machine that had a `.env`.**
+   Story 12.2 gave Gemini an unconditional dummy key in `tests/conftest.py` but left
+   DeepSeek's identical `scenario_node` guard to be satisfied by whatever real key
+   `.env` held. On a `.env`-less checkout — fresh clone, CI, or this git worktree —
+   every stub-profile run died at
+   `stage=scenario: YTFLOW_DEEPSEEK_API_KEY is not configured`. Fixed by setting
+   `YTFLOW_DEEPSEEK_API_KEY` unconditionally alongside Gemini's.
+
+   This is the **actual** cause of the "3 pre-existing `test_e2e_stub_run.py`
+   failures" recorded in Story 12.1's and 12.2's Dev Agent Records, and blamed there
+   (and in this document's Story 12.1 section) on the `_drain_bg_tasks` timeout gotcha.
+   It is neither a timeout nor a flake: with the dummy key the file goes from
+   `3 failed` in 1.09s to `5 passed` in 8.6s — the earlier runs were failing instantly,
+   never timing out. Confirmed by reading the run's `run_failed` SSE payload.
+
+2. **`test_stub_profile_smoke.py::test_graph_reaches_terminal_state` was vacuous** —
+   the very test the story cites as "the offline proof for AC9". It asserted only the
+   final status, and approving the gate of a *failed* stage still advances the run, so
+   it saw `status == "complete"` while scenario had died before either provider seam
+   was reached. Added `assert run.error is None` first, which is what distinguishes
+   "traversed five stages" from "failed instantly and got dragged to the end".
+
+3. **`scripts/run_e2e_stub_server.py` required a real DeepSeek key to boot a run.**
+   Same asymmetry: the module top set a Gemini dummy, and its `__main__` comment
+   explicitly relied on `scenario_node`'s `Settings()` keeping "the real .env-derived
+   value it needs to pass its guard" — so the script advertising "zero real network
+   calls" could not run a scenario stage at all without a live credential on disk.
+   Fixed with a DeepSeek dummy; the stale comment corrected.
+
+4. **Stale provider in a test's simulated failure.**
+   `test_run_service_gate.py::test_ab_eval_failure_does_not_affect_run_status` raised
+   `YTFLOW_DEEPSEEK_API_KEY is not configured` as the realistic A/B-eval failure, but
+   after this story that key no longer stops an evaluation — the Gemini one does
+   (Task 4 asked for exactly this kind of cleanup). Updated.
+
+## Coverage
+
+| Surface | Before | After |
+|---|---|---|
+| Provider routing, E2E through `POST /runs` | none — unit-injected seams only | ✅ full ownership table |
+| Gemini outage visible to an API client | none | ✅ failed run + 409 gate + no DeepSeek fallback |
+| Whole `evaluate_ab` transport (not per-function) | none | ✅ every request asserted Gemini-only |
+| `scripts/run_e2e_stub_server.py` | 0 tests | ✅ 2 tests |
+| Offline stub profile hermetic without `.env` | ✗ DeepSeek | ✅ both providers |
+
+## Verification
+
+- `PYTHONPATH=$PWD/src uv run pytest -q` → **2168 passed, 1 skipped, 0 failed**
+  (was 2160 passed / 3 failed: +5 new tests, and the 3 long-misdiagnosed failures now pass).
+- `PYTHONPATH=$PWD/src uv run pytest -q --cov` → **92.76%**, gate 80% (was 92.51%).
+- `uv run ruff check .` → **All checks passed!**
+- Mutation check — 3 injected defects, **all 3 caught**, sources restored byte-identical
+  (`diff` clean):
+  1. `writing_step` routed back to `_call_deepseek` → both new API E2E tests fail.
+  2. `_judge_sample` model back to `deepseek_judge_model` → the whole-evaluation test fails.
+  3. stub server's DeepSeek dummy key removed → the new key test fails.
+
+## Checklist
+
+| Item | |
+|---|---|
+| API tests generated | ✅ `evaluate_ab` transport; run/gate contract via `POST /runs` + gate endpoint |
+| E2E tests generated | ✅ 3 (2 API-driven pipeline runs + the stub-server script) |
+| Standard framework APIs | ✅ pytest / pytest-asyncio / monkeypatch only |
+| Happy path covered | ✅ full-ownership-table run, complete evaluation |
+| Critical error cases covered | ✅ Gemini 429 outage, missing dummy key, cross-provider stage marker |
+| All generated tests pass | ✅ and the full suite is green for the first time in this worktree |
+| Proper locators | n/a — no UI change in this story |
+| Clear descriptions | ✅ each docstring states the defect it prevents |
+| No hardcoded waits/sleeps | ✅ awaits `run_service._bg_tasks`, no `sleep` |
+| Tests independent | ✅ env/module mutations registered with `monkeypatch` before the script rebinds them, so nothing leaks |
+| Summary includes coverage metrics | ✅ above |
+
+## Next Steps
+
+- **Left for Jay (unchanged by this workflow):** AC10's bounded live golden-SCP
+  `scenario_node` diagnostic still needs a `.env` with a real DeepSeek key + Langfuse
+  Prompt Hub reach, which this worktree does not have. Story 6.12's promotion gate was
+  not run, bypassed, or unfrozen here.
+- **Worth a follow-up story, not fixed here (out of test-generation scope):**
+  approving the gate of a *failed* run marks it **complete**, which is what let gap #2
+  hide. `run_service.resume_run` (`run_service.py:651`) has no status precondition: it
+  writes `status="running"` and streams `Command(resume=…)` into a graph that a failed
+  stage already routed to END, so the stream yields no updates and `_run` falls through
+  to `status="complete"`. Verified directly, not inferred. The API gate endpoint does
+  return 409 on a failed run (asserted by the new outage test), so the exposure is
+  service-level — anything calling `resume_run` without going through the route.

@@ -36,7 +36,39 @@ class Settings(BaseSettings):
     deepseek_max_tokens: int = 32768
     # A/B evaluation judge (Story 4.2). Same OpenAI-compatible endpoint; the model is
     # config-pinned so the judge can be swapped independently of the content generator.
+    # Kept after the Story 12.2 split moved judging to Gemini: it is the zero-new-provider
+    # fallback if Gemini-writes-and-judges self-preference bias makes results suspect.
     deepseek_judge_model: str = "deepseek-v4-flash"
+
+    # Gemini (Story 12.2 model split). Owns every prose-producing/prose-judging call:
+    # scenario writing + scene repair, the runtime review/critic judges, and the Epic 4
+    # axis/pairwise judges. DeepSeek keeps research/structure/cast/visual/tts_normalize.
+    # ponytail: same empty-key default as DeepSeek above so Settings() stays constructible
+    # in tests/tooling; the call sites fail fast with a provider-specific error.
+    gemini_api_key: str = ""
+    # Google's OpenAI-compatibility endpoint. Callers append `/chat/completions`, exactly
+    # like deepseek_base_url — so no new transport, just a second base URL + key.
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    # Exact stable IDs only, never a `-latest`/preview alias: `latest` can be hot-swapped
+    # under a running pipeline, which would silently change output quality and destroy
+    # quality attribution between runs.
+    # SCOPE, because the names undersell it: the *writing* pair below serves every
+    # scenario-chain stage Gemini owns — writing, scene repair AND the runtime
+    # review/critic judges — because they all share one injected seam
+    # (scenario._call_gemini). The *judge* pair serves the Epic 4 A/B judge only
+    # (eval_service). Deliberate: Story 12.2 Task 2 suggested putting runtime
+    # review/critic on the judge budget, but the 2026-08-06 live probe measured
+    # ~2-5k thinking tokens per Gemini call, and review/critic are the two stages
+    # that already truncated live at 16k (run 370666ba) — capping them at 8192 would
+    # buy nothing and re-introduce a known failure. Per-stage model plumbing is the
+    # thing to add if a *different* runtime judge model is ever actually wanted.
+    gemini_writing_model: str = "gemini-3.6-flash"
+    gemini_judge_model: str = "gemini-3.6-flash"
+    # Writing is batched one scene per call (scenario_chain.writing_step), so it needs
+    # far less than deepseek_max_tokens' whole-outline budget. Independently pinned so
+    # an A/B-judge budget change can't perturb generation.
+    gemini_writing_max_tokens: int = 16384
+    gemini_judge_max_tokens: int = 8192
 
     # ComfyUI image generation (Story 1.6). Reachability is checked lazily before
     # the first ComfyUI submission in image_node (Story 5.14), not app startup —

@@ -3,6 +3,7 @@
 - ``fake_run_ffmpeg``       — replaces ``video._run_ffmpeg`` (subprocess seam)
 - ``fake_submit_and_fetch`` / ``fake_submit_and_fetch_outputs`` — ComfyUI HTTP seam
 - ``fake_synthesize``       — replaces ``tts._synthesize`` (Qwen HTTP seam)
+- ``deepseek_stage_aware``/``gemini_stage_aware`` — the two scenario provider seams
 - ``deepseek_from_cassette``/``qwen_payload_from_cassette`` — recorded-shape playback
 - ``fake_image_search`` / ``fake_download_reference_image`` — DuckDuckGo character
   reference search seam (Story 1.11/3.7)
@@ -154,16 +155,26 @@ def patch_character_reference_seams(monkeypatch) -> None:
                          fake_get_image_provider)
 
 
-# ── scenario_chain multi-stage prompt/DeepSeek fakes (Story 1.5 chain redesign) ─
-_STAGE_CASSETTES = {
+# ── scenario_chain multi-stage prompt/provider fakes (Story 1.5 chain redesign) ─
+#
+# Story 12.2 split these by provider so the offline stubs mirror production
+# routing. Each fake only knows its OWN stages: hand a DeepSeek-owned marker to
+# the Gemini fake (or vice versa) and it raises instead of quietly replaying the
+# cassette — which is what makes the offline profile a routing regression test
+# rather than just a network stub. The cassette files keep their `deepseek_`
+# names because they record the *OpenAI-compatible response shape*, which both
+# providers share; only the seam they are played back through changed.
+_DEEPSEEK_STAGE_CASSETTES = {
     "scenario/research": "deepseek_research.json",
     "scenario/structure": "deepseek_structure.json",
-    "scenario/writing": "deepseek_writing.json",
     "scenario/cast_decision": "deepseek_cast_decision.json",
     "scenario/visual_breakdown": "deepseek_visual_breakdown.json",
+    "scenario/tts_normalize": "deepseek_tts_normalize.json",
+}
+_GEMINI_STAGE_CASSETTES = {
+    "scenario/writing": "deepseek_writing.json",
     "scenario/review": "deepseek_review.json",
     "scenario/critic_agent": "deepseek_critic.json",
-    "scenario/tts_normalize": "deepseek_tts_normalize.json",
 }
 
 
@@ -196,26 +207,37 @@ def fake_get_prompt_for_chain(name: str, *, label: str | None = None):
     return _FakeChainPrompt(name)
 
 
-def deepseek_stage_aware():
-    """Replaces ``scenario._call_deepseek`` for the multi-stage chain.
-
-    Reads the stage marker out of ``rendered`` (see ``_FakeChainPrompt``) and
-    replays that stage's real cassette from Tasks 3-5 — one fixed cassette per
-    stage, cached after first load. ``visual_breakdown`` is called once per
-    scene; the same cassette (3 shots) is replayed for every scene, which is
-    fine because the stub-profile run only ever has one scene (see the
-    ``deepseek_writing.json`` cassette's single scene).
+def _stage_aware(provider: str, cassettes: dict[str, str]):
+    """Replay one provider's stage cassettes, keyed by the ``_FakeChainPrompt``
+    marker embedded in ``rendered``. One fixed cassette per stage, cached after
+    first load. ``visual_breakdown`` is called once per scene; the same cassette
+    (3 shots) is replayed for every scene, which is fine because the stub-profile
+    run only ever has one scene (see the ``deepseek_writing.json`` cassette's
+    single scene).
     """
     cache: dict[str, dict] = {}
 
     async def fake(rendered: str, s):
-        for name, filename in _STAGE_CASSETTES.items():
+        for name, filename in cassettes.items():
             if rendered == f"__STAGE__:{name}":
                 if filename not in cache:
                     cache[filename] = load_cassette(filename)
                 data = cache[filename]
                 choice = data["choices"][0]
                 return choice["message"]["content"], data.get("usage", {}), choice.get("finish_reason")
-        raise AssertionError(f"deepseek_stage_aware: no cassette mapped for rendered={rendered!r}")
+        raise AssertionError(
+            f"{provider}_stage_aware: no cassette mapped for rendered={rendered!r}. "
+            f"If that stage belongs to the other provider, the routing under test is wrong."
+        )
 
     return fake
+
+
+def deepseek_stage_aware():
+    """Replaces ``scenario._call_deepseek`` — the planning/visual/normalize stages."""
+    return _stage_aware("deepseek", _DEEPSEEK_STAGE_CASSETTES)
+
+
+def gemini_stage_aware():
+    """Replaces ``scenario._call_gemini`` — the prose + prose-judging stages (Story 12.2)."""
+    return _stage_aware("gemini", _GEMINI_STAGE_CASSETTES)

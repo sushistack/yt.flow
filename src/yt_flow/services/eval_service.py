@@ -11,15 +11,24 @@ and Langfuse (individual score observations with idempotency keys). Provides
 ``determine_winner()`` as a standalone pure function implementing the OQ-6
 algorithm (quality floor, pairwise majority, rule-based tiebreaker).
 
-DeepSeek is OpenAI-compatible, so the judge uses the already-installed ``httpx``
-client — same pattern as ``scenario_node`` — instead of adding the ``openai`` SDK.
-Judge/pairwise prompts live in Langfuse Prompt Hub (``evaluation/judge``,
-``evaluation/pairwise``), never hardcoded here.
+Story 12.2: the judge moved from DeepSeek to Gemini, which owns every call that
+judges prose. Gemini's OpenAI-compatibility endpoint takes the same request shape,
+so the judge still uses the already-installed ``httpx`` client — same pattern as
+``scenario_node`` — instead of adding the ``openai`` SDK. Judge/pairwise prompts
+live in Langfuse Prompt Hub (``evaluation/judge``, ``evaluation/pairwise``), never
+hardcoded here.
+
+Accepted tradeoff, recorded so it is not mistaken for a fix: Gemini now both
+writes and judges the narration, so self-preference bias is *moved*, not
+eliminated. The zero-new-provider fallback is to point the judge back at
+``deepseek_judge_model`` (still configured for exactly this reason). Revisit at
+Story 13.4 before the promotion gate is unfrozen.
 """
 
 import asyncio
 import json
 import logging
+import re
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -38,6 +47,21 @@ AXES = ("atmosphere", "narrative_coherence", "article_fidelity")
 REPS_PER_AXIS = 3            # OQ-1: each axis scored 3 times, then averaged
 QUALITY_FLOOR = 2.0         # OQ-6: any axis average < 2 disqualifies a run
 JUDGE_TIMEOUT_SEC = 30.0    # AC5: per-call timeout, retry-once on timeout
+
+# Same pattern as ``scenario_chain._YAML_FENCE_RE``, deliberately duplicated rather than
+# imported: AD-1 bars services/ from importing pipeline/ (enforced by
+# test_services_does_not_import_api_or_pipeline, which allows only PURE node modules, and
+# scenario_chain is not one). MULTILINE so the fence may open after prose; the ``\Z``
+# branch takes everything after an unterminated fence instead of failing to match.
+# Keep the two in sync — see ``_post_chat`` for why the judge needs it at all.
+_FENCE_RE = re.compile(r"^```[a-zA-Z]*[ \t]*\n(.*?)(?:\n?[ \t]*```|\Z)", re.DOTALL | re.MULTILINE)
+
+
+def _defence(raw: str) -> str:
+    """Strip one markdown code fence, if present. A no-op on bare output."""
+    text = raw.strip()
+    match = _FENCE_RE.search(text)
+    return match.group(1) if match else text
 JUDGE_PROMPT = "evaluation/judge"
 PAIRWISE_PROMPT = "evaluation/pairwise"
 
@@ -100,27 +124,60 @@ def _settings() -> Settings:
 
 
 async def _post_chat(rendered: str, model: str, s: Settings, *, timeout: float = JUDGE_TIMEOUT_SEC) -> str:
-    """POST a JSON-mode chat completion; retry ONCE on timeout only (AC5).
+    """POST a JSON-mode chat completion to Gemini; retry ONCE on timeout only (AC5).
 
     Parse failures are not retried here — the caller raises ``EvalJudgeError``
     immediately so a persistently malformed judge can't burn the time budget.
+
+    Story 12.2: Gemini's OpenAI-compatibility endpoint, so only the base URL, key,
+    model and token budget changed — the retry/timeout/parse contract is untouched.
+    Never falls back to DeepSeek: a judge served by the wrong provider would make
+    the whole comparison uninterpretable. A blocked/empty Gemini response is raised
+    as ``EvalJudgeError`` so it stays inside the per-sample isolation (see below).
     """
+    if not s.gemini_api_key:
+        raise RuntimeError("YTFLOW_GEMINI_API_KEY is not configured")
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": rendered}],
         "response_format": {"type": "json_object"},
-        "max_tokens": s.deepseek_max_tokens,
+        "max_tokens": s.gemini_judge_max_tokens,
     }
     for attempt in range(2):  # initial try + one retry on timeout
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
                 resp = await client.post(
-                    f"{s.deepseek_base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {s.deepseek_api_key}"},
+                    f"{s.gemini_base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {s.gemini_api_key}"},
                     json=payload,
                 )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            # Gemini answers a safety-blocked prompt 200-with-no-choices, and omits
+            # `content` entirely on a MAX_TOKENS stop — two shapes DeepSeek never
+            # produced. Indexing them raw raised IndexError/KeyError, which is NOT
+            # what `_judge_sample`/`_pairwise_once` isolate on, so ONE blocked sample
+            # escaped `asyncio.gather` and failed the whole evaluation instead of
+            # degrading to a dropped sample (Story 6.8's isolation contract, AC7).
+            # Normalize to EvalJudgeError: the caller's existing one-retry-then-drop.
+            choices = resp.json().get("choices") or []
+            if not choices:
+                raise EvalJudgeError(f"judge: response carried no choices (model={model})")
+            content = (choices[0].get("message") or {}).get("content")
+            if not content:
+                raise EvalJudgeError(
+                    f"judge: empty content (model={model}, "
+                    f"finish_reason={choices[0].get('finish_reason')!r})"
+                )
+            # De-fence before the callers' json.loads. `response_format:
+            # {"type": "json_object"}` above is what USED to guarantee bare JSON, but
+            # Google does not document `json_object` for the OpenAI-compatibility
+            # endpoint (checked 2026-08-06) — and Story 12.2's own live probe caught
+            # Gemini fencing its output as ```yaml. If the parameter is silently
+            # ignored, every fenced sample fails json.loads, every axis lands under
+            # the 2-valid-sample floor, and the whole A/B evaluation fails. Reuses
+            # the same fence pattern scenario_chain hardened over live runs 64b6d9a8 /
+            # db2e813 (duplicated, not imported — see `_FENCE_RE`); a no-op on bare JSON.
+            return _defence(content)
         except httpx.TimeoutException:
             if attempt == 1:  # second (final) attempt also timed out
                 raise
@@ -153,7 +210,7 @@ async def _judge_sample(rendered: str, axis: str, s: Settings) -> int | None:
     """
     for attempt in range(2):  # initial try + one retry on parse failure
         try:
-            raw = await _post_chat(rendered, s.deepseek_judge_model, s)
+            raw = await _post_chat(rendered, s.gemini_judge_model, s)
             return _parse_score(raw, axis)
         except EvalJudgeError:
             if attempt == 1:
@@ -207,6 +264,11 @@ def _artifact_text(state: PipelineState) -> str:
     A text LLM can't watch the video or hear the audio, so narration is the
     faithful stand-in for the run's content. ponytail: narration-only judge input;
     add image-prompt/OCR context here if judgments prove too coarse.
+
+    Story 12.2 deliberately did NOT switch this to ``display_narration``: the judge
+    reads the text actually delivered as speech, which includes the bounded DeepSeek
+    tts_normalize pass. Judging display text instead would score something the
+    viewer never hears — a silent contract change, not a provider change.
     """
     return "\n\n".join(sc["narration"] for sc in state["scenes"])
 
@@ -304,7 +366,7 @@ async def _pairwise_once(scp_text: str, first: str, second: str, s: Settings) ->
     rendered = get_prompt(PAIRWISE_PROMPT).compile(
         scp_text=scp_text, content_first=first, content_second=second,
     )
-    raw = await _post_chat(rendered, s.deepseek_judge_model, s)
+    raw = await _post_chat(rendered, s.gemini_judge_model, s)
     try:
         winner = json.loads(raw)["winner"]
     except (ValueError, KeyError, TypeError) as exc:
@@ -460,8 +522,10 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
     (``ab_result`` JSON) and Langfuse scores via ``store_evaluation_results()``.
     """
     s = _settings()
-    if not s.deepseek_api_key:
-        raise RuntimeError("YTFLOW_DEEPSEEK_API_KEY is not configured")
+    # Story 12.2: the judge is Gemini's, so this is the key the evaluation needs —
+    # a DeepSeek key is no longer required to score an A/B pair.
+    if not s.gemini_api_key:
+        raise RuntimeError("YTFLOW_GEMINI_API_KEY is not configured")
 
     ab_pair_id = _validate_pair(run_a_id, run_b_id)  # AC7: raises before any scoring
     state_a = await _load_state(run_a_id, s.db_path)
@@ -480,7 +544,7 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
             metrics_a, metrics_b, run_a_id, run_b_id, s,
         )
         winner, winner_run_id, reason = _resolve_winner(pairwise, run_a_id, run_b_id)
-        trace_url = _finish_trace(span, ab_pair_id, winner, reason)
+        trace_url = _finish_trace(span, ab_pair_id, winner, reason, s.gemini_judge_model)
 
         # Story 4.3: Persist results to DB + Langfuse scores
         await store_evaluation_results(
@@ -749,16 +813,21 @@ def _enter_trace(ab_pair_id: str):
         return None
 
 
-def _finish_trace(span, ab_pair_id: str, winner: str | None, reason: str | None) -> str | None:
+def _finish_trace(
+    span, ab_pair_id: str, winner: str | None, reason: str | None, judge_model: str | None = None
+) -> str | None:
     if span is None:
         return None
     try:
         client = get_client()
         # The parent span IS the trace root; enrich it (langfuse v4 has no
         # update_current_trace). ab_pair_id already keys the trace via the id seed.
+        # judge_provider/judge_model (Story 12.2 AC8) make a stored verdict
+        # attributable to the model that produced it — without them, a later
+        # provider change silently rewrites the meaning of old scores.
         client.update_current_span(
             output={"winner": winner, "reason": reason},
-            metadata={"ab_pair_id": ab_pair_id},
+            metadata={"ab_pair_id": ab_pair_id, "judge_provider": "gemini", "judge_model": judge_model},
         )
         return _trace_url(client)
     except Exception:  # noqa: BLE001

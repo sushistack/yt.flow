@@ -4,7 +4,13 @@ Upgrades tests/pipeline/test_stub_profile_smoke.py (B-2 seam smoke — drives
 run_service directly) to the actual product contract: POST /runs -> observe SSE
 events -> approve all 5 gates via the gate endpoint -> assert completion, SSE
 event order, and the final artifact on disk. Zero real network/subprocess calls
-(stub_profile fakes DeepSeek/Qwen/ComfyUI/ffmpeg).
+(stub_profile fakes DeepSeek/Gemini/Qwen/ComfyUI/ffmpeg).
+
+Story 12.2 added the provider-split E2E cases at the bottom: which provider seam
+serves which scenario substage, and what a Gemini outage looks like to an API
+client. Those live here rather than in the unit tests because the unit tests inject
+the seams by hand — only a run driven through POST /runs proves production wiring
+picks the same providers.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -239,3 +245,119 @@ async def test_retry_image_stage_resubmits_to_comfyui_instead_of_reusing_disk_ca
         assert calls["n"] > first_submit_count
         assert calls["n"] - first_submit_count == len(first_pngs)  # every shot resubmitted, not just some
         assert sorted(p.name for p in images_dir.glob("*.png")) == first_pngs  # same shots, freshly written
+
+
+# ── Story 12.2: the DeepSeek/Gemini split, observed end to end ───────────────
+#
+# The ownership table from the story, keyed by the stage markers the offline
+# prompt fake emits. Gemini owns every prose-producing/prose-revising call and
+# every call that judges that prose; DeepSeek keeps planning, visual metadata,
+# and the Qwen-tuned pronunciation pass.
+_STAGE_OWNER = {
+    "scenario/research": "deepseek",
+    "scenario/structure": "deepseek",
+    "scenario/writing": "gemini",
+    "scenario/writing_scene_repair": "gemini",
+    "scenario/cast_decision": "deepseek",
+    "scenario/visual_breakdown": "deepseek",
+    "scenario/review": "gemini",
+    "scenario/critic_agent": "gemini",
+    "scenario/tts_normalize": "deepseek",
+}
+
+
+def _record_provider_seams(monkeypatch) -> list[tuple[str, str]]:
+    """Wrap the two seams ``stub_profile`` already installed so a run records
+    ``(stage, provider)`` for every LLM call it makes.
+
+    Wrapping rather than replacing keeps the stage-aware cassette fakes in play —
+    they raise on a foreign stage marker, so a mis-route fails either way; the
+    recording is what lets a test also prove the calls HAPPENED.
+    """
+    import yt_flow.pipeline.nodes.scenario as scenario
+
+    seen: list[tuple[str, str]] = []
+
+    def _wrap(provider, inner):
+        async def recording(rendered, s):
+            seen.append((rendered.removeprefix("__STAGE__:"), provider))
+            return await inner(rendered, s)
+        return recording
+
+    monkeypatch.setattr(scenario, "_call_deepseek", _wrap("deepseek", scenario._call_deepseek))
+    monkeypatch.setattr(scenario, "_call_gemini", _wrap("gemini", scenario._call_gemini))
+    return seen
+
+
+async def test_scenario_substages_reach_the_provider_the_ownership_table_assigns(api_env, monkeypatch):
+    """AC1/AC8 end to end: a run created through POST /runs routes each substage to
+    the provider the story assigns it.
+
+    The unit tests inject the seams by hand, so they prove the routing helper works;
+    only a run driven through the API proves production wiring calls it.
+    """
+    seen = _record_provider_seams(monkeypatch)
+
+    async with _asgi_client() as c:
+        resp = await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})
+        run_id = resp.json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        assert run["error"] is None, run["error"]
+        assert (run["status"], run["current_stage"]) == ("awaiting_approval", "scenario")
+
+    assert seen, "no provider seam was reached — the scenario stage never ran"
+    # .get() not [] so an unmapped stage surfaces here as misrouted instead of KeyError.
+    assert [(stage, p) for stage, p in seen if _STAGE_OWNER.get(stage) != p] == []
+
+    observed = {stage for stage, _ in seen}
+    # Both halves of the split must actually be exercised. Naming the stages
+    # individually, not just "len(providers) == 2": a run that skipped tts_normalize
+    # or judged nothing would still hit both providers and tell us nothing.
+    assert {"scenario/writing", "scenario/review", "scenario/critic_agent"} <= observed
+    assert {"scenario/research", "scenario/structure", "scenario/tts_normalize"} <= observed
+
+
+async def test_a_gemini_outage_fails_the_run_visibly_instead_of_completing_on_deepseek(api_env, monkeypatch):
+    """AC1/AD-10: no silent fallback. A run that quietly finished on DeepSeek would
+    look compliant with the model split while invalidating every quality number
+    drawn from it, so the outage has to reach the API client as a failure.
+    """
+    import yt_flow.pipeline.nodes.scenario as scenario
+
+    deepseek = scenario._call_deepseek
+    deepseek_stages: list[str] = []
+
+    async def counting_deepseek(rendered, s):
+        deepseek_stages.append(rendered.removeprefix("__STAGE__:"))
+        return await deepseek(rendered, s)
+
+    async def dead_gemini(rendered, s):
+        # 429 RESOURCE_EXHAUSTED is Gemini's project-scoped rate-limit response —
+        # the realistic outage, and the one a fallback would be most tempting for.
+        raise httpx.HTTPStatusError("429 RESOURCE_EXHAUSTED", request=None, response=None)
+
+    monkeypatch.setattr(scenario, "_call_deepseek", counting_deepseek)
+    monkeypatch.setattr(scenario, "_call_gemini", dead_gemini)
+
+    async with _asgi_client() as c:
+        resp = await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})
+        run_id = resp.json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        assert run["status"] == "failed"
+        assert run["error"] and "stage=scenario" in run["error"]
+
+        # And the failure is not approvable into the rest of the pipeline.
+        gate = await c.post(f"/runs/{run_id}/stages/scenario/gate", json={"action": "approve"})
+        assert gate.status_code == 409
+
+    # DeepSeek picked up its own planning stages and stopped there — it never
+    # covered for the prose stage Gemini owns.
+    assert "scenario/writing" not in deepseek_stages
+    assert set(deepseek_stages) <= {"scenario/research", "scenario/structure"}
+
+    failed = [e for e in app.state.sse_registry.events if e["event"] == "run_failed"]
+    assert [e["data"]["stage"] for e in failed] == ["scenario"]

@@ -54,6 +54,12 @@ async def test_graph_reaches_terminal_state(graph_env, stub_profile):
 
     with Session(db._engine) as session:
         run = session.get(Run, run_id)
+    # `error is None` FIRST: a run whose scenario stage died still reached 'complete'
+    # here (approving the gate of a failed stage advances it anyway), so status alone
+    # cannot tell "traversed all five stages" from "failed instantly and got dragged
+    # to the end". That is how a missing provider key hid in this test — see the
+    # unconditional dummy keys in tests/conftest.py.
+    assert run.error is None, run.error
     assert run.status == "complete"  # terminal state reached
 
 

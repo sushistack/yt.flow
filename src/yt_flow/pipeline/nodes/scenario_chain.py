@@ -2,11 +2,16 @@
 
 See docs/superpowers/specs/2026-07-03-scenario-multistage-design.md for the
 design this implements. Each ``*_step`` function fetches its Langfuse prompt,
-compiles it, calls DeepSeek via the caller-supplied ``call_deepseek`` seam
-(the same ``_call_deepseek`` from ``scenario.py`` — injected as a parameter so
-tests can fake it per stage), and returns a parsed+validated payload. No
-exception handling here: every failure propagates to ``scenario_node``, which
-converts it into ``PipelineState.error`` exactly as before.
+compiles it, calls the LLM via the caller-supplied ``call_llm`` seam, and returns
+a parsed+validated payload. No exception handling here: every failure propagates
+to ``scenario_node``, which converts it into ``PipelineState.error`` exactly as
+before.
+
+``call_llm`` is ``scenario.py``'s ``_call_deepseek`` OR ``_call_gemini`` — this
+module does not choose. Story 12.2 split provider ownership per stage and kept
+that decision in the orchestration layer (``scenario._GEMINI_STAGES``), so no
+parser here has to know or ask which provider it is talking to; the seam's
+``(content, usage, finish_reason)`` contract is identical for both.
 """
 
 import asyncio
@@ -600,7 +605,7 @@ class RetentionError(ValueError):
     """The Stage 2 outline violates the Story 12.1 retention contract.
 
     Deliberately NOT raised from ``structure_step``'s parse callback: a
-    ``ValueError`` there buys one DeepSeek regeneration, and re-rolling the dice
+    ``ValueError`` there buys one LLM regeneration, and re-rolling the dice
     on a narrative-ledger violation is exactly the LLM-recall this story exists
     to avoid. It is raised after ``_call_stage_with_retry`` has returned, so it
     propagates straight out of the stage and ``scenario_node`` turns it into
@@ -784,9 +789,9 @@ def _validate_retention_outline(scenes: list) -> None:
 
 
 async def _call_stage(
-    prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None
+    prompt_name: str, variables: dict, s, call_llm, *, label: str | None = None
 ) -> tuple[str, dict]:
-    """Fetch + compile a Langfuse prompt, call DeepSeek, return (raw text, usage dict).
+    """Fetch + compile a Langfuse prompt, call the injected provider, return (raw text, usage dict).
 
     Raises ``TruncationError`` on truncation (finish_reason == "length") so a
     caller never has to special-case a partial payload — json.loads on it would
@@ -804,7 +809,7 @@ async def _call_stage(
         else prompt_service.get_prompt(prompt_name)
     )
     rendered = prompt.compile(**variables)
-    raw, usage, finish_reason = await call_deepseek(rendered, s)
+    raw, usage, finish_reason = await call_llm(rendered, s)
     if finish_reason == "length":
         completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
         # ponytail: TruncationError.raw is dropped on every stage except
@@ -978,14 +983,14 @@ async def _call_stage_with_retry(
     prompt_name: str,
     variables: dict,
     s,
-    call_deepseek,
+    call_llm,
     parse,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
     what: str | None = None,
 ):
-    """Every scenario-chain DeepSeek call goes through here, so the truncation
+    """Every scenario-chain LLM call goes through here, so the truncation
     re-roll is wired ONCE, here, rather than per stage. Truncation is stochastic
     reasoning-token exhaustion, so any stage can be the next victim: live run
     ce0a455a (2026-08-05) died at ``scenario/cast_decision``, which is already
@@ -999,7 +1004,7 @@ async def _call_stage_with_retry(
     return await reroll_on_truncation(
         what or prompt_name,
         lambda: _parse_with_retry(
-            prompt_name, variables, s, call_deepseek, parse, label=label, usage_sink=usage_sink
+            prompt_name, variables, s, call_llm, parse, label=label, usage_sink=usage_sink
         ),
     )
 
@@ -1008,7 +1013,7 @@ async def _parse_with_retry(
     prompt_name: str,
     variables: dict,
     s,
-    call_deepseek,
+    call_llm,
     parse,
     *,
     label: str | None = None,
@@ -1022,13 +1027,13 @@ async def _parse_with_retry(
     failure the repair can't fix propagates unchanged — never an LLM fallback,
     never an unbounded retry loop.
 
-    ``usage_sink``, when given, collects each underlying DeepSeek call's raw
+    ``usage_sink``, when given, collects each underlying provider call's raw
     ``usage`` dict (one entry normally, two if the semantic retry fires) —
     Story 6.3's token/cache observability seam, additive to every existing
-    caller. The deterministic YAML repair adds no DeepSeek call, so it appends
+    caller. The deterministic YAML repair adds no provider call, so it appends
     nothing.
     """
-    raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_deepseek, label=label)
+    raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_llm, label=label)
     if usage_sink is not None:
         usage_sink.append(usage)
     try:
@@ -1059,7 +1064,7 @@ async def _parse_with_retry(
             "parse_error": f"Previous output failed validation: {error_text}. "
             "Output ONLY valid YAML, no prose, no markdown code fences.",
         }
-        raw, usage = await _call_stage(prompt_name, retry_variables, s, call_deepseek, label=label)
+        raw, usage = await _call_stage(prompt_name, retry_variables, s, call_llm, label=label)
         if usage_sink is not None:
             usage_sink.append(usage)
         return parse(raw)
@@ -1099,7 +1104,7 @@ async def research_step(
     scp_text: str,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1135,7 +1140,7 @@ async def research_step(
             "glossary_section": "",
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,
@@ -1147,7 +1152,7 @@ async def structure_step(
     research: dict,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1178,13 +1183,13 @@ async def structure_step(
             "glossary_section": "",
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,
     )
     # AFTER the await, never inside `parse` (Story 12.1 AC7): raising from the
-    # callback would spend one DeepSeek regeneration on a retention violation.
+    # callback would spend one LLM regeneration on a retention violation.
     # A broken ledger is a planning failure, not a formatting slip — it fails the
     # run loudly rather than being re-rolled or silently repaired.
     _validate_retention_outline(scenes)
@@ -1256,12 +1261,14 @@ async def writing_step(
     format_guide: str,
     quality_feedback: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    """Write every scene's narration — ONE DeepSeek call per scene, concurrently.
+    """Write every scene's narration — ONE LLM call per scene, concurrently.
+
+    Story 12.2: this stage runs on Gemini (``scenario._call_gemini``).
 
     Batched 2026-08-05 after 6 live run attempts proved the single all-scenes call
     unusable: with 8-12 scenes in one completion, ``YTFLOW_DEEPSEEK_MAX_TOKENS``
@@ -1316,7 +1323,7 @@ async def writing_step(
                 "quality_feedback": quality_feedback,
             },
             s,
-            call_deepseek,
+            call_llm,
             parse,
             label=label,
             usage_sink=usage_sink,
@@ -1342,7 +1349,7 @@ async def writing_scene_repair_step(
     frozen_descriptor: str,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1404,7 +1411,7 @@ async def writing_scene_repair_step(
             "glossary_section": "",
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,
@@ -1433,7 +1440,7 @@ async def cast_decision_step(
     scene: dict,
     sentences: list[str],
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1500,7 +1507,7 @@ async def cast_decision_step(
             "sentence_count": len(sentences),
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,
@@ -1517,7 +1524,7 @@ async def visual_breakdown_step(
     story_logline: str,
     scene_role: object,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1571,7 +1578,7 @@ async def visual_breakdown_step(
             "location_keys": ", ".join(LOCATION_KEYS),
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,
@@ -1673,12 +1680,14 @@ async def review_step(
     frozen_descriptor: str,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    """Fact-check + quality review — ONE DeepSeek call per scene, concurrently.
+    """Fact-check + quality review — ONE LLM call per scene, concurrently.
+
+    Story 12.2: this stage runs on Gemini (``scenario._call_gemini``).
 
     Batched 2026-08-05 for the same reason ``writing_step`` was: live run 370666ba
     (SCP-999, 9 scenes) truncated this stage twice, so even the central re-roll in
@@ -1731,7 +1740,7 @@ async def review_step(
                 "glossary_section": "",
             },
             s,
-            call_deepseek,
+            call_llm,
             parse,
             label=label,
             usage_sink=usage_sink,
@@ -1750,12 +1759,14 @@ async def critic_step(
     visual_by_scene: dict,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    """Viewer-perspective critique — ONE DeepSeek call per scene, concurrently.
+    """Viewer-perspective critique — ONE LLM call per scene, concurrently.
+
+    Story 12.2: this stage runs on Gemini (``scenario._call_gemini``).
 
     Same whole-script input shape as ``review_step``, so the same reasoning-token
     exhaustion was next in line; batched pre-emptively alongside it.
@@ -1801,7 +1812,7 @@ async def critic_step(
                 + json.dumps(scenario_json, ensure_ascii=False),
             },
             s,
-            call_deepseek,
+            call_llm,
             parse,
             label=label,
             usage_sink=usage_sink,
@@ -1816,7 +1827,7 @@ async def tts_normalize_step(
     writing: dict,
     format_guide: str,
     s,
-    call_deepseek,
+    call_llm,
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
@@ -1852,7 +1863,7 @@ async def tts_normalize_step(
             "format_guide": format_guide,
         },
         s,
-        call_deepseek,
+        call_llm,
         parse,
         label=label,
         usage_sink=usage_sink,

@@ -8,6 +8,7 @@ and surfacing errors as PipelineState.error.
 
 import json
 
+import httpx
 import pytest
 
 import yt_flow.pipeline.nodes.scenario as sc
@@ -24,6 +25,11 @@ class FakeSettings:
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
+    # Story 12.2 model split — the prose/judge provider.
+    gemini_api_key = "gm-test-secret"
+    gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+    gemini_writing_model = "gemini-3.6-flash"
+    gemini_writing_max_tokens = 16384
     content_language = "ko"
 
 
@@ -95,43 +101,67 @@ async def _async_return(value):
     return value
 
 
-def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None):
+def _provider_name(args) -> str:
+    """Which provider seam a substage was handed (Story 12.2 AC1). Identity against
+    the module attributes, so a monkeypatched fake still resolves to its provider."""
+    call = next((a for a in args if callable(a)), None)
+    if call is sc._call_gemini:
+        return "gemini"
+    if call is sc._call_deepseek:
+        return "deepseek"
+    return f"unrouted:{call!r}"
+
+
+def _stub_chain(monkeypatch, *, review=REVIEW_PASS, critic=CRITIC_PASS, review_retry=None, critic_retry=None, tts_normalize=None, providers=None):
     calls = {"research": 0, "structure": 0, "writing": 0, "repair": 0, "cast": 0, "visual": 0, "review": 0, "critic": 0, "tts_normalize": 0}
+
+    def _note(stage, args):
+        if providers is not None:
+            providers.append((stage, _provider_name(args)))
 
     async def fake_research(*a, **k):
         calls["research"] += 1
+        _note("research", a)
         return RESEARCH
 
     async def fake_structure(*a, **k):
         calls["structure"] += 1
+        _note("structure", a)
         return STRUCTURE
 
     async def fake_writing(*a, **k):
         calls["writing"] += 1
+        _note("writing", a)
         return WRITING
 
     async def fake_repair(*a, **k):
         calls["repair"] += 1
+        _note("repair", a)
         return a[1]
 
     async def fake_cast_decision(*a, **k):
         calls["cast"] += 1
+        _note("cast", a)
         return {}
 
     async def fake_visual(*a, **k):
         calls["visual"] += 1
+        _note("visual", a)
         return VISUAL
 
     async def fake_review(*a, **k):
         calls["review"] += 1
+        _note("review", a)
         return review_retry if (calls["writing"] > 1 and review_retry) else review
 
     async def fake_critic(*a, **k):
         calls["critic"] += 1
+        _note("critic", a)
         return critic_retry if (calls["writing"] > 1 and critic_retry) else critic
 
     async def fake_tts_normalize(writing, *a, **k):
         calls["tts_normalize"] += 1
+        _note("tts_normalize", a)
         return tts_normalize if tts_normalize is not None else writing
 
     monkeypatch.setattr(sc, "research_step", fake_research)
@@ -1067,3 +1097,270 @@ def test_record_trace_success_path_has_no_error_level(monkeypatch):
     assert len(calls) == 1
     assert "level" not in calls[0]
     assert "status_message" not in calls[0]
+
+
+# ── Story 12.2: DeepSeek / Gemini provider split ────────────────────────────
+#
+# The binding ownership table. Gemini owns every prose-producing/prose-revising
+# call and every call that judges that prose; DeepSeek keeps planning, visual
+# metadata, and the Qwen-tuned TTS normalization pass. Asserted by *identity of
+# the injected seam*, not call counts — counts vary with scene count and branch.
+
+_STAGE_OWNER = {
+    "research": "deepseek",
+    "structure": "deepseek",
+    "writing": "gemini",
+    "repair": "gemini",
+    "cast": "deepseek",
+    "visual": "deepseek",
+    "review": "gemini",
+    "critic": "gemini",
+    "tts_normalize": "deepseek",
+}
+
+
+def _misrouted(seen: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return [(stage, provider) for stage, provider in seen if _STAGE_OWNER[stage] != provider]
+
+
+async def test_provider_split_on_the_normal_path(monkeypatch):
+    seen: list[tuple[str, str]] = []
+    _stub_chain(monkeypatch, providers=seen)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert _misrouted(seen) == []
+    assert {stage for stage, _ in seen} == {
+        "research", "structure", "writing", "cast", "visual", "review", "critic", "tts_normalize",
+    }
+
+
+async def test_provider_split_on_the_scene_scoped_repair_path(monkeypatch):
+    """The repaired narration must not silently revert to DeepSeek, and pass 2's
+    review/critic must judge it on Gemini too."""
+    seen: list[tuple[str, str]] = []
+    calls = _stub_chain(monkeypatch, review=REVIEW_FAIL, review_retry=REVIEW_PASS, providers=seen)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert calls["repair"] == 1
+    assert _misrouted(seen) == []
+    assert ("repair", "gemini") in seen
+    assert [p for p in seen if p[0] == "review"] == [("review", "gemini")] * 2
+
+
+async def test_provider_split_on_the_full_rewrite_path(monkeypatch):
+    """critic says retry with no usable scene reference -> full rewrite. Both
+    writing passes are Gemini's."""
+    seen: list[tuple[str, str]] = []
+    calls = _stub_chain(monkeypatch, critic=CRITIC_RETRY, critic_retry=CRITIC_PASS, providers=seen)
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert (calls["writing"], calls["repair"]) == (2, 0)
+    assert _misrouted(seen) == []
+    assert [p for p in seen if p[0] == "writing"] == [("writing", "gemini")] * 2
+
+
+async def test_stage_traces_name_the_provider_and_model(monkeypatch):
+    """AC8: a trace must say which provider/model served each stage, or the 13.4
+    bias reassessment has no evidence to work from."""
+    _stub_chain(monkeypatch)
+    stages: list[dict] = []
+    await sc.scenario_node(_state(), trace_sink=stages)
+    by_name = {stage["name"]: stage for stage in stages}
+    assert by_name["writing"]["provider"] == "gemini"
+    assert by_name["writing"]["model"] == FakeSettings.gemini_writing_model
+    assert by_name["review"]["provider"] == "gemini"
+    assert by_name["critic_agent"]["provider"] == "gemini"
+    assert by_name["research"]["provider"] == "deepseek"
+    assert by_name["research"]["model"] == FakeSettings.deepseek_model
+    assert by_name["tts_normalize"]["provider"] == "deepseek"
+    # A credential must never ride along in trace metadata.
+    assert FakeSettings.gemini_api_key not in json.dumps(stages, ensure_ascii=False)
+
+
+async def test_missing_gemini_key_fails_before_any_stage_runs(monkeypatch):
+    class NoGeminiKey(FakeSettings):
+        gemini_api_key = ""
+
+    calls = _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "_settings", lambda: NoGeminiKey())
+    out = await sc.scenario_node(_state())
+    assert "YTFLOW_GEMINI_API_KEY" in out["error"]
+    assert calls["research"] == 0, "the key check must precede every LLM call, Gemini's or not"
+
+
+async def test_gemini_stage_semantic_retry_stays_on_gemini(monkeypatch):
+    """A parse/validation failure inside a Gemini-owned stage retries on Gemini.
+    A silent mid-stage provider swap would invalidate quality attribution."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "writing_step", chain.writing_step)  # the real stage
+    gemini = {"n": 0}
+
+    async def fake_gemini(rendered, s):
+        gemini["n"] += 1
+        if gemini["n"] == 1:
+            return "scenes:\n  - scene_num: 1\n", {}, "stop"  # no narration -> semantic failure
+        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n", {}, "stop"
+
+    async def fake_deepseek(rendered, s):
+        raise AssertionError("a Gemini-owned stage must never fall back to DeepSeek")
+
+    monkeypatch.setattr(sc, "_call_gemini", fake_gemini)
+    monkeypatch.setattr(sc, "_call_deepseek", fake_deepseek)
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert gemini["n"] == 2, "exactly one bounded semantic retry, same provider"
+
+
+async def test_gemini_writing_text_survives_deepseek_tts_normalize(monkeypatch):
+    """Distinguishable fakes prove the delivered narration is Gemini's, while the
+    DeepSeek-owned tts_normalize pass still receives and preserves it (AC5)."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "writing_step", chain.writing_step)
+    monkeypatch.setattr(sc, "tts_normalize_step", chain.tts_normalize_step)
+    received: list[str] = []
+
+    async def fake_gemini(rendered, s):
+        return "scenes:\n  - scene_num: 1\n    narration: 제미나이가 쓴 문장입니다.\n", {}, "stop"
+
+    async def fake_deepseek(rendered, s):
+        received.append(rendered)
+        return (
+            "scenes:\n  - scene_num: 1\n"
+            "    display_narration: 제미나이가 쓴 문장입니다.\n"
+            "    narration: 제미나이가 쓴 문장입니다.\n"
+        ), {}, "stop"
+
+    monkeypatch.setattr(sc, "_call_gemini", fake_gemini)
+    monkeypatch.setattr(sc, "_call_deepseek", fake_deepseek)
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert out["scenes"][0]["narration"] == "제미나이가 쓴 문장입니다."
+    assert received, "tts_normalize must still run on DeepSeek"
+
+
+# ── _call_gemini transport contract (AC3) ───────────────────────────────────
+
+
+class _CapturingHttpClient(_FakeHttpClient):
+    def __init__(self, payload, sink, *, raise_status=None, timeout=False):
+        super().__init__(payload)
+        self._sink = sink
+        self._raise_status = raise_status
+        self._timeout = timeout
+
+    async def post(self, url, **kwargs):
+        self._sink.append({"url": url, **kwargs})
+        if self._timeout:
+            raise httpx.TimeoutException("gemini timed out")
+        resp = _FakeResponse(self._payload)
+        if self._raise_status is not None:
+            exc = self._raise_status
+            resp.raise_for_status = lambda: (_ for _ in ()).throw(exc)
+        return resp
+
+
+_GEMINI_OK = {
+    "choices": [{"finish_reason": "stop", "message": {"content": "scenes: []"}}],
+    "usage": {"prompt_tokens": 11, "completion_tokens": 22, "total_tokens": 33},
+}
+
+
+def _capture(monkeypatch, payload, **kw):
+    sink: list[dict] = []
+    monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **_: _CapturingHttpClient(payload, sink, **kw))
+    return sink
+
+
+async def test_call_gemini_posts_the_openai_compatible_contract(monkeypatch):
+    sink = _capture(monkeypatch, _GEMINI_OK)
+    raw, usage, finish_reason = await sc._call_gemini("rendered prompt", FakeSettings())
+
+    assert (raw, finish_reason) == ("scenes: []", "stop")
+    request = sink[0]
+    assert request["url"] == f"{FakeSettings.gemini_base_url}/chat/completions"
+    assert request["headers"]["Authorization"] == f"Bearer {FakeSettings.gemini_api_key}"
+    assert request["json"] == {
+        "model": FakeSettings.gemini_writing_model,
+        "messages": [{"role": "user", "content": "rendered prompt"}],
+        "max_tokens": FakeSettings.gemini_writing_max_tokens,
+    }
+    # Gemini reports no DeepSeek cache metrics; they stay absent, never fabricated.
+    assert usage == {"prompt_tokens": 11, "completion_tokens": 22, "total_tokens": 33}
+    assert sc._usage_totals([usage]) == {
+        "prompt_tokens": 11, "completion_tokens": 22,
+        "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 0,
+    }
+
+
+async def test_call_gemini_normalizes_a_token_limit_finish_to_the_truncation_signal(monkeypatch):
+    payload = {
+        "choices": [{"finish_reason": "MAX_TOKENS", "message": {"content": "partial"}}],
+        "usage": {"completion_tokens": 16384},
+    }
+    _capture(monkeypatch, payload)
+    raw, _, finish_reason = await sc._call_gemini("rendered", FakeSettings())
+    assert (raw, finish_reason) == ("partial", "length"), "must reach the chain's bounded re-roll"
+
+
+async def test_call_gemini_rejects_a_blocked_empty_response(monkeypatch):
+    payload = {"choices": [{"finish_reason": "content_filter", "message": {"content": ""}}]}
+    _capture(monkeypatch, payload)
+    with pytest.raises(RuntimeError) as exc:
+        await sc._call_gemini("rendered", FakeSettings())
+    assert "content_filter" in str(exc.value)
+    assert FakeSettings.gemini_api_key not in str(exc.value)
+
+
+async def test_call_gemini_rejects_a_response_with_no_choices(monkeypatch):
+    _capture(monkeypatch, {"choices": []})
+    with pytest.raises(RuntimeError) as exc:
+        await sc._call_gemini("rendered", FakeSettings())
+    assert FakeSettings.gemini_api_key not in str(exc.value)
+
+
+async def test_call_gemini_propagates_an_http_error_without_falling_back(monkeypatch):
+    err = httpx.HTTPStatusError("429 RESOURCE_EXHAUSTED", request=None, response=None)
+    _capture(monkeypatch, _GEMINI_OK, raise_status=err)
+    with pytest.raises(httpx.HTTPStatusError):
+        await sc._call_gemini("rendered", FakeSettings())
+
+
+async def test_call_gemini_propagates_a_timeout(monkeypatch):
+    _capture(monkeypatch, _GEMINI_OK, timeout=True)
+    with pytest.raises(httpx.TimeoutException):
+        await sc._call_gemini("rendered", FakeSettings())
+
+
+async def test_call_gemini_without_a_key_fails_before_any_http(monkeypatch, caplog):
+    class NoGeminiKey(FakeSettings):
+        gemini_api_key = ""
+
+    sink = _capture(monkeypatch, _GEMINI_OK)
+    with pytest.raises(RuntimeError, match="YTFLOW_GEMINI_API_KEY"):
+        await sc._call_gemini("rendered", NoGeminiKey())
+    assert sink == []
+    assert FakeSettings.gemini_api_key not in caplog.text
+
+
+async def test_a_gemini_outage_surfaces_as_a_scenario_error_not_a_deepseek_rewrite(monkeypatch):
+    """AC1/AD-10: no code path silently falls back after a provider error."""
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "writing_step", chain.writing_step)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def dead_gemini(rendered, s):
+        raise httpx.HTTPStatusError("503 unavailable", request=None, response=None)
+
+    async def fake_deepseek(rendered, s):
+        raise AssertionError("a Gemini outage must not be papered over by DeepSeek")
+
+    monkeypatch.setattr(sc, "_call_gemini", dead_gemini)
+    monkeypatch.setattr(sc, "_call_deepseek", fake_deepseek)
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] and "503" in out["error"]
+    assert "scenes" not in out

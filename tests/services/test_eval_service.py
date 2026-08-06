@@ -1,6 +1,7 @@
-"""Unit tests for src/yt_flow/services/eval_service.py (Story 4.2).
+"""Unit tests for src/yt_flow/services/eval_service.py (Story 4.2, judge moved to
+Gemini in Story 12.2).
 
-No live DeepSeek / Langfuse / DB: the LLM call, prompt fetch, settings, trace
+No live provider / Langfuse / DB: the LLM call, prompt fetch, settings, trace
 sink, and checkpoint/run-table reads are all faked. Rule-based metrics run
 against the real PipelineState fixtures (pure functions, exact assertions).
 """
@@ -28,8 +29,13 @@ class FakeSettings:
     deepseek_api_key = "sk-test"
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
-    deepseek_judge_model = "deepseek-v4-flash"
+    deepseek_judge_model = "deepseek-v4-flash"   # dormant fallback (Story 12.2)
     deepseek_max_tokens = 8192
+    # Story 12.2: the judge runs on Gemini.
+    gemini_api_key = "gm-test-secret"
+    gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+    gemini_judge_model = "gemini-3.6-flash"
+    gemini_judge_max_tokens = 8192
     db_path = "unused-mocked.db"
     min_shot_clip_sec = 2.0
 
@@ -478,7 +484,7 @@ async def test_post_chat_raises_after_second_timeout(monkeypatch):
 def _no_trace(monkeypatch):
     # Isolate from Langfuse: trace lifecycle is exercised separately.
     monkeypatch.setattr(es, "_enter_trace", lambda ab_pair_id: None)
-    monkeypatch.setattr(es, "_finish_trace", lambda *a: None)
+    monkeypatch.setattr(es, "_finish_trace", lambda *a, **k: None)
     monkeypatch.setattr(es, "_exit_trace", lambda span: None)
 
 
@@ -873,3 +879,244 @@ class _FakeLFClient:
         return "trace-test"
     def create_score(self, **kw):
         pass
+
+
+# ── Story 12.2: the judge is Gemini's ───────────────────────────────────────
+
+
+class _CapturingClient(_FakeClient):
+    requests: list = []
+
+    async def post(self, url, **kwargs):
+        _CapturingClient.requests.append({"url": url, **kwargs})
+        return _Resp({"choices": [{"message": {"content": '{"score":4}'}}]})
+
+
+async def test_post_chat_targets_the_gemini_endpoint(monkeypatch):
+    _CapturingClient.requests = []
+    monkeypatch.setattr(es.httpx, "AsyncClient", _CapturingClient)
+
+    await es._post_chat("rendered", FakeSettings.gemini_judge_model, FakeSettings())
+
+    request = _CapturingClient.requests[0]
+    assert request["url"] == f"{FakeSettings.gemini_base_url}/chat/completions"
+    assert request["headers"]["Authorization"] == f"Bearer {FakeSettings.gemini_api_key}"
+    assert request["json"]["model"] == FakeSettings.gemini_judge_model
+    assert request["json"]["max_tokens"] == FakeSettings.gemini_judge_max_tokens
+    # JSON mode is part of the parse contract _parse_score depends on.
+    assert request["json"]["response_format"] == {"type": "json_object"}
+
+
+async def test_post_chat_without_a_gemini_key_fails_before_any_http(monkeypatch):
+    class NoKey(FakeSettings):
+        gemini_api_key = ""
+
+    _CapturingClient.requests = []
+    monkeypatch.setattr(es.httpx, "AsyncClient", _CapturingClient)
+    with pytest.raises(RuntimeError, match="YTFLOW_GEMINI_API_KEY"):
+        await es._post_chat("rendered", "m", NoKey())
+    assert _CapturingClient.requests == []
+
+
+async def test_judge_and_pairwise_pass_the_gemini_judge_model(monkeypatch):
+    """The axis judge and both pairwise orderings must all name the Gemini judge
+    model — a leftover DeepSeek judge model would score with the wrong provider
+    while every other assertion still passed."""
+    models: list[str] = []
+
+    async def fake_post(rendered, model, s, *, timeout=es.JUDGE_TIMEOUT_SEC):
+        models.append(model)
+        req = json.loads(rendered)
+        if req["prompt"] == es.JUDGE_PROMPT:
+            return json.dumps({"score": 4})
+        return json.dumps({"winner": "first", "reason": "x"})
+
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    monkeypatch.setattr(es, "_post_chat", fake_post)
+    s = FakeSettings()
+
+    assert await es._judge_sample(_Tmpl(es.JUDGE_PROMPT).compile(axis="atmosphere"), "atmosphere", s) == 4
+    assert await es._pairwise_once("scp", "text-a", "text-b", s) == "A"
+
+    assert models == [FakeSettings.gemini_judge_model] * 2
+
+
+async def test_evaluate_ab_requires_the_gemini_key_not_the_deepseek_one(monkeypatch, _memdb, _no_trace):
+    """AC7: judging no longer depends on a DeepSeek key. A DeepSeek-only install
+    must fail loudly on the Gemini key rather than silently judging on DeepSeek."""
+    class GeminiKeyMissing(FakeSettings):
+        gemini_api_key = ""
+
+    monkeypatch.setattr(es, "_settings", lambda: GeminiKeyMissing())
+    monkeypatch.setattr(es, "_validate_pair", lambda a, b: (_ for _ in ()).throw(
+        AssertionError("the key check must precede pair validation and any scoring")))
+
+    with pytest.raises(RuntimeError, match="YTFLOW_GEMINI_API_KEY"):
+        await es.evaluate_ab("run-a", "run-b")
+
+
+async def test_evaluate_ab_runs_without_a_deepseek_key(monkeypatch, _memdb, _no_trace):
+    class NoDeepSeek(FakeSettings):
+        deepseek_api_key = ""
+
+    _seed_run("run-a")
+    _seed_run("run-b", ab_pair_id="run-a")
+    monkeypatch.setattr(es, "_load_state",
+                        lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
+    _wire(monkeypatch, score_fn=lambda c, a: 4 if _is_a(c) else 3,
+          winner_fn=lambda first, second: "first" if _is_a(first) else "second")
+    monkeypatch.setattr(es, "_settings", lambda: NoDeepSeek())
+
+    res = await es.evaluate_ab("run-a", "run-b")
+    assert res.winner == "A"
+
+
+def test_finish_trace_records_the_judge_provider_and_model_without_the_key(monkeypatch):
+    calls = []
+
+    class _FakeLF:
+        def update_current_span(self, **kw):
+            calls.append(kw)
+
+        def get_trace_url(self):
+            return "https://langfuse.invalid/trace/1"
+
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLF())
+
+    es._finish_trace(object(), "pair-1", "A", "pairwise_majority", FakeSettings.gemini_judge_model)
+
+    metadata = calls[0]["metadata"]
+    assert metadata["judge_provider"] == "gemini"
+    assert metadata["judge_model"] == FakeSettings.gemini_judge_model
+    assert FakeSettings.gemini_api_key not in json.dumps(calls[0])
+
+
+async def test_the_whole_evaluation_talks_only_to_gemini(monkeypatch, _memdb, _no_trace):
+    """AC7 composed, not per-function: every request a *complete* ``evaluate_ab``
+    emits — 3 axes × 3 samples × 2 runs, plus the pairwise comparisons — lands on
+    Gemini's endpoint with the Gemini judge model and the Gemini token budget.
+
+    The other Gemini tests stub ``_post_chat``, which proves the transport in
+    isolation but leaves "does some path inside the evaluation still reach DeepSeek?"
+    unanswered. Here only ``httpx.AsyncClient`` is faked, so anything that skipped
+    the shared transport, or passed the wrong model/budget, shows up as a request
+    that isn't Gemini's.
+    """
+    requests: list[dict] = []
+
+    class _RecordingClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            requests.append({"url": url, **kw})
+            # Satisfies both parsers: `score` for the axis judge, `winner` for pairwise.
+            return _Resp({"choices": [{"message": {"content": '{"score": 4, "winner": "first"}'}}]})
+
+    monkeypatch.setattr(es.httpx, "AsyncClient", _RecordingClient)
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    monkeypatch.setattr(es, "_settings", lambda: FakeSettings())
+    _seed_run("run-a")
+    _seed_run("run-b", ab_pair_id="run-a")
+    monkeypatch.setattr(es, "_load_state",
+                        lambda rid, dbp: _return(fx.state_a("run-a") if rid == "run-a" else fx.state_b("run-b")))
+
+    res = await es.evaluate_ab("run-a", "run-b")
+    assert res.winner == "A"
+
+    assert len(requests) >= 2 * len(es.AXES) * es.REPS_PER_AXIS + 1, "the judge barely ran"
+    expected_url = f"{FakeSettings.gemini_base_url}/chat/completions"
+    assert {r["url"] for r in requests} == {expected_url}
+    assert FakeSettings.deepseek_base_url not in json.dumps(requests)
+    assert {r["json"]["model"] for r in requests} == {FakeSettings.gemini_judge_model}
+    assert {r["json"]["max_tokens"] for r in requests} == {FakeSettings.gemini_judge_max_tokens}
+    assert {r["headers"]["Authorization"] for r in requests} == {f"Bearer {FakeSettings.gemini_api_key}"}
+    # JSON mode is part of the preserved contract, not something the move dropped.
+    assert {r["json"]["response_format"]["type"] for r in requests} == {"json_object"}
+    # ...and the DeepSeek key never rides along on a Gemini request.
+    assert FakeSettings.deepseek_api_key not in json.dumps(requests)
+
+
+# Gemini-only response shapes: a safety-blocked prompt answers 200 with no choices,
+# and a MAX_TOKENS stop omits `content` entirely. DeepSeek produced neither, so the
+# judge transport had no guard for them — and raw IndexError/KeyError is NOT what
+# _judge_sample/_pairwise_once isolate on, which means one blocked sample escaped
+# asyncio.gather and failed the whole evaluation.
+
+
+@pytest.mark.parametrize(
+    ("payload", "shape"),
+    [
+        ({"choices": []}, "blocked: 200 with no choices"),
+        ({"choices": [{"finish_reason": "MAX_TOKENS", "message": {}}]}, "truncated: no content key"),
+        ({"choices": [{"finish_reason": "stop", "message": {"content": ""}}]}, "empty content"),
+    ],
+)
+async def test_post_chat_turns_a_blocked_gemini_response_into_an_eval_judge_error(
+    monkeypatch, payload, shape
+):
+    class _Blocked(_FakeClient):
+        async def post(self, *a, **k):
+            return _Resp(payload)
+
+    monkeypatch.setattr(es.httpx, "AsyncClient", _Blocked)
+    with pytest.raises(es.EvalJudgeError):
+        await es._post_chat("rendered", "gemini-3.6-flash", FakeSettings())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '```json\n{"score": 4, "winner": "first"}\n```',
+        '```\n{"score": 4, "winner": "first"}\n```',
+        'Here is my verdict:\n\n```json\n{"score": 4, "winner": "first"}\n```\n',
+        '{"score": 4, "winner": "first"}',   # bare — de-fencing must be a no-op
+    ],
+)
+async def test_a_fenced_judge_response_still_parses(monkeypatch, content):
+    """Gemini fences its output — this story's own live writing probe came back as
+    ```yaml — and Google does not document `json_object` for the OpenAI-compatibility
+    endpoint. If that parameter is silently ignored, an un-de-fenced judge fails
+    json.loads on EVERY sample, every axis drops below the 2-valid-sample floor, and
+    the whole A/B evaluation fails. DeepSeek's JSON mode was what made bare output safe.
+    """
+    class _Fenced(_FakeClient):
+        async def post(self, *a, **k):
+            return _Resp({"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr(es.httpx, "AsyncClient", _Fenced)
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+    s = FakeSettings()
+
+    raw = await es._post_chat("rendered", "gemini-3.6-flash", s)
+    assert es._parse_score(raw, "atmosphere") == 4                      # axis judge
+    assert await es._pairwise_once("scp", "a", "b", s) == "A"           # pairwise judge
+
+
+async def test_one_blocked_judge_sample_drops_instead_of_failing_the_axis(monkeypatch):
+    """The Story 6.8 isolation contract, against Gemini's blocked-response shape: a
+    dropped sample must not raise out of ``asyncio.gather`` and take the other
+    REPS_PER_AXIS-1 samples (and every other axis) down with it."""
+    calls = {"n": 0}
+
+    class _OneBlocked(_FakeClient):
+        async def post(self, *a, **k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _Resp({"choices": []})  # blocked
+            return _Resp({"choices": [{"message": {"content": '{"score": 4}'}}]})
+
+    monkeypatch.setattr(es.httpx, "AsyncClient", _OneBlocked)
+    monkeypatch.setattr(es, "get_prompt", lambda name: _Tmpl(name))
+
+    scores = await es._judge_axis("scp", "narration", "atmosphere", FakeSettings())
+
+    # The blocked sample retries once (EvalJudgeError is retryable), succeeds, so all
+    # three still land — and critically, nothing propagated out of the gather.
+    assert scores == [4, 4, 4]

@@ -381,6 +381,12 @@ class FakeSettings:
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
+    # Story 12.2: writing/review/critic run on Gemini, so the offline eval script
+    # needs both providers pinned.
+    gemini_api_key = "gm-test"
+    gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+    gemini_writing_model = "gemini-3.6-flash"
+    gemini_writing_max_tokens = 16384
     content_language = "ko"
 
 
@@ -516,9 +522,12 @@ def test_run_stage_chain_visual_breakdown_failure(monkeypatch):
 
 
 def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatch):
-    """Real research_step/structure_step/writing_step against a scripted
-    _call_deepseek — proves the artifact-worthy raw/finish_reason comes from
-    the actual failing DeepSeek call, not a stubbed step function (AC3)."""
+    """Real research_step/structure_step/writing_step against scripted provider
+    calls — proves the artifact-worthy raw/finish_reason comes from the actual
+    failing provider call, not a stubbed step function (AC3). Story 12.2: the
+    truncating stage is writing, so the truncation is scripted on the GEMINI seam;
+    if writing were still routed to DeepSeek this test would never see "length".
+    """
     import asyncio
     import json as jsonlib
 
@@ -528,13 +537,17 @@ def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatc
     ]
 
     async def scripted_call_deepseek(rendered, s):
+        return responses.pop(0)
+
+    async def scripted_call_gemini(rendered, s):
         # writing is batched one call per scene and re-rolls once on truncation,
-        # so the truncated reply is the tail default rather than a fixed slot.
-        return responses.pop(0) if responses else ("{truncated partial json", {}, "length")
+        # so every writing call comes back truncated.
+        return ("{truncated partial json", {}, "length")
 
     monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: FakePrompt())
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
     monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
+    monkeypatch.setattr(ep, "_call_gemini", scripted_call_gemini)
 
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
@@ -788,7 +801,7 @@ def test_main_warns_when_max_tokens_at_risky_default(monkeypatch, capsys):
     monkeypatch.setattr(ep, "build_client", lambda: client)
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 8192})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 8192, "gemini_writing_max_tokens": 16384})())
 
     ep.main(["--label", "production"])
 
@@ -800,7 +813,7 @@ def test_main_silent_when_max_tokens_raised(monkeypatch, capsys):
     monkeypatch.setattr(ep, "build_client", lambda: client)
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
 
     ep.main(["--label", "production"])
 
@@ -1000,7 +1013,7 @@ def test_main_promotion_profile_rejects_stage_isolation():
 def test_main_promotion_profile_runs_all_three_items(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     captured = []
     _wire_scenario_capturing_state(monkeypatch, captured)
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
@@ -1012,7 +1025,7 @@ def test_main_promotion_profile_runs_all_three_items(monkeypatch):
 def test_main_promotion_profile_uses_1200s_default_timeout(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
 
@@ -1033,7 +1046,7 @@ def test_main_promotion_profile_uses_1200s_default_timeout(monkeypatch):
 def test_main_promotion_profile_rejects_risky_default_max_tokens(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS, "gemini_writing_max_tokens": 16384})())
 
     with pytest.raises(SystemExit):
         ep.main(["--profile", "promotion"])
@@ -1042,7 +1055,7 @@ def test_main_promotion_profile_rejects_risky_default_max_tokens(monkeypatch):
 def test_main_promotion_profile_does_not_reject_raised_max_tokens(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
 
@@ -1054,16 +1067,33 @@ def test_main_promotion_profile_rejects_intermediate_risky_max_tokens(monkeypatc
     # exact 8192 default — the preflight must reject any value under the floor.
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 10000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 10000, "gemini_writing_max_tokens": 16384})())
 
     with pytest.raises(SystemExit):
         ep.main(["--profile", "promotion"])
 
 
+def test_main_promotion_profile_rejects_a_risky_gemini_budget(monkeypatch, capsys):
+    """Story 12.2: writing/review/critic are Gemini's now — the three stages with the
+    live truncation history. A preflight that only validated DeepSeek's budget would
+    let a truncation-prone Gemini budget through and score it as a prompt regression.
+    """
+    client = _client_with_seeded_dataset()
+    monkeypatch.setattr(ep, "build_client", lambda: client)
+    monkeypatch.setattr(
+        ep, "Settings",
+        lambda: type("S", (), {"deepseek_max_tokens": 32768, "gemini_writing_max_tokens": 8192})(),
+    )
+
+    with pytest.raises(SystemExit):
+        ep.main(["--profile", "promotion"])
+    assert "YTFLOW_GEMINI_WRITING_MAX_TOKENS" in capsys.readouterr().err
+
+
 def test_main_promotion_profile_persists_authority_metadata(monkeypatch, tmp_path):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     monkeypatch.setattr(ep, "_new_run_dir", lambda *parts: tmp_path / "-".join(parts))
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
@@ -1078,7 +1108,7 @@ def test_main_smoke_profile_not_rejected_by_risky_default_max_tokens(monkeypatch
     """Only promotion hard-blocks on the risky default — smoke stays a fast, unblocked loop."""
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": ep._RISKY_DEFAULT_MAX_TOKENS, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
 
@@ -1219,7 +1249,7 @@ def test_print_comparison_labels_inconclusive_row(capsys):
 def test_main_promotion_profile_exits_nonzero_on_inconclusive(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
 
     async def timeout_scenario_node(state, *, trace_sink=None):
         return {"scenes": [], "current_stage": "scenario", "error": "timeout after 1200s"}
@@ -1372,7 +1402,7 @@ def test_resolve_profile_reps_override_above_floor():
 def test_main_promotion_profile_runs_reps_times_per_label(monkeypatch):
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     captured = []
     _wire_scenario_capturing_state(monkeypatch, captured)
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
@@ -1388,7 +1418,7 @@ def test_main_promotion_median_tolerates_single_noisy_run(monkeypatch):
     # median gate must still PASS (a zero-tolerance gate would FAIL here).
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
 
     calls = {"n": 0}
@@ -1450,7 +1480,7 @@ def test_single_label_run_not_frozen(monkeypatch):
     monkeypatch.delenv(ep.AB_GATE_OVERRIDE_ENV, raising=False)
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
     assert ep.main(["--label", "candidate"]) in (0, 1)  # runs; not blocked by the freeze
@@ -1468,25 +1498,31 @@ def _isolate_cache(tmp_path, monkeypatch):
 
 
 def test_cache_key_differs_for_different_rendered_text():
-    assert ep._cache_key("a", "model", 8192) != ep._cache_key("b", "model", 8192)
+    assert ep._cache_key("a", "deepseek", "model", 8192) != ep._cache_key("b", "deepseek", "model", 8192)
 
 
 def test_cache_key_differs_for_different_model():
-    assert ep._cache_key("same", "model-1", 8192) != ep._cache_key("same", "model-2", 8192)
+    assert ep._cache_key("same", "deepseek", "model-1", 8192) != ep._cache_key("same", "deepseek", "model-2", 8192)
 
 
 def test_cache_key_differs_for_different_max_tokens():
     # max_tokens governs truncation (_RISKY_DEFAULT_MAX_TOKENS) — a bump meant to fix
     # a truncated response must not silently replay the old truncated cache entry.
-    assert ep._cache_key("same", "model", 8192) != ep._cache_key("same", "model", 16000)
+    assert ep._cache_key("same", "deepseek", "model", 8192) != ep._cache_key("same", "deepseek", "model", 16000)
 
 
 def test_cache_get_miss_returns_none():
-    assert ep._cache_get(ep._cache_key("never cached", "model", 8192)) is None
+    assert ep._cache_get(ep._cache_key("never cached", "deepseek", "model", 8192)) is None
+
+
+def test_cache_key_differs_across_providers_pinned_to_the_same_model():
+    """Story 12.2 AC9: the rendered text is identical across providers for a stage,
+    so provider identity has to be in the key or two providers' answers collide."""
+    assert ep._cache_key("same", "deepseek", "m", 8192) != ep._cache_key("same", "gemini", "m", 8192)
 
 
 def test_cache_put_then_get_roundtrips():
-    key = ep._cache_key("rendered", "model", 8192)
+    key = ep._cache_key("rendered", "deepseek", "model", 8192)
     ep._cache_put(key, "raw text", {"completion_tokens": 5}, "stop")
     assert ep._cache_get(key) == ("raw text", {"completion_tokens": 5}, "stop")
 
@@ -1494,13 +1530,13 @@ def test_cache_put_then_get_roundtrips():
 def test_cache_get_treats_corrupt_json_as_a_miss():
     # A process killed mid-write (Ctrl-C/OOM during the 600-1200s eval timeouts this
     # script uses) can leave a truncated file — must degrade to a miss, not crash.
-    key = ep._cache_key("rendered", "model", 8192)
+    key = ep._cache_key("rendered", "deepseek", "model", 8192)
     ep.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
     (ep.CACHE_ROOT / f"{key}.json").write_text('{"raw": "incomplete', encoding="utf-8")
     assert ep._cache_get(key) is None
 
 
-def test_cached_call_deepseek_hits_cache_on_identical_rendered_text_and_model():
+def test_cached_call_hits_cache_on_identical_rendered_text_and_model():
     import asyncio
 
     calls = {"n": 0}
@@ -1509,7 +1545,7 @@ def test_cached_call_deepseek_hits_cache_on_identical_rendered_text_and_model():
         calls["n"] += 1
         return ("raw", {}, "stop")
 
-    wrapped = ep._cached_call_deepseek(fake_call)
+    wrapped = ep._cached_call("deepseek", fake_call)
 
     asyncio.run(wrapped("same text", FakeSettings()))
     asyncio.run(wrapped("same text", FakeSettings()))
@@ -1517,7 +1553,7 @@ def test_cached_call_deepseek_hits_cache_on_identical_rendered_text_and_model():
     assert calls["n"] == 1  # AC8(a): identical rendered text + model -> exactly one real call
 
 
-def test_cached_call_deepseek_misses_on_changed_text_but_hits_unrelated_unchanged_key():
+def test_cached_call_misses_on_changed_text_but_hits_unrelated_unchanged_key():
     import asyncio
 
     calls = []
@@ -1526,7 +1562,7 @@ def test_cached_call_deepseek_misses_on_changed_text_but_hits_unrelated_unchange
         calls.append(rendered)
         return (f"raw-{rendered}", {}, "stop")
 
-    wrapped = ep._cached_call_deepseek(fake_call)
+    wrapped = ep._cached_call("deepseek", fake_call)
 
     first = asyncio.run(wrapped("a", FakeSettings()))
     repeat_of_first = asyncio.run(wrapped("a", FakeSettings()))  # unrelated, unchanged -> still hits
@@ -1537,7 +1573,7 @@ def test_cached_call_deepseek_misses_on_changed_text_but_hits_unrelated_unchange
     assert second == ("raw-b", {}, "stop")
 
 
-def test_cached_call_deepseek_caches_truncated_response_unconditionally():
+def test_cached_call_caches_truncated_response_unconditionally():
     import asyncio
 
     calls = {"n": 0}
@@ -1546,7 +1582,7 @@ def test_cached_call_deepseek_caches_truncated_response_unconditionally():
         calls["n"] += 1
         return ("{truncated partial json", {}, "length")
 
-    wrapped = ep._cached_call_deepseek(fake_call)
+    wrapped = ep._cached_call("deepseek", fake_call)
 
     first = asyncio.run(wrapped("x", FakeSettings()))
     second = asyncio.run(wrapped("x", FakeSettings()))
@@ -1559,10 +1595,12 @@ def test_run_scenario_wires_cache_wrapper_for_scenario_node_call(monkeypatch):
     import asyncio
 
     original = ep.scenario_module._call_deepseek
+    original_gemini = ep.scenario_module._call_gemini
     seen = {}
 
     async def fake_scenario_node(state, *, trace_sink=None):
         seen["wrapped"] = ep.scenario_module._call_deepseek is not original
+        seen["wrapped_gemini"] = ep.scenario_module._call_gemini is not original_gemini
         return {"scenes": [], "current_stage": "scenario", "error": None}
 
     monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
@@ -1570,18 +1608,26 @@ def test_run_scenario_wires_cache_wrapper_for_scenario_node_call(monkeypatch):
     item = FakeDatasetItem("SCP-096", {"scp_id": "SCP-096", "scp_text": "x"})
     asyncio.run(ep._run_scenario(item, "production"))
 
-    assert seen["wrapped"] is True  # AC6: caching wrapper substituted for the duration of the call
+    # AC6: caching wrapper substituted for the duration of the call — on BOTH seams,
+    # or the Gemini-owned stages (writing/review/critic) would never be cached.
+    assert seen["wrapped"] is True
+    assert seen["wrapped_gemini"] is True
     assert ep.scenario_module._call_deepseek is original  # ...and restored afterward
+    assert ep.scenario_module._call_gemini is original_gemini
 
 
 def test_run_scenario_no_cache_leaves_call_deepseek_unwrapped(monkeypatch):
     import asyncio
 
     original = ep.scenario_module._call_deepseek
+    original_gemini = ep.scenario_module._call_gemini
     seen = {}
 
     async def fake_scenario_node(state, *, trace_sink=None):
-        seen["unwrapped"] = ep.scenario_module._call_deepseek is original
+        seen["unwrapped"] = (
+            ep.scenario_module._call_deepseek is original
+            and ep.scenario_module._call_gemini is original_gemini
+        )
         return {"scenes": [], "current_stage": "scenario", "error": None}
 
     monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
@@ -1596,6 +1642,7 @@ def test_run_scenario_restores_call_deepseek_even_when_scenario_node_raises(monk
     import asyncio
 
     original = ep.scenario_module._call_deepseek
+    original_gemini = ep.scenario_module._call_gemini
 
     async def raising_scenario_node(state, *, trace_sink=None):
         raise RuntimeError("boom")
@@ -1606,7 +1653,9 @@ def test_run_scenario_restores_call_deepseek_even_when_scenario_node_raises(monk
     with pytest.raises(RuntimeError):
         asyncio.run(ep._run_scenario(item, "production"))
 
-    assert ep.scenario_module._call_deepseek is original  # AC6: restored even on raise
+    # AC6/AC9: both wrappers restored in the finally path, even on raise.
+    assert ep.scenario_module._call_deepseek is original
+    assert ep.scenario_module._call_gemini is original_gemini
 
 
 def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(monkeypatch):
@@ -1625,16 +1674,17 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
     responses = [
         (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
         (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
-        writing_reply,  # writing is one call per structure scene
+        writing_reply,  # writing is one call per structure scene (Gemini's seam)
         writing_reply,
     ]
 
-    async def scripted_call_deepseek(rendered, s):
+    async def scripted_call(rendered, s):
         return responses.pop(0)
 
     monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: ConstantPrompt())
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: ConstantPrompt())
-    monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
+    monkeypatch.setattr(ep, "_call_deepseek", scripted_call)
+    monkeypatch.setattr(ep, "_call_gemini", scripted_call)
 
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
         ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0, no_cache=True)
@@ -1647,7 +1697,7 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
 
 def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(monkeypatch):
     """AC1/AC2/AC8: through the real _run_stage_chain/_recording_call wiring point
-    (not the _cached_call_deepseek helper in isolation) — a second run with identical
+    (not the _cached_call helper in isolation) — a second run with identical
     scp_id/scp_text/settings hits cache for every stage; no second real call is made."""
     import asyncio
 
@@ -1660,13 +1710,14 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
     ]
     calls = {"n": 0}
 
-    async def scripted_call_deepseek(rendered, s):
+    async def scripted_call(rendered, s):
         calls["n"] += 1
         return responses.pop(0)
 
     monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: FakePrompt())
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
-    monkeypatch.setattr(ep, "_call_deepseek", scripted_call_deepseek)
+    monkeypatch.setattr(ep, "_call_deepseek", scripted_call)
+    monkeypatch.setattr(ep, "_call_gemini", scripted_call)
 
     for _ in range(2):
         failed, actual_stage, error, finish_reason, raw = asyncio.run(
@@ -1731,7 +1782,7 @@ def test_main_promotion_reps_force_no_cache_even_without_flag(monkeypatch):
     one draw, so the reps loop always passes no_cache=True regardless of --no-cache."""
     client = _client_with_seeded_dataset()
     monkeypatch.setattr(ep, "build_client", lambda: client)
-    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000})())
+    monkeypatch.setattr(ep, "Settings", lambda: type("S", (), {"deepseek_max_tokens": 16000, "gemini_writing_max_tokens": 16384})())
     _wire_scenario_capturing_state(monkeypatch, [])
     _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
 
@@ -1767,3 +1818,63 @@ def test_main_default_no_cache_is_false(monkeypatch):
     ep.main(["--label", "production"])
 
     assert captured["no_cache"] is False
+
+
+# ── Story 12.2: offline tooling follows production routing (AC9) ─────────────
+
+
+def test_run_stage_chain_routes_the_writing_call_to_gemini(monkeypatch):
+    """The isolated `writing` call must go to Gemini. Planning prerequisites
+    (research/structure) still run on DeepSeek — they produce writing's input — so
+    this asserts per-stage routing, not that DeepSeek is untouched."""
+    import asyncio
+
+    writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
+    planning = [
+        (json.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
+    ]
+    seen = {"deepseek": 0, "gemini": 0}
+
+    async def fake_deepseek(rendered, s):
+        seen["deepseek"] += 1
+        return planning.pop(0)
+
+    async def fake_gemini(rendered, s):
+        seen["gemini"] += 1
+        return writing_reply
+
+    monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr(ep, "_call_deepseek", fake_deepseek)
+    monkeypatch.setattr(ep, "_call_gemini", fake_gemini)
+
+    failed, actual_stage, error, _, _ = asyncio.run(
+        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0, no_cache=True)
+    )
+
+    assert (failed, actual_stage, error) == (False, "writing", None)
+    assert seen == {"deepseek": 2, "gemini": 2}  # research + structure vs one writing call per scene
+
+
+def test_gemini_cache_wrapper_keys_on_the_gemini_pins():
+    """The Gemini wrapper must read gemini_writing_model/max_tokens, not DeepSeek's —
+    otherwise a Gemini model change would replay stale Gemini output."""
+    import asyncio
+
+    class OtherGeminiModel(FakeSettings):
+        gemini_writing_model = "gemini-3.6-pro"
+
+    calls = {"n": 0}
+
+    async def fake_call(rendered, s):
+        calls["n"] += 1
+        return ("raw", {}, "stop")
+
+    wrapped = ep._cached_call("gemini", fake_call)
+
+    asyncio.run(wrapped("same text", FakeSettings()))
+    asyncio.run(wrapped("same text", FakeSettings()))       # hit
+    asyncio.run(wrapped("same text", OtherGeminiModel()))   # different pinned model -> miss
+
+    assert calls["n"] == 2
