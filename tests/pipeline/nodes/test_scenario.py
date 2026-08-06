@@ -21,6 +21,7 @@ class FakeSettings:
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
+    deepseek_reasoning = "low"
     content_language = "ko"
 
 
@@ -271,6 +272,7 @@ class _FakeResponse:
 class _FakeHttpClient:
     def __init__(self, payload):
         self._payload = payload
+        self.sent = None  # request body of the last post, for request-shape assertions
 
     async def __aenter__(self):
         return self
@@ -279,6 +281,7 @@ class _FakeHttpClient:
         return False
 
     async def post(self, url, **kwargs):
+        self.sent = kwargs.get("json")
         return _FakeResponse(self._payload)
 
 
@@ -310,6 +313,27 @@ async def test_call_deepseek_ignores_reasoning_content_on_a_complete_response(mo
     monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: _FakeHttpClient(payload))
     raw, _, finish_reason = await sc._call_deepseek("rendered", FakeSettings())
     assert (raw, finish_reason) == ("scenes: []", "stop")
+
+
+@pytest.mark.parametrize("setting,expected", [
+    ("low", {"reasoning_effort": "low"}),
+    ("medium", {"reasoning_effort": "medium"}),
+    ("high", {"reasoning_effort": "high"}),
+    ("disabled", {"thinking": {"type": "disabled"}}),  # the only form that probed reasoning_tokens=0
+    ("default", {}),  # API default → send neither field, request unchanged
+])
+async def test_call_deepseek_sends_one_reasoning_field_per_setting(monkeypatch, setting, expected):
+    payload = {"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}], "usage": {}}
+    client = _FakeHttpClient(payload)
+    monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: client)
+
+    class S(FakeSettings):
+        deepseek_reasoning = setting
+
+    await sc._call_deepseek("rendered", S())
+    body = client.sent
+    assert {k: body[k] for k in ("reasoning_effort", "thinking") if k in body} == expected
+    assert body["max_tokens"] == 8192  # batching/budget untouched by the reasoning knob
 
 
 async def test_scene_retry_repairs_only_flagged_position_and_reuses_other_objects(monkeypatch):

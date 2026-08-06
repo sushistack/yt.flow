@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +36,21 @@ class Settings(BaseSettings):
     # budget. This value is sized for the largest single call that remains,
     # structure, with headroom over its measured 16384 failure / 32768 pass.
     deepseek_max_tokens: int = 32768
+    # ROOT CAUSE of the 2026-08-05/06 truncation class (finish_reason=length,
+    # content=="", the whole budget spent inside discarded reasoning_content).
+    # Batching stages per scene treated the symptom — live run 4c85f66d had
+    # writing already at one call PER SCENE and still burned all 32768 tokens on
+    # 67k–77k characters of reasoning for a single scene, re-roll included.
+    # Probed directly against api.deepseek.com (deepseek-v4-flash), measuring
+    # completion_tokens_details.reasoning_tokens:
+    #   baseline (no field)             -> 26
+    #   "reasoning_effort": "low"       -> 16
+    #   "thinking": {"type":"disabled"} -> 0
+    # So reasoning depth is the real lever. Mapped to a request field in
+    # scenario._REASONING_BODY: low/medium/high -> reasoning_effort,
+    # "disabled" -> thinking (the only mechanism that reached 0), "default" ->
+    # send neither field. Literal so an unknown value fails at config load.
+    deepseek_reasoning: Literal["low", "medium", "high", "disabled", "default"] = "low"
     # A/B evaluation judge (Story 4.2). Same OpenAI-compatible endpoint; the model is
     # config-pinned so the judge can be swapped independently of the content generator.
     deepseek_judge_model: str = "deepseek-v4-flash"
