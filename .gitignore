@@ -38,6 +38,7 @@ _bmad
 # agents
 .agents
 .claude
+.codex
 .github/agents
 # live-server / MCP session artifacts
 .playwright-mcp/
@@ -47,3 +48,4 @@ server-live.log
 tmp/
 .claude/.story-automator-active
 .serena
+.agents/.story-automator-active

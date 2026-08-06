@@ -384,6 +384,39 @@ class FakeSettings:
     content_language = "ko"
 
 
+def _valid_structure_scenes(total: int = 2) -> list[dict]:
+    """An outline that satisfies the Story 12.1 retention contract at ANY legal
+    scene count. `structure_step` rejects anything less, so the scripted chain
+    below has to script a real outline. Budget is spread to land inside 180-360
+    and an interrupt lands every 3rd scene, because a flat `90` / interrupt-only-
+    on-scene-1 shape is valid at total=2 by luck and breaks silently past 4."""
+    budget = max(20, min(90, -(-180 // total)))
+    return [{
+        "scene_num": pos,
+        "act": "hook" if pos == 1 else "mystery_expansion",
+        "synopsis": f"scene {pos}",
+        "event": {"who": "경비원", "what": "격리실에 진입했다", "consequence": "통신이 끊겼다"},
+        "emotional_beat": "tension",
+        "hook_type": "shock" if pos == 1 else "none",
+        "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
+        "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
+        "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
+        "word_budget": budget,
+        "fact_references": [f"재단 기록에 사건 {pos}이 남아 있다"],
+        "mood": "dread",
+    } for pos in range(1, total + 1)]
+
+
+@pytest.mark.parametrize("total", [2, 3, 8])
+def test_scripted_structure_fixture_satisfies_the_retention_contract(total):
+    """These scenes are scripted as *valid* DeepSeek replies for the chain below.
+    If the contract or the helper drifts apart, the chain tests fail with an
+    opaque RetentionError instead of pointing at the fixture."""
+    from yt_flow.pipeline.nodes.scenario_chain import _validate_retention_outline
+
+    _validate_retention_outline(_valid_structure_scenes(total))
+
+
 class FakePrompt:
     def compile(self, **variables):
         # Real prompts render distinct text per stage; a fixed "rendered" would make every
@@ -491,12 +524,13 @@ def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatc
 
     responses = [
         (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
-        (jsonlib.dumps({"scenes": [{"scene_num": 1}]}), {}, "stop"),
-        ("{truncated partial json", {}, "length"),
+        (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
     ]
 
     async def scripted_call_deepseek(rendered, s):
-        return responses.pop(0)
+        # writing is batched one call per scene and re-rolls once on truncation,
+        # so the truncated reply is the tail default rather than a fixed slot.
+        return responses.pop(0) if responses else ("{truncated partial json", {}, "length")
 
     monkeypatch.setattr(ep, "get_prompt", lambda *a, **k: FakePrompt())
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
@@ -1587,10 +1621,12 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
         def compile(self, **variables):
             return "identical rendered text for every stage"
 
+    writing_reply = (jsonlib.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
     responses = [
         (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
-        (jsonlib.dumps({"scenes": [{"scene_num": 1}]}), {}, "stop"),
-        (jsonlib.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop"),
+        (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
+        writing_reply,  # writing is one call per structure scene
+        writing_reply,
     ]
 
     async def scripted_call_deepseek(rendered, s):
@@ -1606,7 +1642,7 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
 
     assert failed is False
     assert actual_stage == "writing"
-    assert responses == []  # all 3 canned responses consumed fresh — none served from cache
+    assert responses == []  # all 4 canned responses consumed fresh — none served from cache
 
 
 def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(monkeypatch):
@@ -1615,10 +1651,12 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
     scp_id/scp_text/settings hits cache for every stage; no second real call is made."""
     import asyncio
 
+    writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
     responses = [
         (json.dumps({"frozen_descriptor": "d"}), {}, "stop"),
-        (json.dumps({"scenes": [{"scene_num": 1}]}), {}, "stop"),
-        (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop"),
+        (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
+        writing_reply,  # writing is one call per structure scene
+        writing_reply,
     ]
     calls = {"n": 0}
 
@@ -1637,8 +1675,8 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
         assert failed is False
         assert actual_stage == "writing"
 
-    assert responses == []  # all 3 canned responses consumed exactly once
-    assert calls["n"] == 3  # the second run's 3 stage calls were all served from cache
+    assert responses == []  # all 4 canned responses consumed exactly once
+    assert calls["n"] == 4  # the second run's 4 stage calls were all served from cache
 
 
 def test_run_scenario_cache_enabled_hits_cache_on_second_call(monkeypatch):

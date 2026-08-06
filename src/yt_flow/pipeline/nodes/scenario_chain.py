@@ -61,6 +61,20 @@ _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
 
+# --- Story 12.1 retention contract -------------------------------------------
+# Hand-set starting constants for TARGET_DURATION_MINUTES = 3, kept beside the
+# validator so live tuning is one edit in one place. Calibrating them against
+# measured reference scripts is a separate task, deliberately not this story.
+HOOK_TYPES = ("question", "shock", "mystery", "contrast")  # format_guide §A, verbatim
+_VALID_PATTERN_INTERRUPTS = {"none", "tone_shift", "pov_shift", "direct_address", "format_change"}
+# fullmatch, not `^...$`: `$` also matches just before a trailing newline, so a
+# folded YAML scalar would smuggle "loop_a\n" through as a legal id.
+_LOOP_ID_RE = re.compile(r"loop_[a-z0-9_]+")
+MAX_SCENES_WITHOUT_PATTERN_INTERRUPT = 2
+MIN_PLANTED_LOOPS, MAX_PLANTED_LOOPS = 2, 3
+MIN_SCENE_WORD_BUDGET, MAX_SCENE_WORD_BUDGET = 20, 90
+MIN_TOTAL_WORD_BUDGET, MAX_TOTAL_WORD_BUDGET = 180, 360
+
 # Story 8.18 R2: a single repeat stays legal — the prompt allows a continuous
 # beat; only the 3rd identical (position, depth) shot in a row is repaired.
 _MAX_CONSECUTIVE_SAME_PLACEMENT = 2
@@ -582,6 +596,193 @@ class SceneCoverageError(ValueError):
         self.prompt_name = prompt_name
 
 
+class RetentionError(ValueError):
+    """The Stage 2 outline violates the Story 12.1 retention contract.
+
+    Deliberately NOT raised from ``structure_step``'s parse callback: a
+    ``ValueError`` there buys one DeepSeek regeneration, and re-rolling the dice
+    on a narrative-ledger violation is exactly the LLM-recall this story exists
+    to avoid. It is raised after ``_call_stage_with_retry`` has returned, so it
+    propagates straight out of the stage and ``scenario_node`` turns it into
+    ``PipelineState.error``. ``code`` is the stable identifier tests assert on;
+    the message text is diagnostic and free to change.
+    """
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(f"retention[{code}] {detail}")
+        self.code = code
+
+
+def _canonicalize(scene: dict, key: str) -> object:
+    """Strip surrounding/inner whitespace and ASCII-case a closed-vocabulary scalar.
+
+    Writes back only when the value is a string that actually changed, so an
+    absent key stays absent and a non-string value stays byte-identical for the
+    error message to quote.
+    """
+    raw = scene.get(key)
+    if not isinstance(raw, str):
+        return raw
+    value = " ".join(raw.split()).lower()
+    if value != raw:
+        scene[key] = value
+    return value
+
+
+def _loop_ids(scene: dict, key: str, where: str) -> list[str]:
+    value = scene.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise RetentionError(
+            "loop_field_malformed", f"{where} {key} must be a list of loop-id strings, got {value!r}"
+        )
+    return value
+
+
+def _validate_retention_outline(scenes: list) -> None:
+    """Story 12.1: deterministic, LLM-free enforcement of the retention contract.
+
+    Pure over the freshly parsed structure list — no I/O, no state object, no
+    repair. Unlike ``_enforce_camera_variety`` / ``_enforce_cast_diversity``,
+    which repair what they find, a narrative violation hard-fails: code cannot
+    invent an actor, a consequence, or the payoff of a promise the outline never
+    kept, and a silent rewrite would be exactly the invisible degradation this
+    contract exists to expose.
+
+    The only write is scalar canonicalization of the two closed-vocabulary enums
+    (``hook_type``, ``pattern_interrupt``); everything else — unknown fields,
+    list order, non-enum values — is left byte-identical, so the function is
+    idempotent and a valid outline passes through unchanged.
+
+    List position is the authoritative chronology. ``scene_num`` is model-supplied
+    and is known to duplicate and reorder (6.5/6.6), so it never drives the ledger.
+    """
+    planted: dict[str, int] = {}
+    closed: set[str] = set()
+    active: set[str] = set()
+    total_budget = 0
+    scenes_since_interrupt = 0
+
+    for pos, scene in enumerate(scenes, start=1):
+        where = f"scene at position {pos}"
+        if not isinstance(scene, dict):
+            raise RetentionError("scene_malformed", f"{where} is not a mapping: {scene!r}")
+
+        event = scene.get("event")
+        if not isinstance(event, dict):
+            raise RetentionError("event_missing", f"{where} has no 'event' mapping")
+        for field in ("who", "what", "consequence"):
+            value = event.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise RetentionError(
+                    "event_field_empty", f"{where} event.{field} must be a non-empty string, got {value!r}"
+                )
+
+        # Shape only. Whether a statement is actually grounded in the source
+        # article is not machine-checkable here — review/critic and Story 12.3's
+        # deterministic metrics own that, and this story adds no fact-check call.
+        facts = scene.get("fact_references")
+        if (
+            not isinstance(facts, list)
+            or not facts
+            or not all(isinstance(fact, str) and fact.strip() for fact in facts)
+        ):
+            raise RetentionError(
+                "fact_references_invalid",
+                f"{where} fact_references must be a non-empty list of non-empty fact statements",
+            )
+
+        hook = _canonicalize(scene, "hook_type")
+        if pos == 1:
+            if hook not in HOOK_TYPES:
+                raise RetentionError(
+                    "hook_invalid", f"scene 1 hook_type {hook!r} must be one of {list(HOOK_TYPES)}"
+                )
+        elif hook != "none":
+            raise RetentionError("hook_misplaced", f"{where} hook_type must be 'none', got {hook!r}")
+
+        interrupt = _canonicalize(scene, "pattern_interrupt")
+        # isinstance first: a YAML list/dict value is unhashable, and a bare `in`
+        # against the set would raise TypeError instead of a clean RetentionError.
+        if not isinstance(interrupt, str) or interrupt not in _VALID_PATTERN_INTERRUPTS:
+            raise RetentionError(
+                "interrupt_invalid",
+                f"{where} pattern_interrupt {interrupt!r} must be one of {sorted(_VALID_PATTERN_INTERRUPTS)}",
+            )
+        if pos == 1:
+            scenes_since_interrupt = 0  # the hook itself is scene 1's interrupt
+        elif interrupt == "none":
+            scenes_since_interrupt += 1
+            if scenes_since_interrupt > MAX_SCENES_WITHOUT_PATTERN_INTERRUPT:
+                raise RetentionError(
+                    "interrupt_cadence",
+                    f"{where} is consecutive scene {scenes_since_interrupt} without a pattern interrupt "
+                    f"(max {MAX_SCENES_WITHOUT_PATTERN_INTERRUPT})",
+                )
+        else:
+            scenes_since_interrupt = 0
+
+        budget = scene.get("word_budget")
+        # `type(...) is not int` — bool is an int subclass, and `word_budget: true`
+        # is a real YAML slip that would otherwise sail through as 1.
+        if type(budget) is not int:
+            raise RetentionError(
+                "budget_type", f"{where} word_budget must be an int, got {type(budget).__name__} {budget!r}"
+            )
+        if not MIN_SCENE_WORD_BUDGET <= budget <= MAX_SCENE_WORD_BUDGET:
+            raise RetentionError(
+                "budget_range",
+                f"{where} word_budget {budget} outside {MIN_SCENE_WORD_BUDGET}-{MAX_SCENE_WORD_BUDGET}",
+            )
+        total_budget += budget
+
+        plants = _loop_ids(scene, "loops_planted", where)
+        closes = _loop_ids(scene, "loops_closed", where)
+        # Checked before either list is processed, so a same-scene plant+close can
+        # never be legalized by plant-then-close ordering.
+        both = sorted(set(plants) & set(closes))
+        if both:
+            raise RetentionError("loop_same_scene", f"{where} plants and closes {both} in the same scene")
+        for loop_id in plants:
+            if not _LOOP_ID_RE.fullmatch(loop_id):
+                raise RetentionError("loop_id_invalid", f"{where} planted loop id {loop_id!r} must match loop_[a-z0-9_]+")
+            if loop_id in planted:
+                raise RetentionError(
+                    "loop_duplicate_plant", f"{where} re-plants {loop_id}, already planted at position {planted[loop_id]}"
+                )
+            planted[loop_id] = pos
+            active.add(loop_id)
+        for loop_id in closes:
+            if not _LOOP_ID_RE.fullmatch(loop_id):
+                raise RetentionError("loop_id_invalid", f"{where} closed loop id {loop_id!r} must match loop_[a-z0-9_]+")
+            if loop_id not in planted:
+                raise RetentionError(
+                    "loop_unknown_close", f"{where} closes {loop_id}, which was never planted in an earlier scene"
+                )
+            if loop_id in closed:
+                raise RetentionError("loop_duplicate_close", f"{where} closes {loop_id} a second time")
+            closed.add(loop_id)
+            active.discard(loop_id)
+
+    if not MIN_PLANTED_LOOPS <= len(planted) <= MAX_PLANTED_LOOPS:
+        raise RetentionError(
+            "loop_count",
+            f"outline plants {len(planted)} loops; contract is {MIN_PLANTED_LOOPS}-{MAX_PLANTED_LOOPS}",
+        )
+    if 1 not in planted.values():
+        raise RetentionError("loop_missing_scene1_plant", "no open loop is planted in scene 1")
+    if active:
+        first = min(active, key=lambda loop_id: planted[loop_id])
+        raise RetentionError(
+            "loop_unclosed", f"{first} planted at position {planted[first]} is still active after the final scene"
+        )
+    if not MIN_TOTAL_WORD_BUDGET <= total_budget <= MAX_TOTAL_WORD_BUDGET:
+        raise RetentionError(
+            "budget_total",
+            f"outline word_budget total {total_budget} outside "
+            f"{MIN_TOTAL_WORD_BUDGET}-{MAX_TOTAL_WORD_BUDGET}",
+        )
+
+
 async def _call_stage(
     prompt_name: str, variables: dict, s, call_deepseek, *, label: str | None = None
 ) -> tuple[str, dict]:
@@ -966,7 +1167,7 @@ async def structure_step(
                     raise ValueError(f"structure: scene[{num}] missing non-empty 'title'")
         return scenes
 
-    return await _call_stage_with_retry(
+    scenes = await _call_stage_with_retry(
         "scenario/structure",
         {
             "scp_id": scp_id,
@@ -982,6 +1183,36 @@ async def structure_step(
         label=label,
         usage_sink=usage_sink,
     )
+    # AFTER the await, never inside `parse` (Story 12.1 AC7): raising from the
+    # callback would spend one DeepSeek regeneration on a retention violation.
+    # A broken ledger is a planning failure, not a formatting slip — it fails the
+    # run loudly rather than being re-rolled or silently repaired.
+    _validate_retention_outline(scenes)
+    return scenes
+
+
+def _loops_to_close_context(structure: list[dict], idx: int) -> dict[str, str]:
+    """For each loop this scene must close, the earlier scene that planted it.
+
+    Writing is one call per scene and the neighbour context is a one-line summary
+    of ±1 scene only, but the contract forbids closing a loop in the scene that
+    planted it — so a closure is non-adjacent by construction. Without this the
+    writer of scene 7 sees the bare string ``loop_redacted_page7`` and is told by
+    ``writing.md`` to answer that question; it can only invent one, which is the
+    ungrounded assertion ``critic_agent.md`` criterion 7 exists to catch.
+    """
+    scene = structure[idx] if isinstance(structure[idx], dict) else {}
+    closes = scene.get("loops_closed")
+    if not isinstance(closes, list):
+        return {}
+    context: dict[str, str] = {}
+    for loop_id in closes:
+        for pos, earlier in enumerate(structure[:idx], start=1):
+            planted = earlier.get("loops_planted") if isinstance(earlier, dict) else None
+            if isinstance(planted, list) and loop_id in planted:
+                context[str(loop_id)] = f"scene {pos}: {_scene_role_text(earlier)}"
+                break
+    return context
 
 
 def _writing_scene_brief(structure: list[dict], idx: int) -> str:
@@ -1004,13 +1235,16 @@ def _writing_scene_brief(structure: list[dict], idx: int) -> str:
         "write_only_this_scene": {**scene, "scene_num": idx + 1},
         "previous_scene_context": _scene_role_text(structure[idx - 1]) if idx else None,
         "next_scene_context": _scene_role_text(structure[idx + 1]) if idx + 1 < total else None,
+        "loops_to_close_context": _loops_to_close_context(structure, idx),
     }
     return (
         f"You are writing SCENE {idx + 1} OF {total} ONLY. Output a `scenes` list holding "
         "exactly ONE scene object: the one under `write_only_this_scene`. "
         "`previous_scene_context` / `next_scene_context` exist only so your narration "
         "connects to its neighbours — never write narration for them, and never resolve "
-        "what a later scene is there to reveal.\n"
+        "what a later scene is there to reveal. `loops_to_close_context` maps each id in "
+        "this scene's `loops_closed` to the earlier scene that planted it — that is the "
+        "question you owe an answer to here.\n"
         + json.dumps(payload, ensure_ascii=False)
     )
 
@@ -1103,6 +1337,7 @@ async def writing_step(
 async def writing_scene_repair_step(
     scp_id: str,
     original_scenes: list[dict],
+    scene_structure: list[dict],
     scene_feedback: str,
     frozen_descriptor: str,
     format_guide: str,
@@ -1112,7 +1347,14 @@ async def writing_scene_repair_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> list[dict]:
-    """Repair an exact positional subset without trusting model scene numbers."""
+    """Repair an exact positional subset without trusting model scene numbers.
+
+    ``scene_structure`` is the SAME subset in the SAME order — the caller pairs
+    it by position (Story 12.1 AC9). Without it a repair sees only prose and
+    reviewer feedback, so it can drop a promised loop closure, swap an event's
+    consequence, or replace the scene's grounded facts with atmosphere; those are
+    exactly the defects the retention contract exists to prevent.
+    """
     expected_ids = [scene.get("scene_num") for scene in original_scenes]
 
     def parse(raw: str) -> list[dict]:
@@ -1155,6 +1397,7 @@ async def writing_scene_repair_step(
         {
             "scp_id": scp_id,
             "original_scenes": json.dumps(original_scenes, ensure_ascii=False),
+            "scene_structure": json.dumps(scene_structure, ensure_ascii=False),
             "scene_feedback": scene_feedback,
             "scp_visual_reference": frozen_descriptor,
             "format_guide": format_guide,
@@ -1502,6 +1745,7 @@ async def review_step(
 
 
 async def critic_step(
+    scp_text: str,
     writing: dict,
     visual_by_scene: dict,
     format_guide: str,
@@ -1515,6 +1759,12 @@ async def critic_step(
 
     Same whole-script input shape as ``review_step``, so the same reasoning-token
     exhaustion was next in line; batched pre-emptively alongside it.
+
+    Takes ``scp_text`` for the same reason ``review_step`` does (Story 12.1 AC12a):
+    every criterion used to judge *delivery* only, so filler that correctly applied
+    all six mandated immersion techniques scored as immersive — the critic
+    structurally could not report a scene that says nothing. Substance and fidelity
+    are judged against this fact sheet, never against the model's own SCP knowledge.
     """
     scenes = writing.get("scenes") or []
     if not scenes:
@@ -1546,6 +1796,7 @@ async def critic_step(
             "scenario/critic_agent",
             {
                 "format_guide": format_guide,
+                "scp_fact_sheet": scp_text,
                 "scenario_json": _scene_review_brief(idx, len(scenes))
                 + json.dumps(scenario_json, ensure_ascii=False),
             },

@@ -48,3 +48,111 @@ Journey 3 (character management) surfaced 6 bugs total; all 6 were fixed in-sess
 - Have Dev assess finding #4's TOCTOU window; if real, the fix is likely moving the `status="running"` write earlier (before `aupdate_state`) or holding a per-run asyncio lock across the guard-check-and-write.
 - Wire all specs into a nightly CI job (not PR-blocking), per `test-design-qa.md`'s Execution Strategy — not done this session.
 - Update Story 3.7's task checklist/AC6 note if desired — the SCP Picker item was previously marked done despite the code gap; it's genuinely done now.
+
+---
+
+# Test Automation Summary — Story 12.1 (Retention Schema)
+
+Workflow: `bmad-qa-generate-e2e-tests` · 2026-08-06 · Story status: `review`
+Appended; the Playwright journey summary above is from a prior session and is unchanged.
+
+Story 12.1 is backend-only (AC 10 forbids any API/DB/UX/frontend change), so there is
+no UI surface to drive and no Playwright spec applies. "E2E" here means the full
+`scenario_node` orchestration path with the **real** `structure_step` — the widest
+boundary the story actually owns.
+
+## Framework
+
+pytest + pytest-asyncio (existing). No new dependency, no new fixture layer, no new
+test file — gaps were closed inside the three suites that already own this code.
+
+## Gaps Found and Closed
+
+Existing coverage was already deep (132 retention assertions). These 9 were genuinely
+absent. Each was verified by mutation: break the behavior → the new test fails, and
+**no pre-existing test does**.
+
+### Validator — `tests/pipeline/nodes/test_scenario_chain.py`
+
+| Test | Gap it closes |
+|---|---|
+| `test_retention_canonicalizes_enums_on_later_scenes_too` | AC 3 canonicalization was only proven on scene 1; `hook_type: "  NONE  "` at position 2 is the same model slip |
+| `test_retention_rejected_outline_is_mutated_only_by_canonicalization` | The existing AC 8 sibling used already-canonical values, so it could not distinguish "writes only the two enums" from "writes nothing at all" |
+| `test_retention_empty_outline_is_rejected` | `_validate_retention_outline([])` must not read as a vacuously satisfied contract |
+| `test_retention_single_scene_outline_can_never_settle_its_ledger` | Pins the structural 2-scene minimum implied by AC 4's "closed in a *later* scene" |
+| `test_structure_cassette_satisfies_the_retention_contract` | `deepseek_structure.json` is replayed as a *valid* reply by other tests; drift there surfaced far from the edit that caused it |
+| `test_critic_step_sends_the_source_text_as_the_fact_sheet` | AC 12a wiring — the prompt-contract test only proves `{{scp_fact_sheet}}` still exists, not that the stage fills it |
+
+### Orchestration — `tests/pipeline/nodes/test_scenario.py`
+
+| Test | Gap it closes |
+|---|---|
+| `test_contract_valid_outline_runs_the_whole_chain` | The positive counterpart to the AC 7 failure test. Without it, a validator that rejected **every** outline would still pass that test |
+| `test_scoped_repair_subset_degrades_to_empty_when_writing_overproduces` | `scenario.py:279`'s `idx < len(structure)` guard was untested; removing it turns a recoverable run into an `IndexError` |
+| `test_both_critic_call_sites_receive_the_source_text` | AC 12a at the node boundary — the **post-repair** `critic_step` call site was unexercised |
+
+### Fixture contract — `tests/test_eval_prompts.py`
+
+- `test_scripted_structure_fixture_satisfies_the_retention_contract[2,3,8]`
+
+## Two Real Defects Found (both fixed)
+
+1. **`_valid_structure_scenes()` was only accidentally valid.** It hard-coded
+   `word_budget: 90` and an interrupt on scene 1 only — correct at its default of 2
+   scenes, but any call with ≥4 scenes silently breaks the interrupt cadence and ≥5
+   also blows the 360 budget ceiling. Fixed to spread budget and place an interrupt
+   every 3rd scene, matching `test_scenario_chain.py`'s helper.
+
+2. **The first draft of `test_both_critic_call_sites_receive_the_source_text`
+   overclaimed.** With an empty `scene_notes`, `_retry_scope` yields no indexes, so the
+   run takes the **full-rewrite** path and re-enters the *initial* critic call site
+   twice — the post-repair site was never reached and the injected mutation went
+   undetected. Fixed to flag a specific scene; `calls["repair"] == 1` now pins the path.
+
+## Coverage
+
+| Surface | Status |
+|---|---|
+| `_validate_retention_outline` rule codes | all 20 codes asserted |
+| AC 11's enumerated cases | all present |
+| `structure_step` no-LLM-recall (AC 7) | failure **and** success paths |
+| `scenario_node` E2E with real `structure_step` | failure **and** success paths |
+| Scoped-repair structure subset (AC 9) | non-adjacent indexes + over-production degradation |
+| AC 12a critic wiring | stage-level compile + both node call sites |
+| Prompt/fixture contracts (AC 11, 12) | `structure.md`, both writing prompts, `critic_agent.md`, cassette, eval fixture |
+
+## Verification
+
+- `PYTHONPATH=$PWD/src uv run pytest tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/test_eval_prompts.py -q` → **667 passed**
+- `PYTHONPATH=$PWD/src uv run pytest -q` → **2125 passed, 1 skipped, 3 failed**
+  (2113 before this workflow; +12). The 3 failures are all in
+  `tests/api/test_e2e_stub_run.py`, documented as pre-existing at baseline `db2e813`
+  in the story's own Debug Log, and untouched by these test-only changes.
+- `uv run ruff check src tests` → **All checks passed!**
+- Mutation check: 5 injected defects — critic fact sheet dropped; canonicalization
+  narrowed to scene 1; over-production guard removed; post-repair `scp_text` dropped;
+  validator rejects everything — **all 5 caught**. Source restored byte-identical
+  (verified with `diff`).
+
+## Checklist
+
+| Item | |
+|---|---|
+| API tests generated (if applicable) | n/a — AC 10 forbids an API surface |
+| E2E tests generated | ✅ full `scenario_node` path, real `structure_step`, both directions |
+| Standard framework APIs | ✅ pytest / monkeypatch / parametrize only |
+| Happy path covered | ✅ |
+| Critical error cases covered | ✅ |
+| All generated tests pass | ✅ |
+| Proper locators | n/a — no UI |
+| Clear descriptions | ✅ each docstring states the defect it prevents |
+| No hardcoded waits/sleeps | ✅ |
+| Tests independent | ✅ pass under both default random ordering and `-p no:randomly` |
+| Summary includes coverage metrics | ✅ this section |
+
+## Next Steps
+
+- No production-code change was needed or made — the implementation held under all
+  5 mutations. The two defects found were both in test-side fixtures.
+- The 3 `test_e2e_stub_run.py` failures remain open and predate Story 12.1
+  (`_drain_bg_tasks` timeout, per the project's recorded gotcha). Out of scope here.

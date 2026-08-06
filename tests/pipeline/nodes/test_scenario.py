@@ -6,9 +6,12 @@ only cover scenario_node's own responsibility: sequencing, the bounded retry,
 and surfacing errors as PipelineState.error.
 """
 
+import json
+
 import pytest
 
 import yt_flow.pipeline.nodes.scenario as sc
+import yt_flow.pipeline.nodes.scenario_chain as chain
 
 # Captured before the autouse `_isolate` fixture below monkeypatches
 # `sc._record_trace` to a no-op — tests that exercise the real function call
@@ -30,13 +33,35 @@ class FakePrompt:
 
 
 RESEARCH = {"core_identity": "x", "frozen_descriptor": "desc", "entity_sheet": "entity sheet", "story_logline": "logline", "dramatic_beats": "x", "environment": "x", "hooks": "x"}
-STRUCTURE = [{"scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension", "estimated_duration_sec": 45, "mood": "escalation"}]
+# Story 12.1: structure entries now carry the retention contract, and the scoped
+# repair is handed the matching positional subset — so the fixture has to look
+# like a real outline entry, not just the fields build_scenes reads.
+STRUCTURE = [{
+    "scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension",
+    "estimated_duration_sec": 45, "mood": "escalation",
+    "event": {"who": "경비원", "what": "격리실에 진입했다", "consequence": "통신이 끊겼다"},
+    "hook_type": "shock", "loops_planted": ["loop_a", "loop_b"], "loops_closed": [],
+    "pattern_interrupt": "tone_shift", "word_budget": 45,
+    "fact_references": ["재단 인원 14명이 사망했다"],
+}]
 WRITING = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "문장.", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
 VISUAL = [{"image_prompt": "shot", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
 REVIEW_PASS = {"overall_pass": True, "coverage_pct": 90.0, "issues": [], "corrections": [], "storytelling_score": 80, "storytelling_issues": []}
 REVIEW_FAIL = {**REVIEW_PASS, "overall_pass": False, "issues": [{"scene_num": 1, "description": "bad", "correction": "fix it"}]}
 CRITIC_PASS = {"verdict": "pass", "feedback": "good", "scene_notes": []}
 CRITIC_RETRY = {"verdict": "retry", "feedback": "다시 써주세요", "scene_notes": []}
+
+
+def _retention_outline(total: int) -> list[dict]:
+    """A contract-valid outline (word_budget 45 x 4 = the 180 floor at total=4)."""
+    return [{
+        **STRUCTURE[0], "scene_num": pos,
+        "hook_type": "shock" if pos == 1 else "none",
+        "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
+        "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
+        "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
+        "word_budget": 45,
+    } for pos in range(1, total + 1)]
 
 
 def _state(**over):
@@ -530,6 +555,161 @@ async def test_eight_scenes_one_flag_adds_exactly_five_calls_and_preserves_unfla
     assert out["scenes"][0]["narration"] == "수정됨."
     assert [scene["narration"] for scene in out["scenes"][1:]] == [scene["narration"] for scene in writing["scenes"][1:]]
     assert all(reviewed_visuals[1][idx] is reviewed_visuals[0][idx] for idx in range(1, 8))
+
+
+async def test_scoped_repair_receives_the_positionally_matching_structure_subset(monkeypatch):
+    """Story 12.1 AC9. Two NON-ADJACENT flagged scenes, so a subset that happened
+    to be a contiguous slice (or the whole structure) can't pass by accident."""
+    structure = [{**STRUCTURE[0], "scene_num": i + 1, "synopsis": f"syn{i + 1}"} for i in range(6)]
+    writing = {
+        **WRITING,
+        "scenes": [{**WRITING["scenes"][0], "scene_num": i + 1, "narration": f"문장 {i + 1}."} for i in range(6)],
+    }
+    review_fail = {
+        **REVIEW_PASS, "overall_pass": False,
+        "issues": [
+            {"scene_num": 2, "description": "bad", "correction": "fix"},
+            {"scene_num": 5, "description": "bad", "correction": "fix"},
+        ],
+    }
+    captured: dict = {}
+    reviews = {"n": 0}
+
+    async def fake_repair(scp_id, originals, scene_structure, *a, **k):
+        captured["structure"] = scene_structure
+        captured["originals"] = originals
+        return [{**scene, "narration": "수정됨."} for scene in originals]
+
+    async def fake_review(*a, **k):
+        reviews["n"] += 1
+        return review_fail if reviews["n"] == 1 else REVIEW_PASS
+
+    monkeypatch.setattr(sc, "research_step", lambda *a, **k: _async_return(RESEARCH))
+    monkeypatch.setattr(sc, "structure_step", lambda *a, **k: _async_return(structure))
+    monkeypatch.setattr(sc, "writing_step", lambda *a, **k: _async_return(writing))
+    monkeypatch.setattr(sc, "writing_scene_repair_step", fake_repair)
+    monkeypatch.setattr(sc, "cast_decision_step", lambda *a, **k: _async_return({}))
+    monkeypatch.setattr(sc, "visual_breakdown_step", lambda *a, **k: _async_return(VISUAL))
+    monkeypatch.setattr(sc, "review_step", fake_review)
+    monkeypatch.setattr(sc, "critic_step", lambda *a, **k: _async_return(CRITIC_PASS))
+    monkeypatch.setattr(sc, "tts_normalize_step", lambda value, *a, **k: _async_return(value))
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert [scene["scene_num"] for scene in captured["originals"]] == [2, 5]
+    assert captured["structure"] == [structure[1], structure[4]]
+    assert captured["structure"][0] is structure[1] and captured["structure"][1] is structure[4]
+
+
+async def test_retention_violation_fails_the_run_before_any_writing_call(monkeypatch):
+    """Story 12.1 AC7 end-to-end: a broken outline surfaces as PipelineState.error
+    after exactly one structure call, and no writing/cast/visual work starts."""
+    calls = _stub_chain(monkeypatch)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr(sc, "structure_step", chain.structure_step)  # the real stage
+    deepseek = {"n": 0}
+
+    async def fake_deepseek(rendered, s):
+        deepseek["n"] += 1
+        outline = _retention_outline(4)
+        outline[3]["loops_closed"] = []  # promises made, never paid
+        return json.dumps({"scenes": outline}), {}, "stop"
+
+    monkeypatch.setattr(sc, "_call_deepseek", fake_deepseek)
+
+    out = await sc.scenario_node(_state())
+    assert "retention[loop_unclosed]" in out["error"]
+    assert "stage=scenario" in out["error"]
+    assert "scenes" not in out
+    assert deepseek["n"] == 1, "a retention violation must never buy an LLM regeneration"
+    assert (calls["writing"], calls["cast"], calls["visual"], calls["review"]) == (0, 0, 0, 0)
+
+
+async def test_contract_valid_outline_runs_the_whole_chain(monkeypatch):
+    """The positive counterpart the failure test needs to mean anything. Same real
+    `structure_step`, same stubs — only the outline differs. Without it, a validator
+    that rejected EVERY outline would still pass the AC7 test above."""
+    calls = _stub_chain(monkeypatch)
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    monkeypatch.setattr(sc, "structure_step", chain.structure_step)  # the real stage
+    deepseek = {"n": 0}
+
+    async def fake_deepseek(rendered, s):
+        deepseek["n"] += 1
+        return json.dumps({"scenes": _retention_outline(4)}), {}, "stop"
+
+    monkeypatch.setattr(sc, "_call_deepseek", fake_deepseek)
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert deepseek["n"] == 1, "a valid outline must not be regenerated either"
+    assert (calls["writing"], calls["cast"], calls["visual"], calls["review"]) == (1, 1, 1, 1)
+
+
+async def test_scoped_repair_subset_degrades_to_empty_when_writing_overproduces(monkeypatch):
+    """`_repair_and_review` pairs `structure[idx]`, but writing can return more
+    scenes than the outline has entries (a known model behaviour the visual path
+    already guards). The flagged index must degrade to `{}` rather than raising
+    IndexError and failing an otherwise recoverable run."""
+    structure = [{**STRUCTURE[0], "scene_num": i + 1} for i in range(3)]
+    writing = {
+        **WRITING,
+        "scenes": [{**WRITING["scenes"][0], "scene_num": i + 1, "narration": f"문장 {i + 1}."} for i in range(5)],
+    }
+    review_fail = {
+        **REVIEW_PASS, "overall_pass": False,
+        "issues": [{"scene_num": 5, "description": "bad", "correction": "fix"}],
+    }
+    captured: dict = {}
+    reviews = {"n": 0}
+
+    async def fake_repair(scp_id, originals, scene_structure, *a, **k):
+        captured["structure"] = scene_structure
+        return [{**scene, "narration": "수정됨."} for scene in originals]
+
+    async def fake_review(*a, **k):
+        reviews["n"] += 1
+        return review_fail if reviews["n"] == 1 else REVIEW_PASS
+
+    monkeypatch.setattr(sc, "research_step", lambda *a, **k: _async_return(RESEARCH))
+    monkeypatch.setattr(sc, "structure_step", lambda *a, **k: _async_return(structure))
+    monkeypatch.setattr(sc, "writing_step", lambda *a, **k: _async_return(writing))
+    monkeypatch.setattr(sc, "writing_scene_repair_step", fake_repair)
+    monkeypatch.setattr(sc, "cast_decision_step", lambda *a, **k: _async_return({}))
+    monkeypatch.setattr(sc, "visual_breakdown_step", lambda *a, **k: _async_return(VISUAL))
+    monkeypatch.setattr(sc, "review_step", fake_review)
+    monkeypatch.setattr(sc, "critic_step", lambda *a, **k: _async_return(CRITIC_PASS))
+    monkeypatch.setattr(sc, "tts_normalize_step", lambda value, *a, **k: _async_return(value))
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert captured["structure"] == [{}]
+
+
+async def test_both_critic_call_sites_receive_the_source_text(monkeypatch):
+    """AC12a at the node boundary: `critic_step` leads with `scp_text`, and the
+    post-repair call site inside `_repair_and_review` must pass it too. A stale
+    positional call site there would hand the critic an empty fact sheet and score
+    substance against nothing — while the initial-pass site still looked correct.
+
+    The critic must flag a SPECIFIC scene: an empty `scene_notes` yields no retry
+    indexes, so the run takes the full-rewrite path and re-enters the *initial*
+    call site, leaving the post-repair one unexercised."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    critic_flagged = {**CRITIC_RETRY, "scene_notes": [{"scene_num": 1, "feedback": "고쳐주세요"}]}
+    seen: list = []
+
+    async def fake_critic(scp_text, *a, **k):
+        seen.append(scp_text)
+        return critic_flagged if len(seen) == 1 else CRITIC_PASS
+
+    calls = _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "critic_step", fake_critic)
+
+    out = await sc.scenario_node(_state())
+    assert out["error"] is None
+    assert calls["repair"] == 1, "the scoped-repair path must run, not a full rewrite"
+    assert seen == ["SCP-173 is a concrete statue."] * 2  # initial pass + post-repair
 
 
 async def test_stage_failure_surfaces_as_error(monkeypatch):

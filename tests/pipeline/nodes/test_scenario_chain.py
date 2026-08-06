@@ -38,6 +38,52 @@ class FakePrompt:
 _ONE_SCENE = {"scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
 
 
+def _retention_scene(pos: int, total: int, **overrides) -> dict:
+    """One contract-valid structure scene at 1-based ``pos`` of ``total``.
+
+    Budget is spread so the total always lands inside 180-360 for any scene count
+    the contract allows (2 scenes -> 90 each = 180 exactly, the tightest legal
+    outline). Loops are planted in scene 1 and settled in the last scene; a
+    pattern interrupt lands every 3rd scene so no `none` run ever reaches 3.
+    """
+    budget = max(
+        chain.MIN_SCENE_WORD_BUDGET,
+        min(chain.MAX_SCENE_WORD_BUDGET, -(-chain.MIN_TOTAL_WORD_BUDGET // total)),
+    )
+    scene = {
+        "scene_num": pos,
+        "act": "hook" if pos == 1 else "mystery_expansion",
+        "synopsis": f"scene {pos}",
+        "event": {"who": f"연구원 {pos}", "what": "격리실에 진입했다", "consequence": "통신이 끊겼다"},
+        "key_points": [],
+        "emotional_beat": "tension",
+        "estimated_duration_sec": 45,
+        "hook_type": "shock" if pos == 1 else "none",
+        "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
+        "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
+        "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
+        "word_budget": budget,
+        "fact_references": [f"재단 기록에 사건 {pos}이 남아 있다"],
+        "mood": "dread",
+        "title": f"제목 {pos}",
+        "kicker": f"한 줄 {pos}",
+    }
+    return {**scene, **overrides}
+
+
+def _retention_outline(total: int = 8) -> list[dict]:
+    return [_retention_scene(pos, total) for pos in range(1, total + 1)]
+
+
+def _retention_yaml(total: int = 8) -> str:
+    return yaml.safe_dump({"scenes": _retention_outline(total)}, allow_unicode=True)
+
+
+def _repair_structure(originals: list[dict]) -> list[dict]:
+    """Positionally-paired structure subset for a `writing_scene_repair_step` call."""
+    return [_retention_scene(idx + 1, max(2, len(originals))) for idx in range(len(originals))]
+
+
 def test_split_sentences_basic():
     assert chain.split_sentences("격리 절차가 시작된다. 요원들이 진입한다.") == [
         "격리 절차가 시작된다.",
@@ -220,11 +266,613 @@ async def test_structure_step_label_none_tolerates_missing_title(monkeypatch):
     )
 
     async def call(rendered, s):
-        payload = {"scenes": [{"scene_num": 1, "act": "hook", "synopsis": "x", "mood": "dread"}]}
-        return json.dumps(payload), {}, "stop"
+        scenes = _retention_outline(2)
+        for scene in scenes:
+            scene.pop("title")
+        return json.dumps({"scenes": scenes}), {}, "stop"
 
     scenes = await chain.structure_step("SCP-173", {"frozen_descriptor": "x"}, "guide", None, call)
     assert scenes[0]["scene_num"] == 1
+    assert "title" not in scenes[0]
+
+
+# --- Story 12.1: retention contract -------------------------------------------
+# Deterministic outline validation. Mirrors the property/boundary/integration
+# shape of the _enforce_camera_variety / _enforce_cast_diversity blocks, but the
+# semantics are the opposite: a violation hard-fails instead of being repaired,
+# because code cannot invent an actor, a consequence, or a missing payoff.
+
+
+def _budget_outline(total: int, budget: int) -> list[dict]:
+    return [_retention_scene(pos, total, word_budget=budget) for pos in range(1, total + 1)]
+
+
+def _cadence_outline(interrupts: list[str]) -> list[dict]:
+    total = len(interrupts)
+    return [_retention_scene(pos, total, pattern_interrupt=interrupts[pos - 1]) for pos in range(1, total + 1)]
+
+
+def _raises(outline: list[dict]) -> str:
+    with pytest.raises(chain.RetentionError) as excinfo:
+        chain._validate_retention_outline(outline)
+    return excinfo.value.code
+
+
+def test_retention_valid_outline_passes():
+    chain._validate_retention_outline(_retention_outline(8))
+
+
+@pytest.mark.parametrize("hook", chain.HOOK_TYPES)
+def test_retention_scene1_accepts_every_library_hook(hook):
+    outline = _retention_outline(3)
+    outline[0]["hook_type"] = hook
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_hook_library_is_exactly_the_format_guide_vocabulary():
+    assert chain.HOOK_TYPES == ("question", "shock", "mystery", "contrast")
+
+
+@pytest.mark.parametrize("hook", ["none", "cliffhanger", "question!", "", None, 3, ["shock"]])
+def test_retention_scene1_rejects_anything_outside_the_library(hook):
+    outline = _retention_outline(3)
+    outline[0]["hook_type"] = hook
+    assert _raises(outline) == "hook_invalid"
+
+
+@pytest.mark.parametrize("hook", chain.HOOK_TYPES + ("tone_shift",))
+def test_retention_later_scene_must_be_none(hook):
+    outline = _retention_outline(3)
+    outline[1]["hook_type"] = hook
+    assert _raises(outline) == "hook_misplaced"
+
+
+def test_retention_scene1_missing_hook_key_is_invalid():
+    outline = _retention_outline(3)
+    del outline[0]["hook_type"]
+    assert _raises(outline) == "hook_invalid"
+
+
+def test_retention_hook_and_interrupt_are_case_and_whitespace_canonicalized():
+    outline = _retention_outline(3)
+    outline[0]["hook_type"] = "  SHOCK  "
+    outline[0]["pattern_interrupt"] = "Tone_Shift"
+    chain._validate_retention_outline(outline)
+    assert outline[0]["hook_type"] == "shock"
+    assert outline[0]["pattern_interrupt"] == "tone_shift"
+
+
+# --- event ---
+
+
+@pytest.mark.parametrize("field", ["who", "what", "consequence"])
+@pytest.mark.parametrize("bad", ["", "   ", None, 5, ["누군가"], {"who": "x"}])
+def test_retention_event_field_must_be_a_non_empty_string(field, bad):
+    outline = _retention_outline(3)
+    outline[0]["event"][field] = bad
+    assert _raises(outline) == "event_field_empty"
+
+
+@pytest.mark.parametrize("field", ["who", "what", "consequence"])
+def test_retention_event_field_may_not_be_absent(field):
+    outline = _retention_outline(3)
+    del outline[0]["event"][field]
+    assert _raises(outline) == "event_field_empty"
+
+
+@pytest.mark.parametrize("bad", [None, "연구원이 격리실에 들어갔다", ["who"], 3])
+def test_retention_event_must_be_a_mapping(bad):
+    outline = _retention_outline(3)
+    outline[1]["event"] = bad
+    assert _raises(outline) == "event_missing"
+
+
+def test_retention_event_missing_entirely_is_rejected():
+    outline = _retention_outline(3)
+    del outline[2]["event"]
+    assert _raises(outline) == "event_missing"
+
+
+# --- fact_references (shape only — grounding is review/critic + Story 12.3) ---
+
+
+@pytest.mark.parametrize("bad", [[], None, "사실 하나", ["", "  "], ["사실", 7], {"a": "b"}])
+def test_retention_fact_references_must_be_non_empty_statements(bad):
+    outline = _retention_outline(3)
+    outline[1]["fact_references"] = bad
+    assert _raises(outline) == "fact_references_invalid"
+
+
+# --- open-loop ledger ---
+
+
+def test_retention_loop_happy_path_plants_and_settles():
+    chain._validate_retention_outline(_retention_outline(5))
+
+
+def test_retention_three_planted_loops_is_the_upper_boundary():
+    outline = _retention_outline(4)
+    outline[0]["loops_planted"] = ["loop_a", "loop_b", "loop_c"]
+    outline[3]["loops_closed"] = ["loop_a", "loop_b", "loop_c"]
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_two_planted_loops_is_the_lower_boundary():
+    outline = _retention_outline(4)
+    assert len(outline[0]["loops_planted"]) == 2
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_one_planted_loop_is_below_contract():
+    outline = _retention_outline(4)
+    outline[0]["loops_planted"] = ["loop_a"]
+    outline[3]["loops_closed"] = ["loop_a"]
+    assert _raises(outline) == "loop_count"
+
+
+def test_retention_four_planted_loops_is_above_contract():
+    outline = _retention_outline(4)
+    outline[0]["loops_planted"] = ["loop_a", "loop_b", "loop_c", "loop_d"]
+    outline[3]["loops_closed"] = ["loop_a", "loop_b", "loop_c", "loop_d"]
+    assert _raises(outline) == "loop_count"
+
+
+def test_retention_requires_a_plant_in_scene_one():
+    outline = _retention_outline(4)
+    outline[0]["loops_planted"] = []
+    outline[1]["loops_planted"] = ["loop_a", "loop_b"]
+    assert _raises(outline) == "loop_missing_scene1_plant"
+
+
+def test_retention_unclosed_loop_is_a_violation():
+    outline = _retention_outline(4)
+    outline[3]["loops_closed"] = ["loop_a"]
+    assert _raises(outline) == "loop_unclosed"
+
+
+def test_retention_unclosed_message_names_the_loop_and_its_position():
+    outline = _retention_outline(4)
+    outline[3]["loops_closed"] = ["loop_a"]
+    with pytest.raises(chain.RetentionError, match="loop_b planted at position 1"):
+        chain._validate_retention_outline(outline)
+
+
+def test_retention_unknown_closure_is_a_violation():
+    outline = _retention_outline(4)
+    outline[3]["loops_closed"] = ["loop_a", "loop_b", "loop_ghost"]
+    assert _raises(outline) == "loop_unknown_close"
+
+
+def test_retention_close_before_plant_is_a_violation():
+    outline = _retention_outline(4)
+    outline[2]["loops_planted"] = ["loop_c"]
+    outline[1]["loops_closed"] = ["loop_c"]
+    outline[3]["loops_closed"] = ["loop_a", "loop_b", "loop_c"]
+    assert _raises(outline) == "loop_unknown_close"
+
+
+def test_retention_duplicate_plant_is_a_violation():
+    outline = _retention_outline(4)
+    outline[1]["loops_planted"] = ["loop_a"]
+    assert _raises(outline) == "loop_duplicate_plant"
+
+
+def test_retention_duplicate_close_is_a_violation():
+    outline = _retention_outline(4)
+    outline[2]["loops_closed"] = ["loop_a"]
+    assert _raises(outline) == "loop_duplicate_close"
+
+
+def test_retention_same_scene_plant_and_close_is_a_violation():
+    outline = _retention_outline(4)
+    outline[0]["loops_closed"] = ["loop_a"]
+    assert _raises(outline) == "loop_same_scene"
+
+
+@pytest.mark.parametrize("field", ["loops_planted", "loops_closed"])
+@pytest.mark.parametrize("bad", ["loop_a", None, {"loop_a": 1}, ["loop_a", 3], 7])
+def test_retention_loop_fields_must_be_string_lists(field, bad):
+    outline = _retention_outline(4)
+    outline[1][field] = bad
+    assert _raises(outline) == "loop_field_malformed"
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    # "loop_a\n" is the regex trap: `$` matches before a trailing newline, so a
+    # folded YAML scalar (`- >\n  loop_a`) would pass an `^...$` check and then
+    # never match the closure's own id.
+    ["Loop_A", "reveal", "loop-a", "loop_", "loop_긴장", " loop_a", "loop_a\n", "loop_a\nloop_b"],
+)
+def test_retention_loop_ids_must_match_the_syntax(bad_id):
+    outline = _retention_outline(4)
+    outline[0]["loops_planted"] = [bad_id, "loop_b"]
+    outline[3]["loops_closed"] = [bad_id, "loop_b"]
+    assert _raises(outline) == "loop_id_invalid"
+
+
+def test_retention_atmospheric_ending_needs_no_ledger_entry():
+    # An unresolved implication in the final act is legal — it just may not
+    # masquerade as a tracked promise. Nothing extra is planted, so it passes.
+    outline = _retention_outline(4)
+    outline[3]["synopsis"] = "재단도 답을 모르는 질문 하나가 남는다"
+    chain._validate_retention_outline(outline)
+
+
+# --- pattern-interrupt cadence ---
+
+
+def test_retention_cadence_constant_is_two():
+    assert chain.MAX_SCENES_WITHOUT_PATTERN_INTERRUPT == 2
+
+
+def test_retention_run_of_two_none_scenes_is_valid():
+    chain._validate_retention_outline(_cadence_outline(["none", "none", "none", "tone_shift"]))
+
+
+def test_retention_run_of_three_none_scenes_is_invalid():
+    assert _raises(_cadence_outline(["none", "none", "none", "none"])) == "interrupt_cadence"
+
+
+def test_retention_a_non_none_interrupt_resets_the_run():
+    outline = _cadence_outline(["none", "none", "none", "pov_shift", "none", "none"])
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_cadence_counts_from_after_the_scene1_hook():
+    # Scene 1 is `none` here too; the hook is scene 1's interrupt, so the run
+    # starts at scene 2 and scenes 2-3 are still legal.
+    chain._validate_retention_outline(_cadence_outline(["none", "none", "none", "format_change"]))
+
+
+@pytest.mark.parametrize("interrupt", sorted(chain._VALID_PATTERN_INTERRUPTS))
+def test_retention_every_vocabulary_interrupt_is_accepted(interrupt):
+    chain._validate_retention_outline(_cadence_outline([interrupt, "tone_shift", "none", "none"]))
+
+
+@pytest.mark.parametrize("bad", ["cutaway", "NONE!", "", None, 4, ["tone_shift"]])
+def test_retention_interrupt_outside_the_vocabulary_is_rejected(bad):
+    outline = _retention_outline(4)
+    outline[1]["pattern_interrupt"] = bad
+    assert _raises(outline) == "interrupt_invalid"
+
+
+def test_retention_interrupt_key_may_not_be_absent():
+    outline = _retention_outline(4)
+    del outline[1]["pattern_interrupt"]
+    assert _raises(outline) == "interrupt_invalid"
+
+
+# --- word budget ---
+
+
+def test_retention_per_scene_budget_boundaries_are_inclusive():
+    chain._validate_retention_outline(_budget_outline(9, chain.MIN_SCENE_WORD_BUDGET))  # 20 x 9 = 180
+    chain._validate_retention_outline(_budget_outline(4, chain.MAX_SCENE_WORD_BUDGET))  # 90 x 4 = 360
+
+
+@pytest.mark.parametrize("budget", [chain.MIN_SCENE_WORD_BUDGET - 1, chain.MAX_SCENE_WORD_BUDGET + 1])
+def test_retention_per_scene_budget_outside_the_range_is_rejected(budget):
+    assert _raises(_budget_outline(6, budget)) == "budget_range"
+
+
+def test_retention_total_budget_boundaries_are_inclusive():
+    assert sum(s["word_budget"] for s in _budget_outline(9, 20)) == chain.MIN_TOTAL_WORD_BUDGET
+    assert sum(s["word_budget"] for s in _budget_outline(4, 90)) == chain.MAX_TOTAL_WORD_BUDGET
+
+
+def test_retention_total_below_the_floor_is_rejected():
+    outline = _budget_outline(8, 20)  # every scene legal, 160 total
+    assert sum(s["word_budget"] for s in outline) < chain.MIN_TOTAL_WORD_BUDGET
+    assert _raises(outline) == "budget_total"
+
+
+def test_retention_total_above_the_ceiling_is_rejected():
+    outline = _budget_outline(5, 90)  # every scene legal, 450 total
+    assert _raises(outline) == "budget_total"
+
+
+@pytest.mark.parametrize("bad", [True, False, 45.0, "45", None, [45]])
+def test_retention_budget_must_be_a_real_int(bad):
+    # `True` is the trap: bool subclasses int, so a naive isinstance check reads
+    # `word_budget: true` as a budget of 1.
+    outline = _retention_outline(6)
+    outline[2]["word_budget"] = bad
+    assert _raises(outline) == "budget_type"
+
+
+def test_retention_zero_budget_is_rejected_by_range_not_type():
+    outline = _retention_outline(6)
+    outline[2]["word_budget"] = 0
+    assert _raises(outline) == "budget_range"
+
+
+# --- malformed scenes / positional authority ---
+
+
+@pytest.mark.parametrize("bad", [None, "scene", ["scene"], 7])
+def test_retention_non_mapping_scene_is_rejected(bad):
+    outline = _retention_outline(4)
+    outline[2] = bad
+    assert _raises(outline) == "scene_malformed"
+
+
+def test_retention_ignores_scene_num_and_uses_list_position():
+    # Every scene claims to be scene 1 — a real, observed LLM misbehaviour. The
+    # ledger and the hook rule must still read the list positionally.
+    outline = _retention_outline(4)
+    for scene in outline:
+        scene["scene_num"] = 1
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_non_contiguous_scene_num_does_not_break_validation():
+    outline = _retention_outline(4)
+    for scene, num in zip(outline, [7, 3, 99, 1], strict=True):
+        scene["scene_num"] = num
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_deceptive_scene_num_cannot_rescue_a_positional_violation():
+    # Position 2 carries a hook and claims scene_num 1. Trusting the model's
+    # number would legalize a second hook; position must win.
+    outline = _retention_outline(4)
+    outline[1]["hook_type"] = "mystery"
+    outline[1]["scene_num"] = 1
+    assert _raises(outline) == "hook_misplaced"
+
+
+# --- determinism / idempotence / non-destructiveness ---
+
+
+def test_retention_valid_outline_is_left_byte_equivalent():
+    outline = _retention_outline(8)
+    before = json.dumps(outline, ensure_ascii=False, sort_keys=True)
+    chain._validate_retention_outline(outline)
+    assert json.dumps(outline, ensure_ascii=False, sort_keys=True) == before
+
+
+def test_retention_preserves_unknown_scene_fields_and_list_order():
+    outline = _retention_outline(5)
+    for idx, scene in enumerate(outline):
+        scene["some_future_field"] = {"nested": [idx]}
+    snapshot = copy.deepcopy(outline)
+    chain._validate_retention_outline(outline)
+    assert outline == snapshot
+
+
+def test_retention_validation_is_idempotent():
+    once, twice = _retention_outline(6), _retention_outline(6)
+    once[0]["hook_type"] = twice[0]["hook_type"] = " SHOCK "
+    chain._validate_retention_outline(once)
+    chain._validate_retention_outline(twice)
+    chain._validate_retention_outline(twice)  # second pass changes nothing
+    assert once == twice
+
+
+def test_retention_is_deterministic_across_repeated_runs():
+    codes = set()
+    for _ in range(5):
+        outline = _retention_outline(4)
+        outline[3]["loops_closed"] = []
+        codes.add(_raises(outline))
+    assert codes == {"loop_unclosed"}
+
+
+def test_retention_does_not_mutate_a_rejected_outline_beyond_canonicalization():
+    outline = _retention_outline(4)
+    outline[3]["loops_closed"] = []
+    snapshot = copy.deepcopy(outline)
+    _raises(outline)
+    assert outline == snapshot  # already-canonical scalars, so nothing was written
+
+
+def test_retention_canonicalizes_enums_on_later_scenes_too():
+    # AC3's canonicalization is not a scene-1 special case: `hook_type: "  NONE  "`
+    # at position 2 is the same model slip, and rejecting it would fail a valid
+    # outline on formatting alone.
+    outline = _retention_outline(4)
+    outline[1]["hook_type"] = "  NONE  "
+    outline[2]["pattern_interrupt"] = " Pov_Shift "
+    chain._validate_retention_outline(outline)
+    assert outline[1]["hook_type"] == "none"
+    assert outline[2]["pattern_interrupt"] == "pov_shift"
+
+
+def test_retention_rejected_outline_is_mutated_only_by_canonicalization():
+    """The stricter half of AC8's non-destructiveness claim. The existing sibling
+    test uses already-canonical values, so it cannot distinguish "writes only the
+    two enums" from "writes nothing at all"; this one puts a non-canonical enum
+    ahead of the violation and pins the write to exactly that key."""
+    outline = _retention_outline(4)
+    outline[1]["hook_type"] = "  NONE  "
+    outline[3]["loops_closed"] = []  # ledger never settles — fails after scene 2
+    expected = copy.deepcopy(outline)
+    expected[1]["hook_type"] = "none"
+    assert _raises(outline) == "loop_unclosed"
+    assert outline == expected
+
+
+def test_retention_empty_outline_is_rejected():
+    # `structure_step`'s base parser rejects an empty `scenes` list first, but the
+    # validator is a public-by-convention pure function — it must not read an
+    # empty outline as a vacuously satisfied contract.
+    assert _raises([]) == "loop_count"
+
+
+def test_retention_single_scene_outline_can_never_settle_its_ledger():
+    # Two scenes is the structural minimum: a loop must close in a LATER scene, so
+    # a one-scene outline either leaves the ledger open or plants-and-closes in
+    # place. Both are violations; neither is a legal shortcut.
+    unclosed = [_retention_scene(1, 1, loops_closed=[])]
+    assert _raises(unclosed) == "loop_unclosed"
+    assert _raises([_retention_scene(1, 1)]) == "loop_same_scene"
+
+
+def test_retention_rejects_an_all_invalid_fake_llm_payload():
+    # Every rule broken at once — the shape a model produces when it ignores the
+    # contract entirely. It must fail, and it must fail with a rule code.
+    payload = yaml.safe_load("""
+scenes:
+  - scene_num: 1
+    synopsis: "긴장을 고조시킨다"
+    event: "무서운 분위기를 만든다"
+    hook_type: "cliffhanger"
+    loops_planted: "loop_a"
+    loops_closed: ["loop_zzz"]
+    pattern_interrupt: "cutaway"
+    word_budget: true
+    fact_references: []
+  - scene_num: 1
+    synopsis: "더 무섭게 만든다"
+    hook_type: "shock"
+    loops_planted: []
+    loops_closed: []
+    pattern_interrupt: "none"
+    word_budget: "많이"
+    fact_references: ["fact_key_1"]
+""")["scenes"]
+    with pytest.raises(chain.RetentionError) as excinfo:
+        chain._validate_retention_outline(payload)
+    assert excinfo.value.code == "event_missing"
+
+
+# --- structure_step integration: no LLM recall on a retention violation ---
+
+
+async def test_structure_step_retention_failure_makes_no_second_call(monkeypatch):
+    """AC7's load-bearing assertion. Two calls would mean the validator was placed
+    inside `_call_stage_with_retry`'s parse callback, where a ValueError buys one
+    DeepSeek regeneration — exactly the LLM recall this contract forbids."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        outline = _retention_outline(4)
+        outline[3]["loops_closed"] = []  # ledger never settles
+        return json.dumps({"scenes": outline}), {}, "stop"
+
+    with pytest.raises(chain.RetentionError) as excinfo:
+        await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    assert excinfo.value.code == "loop_unclosed"
+    assert attempts["n"] == 1, "retention validation must sit OUTSIDE the semantic-retry boundary"
+
+
+async def test_structure_step_base_schema_error_still_gets_its_one_retry(monkeypatch):
+    """The retention validator must not shorten the pre-existing retry for a base
+    YAML/shape failure — that one is still worth a regeneration."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    attempts = {"n": 0}
+
+    async def call(rendered, s):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return json.dumps({"scenes": []}), {}, "stop"
+        return json.dumps({"scenes": _retention_outline(4)}), {}, "stop"
+
+    scenes = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    assert attempts["n"] == 2
+    assert len(scenes) == 4
+
+
+async def test_structure_step_returns_a_contract_valid_outline_untouched(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    expected = _retention_outline(6)
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
+
+    assert await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call) == expected
+
+
+async def test_writing_scene_repair_step_sends_the_paired_structure_subset(monkeypatch):
+    captured = {}
+
+    class CapturingPrompt:
+        def compile(self, **variables):
+            captured.update(variables)
+            return "rendered"
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CapturingPrompt())
+    originals = [{"scene_num": 2, "narration": "둘."}, {"scene_num": 5, "narration": "다섯."}]
+    subset = [_retention_scene(2, 6), _retention_scene(5, 6)]
+
+    async def call(rendered, s):
+        return yaml.safe_dump({"scenes": originals}, allow_unicode=True), {}, "stop"
+
+    await chain.writing_scene_repair_step("SCP-173", originals, subset, "feedback", "desc", "guide", None, call)
+    assert json.loads(captured["scene_structure"]) == subset
+
+
+def test_structure_cassette_satisfies_the_retention_contract():
+    """The cassette is replayed by other stage tests as a *valid* DeepSeek reply.
+    If it ever drifts out of contract, those tests fail with a RetentionError far
+    from the edit that caused it — pin the contract at the fixture instead."""
+    content = _load_cassette("deepseek_structure.json")["choices"][0]["message"]["content"]
+    chain._validate_retention_outline(yaml.safe_load(content)["scenes"])
+
+
+async def test_critic_step_sends_the_source_text_as_the_fact_sheet(monkeypatch):
+    """AC12a wiring. The prompt-contract test only proves `{{scp_fact_sheet}}` is
+    still in critic_agent.md; it cannot see whether the stage fills it. Without
+    this, dropping `scp_text` from the compile leaves criteria 6/7 judging
+    substance against the model's own SCP knowledge — silently."""
+    captured: list[dict] = []
+
+    class CapturingPrompt:
+        def compile(self, **variables):
+            captured.append(variables)
+            return "rendered"
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CapturingPrompt())
+
+    async def call(rendered, s):
+        return yaml.safe_dump({"verdict": "pass", "feedback": "좋다", "scene_notes": []}), {}, "stop"
+
+    await chain.critic_step("SCP-173 원문 전체", _ONE_SCENE, {}, "guide", None, call)
+    assert [v["scp_fact_sheet"] for v in captured] == ["SCP-173 원문 전체"]
+
+
+# --- prompt contract (AC 12): fact_references must resolve, not dangle ---
+
+
+def _prompt_text(name: str) -> str:
+    return (Path(__file__).parents[3] / "prompts" / "scenario" / name).read_text(encoding="utf-8")
+
+
+def test_structure_prompt_no_longer_illustrates_placeholder_fact_keys():
+    # The old example (`"fact_key_1"`) named a dictionary that exists nowhere in
+    # the pipeline, so Stage 3 saw fact LABELS with no fact CONTENT. A later
+    # prompt edit must not reintroduce the pattern.
+    content = _prompt_text("structure.md")
+    assert "fact_references" in content
+    assert not re.search(r"fact_key_|fact_\d", content), "structure.md reintroduced a placeholder-key example"
+
+
+def test_structure_prompt_carries_the_retention_contract():
+    content = _prompt_text("structure.md")
+    for field in ("event", "hook_type", "loops_planted", "loops_closed", "pattern_interrupt", "word_budget"):
+        assert field in content, f"structure.md does not describe {field}"
+    for hook in chain.HOOK_TYPES:
+        assert hook in content
+
+
+@pytest.mark.parametrize("name", ["writing.md", "writing_scene_repair.md"])
+def test_writing_prompts_carry_the_fact_grounding_rule(name):
+    content = _prompt_text(name)
+    assert "fact_references" in content, f"{name} lost the fact-grounding rule"
+    assert "사실 접지" in content, f"{name} lost the fact-grounding section"
+
+
+def test_writing_scene_repair_prompt_receives_the_structure_subset():
+    assert "{{scene_structure}}" in _prompt_text("writing_scene_repair.md")
+
+
+def test_critic_prompt_judges_substance_against_the_fact_sheet():
+    content = _prompt_text("critic_agent.md")
+    assert "{{scp_fact_sheet}}" in content
+    assert "Substance" in content and "Fidelity" in content
 
 
 async def test_writing_step_returns_scenes(monkeypatch):
@@ -346,7 +994,61 @@ async def test_writing_step_passes_neighbour_context_but_only_one_scene_to_write
     assert seen[1]["previous_scene_context"] is None  # nothing before the hook
     assert seen[3]["next_scene_context"] is None
     # the whole point of batching: one scene's worth of payload per call
-    assert set(seen[2]) == {"write_only_this_scene", "previous_scene_context", "next_scene_context"}
+    assert set(seen[2]) == {
+        "write_only_this_scene", "previous_scene_context", "next_scene_context", "loops_to_close_context",
+    }
+    assert seen[2]["loops_to_close_context"] == {}  # this fixture plants no loops
+
+
+async def test_writing_step_carries_the_plant_context_for_every_loop_it_must_close(monkeypatch):
+    """Story 12.1 review: the contract forbids closing a loop in the scene that
+    planted it, so every closure is non-adjacent — and neighbour context only
+    reaches ±1 scene. Given just the id `loop_a`, the writer of the closing scene
+    has to invent the question it is answering, which is precisely the ungrounded
+    assertion critic criterion 7 exists to catch."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    structure = _structure(5)
+    structure[0]["loops_planted"] = ["loop_a"]
+    structure[1]["loops_planted"] = ["loop_b"]
+    structure[4]["loops_closed"] = ["loop_a", "loop_b"]
+    seen = {}
+
+    async def call(rendered, s):
+        brief = json.loads(rendered)["scene_structure"]
+        n = _requested_scene(brief)
+        seen[n] = json.loads(brief.split("\n", 1)[1])
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n", {}, "stop"
+
+    await chain.writing_step("SCP-173", structure, "desc", "guide", "", None, call)
+
+    # scene 5 closes both; the plant is 4 and 3 scenes back, far outside neighbour range
+    assert seen[5]["loops_to_close_context"] == {
+        "loop_a": "scene 1: act1 / beat1: syn1",
+        "loop_b": "scene 2: act2 / beat2: syn2",
+    }
+    assert seen[1]["loops_to_close_context"] == {}  # planting scenes owe nothing yet
+
+
+def test_loops_to_close_context_ignores_a_plant_that_is_not_earlier():
+    # A same-scene or later "plant" is already a contract violation upstream; the
+    # brief must not paper over it by resolving forwards.
+    structure = _structure(3)
+    structure[1]["loops_planted"] = ["loop_a"]
+    structure[1]["loops_closed"] = ["loop_a"]
+    structure[2]["loops_planted"] = ["loop_b"]
+    structure[0]["loops_closed"] = ["loop_b"]
+    assert chain._loops_to_close_context(structure, 1) == {}
+    assert chain._loops_to_close_context(structure, 0) == {}
+
+
+@pytest.mark.parametrize("bad", [None, "loop_a", 7, {"loop_a": 1}])
+def test_loops_to_close_context_tolerates_a_malformed_ledger(bad):
+    # `_writing_scene_brief` runs on structure entries that the retention validator
+    # already accepted, but it is also reachable on resumed/edited outlines — it
+    # must degrade to no context, never raise inside the writing stage.
+    structure = _structure(2)
+    structure[1]["loops_closed"] = bad
+    assert chain._loops_to_close_context(structure, 1) == {}
 
 
 async def test_writing_step_rejects_a_call_that_answers_more_than_its_own_scene(monkeypatch):
@@ -420,7 +1122,9 @@ def _truncatable_stages():
     return [
         ("research", "frozen_descriptor: desc\n",
          lambda call: chain.research_step("SCP-173", "text", "guide", None, call)),
-        ("structure", "scenes:\n  - scene_num: 1\n",
+        # the re-rolled structure payload must satisfy the retention contract, or
+        # the stage fails after the successful re-roll for an unrelated reason
+        ("structure", _retention_yaml(2),
          lambda call: chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)),
         ("cast_decision", "shots:\n  - sentence: 1\n    cast: []\n",
          lambda call: chain.cast_decision_step("SCP-173", scene, ["문장 하나."], None, call)),
@@ -430,10 +1134,11 @@ def _truncatable_stages():
         ("review", "overall_pass: true\n",
          lambda call: chain.review_step("text", writing, {}, "desc", "guide", None, call)),
         ("critic_agent", "verdict: pass\n",
-         lambda call: chain.critic_step(writing, {}, "guide", None, call)),
+         lambda call: chain.critic_step("원문", writing, {}, "guide", None, call)),
         ("writing_scene_repair", "scenes:\n  - scene_num: 1\n    narration: 고친 문장.\n",
          lambda call: chain.writing_scene_repair_step(
-             "SCP-173", writing["scenes"], "feedback", "desc", "guide", None, call)),
+             "SCP-173", writing["scenes"], _repair_structure(writing["scenes"]), "feedback", "desc", "guide",
+             None, call)),
         ("tts_normalize", "scenes:\n  - scene_num: 1\n    narration: 읽는 문장.\n",
          lambda call: chain.tts_normalize_step(writing, "guide", None, call)),
     ]
@@ -567,7 +1272,7 @@ async def test_writing_scene_repair_requires_exact_ordered_coverage(monkeypatch)
         return "scenes:\n  - scene_num: 2\n    narration: fixed\n", {}, "stop"
 
     with pytest.raises(chain.SceneCoverageError, match="expected 2 scenes"):
-        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+        await chain.writing_scene_repair_step("SCP-173", originals, _repair_structure(originals), "feedback", "desc", "guide", None, call)
 
 
 async def test_writing_scene_repair_reorders_permutation_to_expected(monkeypatch):
@@ -581,7 +1286,7 @@ async def test_writing_scene_repair_reorders_permutation_to_expected(monkeypatch
     async def call(rendered, s):
         return "scenes:\n  - scene_num: 2\n    narration: fixed 2\n  - scene_num: 4\n    narration: fixed 4\n", {}, "stop"
 
-    result = await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+    result = await chain.writing_scene_repair_step("SCP-173", originals, _repair_structure(originals), "feedback", "desc", "guide", None, call)
     assert [sc["scene_num"] for sc in result] == [4, 2]  # reordered back to the requested order
     assert result[0]["narration"] == "fixed 4"
     assert result[1]["narration"] == "fixed 2"
@@ -598,7 +1303,7 @@ async def test_writing_scene_repair_genuine_set_mismatch_raises_scene_coverage_e
         return "scenes:\n  - scene_num: 2\n    narration: fixed 2\n  - scene_num: 5\n    narration: wrong\n", {}, "stop"
 
     with pytest.raises(chain.SceneCoverageError, match="coverage mismatch"):
-        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+        await chain.writing_scene_repair_step("SCP-173", originals, _repair_structure(originals), "feedback", "desc", "guide", None, call)
 
 
 async def test_writing_scene_repair_rejects_extra_scene(monkeypatch):
@@ -616,7 +1321,7 @@ async def test_writing_scene_repair_rejects_extra_scene(monkeypatch):
         )
 
     with pytest.raises(ValueError, match="expected 2 scenes"):
-        await chain.writing_scene_repair_step("SCP-173", originals, "feedback", "desc", "guide", None, call)
+        await chain.writing_scene_repair_step("SCP-173", originals, _repair_structure(originals), "feedback", "desc", "guide", None, call)
 
 
 async def test_research_step_collapses_embedded_newlines_in_freetext_fields(monkeypatch):
@@ -908,7 +1613,7 @@ async def test_critic_step_returns_verdict(monkeypatch):
     )
     call = _deepseek_from_cassette("deepseek_critic.json")
     writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
-    result = await chain.critic_step(writing, {1: []}, "guide", None, call)
+    result = await chain.critic_step("원문", writing, {1: []}, "guide", None, call)
     assert result["verdict"] == "pass"
     assert result["feedback"]
 
@@ -922,7 +1627,7 @@ async def test_critic_step_collapses_embedded_newlines_in_feedback(monkeypatch):
         return 'verdict: pass\nfeedback: |\n  첫 줄.\n  둘째 줄.\nscene_notes: []\n', {}, "stop"
 
     writing = {"scenes": [{"scene_num": 1, "narration": "n"}]}
-    result = await chain.critic_step(writing, {1: []}, "guide", None, call)
+    result = await chain.critic_step("원문", writing, {1: []}, "guide", None, call)
     assert result["feedback"] == "Scene 1: 첫 줄. 둘째 줄."
 
 
@@ -961,7 +1666,7 @@ async def test_critic_step_normalizes_scene_note_freetext_fields(monkeypatch):
             "  - scene_num: 2\n    issue: 7\n"
         ), {}, "stop"
 
-    result = await chain.critic_step(_ONE_SCENE, {}, "guide", None, call)
+    result = await chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call)
 
     assert result["scene_notes"][0]["issue"] == "문제 한 줄. 문제 두 줄."
     assert result["scene_notes"][0]["suggestion"] == "제안 한 줄. 제안 두 줄."
@@ -978,7 +1683,7 @@ async def test_critic_step_rejects_unknown_verdict(monkeypatch):
         return json.dumps({"verdict": "maybe", "feedback": "x", "scene_notes": []}), {}, "stop"
 
     with pytest.raises(ValueError, match="verdict"):
-        await chain.critic_step(_ONE_SCENE, {}, "guide", None, call)
+        await chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call)
 
 
 # --- review/critic per-scene batching (live run 370666ba truncation) ------------
@@ -1082,7 +1787,7 @@ async def test_critic_step_aggregates_worst_verdict(monkeypatch, verdicts, expec
         num = _scene_num_of(json.loads(rendered)["scenario_json"])
         return f"verdict: {verdicts[num - 1]}\nfeedback: 의견 {num}\nscene_notes: []\n", {}, "stop"
 
-    result = await chain.critic_step(_writing(len(verdicts)), {}, "guide", None, call)
+    result = await chain.critic_step("원문", _writing(len(verdicts)), {}, "guide", None, call)
 
     assert len(prompt.calls) == len(verdicts)
     assert result["verdict"] == expected
@@ -1101,7 +1806,7 @@ async def test_critic_step_stamps_scene_notes_by_position(monkeypatch):
             f"scene_notes:\n  - scene_num: 1\n    issue: 문제 {num}\n    suggestion: 제안 {num}\n"
         ), {}, "stop"
 
-    result = await chain.critic_step(_writing(3), {}, "guide", None, call)
+    result = await chain.critic_step("원문", _writing(3), {}, "guide", None, call)
     assert [(n["scene_num"], n["issue"]) for n in result["scene_notes"]] == [
         (1, "문제 1"), (2, "문제 2"), (3, "문제 3"),
     ]

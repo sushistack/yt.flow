@@ -256,7 +256,9 @@ async def _write_and_review(
 
     t0 = time.perf_counter()
     usage = []
-    critic = await critic_step(writing, visual_by_scene, format_guide, s, _call_deepseek, label=label, usage_sink=usage)
+    critic = await critic_step(
+        scp_text, writing, visual_by_scene, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+    )
     stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
 
     return writing, visual_by_scene, review, critic
@@ -270,10 +272,15 @@ async def _repair_and_review(
 ) -> tuple[dict, dict, dict, dict]:
     trace = _trace_fields(2, "scene", indexes, rejected)
     originals = [writing["scenes"][idx] for idx in indexes]
+    # Positional pairing, same rule as `_breakdown_for` below: the repair prompt
+    # gets structure[idx] for each flagged index, never a model-reported
+    # scene_num lookup (Story 12.1 AC9). An index past structure (writing
+    # over-produced) degrades to {} exactly as the visual path already does.
+    subset_structure = [structure[idx] if idx < len(structure) else {} for idx in indexes]
     t0 = time.perf_counter()
     usage: list[dict] = []
     repaired = await writing_scene_repair_step(
-        scp_id, originals, _format_scene_feedback(review, critic, indexes), frozen_descriptor,
+        scp_id, originals, subset_structure, _format_scene_feedback(review, critic, indexes), frozen_descriptor,
         format_guide, s, _call_deepseek, label=label, usage_sink=usage,
     )
     stages.append({"name": "writing_scene_repair", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
@@ -312,7 +319,7 @@ async def _repair_and_review(
     t0 = time.perf_counter()
     usage = []
     next_critic = await critic_step(
-        merged_writing, merged_visuals, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+        scp_text, merged_writing, merged_visuals, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
     )
     stages.append({"name": "critic_agent", "latency_ms": _ms(t0), **trace, **_usage_totals(usage)})
     return merged_writing, merged_visuals, next_review, next_critic
