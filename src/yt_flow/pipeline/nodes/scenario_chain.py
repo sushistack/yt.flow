@@ -1585,41 +1585,73 @@ async def tts_normalize_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    """Rewrite each scene's narration for natural Korean TTS, matching scenes positionally.
+    """Rewrite each scene's narration for natural Korean TTS — ONE call per scene.
+
+    Batched 2026-08-06 (live run bad091eb, SCP-999) for the same reason as
+    ``writing`` (f7639b2) and ``review``/``critic`` (53e5c8f): the dump header
+    ``completion_tokens=32768 raw_chars=77634`` on the whole-script call is
+    reasoning-token exhaustion, not narration volume. This was the last scenario
+    stage still sending every scene in one completion.
+
+    The three validations the single call enforced are unchanged, just relocated:
+    the per-scene ``parse`` rejects a malformed scene and an empty narration for
+    ITS scene, and issuing exactly one call per original scene — each of which
+    must return exactly one scene — is what makes the aggregate scene count equal
+    ``len(original_scenes)``.
 
     A scene whose normalized sentence count doesn't match the original (per
     ``split_sentences()``) keeps its original narration instead of failing the
     whole scenario stage — see story 5-4-tts-korean-naturalization.md.
     """
     original_scenes = writing["scenes"]
-    scenes_input = [
-        {"scene_num": scene.get("scene_num"), "narration": scene.get("narration", "")} for scene in original_scenes
-    ]
-    def parse(raw: str) -> list[dict]:
-        data = _parse_yaml(raw)
-        normalized_scenes = data.get("scenes") if isinstance(data, dict) else None
-        if not isinstance(normalized_scenes, list) or len(normalized_scenes) != len(original_scenes):
-            got = len(normalized_scenes) if isinstance(normalized_scenes, list) else "non-list"
-            raise ValueError(f"tts_normalize: expected {len(original_scenes)} scenes, got {got}")
-        for scene in normalized_scenes:
+    total = len(original_scenes)
+
+    async def _normalize_one(idx: int, original: dict) -> dict:
+        def parse(raw: str) -> dict:
+            data = _parse_yaml(raw)
+            scenes = data.get("scenes") if isinstance(data, dict) else None
+            if not isinstance(scenes, list) or len(scenes) != 1:
+                got = len(scenes) if isinstance(scenes, list) else "non-list"
+                raise ValueError(f"tts_normalize: scene {idx + 1} call must return exactly 1 scene, got {got}")
+            scene = scenes[0]
             if not isinstance(scene, dict):
                 raise ValueError(f"tts_normalize: malformed scene {scene!r}")
             if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
-                raise ValueError(f"tts_normalize: scene[{scene.get('scene_num')}] has empty narration")
-            scene["narration"] = _normalize_freetext(scene["narration"])
-        return normalized_scenes
+                raise ValueError(f"tts_normalize: scene[{idx + 1}] has empty narration")
+            return {"narration": _normalize_freetext(scene["narration"])}
 
-    normalized_scenes = await _call_stage_with_retry(
-        "scenario/tts_normalize",
-        {
-            "scenes_json": json.dumps(scenes_input, ensure_ascii=False),
-            "format_guide": format_guide,
-        },
-        s,
-        call_deepseek,
-        parse,
-        label=label,
-        usage_sink=usage_sink,
+        return await _call_stage_with_retry(
+            "scenario/tts_normalize",
+            {
+                # The steering prefix rides the free-text `scenes_json` variable, so
+                # no Langfuse prompt version has to move — the same trick
+                # `_writing_scene_brief` / `_scene_review_brief` use.
+                "scenes_json": (
+                    f"You are normalizing SCENE {idx + 1} OF {total} ONLY. The list below holds "
+                    "that one scene and nothing else. Output a `scenes` list containing exactly "
+                    f"ONE scene object with `scene_num: {idx + 1}`. Rule 5's scene-order/count "
+                    "invariant is satisfied by returning that single scene; Rule 2's sentence-count "
+                    "invariant still applies within it.\n"
+                    + json.dumps(
+                        [{"scene_num": idx + 1, "narration": original.get("narration", "")}], ensure_ascii=False
+                    )
+                ),
+                "format_guide": format_guide,
+            },
+            s,
+            call_deepseek,
+            parse,
+            label=label,
+            usage_sink=usage_sink,
+            what=f"tts_normalize scene {idx + 1}",
+        )
+
+    # gather returns results in ARGUMENT order, not completion order, so zipping
+    # against `original_scenes` below stays aligned however the calls interleave.
+    # scene_num is never read back off the model — the aggregation keeps each
+    # ORIGINAL scene dict wholesale and replaces only its narration text.
+    normalized_scenes = await asyncio.gather(
+        *(_normalize_one(idx, original) for idx, original in enumerate(original_scenes))
     )
 
     updated_scenes = []

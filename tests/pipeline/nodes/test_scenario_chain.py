@@ -1627,6 +1627,8 @@ async def test_tts_normalize_step_rewrites_narration(monkeypatch):
     monkeypatch.setattr(
         "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
     )
+    # The cassette carries ONE scene: tts_normalize is batched per scene, so a
+    # single call's response is one scene's normalization (like deepseek_writing.json).
     call = _deepseek_from_cassette("deepseek_tts_normalize.json")
     writing = {
         "scp_id": "SCP-173",
@@ -1640,21 +1642,10 @@ async def test_tts_normalize_step_rewrites_narration(monkeypatch):
                 "color_palette": "cold gray",
                 "atmosphere": "dread",
             },
-            {
-                # The cassette carries 2 scenes because the stub chain now writes one
-                # scene per call and therefore follows the structure cassette's count.
-                "scene_num": 2,
-                "narration": "그리고 그날 밤. 복도의 조명이 깜빡였습니다. (정적) 그게 마지막이었습니다.",
-                "location": "corridor",
-                "characters_present": ["SCP-173"],
-                "color_palette": "cold gray",
-                "atmosphere": "dread",
-            },
         ],
     }
     result = await chain.tts_normalize_step(writing, "guide", None, call)
     assert result["scenes"][0]["narration"].startswith("열네 명.")
-    assert result["scenes"][1]["narration"].startswith("그리고 그날 밤.")
     # non-narration fields are preserved unchanged
     assert result["scenes"][0]["location"] == "underground containment chamber"
     assert result["scenes"][0]["characters_present"] == ["SCP-173"]
@@ -1701,50 +1692,96 @@ async def test_tts_normalize_step_rejects_scene_count_mismatch(monkeypatch):
         await chain.tts_normalize_step(writing, "guide", None, call)
 
 
-async def test_tts_normalize_step_matches_scenes_positionally(monkeypatch):
-    # LLM echoes a duplicate/misleading scene_num — matching must be by list
-    # position, not by the LLM's own scene_num, matching build_scenes()'s rule.
-    monkeypatch.setattr(
-        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
-    )
+# ── tts_normalize_step per-scene batching (2026-08-06, live run bad091eb) ──────
+
+
+def _tts_writing(n: int) -> dict:
+    return {"scp_id": "SCP-999", "scenes": [{"scene_num": i + 1, "narration": f"원본 {i + 1}."} for i in range(n)]}
+
+
+async def test_tts_normalize_step_makes_one_call_per_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    calls = []
 
     async def call(rendered, s):
-        payload = {
-            "scenes": [
-                {"scene_num": 1, "narration": "정규화 첫째."},
-                {"scene_num": 1, "narration": "정규화 둘째."},
-            ]
-        }
-        return json.dumps(payload), {}, "stop"
+        n = _requested_scene(rendered)
+        calls.append(n)
+        # one scene's payload per call — the whole point of the batching
+        return f"scenes:\n  - scene_num: {n}\n    narration: 정규화 {n}.\n", {}, "stop"
 
-    writing = {
-        "scenes": [
-            {"scene_num": 1, "narration": "원본 첫째."},
-            {"scene_num": 2, "narration": "원본 둘째."},
-        ]
-    }
+    result = await chain.tts_normalize_step(_tts_writing(8), "guide", None, call)
+    assert sorted(calls) == list(range(1, 9))
+    assert len(result["scenes"]) == 8  # aggregate count == len(original_scenes)
+
+
+async def test_tts_normalize_step_keeps_scene_order_when_calls_finish_out_of_order(monkeypatch):
+    """The calls run concurrently, so completion order is not argument order —
+    aggregation must key on position, never on arrival (the writing_step trap)."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    writing = _tts_writing(5)
+    completed = []
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        await asyncio.sleep((len(writing["scenes"]) - n) * 0.01)  # the LAST scene answers first
+        completed.append(n)
+        # a model normalizing one scene in isolation says "1" whatever it was asked
+        return json.dumps({"scenes": [{"scene_num": 1, "narration": f"정규화 {n}."}]}), {}, "stop"
+
     result = await chain.tts_normalize_step(writing, "guide", None, call)
-    assert result["scenes"][0]["narration"] == "정규화 첫째."
-    assert result["scenes"][0]["scene_num"] == 1  # original scene_num preserved
-    assert result["scenes"][1]["narration"] == "정규화 둘째."
-    assert result["scenes"][1]["scene_num"] == 2
+    assert completed == [5, 4, 3, 2, 1], "calls did not interleave; the ordering assert below is vacuous"
+    assert [scene["narration"] for scene in result["scenes"]] == [f"정규화 {n}." for n in range(1, 6)]
+    # scene_num identity comes from the ORIGINAL scene, never from the model's echo
+    assert [scene["scene_num"] for scene in result["scenes"]] == [1, 2, 3, 4, 5]
+    assert [scene["display_narration"] for scene in result["scenes"]] == [f"원본 {n}." for n in range(1, 6)]
+
+
+async def test_tts_normalize_step_rejects_one_scenes_empty_narration(monkeypatch):
+    """Scene 3 comes back blank while its siblings are fine — the per-scene
+    validation must still fail the stage, exactly as the whole-script parse did."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        narration = "   " if n == 3 else f"정규화 {n}."
+        return json.dumps({"scenes": [{"scene_num": n, "narration": narration}]}), {}, "stop"
+
+    with pytest.raises(ValueError, match=r"scene\[3\] has empty narration"):
+        await chain.tts_normalize_step(_tts_writing(4), "guide", None, call)
+
+
+async def test_tts_normalize_step_rejects_one_malformed_scene(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+
+    async def call(rendered, s):
+        n = _requested_scene(rendered)
+        scene = "not-a-mapping" if n == 2 else {"scene_num": n, "narration": f"정규화 {n}."}
+        return json.dumps({"scenes": [scene]}), {}, "stop"
+
+    with pytest.raises(ValueError, match="malformed scene"):
+        await chain.tts_normalize_step(_tts_writing(3), "guide", None, call)
+
+
+async def test_tts_normalize_step_rejects_a_multi_scene_response(monkeypatch):
+    """A per-scene call answering for more than its own scene is the failure the
+    old whole-script "expected N scenes, got M" guard caught, now per call."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": [{"scene_num": 1, "narration": "가."}, {"scene_num": 2, "narration": "나."}]}), {}, "stop"
+
+    with pytest.raises(ValueError, match="must return exactly 1 scene, got 2"):
+        await chain.tts_normalize_step(_tts_writing(2), "guide", None, call)
 
 
 async def test_tts_normalize_step_falls_back_per_scene_on_sentence_count_mismatch(monkeypatch):
     # Scene 1's normalized text adds a sentence boundary -> keep original.
     # Scene 2 normalizes cleanly -> accept it. One bad scene must not fail the rest.
-    monkeypatch.setattr(
-        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
-    )
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
 
     async def call(rendered, s):
-        payload = {
-            "scenes": [
-                {"scene_num": 1, "narration": "첫 문장. 추가된 문장."},
-                {"scene_num": 2, "narration": "정규화된 둘째 문장."},
-            ]
-        }
-        return json.dumps(payload), {}, "stop"
+        narration = "첫 문장. 추가된 문장." if _requested_scene(rendered) == 1 else "정규화된 둘째 문장."
+        return json.dumps({"scenes": [{"scene_num": 1, "narration": narration}]}), {}, "stop"
 
     writing = {
         "scenes": [
