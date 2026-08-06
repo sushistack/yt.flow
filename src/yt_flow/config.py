@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     comfyui_crash_recovery_poll_sec: float = Field(15.0, gt=0)
     comfyui_crash_recovery_timeout_sec: float = Field(300.0, gt=0)
 
+    # Read timeout for the /system_stats health probe. ComfyUI's server is
+    # single-threaded on the GPU: while it executes a prompt it does not answer
+    # /system_stats at all. Measured 2026-08-06 (run fdd69699): 28/28 prompts
+    # succeeded at ~20s each, yet the old 5s probe timeout misread the
+    # healthy-but-busy server as crashed and stalled the image stage after
+    # 1/68 shots. So this must tolerate at least one full generation. Crash
+    # detection does NOT depend on it — a dead server fails at connect
+    # (5s, see comfyui_client.HEALTH_CONNECT_TIMEOUT), not at read.
+    comfyui_health_read_timeout_sec: float = Field(120.0, gt=0)
+
     # Per-generation poll budget for submit_and_fetch*. Measured 2026-08-04 on
     # RX 9060 XT / ROCm: a cold character card (SDXL + LoRA + IPAdapter +
     # CLIPVision + InspyrenetRembg) completes at ~400s. The old hardcoded 180s

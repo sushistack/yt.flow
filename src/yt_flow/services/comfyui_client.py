@@ -24,6 +24,11 @@ from yt_flow.config import Settings
 CONNECT_ATTEMPTS = 3
 CONNECT_RETRY_DELAY = 2.0
 
+# Health probe: a *dead* server refuses the TCP connection, so crash detection
+# lives entirely in the connect timeout. The read timeout is the long,
+# configurable one (see Settings.comfyui_health_read_timeout_sec).
+HEALTH_CONNECT_TIMEOUT = 5.0
+
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
@@ -70,8 +75,18 @@ async def check_health(base_url: str) -> None:
     ``GET /system_stats`` with the same bounded transport retry as prompt
     submission. Raises :class:`ComfyUIError` on final failure so callers can
     fail fast without submitting anything.
+
+    A slow answer is not a crash: ComfyUI is single-threaded on the GPU and
+    stops serving ``/system_stats`` while a prompt runs (~20s/generation,
+    measured run fdd69699). So the probe uses a short connect timeout — a real
+    crash means connection refused / no listener, which still fails promptly —
+    and a long, configurable read timeout.
     """
-    async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(5.0)) as client:
+    timeout = httpx.Timeout(
+        Settings().comfyui_health_read_timeout_sec,  # type: ignore[call-arg]
+        connect=HEALTH_CONNECT_TIMEOUT,
+    )
+    async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
         try:
             resp = await _request_with_retry(lambda: client.get("/system_stats"))
             resp.raise_for_status()
