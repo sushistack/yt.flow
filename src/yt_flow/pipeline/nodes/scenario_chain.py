@@ -60,6 +60,20 @@ _VALID_MOVEMENT_MODES = {"anchored", "drift", "enter", "exit", "cross", "approac
 _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
+# Stand-in when a writing scene reaches image work without a `location`. Both
+# consumers (visual_breakdown's prompt variable, _fallback_prompt) share it so
+# they can't disagree: the strict one used to hard-index and killed live run
+# cd2f1fb8 (SCP-999) with a bare KeyError while the other already degraded fine.
+_DEFAULT_LOCATION = "an unmarked containment area"
+# Same story for `color_palette`/`atmosphere`: visual_breakdown hard-indexed both
+# on the lines next to `location`, so the identical KeyError was one output
+# variance away. The atmosphere text is the one `_fallback_prompt` already used.
+_DEFAULT_COLOR_PALETTE = "desaturated grey, cold fluorescent white"
+_DEFAULT_ATMOSPHERE = "tense silence"
+# Writing fields the image stages consume directly, all three marked REQUIRED by
+# `scenario/writing` — absence is model variance, not a prompt-variant gap, so it
+# earns the one corrective retry (see writing_step's parse).
+_REQUIRED_WRITING_VISUAL_FIELDS = ("location", "color_palette", "atmosphere")
 
 # Story 8.18 R2: a single repeat stays legal — the prompt allows a continuous
 # beat; only the 3rd identical (position, depth) shot in a row is repaired.
@@ -1079,6 +1093,14 @@ async def writing_step(
             if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
                 raise ValueError(f"writing: scene[{idx + 1}] has empty narration")
             scene["narration"] = _normalize_freetext(scene["narration"])
+            # The fields the image stages consume directly, all REQUIRED by the prompt
+            # since it was repatriated from production — so absence is model variance,
+            # not a prompt-variant gap, and is worth the one corrective retry. Ungated
+            # (unlike `title`): no writing variant omits them. A scene still missing one
+            # after the retry degrades to the _DEFAULT_* stand-in rather than crashing.
+            for field in _REQUIRED_WRITING_VISUAL_FIELDS:
+                if not str(scene.get(field) or "").strip():
+                    raise ValueError(f"writing: scene[{idx + 1}] missing non-empty {field!r}")
             return scene
 
         # Per-scene re-roll: a truncated scene costs one small re-call, not the
@@ -1326,10 +1348,10 @@ async def visual_breakdown_step(
         "scenario/visual_breakdown",
         {
             "scene_num": scene["scene_num"],
-            "location": scene["location"],
+            "location": scene.get("location") or _DEFAULT_LOCATION,
             "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
-            "color_palette": scene["color_palette"],
-            "atmosphere": scene["atmosphere"],
+            "color_palette": scene.get("color_palette") or _DEFAULT_COLOR_PALETTE,
+            "atmosphere": scene.get("atmosphere") or _DEFAULT_ATMOSPHERE,
             "scp_visual_reference": frozen_descriptor,
             "entity_sheet": entity_sheet,
             "story_logline": story_logline,
@@ -1677,8 +1699,8 @@ async def tts_normalize_step(
 
 def _fallback_prompt(scene: dict) -> str:
     """Minimal prompt for a leading transition-only sentence with nothing to merge into."""
-    location = scene.get("location") or "an unmarked containment area"
-    atmosphere = scene.get("atmosphere") or "tense silence"
+    location = scene.get("location") or _DEFAULT_LOCATION
+    atmosphere = scene.get("atmosphere") or _DEFAULT_ATMOSPHERE
     return f"static wide shot, {location}, {atmosphere}, no visible subject"
 
 

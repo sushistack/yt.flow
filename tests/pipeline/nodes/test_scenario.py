@@ -228,7 +228,7 @@ async def test_batched_writing_output_satisfies_the_retry_scope_scene_num_guard(
     structure = [{"scene_num": i + 1, "act": "act", "synopsis": f"syn{i + 1}", "mood": "dread"} for i in range(4)]
 
     async def call(rendered, s):
-        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n", {}, "stop"
+        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     writing = await sc.writing_step("SCP-173", structure, "desc", "guide", "", FakeSettings(), call)
     assert [scene["scene_num"] for scene in writing["scenes"]] == [1, 2, 3, 4]

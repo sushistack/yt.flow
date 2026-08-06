@@ -250,6 +250,78 @@ async def test_writing_step_rejects_empty_narration(monkeypatch):
         await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
 
 
+_VISUALS = {"location": "underground containment chamber", "color_palette": "grey", "atmosphere": "tense"}
+
+
+@pytest.mark.parametrize("field", chain._REQUIRED_WRITING_VISUAL_FIELDS)
+@pytest.mark.parametrize("bad", ["__missing__", "", "   ", None])
+async def test_writing_step_rejects_missing_or_empty_visual_field(monkeypatch, field, bad):
+    """Live run cd2f1fb8 (SCP-999): one scene came back with no `location` and the
+    image stage died on a bare KeyError — `color_palette`/`atmosphere` sat on the
+    adjacent lines with the same hard index. All three are REQUIRED by the prompt,
+    so the model gets the one corrective retry rather than a silent fallback."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    calls = []
+
+    async def call(rendered, s):
+        calls.append(rendered)
+        scene = {"scene_num": 1, "narration": "문장 하나.", **_VISUALS}
+        if bad == "__missing__":
+            scene.pop(field)
+        else:
+            scene[field] = bad
+        return json.dumps({"scenes": [scene]}), {}, "stop"
+
+    with pytest.raises(ValueError, match=field):
+        await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+    assert len(calls) == 2  # initial + the one semantic-correction retry, then it gives up
+
+
+@pytest.mark.parametrize("field", chain._REQUIRED_WRITING_VISUAL_FIELDS)
+async def test_writing_step_visual_field_retry_feeds_the_error_back_and_accepts_the_fix(monkeypatch, field):
+    class CapturingPrompt:
+        def __init__(self):
+            self.errors = []
+
+        def compile(self, **kwargs):
+            self.errors.append(kwargs.get("parse_error", ""))
+            return "rendered"
+
+    captured = CapturingPrompt()
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: captured
+    )
+
+    async def call(rendered, s):
+        scene = {"scene_num": 1, "narration": "문장 하나.", **_VISUALS}
+        if len(captured.errors) < 2:  # omitted on the first attempt, corrected on the retry
+            scene.pop(field)
+        return json.dumps({"scenes": [scene]}), {}, "stop"
+
+    result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+    assert result["scenes"][0][field] == _VISUALS[field]
+    assert captured.errors[0] == ""
+    assert field in captured.errors[1]
+
+
+async def test_writing_step_passes_valid_visual_fields_through_unchanged(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    calls = []
+
+    async def call(rendered, s):
+        calls.append(rendered)
+        payload = {"scenes": [{"scene_num": 1, "narration": "문장 하나.", **_VISUALS}]}
+        return json.dumps(payload), {}, "stop"
+
+    result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
+    assert {k: result["scenes"][0][k] for k in _VISUALS} == _VISUALS
+    assert len(calls) == 1  # no corrective retry
+
+
 async def test_writing_step_collapses_embedded_newlines_in_narration(monkeypatch):
     """Live golden-set eval (Story 6.4) caught DeepSeek writing one sentence
     per physical line inside a YAML ``narration: |`` block literal — collapse
@@ -259,7 +331,7 @@ async def test_writing_step_collapses_embedded_newlines_in_narration(monkeypatch
     )
 
     async def call(rendered, s):
-        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n", {}, "stop"
+        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     result = await chain.writing_step("SCP-173", [{"scene_num": 1}], "desc", "guide", "", None, call)
     assert result["scenes"][0]["narration"] == "첫 문장. 둘째 문장."
@@ -297,7 +369,7 @@ async def test_writing_step_makes_one_call_per_scene(monkeypatch):
     async def call(rendered, s):
         n = _requested_scene(rendered)
         calls.append(n)
-        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n", {}, "stop"
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     result = await chain.writing_step("SCP-173", _structure(8), "desc", "guide", "", None, call)
     assert sorted(calls) == list(range(1, 9))
@@ -317,7 +389,7 @@ async def test_writing_step_preserves_scene_order_when_calls_finish_out_of_order
         completed.append(n)
         # a model answering one scene in isolation has no idea of its index — it
         # says "1" (or anything); the position it was asked for is the truth
-        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n", {}, "stop"
+        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     result = await chain.writing_step("SCP-173", structure, "desc", "guide", "", None, call)
     assert completed == [5, 4, 3, 2, 1], "test is void unless the calls really finished out of order"
@@ -336,7 +408,7 @@ async def test_writing_step_passes_neighbour_context_but_only_one_scene_to_write
         brief = variables["scene_structure"]
         n = _requested_scene(brief)
         seen[n] = json.loads(brief.split("\n", 1)[1])
-        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n", {}, "stop"
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
 
@@ -368,7 +440,7 @@ async def test_writing_step_still_rejects_empty_narration_per_scene(monkeypatch)
     async def call(rendered, s):
         n = _requested_scene(rendered)
         narration = "" if n == 2 else f"narr {n}."
-        return f"scenes:\n  - scene_num: {n}\n    narration: '{narration}'\n", {}, "stop"
+        return f"scenes:\n  - scene_num: {n}\n    narration: '{narration}'\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     with pytest.raises(ValueError, match=r"scene\[2\] has empty narration"):
         await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
@@ -386,7 +458,7 @@ async def test_writing_step_rerolls_only_the_truncated_scene(monkeypatch, tmp_pa
         attempts[n] = attempts.get(n, 0) + 1
         if n == 2 and attempts[n] == 1:
             return "scenes:\n  - narration: runaway", {"completion_tokens": 32768}, "length"
-        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n", {}, "stop"
+        return f"scenes:\n  - scene_num: 1\n    narration: narr {n}.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     result = await chain.writing_step("SCP-173", _structure(3), "desc", "guide", "", None, call)
     assert attempts == {1: 1, 2: 2, 3: 1}
@@ -767,6 +839,53 @@ async def test_visual_breakdown_step_threads_story_and_entity_context(monkeypatc
     assert "the discovery" in captured.kwargs["scene_role"]
     assert captured.kwargs["scp_id"] == "SCP-173"
     assert json.loads(captured.kwargs["cast_by_sentence"]) == {"1": cast_by_sentence[1]}
+
+
+@pytest.mark.parametrize(
+    "scene_extra",
+    [
+        {},
+        {"location": ""},
+        {"color_palette": ""},
+        {"atmosphere": ""},
+        {"location": "", "color_palette": "", "atmosphere": ""},
+    ],
+)
+async def test_visual_breakdown_step_survives_a_scene_with_no_visual_fields(monkeypatch, scene_extra):
+    """Live run cd2f1fb8 (SCP-999) died here on a bare KeyError. The stage must
+    degrade to the SAME fallbacks `_fallback_prompt` already uses, not crash."""
+    class CapturingPrompt:
+        kwargs: dict = {}
+
+        def compile(self, **kwargs):
+            CapturingPrompt.kwargs = kwargs
+            return "rendered"
+
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CapturingPrompt()
+    )
+
+    async def call(rendered, s):
+        payload = {"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "x", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}
+        ]}
+        return json.dumps(payload), {}, "stop"
+
+    scene = {"scene_num": 1, "atmosphere": "y", "color_palette": "z", "characters_present": [], **scene_extra}
+    result = await chain.visual_breakdown_step(
+        "SCP-173", scene, ["문장1."], {1: []}, "desc", "entity sheet", "logline", {}, None, call,
+    )
+    fallbacks = {
+        "location": chain._DEFAULT_LOCATION,
+        "color_palette": chain._DEFAULT_COLOR_PALETTE,
+        "atmosphere": chain._DEFAULT_ATMOSPHERE,
+    }
+    assert len(result) == 1
+    for field, fallback in fallbacks.items():
+        assert CapturingPrompt.kwargs[field] == (scene.get(field) or fallback)
+    # the same constants the lenient sibling site already degrades to
+    assert chain._DEFAULT_LOCATION in chain._fallback_prompt(scene)
+    assert (scene.get("atmosphere") or chain._DEFAULT_ATMOSPHERE) in chain._fallback_prompt(scene)
 
 
 # ── cast_decision_step (Story 8.10) ─────────────────────────────────────────
@@ -1659,7 +1778,7 @@ async def test_tts_normalize_step_collapses_embedded_newlines_in_narration(monke
     )
 
     async def call(rendered, s):
-        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n", {}, "stop"
+        return "scenes:\n  - scene_num: 1\n    narration: |\n      첫 문장.\n      둘째 문장.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. 둘째 문장."}]}
     result = await chain.tts_normalize_step(writing, "guide", None, call)
