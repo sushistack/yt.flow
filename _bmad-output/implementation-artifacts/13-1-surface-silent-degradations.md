@@ -4,6 +4,9 @@ epic: 13
 story: 1
 status: ready-for-dev
 created: 2026-08-03
+updated: 2026-08-08
+depends_on:
+  - 12-3-pass2-verdict-grounded-gate
 ---
 
 # Story 13.1: Surface Silent Degradations at Human Gates
@@ -41,15 +44,16 @@ so that I can distinguish a clean result from a fallback result before approving
    - Story 5.11's segmentation/`layered_fallback` path is historical only: Story 8.3 retired layered image generation and removed that runtime path. This story must not reintroduce segmentation, `background_path`, `character_path`, or `layered_fallback`. The stale frontend-only `layered_fallback` DTO/indicator is removed or replaced by the generic run-warning UI.
 
 4. **Warnings reach the human gate through existing contracts**
-   - Given warnings exist in checkpoint state, when a gate calls `interrupt()`, then its JSON-serializable payload is exactly `{"stage": stage, "warnings": [...], "warning_count": N}`.
+   - Given warnings exist in checkpoint state, when a gate calls `interrupt()`, then its JSON-serializable payload includes `{"stage": stage, "warnings": [...], "warning_count": N}`.
+   - Story 12.3 already adds `scenario_quality` to the scenario-gate payload when final review remains unresolved. The generic warning keys are additive: `gate_scenario` preserves `scenario_quality`, and gates with no existing stage-specific context retain only the base stage/warning keys.
    - The existing `gate_pending` SSE data uses the same `warnings` and `warning_count` keys, but no fifth SSE event type is introduced.
-   - `GET /runs/{id}/stages/{stage}/artifacts` includes `warnings: RunWarning[]` for every stage DTO, returning `[]` for legacy/no-warning states.
+   - `GET /runs/{id}/stages/{stage}/artifacts` includes `warnings: RunWarning[]` for every stage DTO, returning `[]` for legacy/no-warning states. Scenario artifacts continue returning `scenario_quality` independently.
    - No `Run` SQLModel column, migration, warning table, or second persistence source is added. The `runs` table remains a status/gate projection; LangGraph checkpoint state remains authoritative.
 
 5. **Gate UI makes degradation visible and actionable**
    - Given an artifact response has one or more warnings, when the Artifact Panel is shown, then its header displays a compact Korean badge such as `⚠ 경고 N건` and a scannable list with the warning message and available scene/shot/card identifiers.
    - The warning treatment uses neutral Zinc tokens (`border-border`, `bg-card`, `text-foreground`) plus icon + text + count (never color alone), no new icon dependency, and short Korean operator microcopy. Do not repurpose `status-running`, `status-awaiting`, `status-approved`, or `status-failed`; those colors retain their existing state meanings.
-   - The badge/list is additive: pending Approve/Reject controls, retry, editing, lightbox/media rendering, sidebar gate state, focus behavior, and `aria-current` remain unchanged. A warning is not a new gate state and does not replace pending/approved/rejected/failed styling.
+   - The badge/list is additive: the existing Story 12.3 `2차 검토 경고`, pending Approve/Reject controls, retry, editing, lightbox/media rendering, sidebar gate state, focus behavior, and `aria-current` remain unchanged. A run warning is not a new gate state and does not replace scenario-review evidence or pending/approved/rejected/failed styling.
    - On `gate_pending`, the current artifact data refreshes so warnings written by the just-completed stage appear without a manual page reload.
 
 6. **Resume, retry, and restart semantics are explicit**
@@ -60,7 +64,7 @@ so that I can distinguish a clean result from a fallback result before approving
 
 7. **Verification closes the old observability gap**
    - Backend tests force each covered degradation and assert all three facts together: fallback still succeeds, a structured warning is in checkpoint/node output, and the warning reaches gate/artifact payloads.
-   - Tests cover legacy state with no `run_warnings`, deterministic ordering/deduplication, warning-free happy/config-disabled/mock paths, exact gate payload changes, and full-restart reset.
+   - Tests cover legacy state with no `run_warnings`, deterministic ordering/deduplication, warning-free happy/config-disabled/mock paths, additive gate payload changes including `scenario_quality` preservation, and full-restart reset.
    - Frontend tests cover zero/one/multiple warnings, Korean accessible text, identifiers, gate controls remaining operable, and refresh after `gate_pending`.
    - Targeted suites, full backend regression, Ruff, frontend Vitest, and TypeScript build are green. No live GPU run is required for warning plumbing; do not fabricate live evidence. If a real existing checkpoint is used, record the command and observed warning payload.
 
@@ -87,19 +91,19 @@ so that I can distinguish a clean result from a fallback result before approving
   - [ ] Keep existing logger warnings and trace counters where useful; structured state is additive and is the gate-facing authority.
 
 - [ ] Task 4: Expose warnings through gates, SSE, and artifact DTOs (AC: 4, 6)
-  - [ ] Extend `gates._gate()` interrupt payload with accumulated warnings/count. Do not mutate warning state immediately before `interrupt()`; the gate only reads the persisted collection.
+  - [ ] Extend `gates._gate()` interrupt payload with accumulated warnings/count while preserving the existing scenario-only `scenario_quality` field. Do not mutate warning state immediately before `interrupt()`; the gate only reads persisted collections.
   - [ ] Extend `_consume()`'s existing `gate_pending` payload rather than adding an event type.
   - [ ] Add `warnings` to every `get_stage_artifacts()` response and every frontend `StageArtifacts` variant/shared base.
   - [ ] Preserve the four-event SSE convention and avoid changes to `Run`, database models, migrations, or `RunRead` unless implementation proves the existing artifact/gate path cannot meet the AC (escalate rather than silently creating dual authority).
 
-- [ ] Task 5: Replace the stale one-off frontend warning with generic gate warnings (AC: 3, 5)
+- [ ] Task 5: Replace the stale layered-fallback frontend warning with generic gate warnings (AC: 3, 5)
   - [ ] Add the shared `RunWarning` TypeScript type in `frontend/src/lib/api.ts` or `frontend/src/lib/types.ts` and remove stale `layered_fallback` DTO dependence. Render the backend's short Korean `message`; never promote raw exception/provider detail to primary UI text.
-  - [ ] Add a reusable warning summary inside `ArtifactPanel`: `⚠ 경고 N건`, short messages, identifiers, accessible semantics, existing status tokens, no icon package.
+  - [ ] Add a reusable warning summary inside `ArtifactPanel`: `⚠ 경고 N건`, short messages, identifiers, accessible semantics, existing status tokens, no icon package. Keep the existing `ScenarioQualityWarning` component and render both when both contracts are present.
   - [ ] Ensure `RunDetail` refetches artifacts after `gate_pending`; change logic only if the existing `run` state update does not already trigger the fetch.
   - [ ] Preserve all current gate, retry, editor, media, and lightbox behavior.
 
 - [ ] Task 6: Add cross-layer regression evidence (AC: 7)
-  - [ ] Domain/gate: warning shape, JSON serialization, legacy state, exact interrupt payload, deterministic merge/dedupe.
+  - [ ] Domain/gate: warning shape, JSON serialization, legacy state, additive interrupt payload with `scenario_quality` preservation, deterministic merge/dedupe.
   - [ ] Service: enrichment, special-pose/derived caps and failures, scenario-approval checkpoint merge, artifact DTO exposure, retry persistence, restart reset.
   - [ ] Pipeline: stock plate hit/miss/error, WhisperX success/fallback/mock, cast resolver success/failure/missing/malformed/fallback, relight success/failure/invalid output, hard RGBA failure unchanged.
   - [ ] Frontend: zero/one/multiple warnings, accessible Korean badge/list, controls remain functional, gate-pending refresh.
@@ -120,6 +124,8 @@ best-effort producer
 ```
 
 Do not add a warnings table, write warnings from pipeline nodes to the DB, or overload `gate_states`. Warnings describe output quality/provenance; they are not failures and not gate decisions.
+
+This spine is parallel to, not a replacement for, Story 12.3's `scenario_quality` contract. `scenario_quality` describes final scenario review/critic evidence from generation; `run_warnings` describes runtime fallback/degradation history across stages. Both remain checkpoint-owned and may appear together at the scenario decision point.
 
 `RunWarningCode` is the following exact `Literal` vocabulary; backend, frontend, and tests use these values without aliases:
 
@@ -154,8 +160,8 @@ The `stage` is the pipeline stage that owns/operator-reviews the condition, not 
   - Preserve: existing `str | None` return contract, non-fatal enrichment semantics, database rollback behavior, and callers with no run context.
 
 - `src/yt_flow/pipeline/gates.py`
-  - Current: `interrupt({"stage": stage})`, then validates the resumed decision and replaces the complete `gate_states` dict.
-  - Change: read warnings/count into the interrupt payload.
+  - Current: every gate payload contains `stage`; the scenario gate also includes `scenario_quality` when present, then validates the resumed decision and replaces the complete `gate_states` dict.
+  - Change: read warnings/count into the interrupt payload without removing stage-specific context.
   - Preserve: no side effects before interrupt, decision validation, and full-dict gate-state merge.
 
 - `src/yt_flow/pipeline/nodes/image.py`
@@ -179,8 +185,8 @@ The `stage` is the pipeline stage that owns/operator-reviews the condition, not 
   - Preserve: per-pair isolation, cache safety, concurrency bound, and original-sprite fallback.
 
 - `frontend/src/lib/api.ts`, `frontend/src/components/ArtifactPanel.tsx`, `frontend/src/pages/RunDetail.tsx`
-  - Current: stage DTO union and gate panel; a stale image-only `layered_fallback` indicator remains after backend retirement.
-  - Change: shared warnings DTO and generic warning summary/refetch behavior.
+  - Current: stage DTO union and gate panel; Story 12.3 already defines and renders `ScenarioQuality`, while a stale image-only `layered_fallback` indicator remains after backend retirement.
+  - Change: shared run-warnings DTO and generic warning summary/refetch behavior; preserve the scenario-quality DTO and warning block.
   - Preserve: same-origin API client, no ad-hoc fetches, Korean UI, two-column layout, and existing control lifecycle.
 
 ### Explicitly Out of Scope
@@ -203,6 +209,7 @@ The `stage` is the pipeline stage that owns/operator-reviews the condition, not 
 
 ### Previous Story and Git Intelligence
 
+- Story 12.3 is the direct delivery-path precedent. It added checkpoint-owned `scenario_quality`, scenario-gate interrupt context, `gate_pending` forwarding, durable scenario-artifact reload, explicit refresh on gate pending, and the accessible `2차 검토 경고` block. Reuse its checkpoint → gate/SSE → artifact → UI spine, but keep `run_warnings` semantically separate and additive.
 - Story 5.11 established per-item degradation metadata, artifact DTO propagation, and frontend warning rendering. Its review found three recurring mistakes to prevent here: losing the original error, undercounting attempts, and omitting `scene_num` from ambiguous warnings.
 - Story 8.3 later retired that entire segmentation/layered path. Its current architecture wins; remove stale frontend assumptions rather than resurrecting backend fields.
 - Stories 8.4/8.13 show cap overflow and swallowed card generation can produce empty-room output; name every skipped key and verify required artifacts after best-effort generation.

@@ -1369,6 +1369,8 @@ zoompan은 줌+팬만 가능하고(회전·패럴랙스 불가) 좌표 양자화
 
 AD-10은 "조용한 강등 금지"를 요구하지만 실제로는 여러 경로가 로그만 남기고 통과한다: cast 멤버의 카드가 없어 샷이 배경만으로 렌더되는 경로(8.13이 고친 `no character row for cast member ... skipping` ×10이 정확히 이 부류 — 고친 뒤에도 캡 초과분은 여전히 조용), 로케이션 플레이트 미스(생성 폴백), relight/harmonization 실패(8.7의 per-shot 예외 격리), 세그멘테이션 실패 플랫 폴백(5.11), 특수 포즈 캡 초과(8.4 `special_pose_max_per_run`), enrichment 400(8.15). 각 경로가 **런 단위 경고 레코드**를 쌓고 그것이 게이트 응답/UI에 노출되게 한다 — 런을 실패시키지 않는 비치명적 계약은 유지하고(그 설계는 옳다), "사람이 모른다"만 고친다. 3.5 게이트 컨트롤 UI에 경고 배지 추가. 신규 서비스 분리 없음(기존 state/artifact 경로에 필드 추가). (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+**Epic 12 회고 반영(2026-08-08)**: 12.3이 이미 시나리오 전용 `scenario_quality`를 checkpoint → gate interrupt → `gate_pending`/artifact → `ScenarioQualityWarning`으로 전달한다. 13.1의 범용 `run_warnings`는 이 계약을 대체하지 않고 **가산적으로** 같은 전달 축을 재사용해야 한다. 특히 scenario gate에서 `scenario_quality`를 보존하고 generic warnings를 함께 실어야 하며, UI도 두 경고 의미를 합치지 않는다.
+
 ### Story 13.2: 평가 축 확장 — 프레임/모션 축 추가
 
 현재 `eval_service`의 judge는 **나레이션 텍스트만** 채점한다(4.2의 3축: atmosphere/narrative_coherence/article_fidelity) — 즉 영상이 아무리 조잡해도 평가 점수는 변하지 않는다. Jay의 "품질 우선" 요구와 정면으로 어긋나는 갭. 추가할 축은 전부 규칙/도구 기반(LLM 판단 불필요): **libcom composite quality score**(8.16이 도입 시 캘리브레이션한 임계값 재사용 — 8.16 미착수 시 이 스토리는 나머지 축만), **모션 다양성/아키타입 커버리지**(11.2의 닫힌 enum 분포 — 연속 동일 모션 비율), **컷 정렬 오차**(11.4가 이미 추가한 룰 메트릭을 평가 축으로 승격). 채점 입력은 기존 런 산출물(합성 프레임/EffectSpec/타이밍)이라 GPU 재실행 불필요. (draft — 상세 스토리 파일은 create-story로 별도 생성)
@@ -1380,3 +1382,5 @@ AD-10은 "조용한 강등 금지"를 요구하지만 실제로는 여러 경로
 ### Story 13.4: A/B 승격 게이트 해제 — 품질튜닝 국면 진입
 
 2026-08-03 DEV MODE 전환(품질 게이팅 OFF, `PROMPT_POLICY.md` 배너)의 되돌림 스토리. 파이프라인이 완성되고 품질튜닝 국면에 들어갈 때: `PROMPT_POLICY.md` Rules 3/4의 SUSPENDED 해제, 6.12의 `YTFLOW_ALLOW_AB_GATE` 동결 해제, 6.10 median 게이트로 보류 후보 재평가, 13.2의 시각 축을 게이트에 포함. 6.12와 이 스토리의 관계: 6.12는 "동결한다", 13.4는 "해제한다" — 별개 스토리로 두는 이유는 해제 조건 판단(파이프라인 완성 정의)이 별도 의사결정이기 때문. **착수 조건**: Epic 8/11의 GPU 스토리가 닫히고 E2E 산출물이 Jay 기준을 통과한 뒤. (draft — 상세 스토리 파일은 create-story로 별도 생성)
+
+**Epic 12 회고 반영(2026-08-08)**: 12.2 결과는 Gemini가 한국어 문장과 Epic 4 judge를 함께 소유하므로 self-preference bias를 제거하지 않고 이동시켰다. 13.4가 promotion 권한을 복원하기 전, Gemini judge 유지 또는 DeepSeek judge 분리 중 하나를 실측 근거와 함께 명시적으로 결정해야 한다. 결정 없이 게이트 권한만 복원하는 것은 허용하지 않는다.

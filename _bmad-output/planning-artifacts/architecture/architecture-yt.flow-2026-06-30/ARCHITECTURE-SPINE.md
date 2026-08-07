@@ -7,7 +7,7 @@ paradigm: layered + pipes-and-filters
 scope: yt.flow Python/LangGraph SCP content pipeline — full system
 status: final
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-08-08
 binds: [F1, F2, F3, F4, F5, F6, F7]
 sources:
   - _bmad-output/planning-artifacts/prds/prd-yt.flow-2026-06-30/prd.md
@@ -34,7 +34,7 @@ graph TD
     frontend["frontend/\nReact SPA (served as static)"] -.->|HTTP| api
 ```
 
-Dependency direction is strictly downward. `pipeline/` nodes never import `db/`. `api/` never imports `pipeline/` directly — always through `services/`.
+Dependency direction is downward. `pipeline/` nodes never import `db/`. `api/` never imports `pipeline/` directly — always through `services/`. One scoped implementation exception exists: `pipeline/nodes/scenario_chain.py` uses `services.prompt_service` as the established Prompt Hub adapter. It may fetch/compile prompts through that seam, but it must not import orchestration, DB, SSE, or API behavior from `services/`.
 
 ## Invariants & Rules
 
@@ -42,7 +42,7 @@ Dependency direction is strictly downward. `pipeline/` nodes never import `db/`.
 
 - **Binds:** all modules
 - **Prevents:** pipeline nodes touching DB; API calling LangGraph directly
-- **Rule:** Import path must follow `api → services → (pipeline | db) → domain`. Any cross-layer import is forbidden.
+- **Rule:** Import path follows `api → services → (pipeline | db) → domain`. The only accepted upward dependency is the existing scenario-chain → `services.prompt_service` Prompt Hub seam. No other pipeline-to-service import is permitted; expanding or replacing this exception requires an explicit architecture decision.
 
 ### AD-2 — LangGraph state is the single source of truth
 
@@ -54,7 +54,7 @@ Dependency direction is strictly downward. `pipeline/` nodes never import `db/`.
 
 - **Binds:** F1 (FR-9), F5 (FR-29)
 - **Prevents:** custom polling gate nodes; gate state managed outside LangGraph; dual-write ambiguity on `gate_states`
-- **Rule:** Every gate node (in `gates.py`) calls `interrupt({"stage": stage_name})` and returns `{"gate_states": {stage: "pending"}}` as its state update — gate nodes are the sole writers of `gate_states` into `PipelineState`. On resume, `Command(resume="approved" | "rejected")` is passed; the gate node returns `{"gate_states": {stage: "approved" | "rejected"}}`. `services/` mirrors `gate_states` to the `runs` table only after receiving the LangGraph confirmation event — `services/` never writes `gate_states` independently. Graph topology is fixed: all 5 gate nodes always present, regardless of OQ-8 outcome.
+- **Rule:** Every gate node (in `gates.py`) calls `interrupt()` with a JSON-safe payload containing at least `{"stage": stage_name}` and returns `{"gate_states": {stage: "pending"}}` as its state update — gate nodes are the sole writers of `gate_states` into `PipelineState`. Stage-specific decision context is additive: the scenario gate includes `scenario_quality` when present so unresolved final review evidence reaches the operator. On resume, `Command(resume="approved" | "rejected")` is passed; the gate node returns `{"gate_states": {stage: "approved" | "rejected"}}`. `services/` mirrors `gate_states` to the `runs` table only after receiving the LangGraph confirmation event — `services/` never writes `gate_states` independently. Graph topology is fixed: all 5 gate nodes are always present.
 
 ### AD-4 — `services/` owns DB sync and SSE fan-out
 
@@ -66,7 +66,7 @@ Dependency direction is strictly downward. `pipeline/` nodes never import `db/`.
 
 - **Binds:** F1 (FR-2, FR-3), domain/state.py
 - **Prevents:** per-scene single-image oversimplification; fixed sentence-per-shot assumptions; `image_node` branching on unpopulated camera fields
-- **Rule:** `ShotData.sentence_indices: list[int]` maps each shot to one or more narration sentences (0-based). `scenario_node` prompts DeepSeek V4 as Director — shot boundaries are determined by narrative/camera shift, not sentence count. One sentence may span multiple shots (split); multiple sentences may share one shot (merge). `scenario_node` is **required** to populate `camera_angle` and `camera_movement` for every `ShotData` it emits; `None` is only permitted when the LLM explicitly omits them. `image_node` must handle `None` camera fields gracefully (use defaults, never crash).
+- **Rule:** `ShotData.sentence_indices: list[int]` maps each shot to one or more narration sentences (0-based). The scenario chain uses DeepSeek for research/structure/visual planning and Gemini for Korean writing plus runtime review/critic; shot boundaries are determined by narrative/camera shift, not sentence count. One sentence may span multiple shots (split); multiple sentences may share one shot (merge). `scenario_node` is **required** to populate `camera_angle` and `camera_movement` for every `ShotData` it emits; `None` is only permitted when the LLM explicitly omits them. `image_node` must handle `None` camera fields gracefully (use defaults, never crash).
 
 ### AD-6 — A/B testing is two independent runs linked by `ab_pair_id`
 
@@ -96,7 +96,7 @@ Dependency direction is strictly downward. `pipeline/` nodes never import `db/`.
 
 - **Binds:** F1, F5, F6, deployment
 - **Prevents:** undiscoverable workspace path; silent Langfuse failures blocking pipeline
-- **Rule:** `workspace/` root is configurable via `YTFLOW_WORKSPACE_PATH` (default: `./workspace`). Langfuse tracing failures are non-fatal — log the error and continue; pipeline must not fail due to observability unavailability. ComfyUI reachability is checked eagerly at `image_node` entry, not at app startup.
+- **Rule:** `workspace/` root is configurable via `YTFLOW_WORKSPACE_PATH` (default: `./workspace`). Langfuse tracing failures are non-fatal — log the error and continue; pipeline must not fail due to observability unavailability. Non-fatal content degradation must not masquerade as a clean result: checkpoint-owned warning context is delivered through the existing gate/SSE/artifact path. Epic 12 implements this for unresolved scenario pass-2 review via `scenario_quality`; broader run warnings are additive. ComfyUI reachability is checked at image execution, not at app startup.
 
 ## Consistency Conventions
 
@@ -120,14 +120,15 @@ Dependency direction is strictly downward. `pipeline/` nodes never import `db/`.
 | Name | Version |
 |------|---------|
 | Python | 3.12 |
-| LangGraph | 1.2.6 |
-| langgraph-checkpoint-sqlite | separate package; provides `AsyncSqliteSaver` at `langgraph.checkpoint.sqlite.aio` |
-| FastAPI | 0.115.x |
-| SQLModel | 0.0.38 |
+| LangGraph | 1.2.7 |
+| langgraph-checkpoint-sqlite | 3.1.0; provides `AsyncSqliteSaver` at `langgraph.checkpoint.sqlite.aio` |
+| FastAPI | 0.138.2 |
+| SQLModel | 0.0.39 |
 | Alembic | 1.x |
 | Langfuse (self-hosted) | latest stable |
 | langfuse Python SDK | 4.x (4.12.0+) |
 | DeepSeek V4 | via OpenAI-compatible client |
+| Gemini | OpenAI-compatible REST; writing, runtime review/critic, and Epic 4 judge |
 | Qwen TTS | cloud API (latest) |
 | ComfyUI | local HTTP, version pinned in config |
 | React | 18.x |
@@ -145,7 +146,7 @@ yt.flow/
 │   │   ├── graph.py          # StateGraph construction + AsyncSqliteSaver wiring
 │   │   ├── gates.py          # gate nodes (separate StateGraph nodes calling interrupt())
 │   │   └── nodes/            # pure stage nodes — testable without LangGraph runtime
-│   │       ├── scenario.py   # DeepSeek V4 Director → scenes[]
+│   │       ├── scenario.py   # DeepSeek planning + Gemini prose/review → scenes[]
 │   │       ├── image.py      # shots → ComfyUI → ShotData.image_path
 │   │       ├── tts.py        # narration → Qwen TTS → audio_path + word_timings
 │   │       ├── subtitle.py   # forced alignment → subtitle_path
@@ -197,7 +198,7 @@ graph LR
     gate_video -->|rejected| video
 ```
 
-## PipelineState (OQ-7 resolved)
+## PipelineState (OQ-7 resolved, abridged)
 
 ```python
 # domain/state.py
@@ -233,7 +234,12 @@ class PipelineState(TypedDict):
     gate_states: dict[str, str]   # stage → pending|approved|rejected|n/a
     prompt_variant: str | None    # "A" | "B" | None
     error: str | None
+    scenario_quality: NotRequired[ScenarioQuality | None]
+    story_archetype: NotRequired[StoryArchetype | None]
+    story_archetype_fallback_used: NotRequired[bool]
 ```
+
+The executable schema in `src/yt_flow/domain/state.py` is authoritative and contains additional fields introduced by later epics. Epic 12's optional fields are checkpoint-safe for older runs: `scenario_quality` carries final review/critic evidence, while `story_archetype` and `story_archetype_fallback_used` make source-grounded narrative selection observable.
 
 ## runs Table (OQ-3 resolved)
 

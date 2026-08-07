@@ -2,7 +2,7 @@
 title: yt.flow — Python/LangGraph SCP Content Pipeline
 status: final
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-08-08
 ---
 
 ## Problem Statement
@@ -49,7 +49,7 @@ Each stage is a discrete LangGraph node. Node boundaries are the unit of observa
 
 | ID | Requirement |
 |----|-------------|
-| FR-1 | Accept SCP article text as input and generate a structured scene scenario via DeepSeek V4 |
+| FR-1 | Accept SCP article text as input and generate a structured scene scenario through the multi-stage scenario chain: DeepSeek owns research/structure/visual planning and TTS normalization; Gemini owns Korean writing, scene repair, and runtime review/critic. Provider errors are explicit and do not silently fall back across providers. |
 | FR-2 | Generate an image prompt per scene from the scenario via DeepSeek V4 |
 | FR-3 | Submit image prompts to ComfyUI local HTTP API and retrieve generated images |
 | FR-4 | Generate TTS audio per scene via Qwen TTS (latest) |
@@ -86,7 +86,7 @@ Existing `.tmpl` files from `yt.pipe/templates/` are migrated to Langfuse Prompt
 | ID | Requirement |
 |----|-------------|
 | FR-18 | Given the same SCP input, execute the pipeline with prompt variant A and variant B |
-| FR-19 | LLM-as-judge evaluation: score each output against SCP-specific criteria (atmosphere, narrative coherence, article fidelity) |
+| FR-19 | LLM-as-judge evaluation: score each output against SCP-specific criteria (atmosphere, narrative coherence, article fidelity). The current judge is the config-pinned Gemini judge endpoint; provider/model identity is recorded for later bias review. |
 | FR-20 | Rule-based evaluation: score each output against structural metrics (scene count, subtitle sync, audio length variance) |
 | FR-21 | Combined evaluation result stored in Langfuse as a scored comparison trace |
 | FR-22 | A/B result retrievable via API |
@@ -145,11 +145,11 @@ React SPA served by FastAPI (static build). Each stage pauses at completion and 
 | Observability overhead | Langfuse tracing adds ≤ 10% to total run time |
 | Storage | SQLite flat file; no external DB |
 | Authentication | None — local-only deployment, single operator |
-| External dependencies | DeepSeek V4 API, Qwen TTS API, ComfyUI (local HTTP), Langfuse (homelab) |
+| External dependencies | DeepSeek V4 API, Gemini API, Qwen TTS API, ComfyUI (local HTTP), Langfuse (homelab) |
 | Error visibility | Any run failure surfaces the failed node, inputs, and exception in the Langfuse trace |
 | Resume granularity | Resume at node level (not scene level) — a mid-stage failure (e.g., TTS fails on scene 8 of 20) restarts that entire stage; accepted trade-off for implementation simplicity |
 | Data retention | Runs older than 30 days are eligible for manual cleanup; no automatic deletion. Artifact files (images, audio, video) are not auto-purged |
-| Model versioning | DeepSeek and Qwen TTS model identifiers must be pinned in config (not hardcoded); updating a model requires a config change, not a code change |
+| Model versioning | DeepSeek, Gemini writing/judge, and Qwen TTS model identifiers must be pinned in config (not hardcoded); updating a model requires a config change, not a code change |
 | Performance bottleneck | The 2-hour ceiling is dominated by ComfyUI image generation time, not LLM or TTS API calls |
 | Human gate latency | The 2-hour NFR covers automated processing time only; human approval wait time is excluded |
 | UI technology | React SPA; FastAPI serves the static build under `/app`; no separate web server |
