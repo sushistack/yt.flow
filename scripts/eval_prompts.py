@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from langfuse import Evaluation  # noqa: E402
 
 from yt_flow.config import Settings  # noqa: E402
+from yt_flow.domain.state import STORY_ARCHETYPE_FALLBACK, STORY_ARCHETYPES  # noqa: E402
 from yt_flow.pipeline.nodes import scenario as scenario_module  # noqa: E402
 from yt_flow.pipeline.nodes.scenario import _call_deepseek, _call_gemini, scenario_node  # noqa: E402
 from yt_flow.pipeline.nodes.scenario_chain import (  # noqa: E402
@@ -333,7 +334,33 @@ async def _score_evaluator(*, input, output, expected_output=None, metadata=None
     evals = [Evaluation(name=axis, value=getattr(axis_scores, axis)) for axis in AXES]
     evals.append(Evaluation(name="total", value=axis_scores.total))
     evals.extend(Evaluation(name=name, value=value) for name, value in _rule_metrics(scenes).items())
+    evals.extend(_archetype_evaluations(output))
     return evals
+
+
+# Story 12.4: the selected archetype, observed — informational in the current DEV
+# MODE, deliberately NOT part of winner selection (one episode correctly has ONE
+# template, so a different choice is not a regression).
+_CATEGORICAL_METRICS = ("story_archetype",)
+
+
+def _archetype_evaluations(output: dict) -> list[Evaluation]:
+    """Categorical selection + the two deterministic booleans (AC6).
+
+    ``story_archetype_fallback_used`` is not redundant with ``_valid``: validity is
+    measured AFTER resolution, so it is always true and on its own would hide a
+    selector that has silently stopped selecting.
+    """
+    archetype = output.get("story_archetype")
+    return [
+        Evaluation(name="story_archetype", value=str(archetype or ""), data_type="CATEGORICAL"),
+        Evaluation(name="story_archetype_valid", value=archetype in STORY_ARCHETYPES, data_type="BOOLEAN"),
+        Evaluation(
+            name="story_archetype_fallback_used",
+            value=bool(output.get("story_archetype_fallback_used")),
+            data_type="BOOLEAN",
+        ),
+    ]
 
 
 # ── per-item results + label evaluation ─────────────────────────────────────
@@ -347,6 +374,9 @@ class ItemResult:
     axes: dict[str, float] = field(default_factory=dict)
     total: float | None = None
     rule_metrics: dict[str, float] = field(default_factory=dict)
+    # Story 12.4 — the categorical selection lives in its own field, never in the
+    # numeric `rule_metrics` dict that median/delta arithmetic iterates over.
+    story_archetype: str | None = None
     artifact_path: str | None = None
     parsed_state: object = None
     # Populated only by aggregate_runs (Story 6.10) — a single run leaves the
@@ -404,10 +434,17 @@ def _to_item_result(item_result) -> ItemResult:
         # real Langfuse SDK swallows an evaluator exception into evaluations=[] for the item
         return ItemResult(scp_id, failed=True, error="evaluator produced no scores", parsed_state=output)
     axes = {ax: by_name[ax].value for ax in AXES}
-    rule_metrics = {name: ev.value for name, ev in by_name.items() if name not in AXES and name != "total"}
+    rule_metrics = {
+        name: ev.value for name, ev in by_name.items()
+        if name not in AXES and name != "total" and name not in _CATEGORICAL_METRICS
+    }
+    archetype = by_name["story_archetype"].value if "story_archetype" in by_name else None
     # parsed_state carries `stages` (Story 6.3 token/cache fields) through to write_artifact
     # even on a pass — evidence used to be discarded here for every non-failing item.
-    return ItemResult(scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics, parsed_state=output)
+    return ItemResult(
+        scp_id, failed=False, axes=axes, total=by_name["total"].value, rule_metrics=rule_metrics,
+        story_archetype=archetype or None, parsed_state=output,
+    )
 
 
 def evaluate_label(
@@ -511,7 +548,13 @@ async def _run_stage_chain(
         current_stage = "research"
         research = await research_step(scp_id, scp_text, format_guide, s, _recording_call, label=chain_label)
         current_stage = "structure"
-        structure = await structure_step(scp_id, research, format_guide, s, _recording_call, label=chain_label)
+        structure = await structure_step(
+            scp_id, research, format_guide, s, _recording_call,
+            # Same resolution rule as scenario_node: research owns the choice, this
+            # stage only obeys it (Story 12.4).
+            story_archetype=research.get("story_archetype") or STORY_ARCHETYPE_FALLBACK,
+            label=chain_label,
+        )
         current_stage = "writing"
         writing = await writing_step(
             scp_id, structure, research["frozen_descriptor"], format_guide, "", s,
@@ -634,9 +677,14 @@ def aggregate_runs(runs: list[list[ItemResult]]) -> list[ItemResult]:
             ))
             continue
         axes = {ax: statistics.median(r.axes[ax] for r in successes) for ax in AXES}
+        # Story 12.4: the categorical selection is REPORTED (mode of the successful
+        # reps, ties resolving to first-observed), never averaged — `statistics.mode`
+        # on strings, deliberately nowhere near the median/delta arithmetic above.
+        observed = [r.story_archetype for r in successes if r.story_archetype]
         aggregated.append(ItemResult(
             scp_id, failed=False,
             axes=axes, total=statistics.median(r.total for r in successes if r.total is not None),
+            story_archetype=statistics.mode(observed) if observed else None,
             artifact_path=artifact, n_runs=reps, n_failed_runs=n_fail, failed_run_reasons=reasons,
             run_results=group,
         ))
@@ -790,6 +838,12 @@ def print_report(label: str, results: list[ItemResult]) -> None:
         metrics = ", ".join(f"{k}={v:.2f}" for k, v in r.rule_metrics.items())
         print(f"  {r.scp_id}: {axes}  total={r.total:.2f}")
         print(f"    rules: {metrics}")
+        if r.story_archetype:
+            # Observed distribution, not a score. Three golden SCPs cannot cover four
+            # archetypes and are not asserted to — exhaustiveness is unit-tested.
+            observed = [x.story_archetype for x in r.run_results if x.story_archetype]
+            print(f"    story_archetype: {r.story_archetype}"
+                  + (f" (observed: {', '.join(observed)})" if len(observed) > 1 else ""))
 
 
 def write_profile_metadata(run_dir: Path, profile: str, authority_note: str | None) -> Path:

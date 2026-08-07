@@ -47,7 +47,7 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     writing_scene_repair_step,
     writing_step,
 )
-from yt_flow.domain.state import PipelineState
+from yt_flow.domain.state import STORY_ARCHETYPE_FALLBACK, PipelineState
 from yt_flow.services.prompt_service import get_prompt, get_prompt_with_fallback
 
 logger = logging.getLogger(__name__)
@@ -552,8 +552,21 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         research = await research_step(
             state["scp_id"], state["scp_text"], format_guide, s, _call_deepseek, label=label, usage_sink=usage,
         )
+        # Resolved exactly once, here, and reused unchanged by structure, pass 1,
+        # scene-scoped repair and the full-rewrite fallback — none of which
+        # re-select (Story 12.4 AC2). `.get` rather than `[...]`: research_step
+        # always resolves the key, but a stubbed/older research seam must degrade
+        # to production's pre-12.4 template, not crash the stage. A seam that stops
+        # selecting IS a selector failure, so it sets the flag too — otherwise the
+        # one signal AC6 added to expose that drift reads clean while it happens.
+        story_archetype = research.get("story_archetype") or STORY_ARCHETYPE_FALLBACK
+        archetype_fallback_used = (
+            bool(research.get("story_archetype_fallback_used")) or not research.get("story_archetype")
+        )
         stages.append({
             "name": "research", "latency_ms": _ms(t0),
+            "story_archetype": story_archetype,
+            "story_archetype_fallback_used": archetype_fallback_used,
             **_provider_fields("research", s), **_trace_fields(1, "none", []), **_usage_totals(usage),
         })
 
@@ -563,10 +576,12 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         # single `_call_stage_with_retry` call re-rolls it whole, which is where
         # every stage's re-roll now lives (see reroll_on_truncation).
         structure = await structure_step(
-            state["scp_id"], research, format_guide, s, _call_deepseek, label=label, usage_sink=usage,
+            state["scp_id"], research, format_guide, s, _call_deepseek,
+            story_archetype=story_archetype, label=label, usage_sink=usage,
         )
         stages.append({
             "name": "structure", "latency_ms": _ms(t0),
+            "story_archetype": story_archetype,
             **_provider_fields("structure", s), **_trace_fields(1, "none", []), **_usage_totals(usage),
         })
 
@@ -681,6 +696,8 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         return {
             "scenes": scenes, "current_stage": "scenario", "error": None,
             "scenario_quality": quality,
+            "story_archetype": story_archetype,
+            "story_archetype_fallback_used": archetype_fallback_used,
         }
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(stages=stages, total_latency_ms=_ms(t0_total), error=exc)

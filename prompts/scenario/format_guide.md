@@ -24,13 +24,15 @@ Every SCP video must open with a hook within the first 15 seconds. Choose one:
 
 ### B. Progressive Disclosure Pattern
 
-Never reveal everything at once. Structure information in 3 waves:
+Never reveal everything at once. Information arrives in 3 waves. This is a **retention
+principle, not a fixed act order** — each archetype guide realizes it differently (which
+wave opens the episode, and what counts as "the surface", is the archetype's call):
 
-| Wave | Content | Timing |
-|------|---------|--------|
-| **Wave 1: The Surface** | Basic appearance, classification, what it seems to be | Act 1 (first 15%) |
-| **Wave 2: The Depth** | True anomalous properties, containment details, incident logs | Act 2-3 (middle 70%) |
-| **Wave 3: The Abyss** | Unresolved mysteries, [REDACTED] implications, what the Foundation doesn't know | Act 4 (final 15%) |
+| Wave | Content | Placement |
+|------|---------|-----------|
+| **Wave 1: The Surface** | What it seems to be — appearance, the first record, the mundane framing | opening beat, kept short |
+| **Wave 2: The Depth** | True anomalous properties, containment details, the incident/log/testimony body | the middle, the bulk of the runtime |
+| **Wave 3: The Abyss** | Unresolved mysteries, [REDACTED] implications, what the Foundation doesn't know | closing beat, kept short |
 
 **SCP-specific techniques:**
 - Use [REDACTED] and [DATA EXPUNGED] as narrative tension tools — mention them early, explore implications later
@@ -92,19 +94,23 @@ Match scene count to target video duration:
 
 ---
 
-### F. Act Structure & Ratios (INCIDENT-FIRST)
+### F. Act Structure — 공통 원칙 (구체적 순서는 아키타입 가이드가 정함)
 
-Use an incident-first 4-act structure. Start with WHAT HAPPENED, not WHAT IT IS. The entity's identity is a mystery that unfolds gradually.
+> ⚠️ 이 가이드는 **어떤 아키타입에도 공통인 원칙**만 정의합니다. 이 에피소드의 실제 비트 순서,
+> 시점, 정체 공개 타이밍, 결말 계약은 Stage 2에 주입되는 **선택된 아키타입 가이드**
+> (`scenario/archetypes/<story_archetype>`)가 유일한 권위입니다. 아래 원칙과 그 가이드가 충돌하는
+> 것처럼 보이면 **가이드를 따르세요.**
 
-| Act | Purpose | Ratio | Key Deliverable |
-|-----|---------|-------|-----------------|
-| **Act 1: 사건으로 시작** | 가장 충격적인 사건/피해로 시작. 개체 이름/등급 언급 안 함 | ~15% | Hook + "무슨 일이 일어났는가" |
-| **Act 2: 미스터리 확장** | 맥락 추가. 격리 절차로 위험성 암시. 정체 아직 미공개 | ~30% | "왜 이런 일이?" + 간접적 공포 |
-| **Act 3: 정체 공개 + 깊은 공포** | 본격적으로 개체 설명 + 추가 사건/실험 로그 | ~40% | 핵심 능력 + 가장 무서운 디테일 |
-| **Act 4: 미해결 미스터리** | 재단도 모르는 것, 열린 결말, 여운 | ~15% | 미해결 질문 + closing hook |
+모든 아키타입이 지키는 것:
 
-**핵심:**
-- ❌ 위키 순서: 분류 → 설명 → 격리 → 사건
-- ✅ 유튜브 순서: 사건 → 미스터리 → 정체 공개 → 미해결
-- 시청자는 "이게 뭔지"가 아니라 "무슨 일이 일어났는지"에 먼저 반응함
-- 개체의 정체를 미스터리로 활용하면 Act 3까지의 retention이 극적으로 올라감
+| 원칙 | 내용 |
+|------|------|
+| **위키 순서 금지** | 분류 → 설명 → 격리 → 사건 순서로 열지 않습니다. 등급/분류 낭독으로 시작하지 않습니다. |
+| **단계적 공개** | 정보를 한 번에 쏟지 않습니다. 무엇을 언제 공개할지는 아키타입 가이드가 정합니다. |
+| **정체는 자원** | 개체가 무엇인지는 소비할 자원입니다 — 첫 씬에 다 쓰지 말고 계획된 지점에서 씁니다. |
+| **격리 절차는 장치** | 설명 대상이 아니라 "이렇게까지 해야 하는 이유"를 암시하는 도구입니다. |
+| **열린 결말** | 마지막 비트는 여운을 남깁니다. *무엇을* 열어둘지는 아키타입의 결말 계약을 따릅니다. |
+| **분량 배분** | 오프닝 비트는 짧게(~15%), 중심 비트에 가장 큰 분량을, 마지막 비트는 짧게(~15%). |
+
+- 시청자는 "이게 뭔지"보다 "무슨 일이 일어났는지"에 먼저 반응하지만, 그 "일"은 사건일 수도 기록일
+  수도 증언일 수도 있습니다 — 원문이 무엇을 갖고 있는지에 달렸습니다.

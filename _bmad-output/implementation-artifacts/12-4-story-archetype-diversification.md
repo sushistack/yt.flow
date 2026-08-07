@@ -4,7 +4,7 @@ baseline_commit: 71417071ba42a28a3f7e6ef2720f706176041501
 
 # Story 12.4: Story Archetype Diversification
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -80,42 +80,42 @@ so that **episodes vary their documentary/creepypasta pacing while preserving fa
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define the closed story-archetype contract (AC: 1, 2, 6)
-  - [ ] Add `StoryArchetype` and `STORY_ARCHETYPES` in `src/yt_flow/domain/state.py`; add `story_archetype: NotRequired[StoryArchetype | None]` and `story_archetype_fallback_used: NotRequired[bool]` to `PipelineState`.
-  - [ ] Add a narrow `StoryArchetypeError` + optional second-parse semantic-fallback callback seam to `_call_stage_with_retry`; only this error may resolve to `incident_first` after the existing one retry.
-  - [ ] Validate/normalize `archetype_rationale`, include it in `FREETEXT_KEYS`, and ensure unrelated research schema errors remain fatal after the retry.
-  - [ ] Add lockstep tests for vocabulary, guide keys, and fallback behavior. Keep `PipelineState` key-contract tests synchronized.
+- [x] Task 1: Define the closed story-archetype contract (AC: 1, 2, 6)
+  - [x] Add `StoryArchetype` and `STORY_ARCHETYPES` in `src/yt_flow/domain/state.py`; add `story_archetype: NotRequired[StoryArchetype | None]` and `story_archetype_fallback_used: NotRequired[bool]` to `PipelineState`.
+  - [x] Add a narrow `StoryArchetypeError` + optional second-parse semantic-fallback callback seam to `_call_stage_with_retry`; only this error may resolve to `incident_first` after the existing one retry.
+  - [x] Validate/normalize `archetype_rationale`, include it in `FREETEXT_KEYS`, and ensure unrelated research schema errors remain fatal after the retry.
+  - [x] Add lockstep tests for vocabulary, guide keys, and fallback behavior. Keep `PipelineState` key-contract tests synchronized.
 
-- [ ] Task 2: Move selection into research and pass it explicitly to structure (AC: 2, 3, 4)
-  - [ ] Extend `research.md` with the four-value catalogue, selection criteria, `story_archetype`, and `archetype_rationale` output fields.
-  - [ ] Preserve and normalize all existing research fields; update offline research cassette(s).
-  - [ ] Extend `structure_step` to resolve/fetch the chosen archetype guide label-aware and compile `structure.md` with explicit `story_archetype` and `archetype_guide` variables.
-  - [ ] Verify the choice is made exactly once and stays fixed through pass 1, scene repair, and full rewrite.
+- [x] Task 2: Move selection into research and pass it explicitly to structure (AC: 2, 3, 4)
+  - [x] Extend `research.md` with the four-value catalogue, selection criteria, `story_archetype`, and `archetype_rationale` output fields.
+  - [x] Preserve and normalize all existing research fields; update offline research cassette(s).
+  - [x] Extend `structure_step` to resolve/fetch the chosen archetype guide label-aware and compile `structure.md` with explicit `story_archetype` and `archetype_guide` variables.
+  - [x] Verify the choice is made exactly once and stays fixed through pass 1, scene repair, and full rewrite.
 
-- [ ] Task 3: Author the four archetype guides and remove universal INCIDENT-FIRST overrides (AC: 3, 4, 5)
-  - [ ] Add `prompts/scenario/archetypes/{incident_first,discovery_log,interview_testimony,containment_breach_realtime}.md` with beat grammar, POV/timeline rules, fact-safety rules, ending contract, and ≥1 concise YAML example each.
-  - [ ] Make `structure.md` catalogue-driven and selected-guide-driven while retaining common scene schema/rules.
-  - [ ] Replace `format_guide.md` Section F with archetype-neutral shared principles and a pointer to selected-guide authority.
-  - [ ] Remove `writing.md`'s fixed incident-first Act 1–4 instructions; require adherence to the supplied scene structure and selected guide instead.
-  - [ ] Add prompt-contract tests that fail if any common prompt again unconditionally forces INCIDENT-FIRST.
+- [x] Task 3: Author the four archetype guides and remove universal INCIDENT-FIRST overrides (AC: 3, 4, 5)
+  - [x] Add `prompts/scenario/archetypes/{incident_first,discovery_log,interview_testimony,containment_breach_realtime}.md` with beat grammar, POV/timeline rules, fact-safety rules, ending contract, and ≥1 concise YAML example each.
+  - [x] Make `structure.md` catalogue-driven and selected-guide-driven while retaining common scene schema/rules.
+  - [x] Replace `format_guide.md` Section F with archetype-neutral shared principles and a pointer to selected-guide authority.
+  - [x] Remove `writing.md`'s fixed incident-first Act 1–4 instructions; require adherence to the supplied scene structure and selected guide instead.
+  - [x] Add prompt-contract tests that fail if any common prompt again unconditionally forces INCIDENT-FIRST.
 
-- [ ] Task 4: Persist and trace the selected archetype (AC: 6, 8)
-  - [ ] Return `story_archetype` and `story_archetype_fallback_used` from `scenario_node` on successful generation; include selection/fallback facts in research/structure trace metadata without changing stage names or token accounting.
-  - [ ] Update scenario-stage `_nullify` in `run_service.py` to clear both values before rerun; add a regression test proving a failed scenario retry cannot retain stale selection state.
-  - [ ] Preserve error shaping (`stage=scenario run_id=...`) and do not write DB/SSE/gates from pipeline code.
-  - [ ] Test successful propagation and verify repair/full-rewrite paths do not change the selection.
+- [x] Task 4: Persist and trace the selected archetype (AC: 6, 8)
+  - [x] Return `story_archetype` and `story_archetype_fallback_used` from `scenario_node` on successful generation; include selection/fallback facts in research/structure trace metadata without changing stage names or token accounting.
+  - [x] Update scenario-stage `_nullify` in `run_service.py` to clear both values before rerun; add a regression test proving a failed scenario retry cannot retain stale selection state.
+  - [x] Preserve error shaping (`stage=scenario run_id=...`) and do not write DB/SSE/gates from pipeline code.
+  - [x] Test successful propagation and verify repair/full-rewrite paths do not change the selection.
 
-- [ ] Task 5: Connect observability to the existing Story 6.2 runner (AC: 5, 6, 7)
-  - [ ] Extend `scripts/eval_prompts.py` so full scenario output/debug artifacts retain `story_archetype`.
-  - [ ] Emit a categorical `story_archetype` evaluation plus deterministic validity and fallback-used metrics; add a dedicated `ItemResult.story_archetype` field and exclude the categorical value from numeric rule-metric aggregation/deltas.
-  - [ ] Keep narrative axes and comparison authority unchanged; multi-repetition aggregation may report observed archetypes but must not treat selection differences as quality regression.
-  - [ ] Add runner tests for valid/invalid/missing values, artifact persistence, and the fact that three golden SCPs are not asserted to cover all four archetypes.
+- [x] Task 5: Connect observability to the existing Story 6.2 runner (AC: 5, 6, 7)
+  - [x] Extend `scripts/eval_prompts.py` so full scenario output/debug artifacts retain `story_archetype`.
+  - [x] Emit a categorical `story_archetype` evaluation plus deterministic validity and fallback-used metrics; add a dedicated `ItemResult.story_archetype` field and exclude the categorical value from numeric rule-metric aggregation/deltas.
+  - [x] Keep narrative axes and comparison authority unchanged; multi-repetition aggregation may report observed archetypes but must not treat selection differences as quality regression.
+  - [x] Add runner tests for valid/invalid/missing values, artifact persistence, and the fact that three golden SCPs are not asserted to cover all four archetypes.
 
-- [ ] Task 6: Fixtures, regression, and rollout (AC: 7, 8)
-  - [ ] Update `tests/fixtures/cassettes/deepseek_research.json` and any dependent stub fixtures/README contract notes; update structure fixture only if its emitted shape changes.
-  - [ ] Run `uv run pytest -q tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/test_eval_prompts.py tests/domain/test_state_imports.py` plus the existing run-service scenario retry/nullification test module.
-  - [ ] Run `uv run pytest -q` and `uv run ruff check` on changed Python/test files.
-  - [ ] Seed from repo to Langfuse production using the exact DEV MODE command in AC7. Record the command/result in the Dev Agent Record; do not run a baseline/promotion gate.
+- [x] Task 6: Fixtures, regression, and rollout (AC: 7, 8)
+  - [x] Update `tests/fixtures/cassettes/deepseek_research.json` and any dependent stub fixtures/README contract notes; update structure fixture only if its emitted shape changes.
+  - [x] Run `uv run pytest -q tests/pipeline/nodes/test_scenario_chain.py tests/pipeline/nodes/test_scenario.py tests/test_eval_prompts.py tests/domain/test_state_imports.py` plus the existing run-service scenario retry/nullification test module.
+  - [x] Run `uv run pytest -q` and `uv run ruff check` on changed Python/test files.
+  - [x] Seed from repo to Langfuse production using the exact DEV MODE command in AC7. Record the command/result in the Dev Agent Record; do not run a baseline/promotion gate.
 
 ## Dev Notes
 
@@ -257,12 +257,209 @@ The cited 2026 narrative-theory survey supplies a taxonomy and argues for theory
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-5[1m] (Claude Opus 5, 1M context) — Claude Code dev-story workflow
 
 ### Debug Log References
+
+- `uv run pytest -q` (full suite): **2328 passed, 1 skipped, 0 failed** in 295s.
+  Baseline before this story was 2251 passed / 1 skipped → **+77 tests**.
+  ⚠️ **Review re-measurement (2026-08-07): this number does not reproduce.**
+  `PYTHONPATH=$PWD/src uv run pytest -q` in this worktree gives
+  **2339 passed, 1 skipped** in 304s. The review added exactly 3 tests, so the
+  pre-review suite was **2336**, not 2328 — the recorded figure is 8 low. Same
+  upward-drift class the 12.3 review flagged (recorded 2238/114 vs measured
+  2251/117): the counts in these records are being written from memory rather
+  than from the run. Nothing is failing; only the bookkeeping was wrong.
+- `uv run ruff check src scripts tests`: **All checks passed**.
+- Focused modules: `tests/pipeline/nodes/test_scenario_chain.py` (582 passed),
+  `tests/pipeline/nodes/test_scenario.py` (86 passed), `tests/test_eval_prompts.py`
+  (152 passed), `tests/domain/test_state_imports.py`, `tests/services/test_run_service_gate.py`
+  (28 passed — the run-service scenario retry/nullification module).
+- Prompt rollout (AC7, DEV MODE, no baseline/promotion gate):
+  `uv run python scripts/migrate_prompts.py --label production --source prompts`
+  → `created:` `scenario/archetypes/{incident_first,discovery_log,interview_testimony,containment_breach_realtime}`,
+  `scenario/format_guide`, `scenario/research`, `scenario/structure`, `scenario/writing`;
+  every other prompt `skipped`. **No incidental promotion** — a read-only pre-check
+  computed the would-create set first and it was exactly these 8. Post-seed
+  verification: repo text == `production` for all 20 prompts, and a live
+  `get_prompt("scenario/archetypes/discovery_log").compile()` returned 1934 chars,
+  confirming the nested name derived by `--source prompts` is fetchable at runtime.
+  (Langfuse credentials came from the main tree's `.env`; this worktree has none.)
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- **Selection is deterministic where it matters, LLM where it can't be.** Research
+  reports a five-key boolean inventory of what the *source* contains; code maps each
+  archetype to the evidence its framing device requires and rejects a choice whose
+  evidence is absent. The model picks among *eligible* candidates only.
+- **Two failure classes, two different resolutions — deliberately.** A malformed
+  archetype value is a formatting slip, so it gets the existing one semantic-correction
+  retry via a new narrow `StoryArchetypeError` + `semantic_fallback` seam on
+  `_parse_with_retry`; a second bad value resolves to `incident_first` with the packet
+  intact. A *missing-evidence* archetype is not a slip the model can talk its way out
+  of, so that check runs **after** `_call_stage_with_retry` returns and spends **zero**
+  extra provider calls (asserted: `calls["n"] == 1`).
+- `archetype_rationale` stays a plain `ValueError` (fatal after the retry) on purpose —
+  the archetype fallback must not smuggle through a packet with no stated grounding.
+  It is also in `FREETEXT_KEYS`, because a rationale citing "Addendum 173-1: …" hits the
+  Story 6.11 inline-colon class almost every time.
+- **`incident_first` on a bare source is not a fallback.** `story_archetype_fallback_used`
+  stays `false` when the inventory legitimately supports only the default. Diversity is
+  subordinate to fidelity, and the flag has to keep meaning "the selector failed" or it
+  is useless as a drift signal.
+- **Resolved once.** `scenario_node` computes the value before `structure_step` and
+  passes it as an explicit keyword. Tests pin `structure_step` at exactly one call and
+  the same value across pass 1, scene-scoped repair, and the full-rewrite fallback.
+- Three prompts each independently re-imposed the same reveal grammar; that was the
+  actual defect. `structure.md` is now `{{story_archetype}}` + `{{archetype_guide}}`
+  driven, `format_guide.md` §F keeps only cross-archetype principles and points at the
+  selected guide for act authority, and `writing.md` follows the supplied outline
+  instead of restating Act 1–4. A parametrized prompt-contract test fails if any of the
+  three starts doing it again.
+- Only the **selected** guide is fetched and injected (asserted), through the same
+  label-aware `prompt_service` seam every other stage uses — no new cross-layer
+  dependency, no `archetype_service.py`, and the suspended candidate workflow still works.
+- Eval side: categorical `story_archetype` + boolean `story_archetype_valid` /
+  `story_archetype_fallback_used`. The categorical value lives in its own
+  `ItemResult.story_archetype` field and is excluded from `rule_metrics` (a test asserts
+  no `rule_metrics` value is ever a `str`, since median/delta arithmetic iterates it);
+  `aggregate_runs` reports the modal value and the ordered observations. `compare()` is
+  untouched — a different archetype is not a regression.
+- `researcher_descent` is deliberately absent, and a test asserts its absence from both
+  the vocabulary and `research.md` so it cannot be half-added later.
+- ⚠️ **Not verified live (Jay).** No network scenario run was made, per AC8 ("Network LLM
+  calls and a live Langfuse evaluation are not required"). So the *live* questions remain
+  open: whether DeepSeek reports the evidence inventory honestly, and how the observed
+  archetype distribution actually looks on the golden set. Both are one command:
+  `uv run python scripts/eval_prompts.py --label production --profile smoke --scp-id SCP-049`
+  from the main tree. Worst case if the inventory is over-reported is a fidelity risk the
+  code cannot catch — the check trusts research's *reading* of the source, only its
+  *choice* is constrained.
+- ⚠️ Making `archetype_rationale`/`story_archetype` unconditional (no `label`-gated
+  leniency, matching Story 12.1's precedent rather than the older entity_sheet pattern)
+  means an un-seeded `scenario/research` prompt would fall back on every run. The seeding
+  above closes that; a future environment that skips seeding would see 100%
+  `story_archetype_fallback_used=true`, which is exactly the drift signal AC6 asks for.
 
 ### File List
+
+**New**
+- `prompts/scenario/archetypes/incident_first.md`
+- `prompts/scenario/archetypes/discovery_log.md`
+- `prompts/scenario/archetypes/interview_testimony.md`
+- `prompts/scenario/archetypes/containment_breach_realtime.md`
+
+**Modified — code**
+- `src/yt_flow/domain/state.py`
+- `src/yt_flow/pipeline/nodes/scenario_chain.py`
+- `src/yt_flow/pipeline/nodes/scenario.py`
+- `src/yt_flow/services/run_service.py`
+- `scripts/eval_prompts.py`
+
+**Modified — prompts**
+- `prompts/scenario/research.md`
+- `prompts/scenario/structure.md`
+- `prompts/scenario/writing.md`
+- `prompts/scenario/format_guide.md`
+
+**Modified — tests / fixtures**
+- `tests/api/test_e2e_stub_run.py`  <!-- added during review: 3 production-wiring E2E tests, was missing from this list -->
+- `tests/domain/test_state_imports.py`
+- `tests/pipeline/nodes/test_scenario_chain.py`
+- `tests/pipeline/nodes/test_scenario.py`
+- `tests/services/test_run_service_gate.py`
+- `tests/test_eval_prompts.py`
+- `tests/fixtures/cassettes/deepseek_research.json`
+- `tests/fixtures/cassettes/README.md`
+- `tests/stubs/fakes.py`
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Jay (adversarial AI review, `bmad-story-automator-review`) · **Date:** 2026-08-07
+**Outcome:** **Approve** — 5 findings, all fixed in place. 0 CRITICAL.
+
+Every AC was checked against code rather than against the task checkboxes, and the
+verification claims were re-run rather than taken on trust. What holds up: the
+selection really is resolved once (`scenario.py:556`) and pinned by tests across
+pass 1 / scoped repair / full rewrite; the evidence gate really does sit outside
+the retry boundary and spends zero extra provider calls (`calls["n"] == 1`); only
+the selected guide is ever fetched, asserted both in unit tests and through real
+`POST /runs` wiring; the categorical value really is kept out of `rule_metrics`,
+with a test that no `rule_metrics` value is ever a `str`. `researcher_descent` is
+absent and asserted absent. No new stage, service, table, route, or dependency.
+
+Findings and fixes:
+
+1. **HIGH — an overridden choice left its argument on the packet.**
+   `structure_step` dumps the whole research packet into `{{research_packet}}`,
+   immediately below a prompt declaring the injected guide the sole authority. On
+   either fallback path the packet still carried the model's original
+   `archetype_rationale` — a written case for the archetype the gate had just
+   refused ("Addendum 173-4의 심문 기록이 증언 서사를 지지함" next to
+   `story_archetype: incident_first`). That is a contradictory instruction (AC3) and
+   it points at exactly the invented framing device AC4 forbids and the evidence
+   gate exists to prevent — the `article_fidelity` failure class the story itself
+   cites. **Fixed:** `_fallback_rationale()` replaces the invalidated field on both
+   override paths (`scenario_chain.py`); the model's original wording stays in the
+   WARNING beside it. Two new tests cover both paths and assert a kept choice is
+   *not* rewritten.
+
+2. **MEDIUM — the guide examples are injected as if they were the schema.**
+   All four guides end in an example outline that omits every hard-required
+   Retention Contract field (`event`, `word_budget`, `hook_type`,
+   `loops_planted/closed`, `pattern_interrupt`, `fact_references`, `mood`,
+   `title`, `kicker`) and skips scene numbers (1, 3, 5, 7, 9) — and it lands
+   *above* the field schema, under the line naming the guide 유일한 권위. This is not
+   a soft quality risk: `_validate_retention_outline` hard-fails a scene with no
+   `event` or no `word_budget`, so imitation of the example shape fails the run.
+   **Fixed:** an explicit excerpt disclaimer in `structure.md` directly after
+   `{{archetype_guide}}` (one place, covers all four guides, cannot drift).
+
+3. **MEDIUM — File List omitted the strongest tests in the story.**
+   `tests/api/test_e2e_stub_run.py` gained 169 lines / 3 production-wiring E2E
+   tests (checkpoint round trip, mid-run fallback, retry-clears-then-reresolves)
+   and was absent from the Dev Agent Record. **Fixed:** added.
+
+4. **LOW — the drift signal read clean while drifting.** `scenario_node` degraded a
+   research packet with no `story_archetype` to `incident_first` but reported
+   `story_archetype_fallback_used=False`. A seam that has stopped selecting *is* the
+   selector failure AC6 added that flag to expose. **Fixed:** the flag now derives
+   from the same expression; the existing degradation test was updated to assert
+   the corrected meaning.
+
+5. **LOW — `ARCHETYPE_REQUIRED_EVIDENCE` values were untyped `str`.** AC1 asks for a
+   typed source of truth. **Fixed:** values are `tuple[SourceEvidenceKey, ...]`; the
+   key stays `str` deliberately (with a comment) because
+   `missing_archetype_evidence` must remain total over unvalidated input.
+
+Verified, not assumed:
+
+- `uv run pytest -q` (full suite, this worktree, `PYTHONPATH=$PWD/src`) after the
+  fixes: **2339 passed, 1 skipped** in 304s. Focused modules (838 passed) re-run
+  after every fix. The story's recorded `2328` does not reproduce — see the ⚠️ note
+  in the Debug Log.
+- `uv run ruff check src scripts tests` — **All checks passed**, re-run after the fixes.
+- `scripts/migrate_prompts.py` uses `source.rglob("*")` + `relative_to(source)`, so
+  the nested `scenario/archetypes/*` names the record claims are in fact derivable.
+- `langfuse.Evaluation` does accept `data_type=Literal["NUMERIC","CATEGORICAL","BOOLEAN"]`
+  in the installed 4.x SDK — the categorical evaluation is not a guess.
+- Module-level lockstep `assert`s in `domain/state.py` match established project
+  idiom (`color_grade.py`, `camera_path.py`, `video.py`) — not a finding.
+
+Left for Jay (unchanged from the Dev record, and correct to leave):
+
+- The prompt seeding to `production` was performed from the main tree's `.env`;
+  this worktree has no credentials, so the review could not re-verify it live.
+- Nothing here proves DeepSeek reports `source_evidence` **honestly**. The gate
+  constrains the model's *choice*, never its *reading* of the source — an
+  over-reported inventory is a fidelity risk no code in this story can catch. The
+  one command that would show it: `uv run python scripts/eval_prompts.py --label
+  production --profile smoke --scp-id SCP-049` from the main tree.
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-08-07 | **Review (adversarial, auto-fix).** 5 findings, 0 CRITICAL, all fixed. HIGH: after either archetype override the packet still carried the model's rationale for the *rejected* archetype into `{{research_packet}}` — a written invitation to reintroduce the framing device the evidence gate had just refused (AC3 contradiction → AC4 fabrication → `article_fidelity`); `_fallback_rationale()` now replaces the invalidated field on both paths. MEDIUM: the four guides' example outlines omit every hard-required Retention Contract field and land *above* the schema under "유일한 권위", so imitating them fails `_validate_retention_outline` — excerpt disclaimer added to `structure.md`. MEDIUM: `tests/api/test_e2e_stub_run.py` (169 lines, 3 production-wiring E2E tests) was missing from the File List. LOW: a research seam that stopped selecting reported `story_archetype_fallback_used=false`, blinding the one signal AC6 added to catch that drift. LOW: `ARCHETYPE_REQUIRED_EVIDENCE` values now `tuple[SourceEvidenceKey, ...]`. +3 tests, 1 existing test corrected. Status → done. |
+| 2026-08-07 | Story 12.4 implemented. Closed four-value `StoryArchetype` vocabulary + `SOURCE_EVIDENCE_KEYS` + `ARCHETYPE_REQUIRED_EVIDENCE` and the pure `missing_archetype_evidence()` gate in `domain/state.py`; `research_step` now selects/normalizes the archetype, validates `archetype_rationale`, and resolves an unusable choice deterministically (narrow `StoryArchetypeError` + `semantic_fallback` seam, one bounded retry, zero extra calls for the evidence check); `structure_step` receives the value explicitly and injects only that archetype's Prompt Hub guide; `scenario_node` returns/traces `story_archetype` + `story_archetype_fallback_used` and `run_service` clears both on scenario nullification/restart; four new archetype guides authored and the three shared prompts stripped of their universal INCIDENT-FIRST overrides; `eval_prompts.py` records the selection as categorical + two booleans without letting a string into numeric aggregation. Prompts seeded repo→`production` (8 created, no incidental promotion). 2328 passed / 1 skipped, ruff clean, +77 tests. |

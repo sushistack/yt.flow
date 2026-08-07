@@ -477,3 +477,172 @@ async def test_unresolved_pass2_reaches_an_api_client_and_stays_approvable(api_e
         await _drain_bg_tasks()
         advanced = (await c.get(f"/runs/{run_id}")).json()
         assert (advanced["status"], advanced["current_stage"]) == ("awaiting_approval", "image")
+
+
+# ── Story 12.4: the narrative archetype, resolved by production wiring ────────
+#
+# Every 12.4 unit test injects the research packet, the structure seam or the
+# prompt fake by hand, so all of them would still pass if `scenario_node` never
+# resolved a value, if `structure_step` were never handed one, or if the guide
+# name derived for the Prompt Hub were wrong. These drive the REAL chain through
+# POST /runs and read the selection back off the LangGraph checkpoint — the only
+# place it lives (AC6: non-authoritative outside state, so there is no API field
+# to read it from).
+#
+# The offline research cassette selects `containment_breach_realtime` and reports
+# `incident_log: true`, so a clean stub run must land there with no fallback.
+_CASSETTE_ARCHETYPE = "containment_breach_realtime"
+
+
+def _record_guide_fetches(monkeypatch) -> list[str]:
+    """Record every ``scenario/archetypes/*`` name production wiring fetches.
+
+    Wraps the fake ``stub_profile`` already installed rather than replacing it, so
+    the chain keeps replaying its real cassettes.
+    """
+    import yt_flow.services.prompt_service as prompt_service
+
+    inner = prompt_service.get_prompt
+    fetched: list[str] = []
+
+    def recording(name, **kwargs):
+        if name.startswith("scenario/archetypes/"):
+            fetched.append(name)
+        return inner(name, **kwargs)
+
+    monkeypatch.setattr(prompt_service, "get_prompt", recording)
+    return fetched
+
+
+def _rewrite_research(monkeypatch, replacements: dict[str, str]) -> None:
+    """Apply literal substitutions to the research cassette's reply, in place.
+
+    Keeps every other field of the real packet intact — the point is to change
+    exactly the archetype contract and watch what production does with it.
+    """
+    import yt_flow.pipeline.nodes.scenario as scenario
+
+    inner = scenario._call_deepseek
+
+    async def fake(rendered, s):
+        raw, usage, finish = await inner(rendered, s)
+        if rendered.removeprefix("__STAGE__:") == "scenario/research":
+            for old, new in replacements.items():
+                assert old in raw, f"research cassette no longer contains {old!r}"
+                raw = raw.replace(old, new)
+        return raw, usage, finish
+
+    monkeypatch.setattr(scenario, "_call_deepseek", fake)
+
+
+async def _checkpoint(run_id: str) -> dict:
+    # thread_id, not `_configs[run_id]`: the run-scoped config is dropped once a run
+    # reaches a terminal state, and a failed rerun is exactly what these read back.
+    snap = await run_service._graph.aget_state({"configurable": {"thread_id": run_id}})
+    return snap.values
+
+
+async def test_stub_run_resolves_the_archetype_and_fetches_only_that_guide(api_env, monkeypatch):
+    """AC2/AC5/AC6 in production wiring: research's choice reaches the checkpoint,
+    and exactly one archetype guide — the selected one — is compiled into structure."""
+    fetched = _record_guide_fetches(monkeypatch)
+
+    async with _asgi_client() as c:
+        run_id = (await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})).json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        assert run["error"] is None, run["error"]
+        assert (run["status"], run["current_stage"]) == ("awaiting_approval", "scenario")
+
+        body = (await c.get(f"/runs/{run_id}/stages/scenario/artifacts")).json()
+
+    # AC5: the selected guide, once. Four fetches would be the token bloat the story
+    # forbids; zero would mean structure never got a guide at all.
+    assert fetched == [f"scenario/archetypes/{_CASSETTE_ARCHETYPE}"]
+
+    # AC6: it survives the real sqlite checkpoint round trip as plain JSON.
+    values = await _checkpoint(run_id)
+    assert values["story_archetype"] == _CASSETTE_ARCHETYPE
+    assert values["story_archetype_fallback_used"] is False
+    assert json.loads(json.dumps(values["story_archetype"])) == _CASSETTE_ARCHETYPE
+
+    # AC8: no API serializer grew a field — the selection stays inside LangGraph state.
+    assert "story_archetype" not in run
+    assert "story_archetype" not in body
+    assert body["scenes"], "the run produced a script, so this is a real negative"
+
+
+async def test_archetype_without_its_source_evidence_falls_back_mid_run_without_failing(
+    api_env, monkeypatch,
+):
+    """AC2 end to end: the cassette's source has no interview log, so a research
+    packet asking for `interview_testimony` resolves to `incident_first` — the run
+    keeps going, the flag records that the selector failed, and the guide actually
+    injected is the fallback's, not the rejected choice's."""
+    fetched = _record_guide_fetches(monkeypatch)
+    _rewrite_research(monkeypatch, {f'"{_CASSETTE_ARCHETYPE}"': '"interview_testimony"'})
+
+    async with _asgi_client() as c:
+        run_id = (await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})).json()["id"]
+        await _drain_bg_tasks()
+
+        run = (await c.get(f"/runs/{run_id}")).json()
+        # A missing framing device is a fidelity correction, never a stage failure.
+        assert run["error"] is None, run["error"]
+        assert (run["status"], run["current_stage"]) == ("awaiting_approval", "scenario")
+
+    values = await _checkpoint(run_id)
+    assert values["story_archetype"] == "incident_first"
+    assert values["story_archetype_fallback_used"] is True
+    # The writer must not be handed the guide for a framing device the source lacks.
+    assert fetched == ["scenario/archetypes/incident_first"]
+
+
+async def test_scenario_retry_clears_then_reresolves_the_archetype(api_env, monkeypatch):
+    """AC8 through the product's own redo path: `_nullify` runs against a REAL
+    checkpoint (not a fake node's canned dict). The rerun re-selects normally, and
+    a rerun that fails leaves no archetype sitting beside the new error."""
+    import yt_flow.pipeline.nodes.scenario as scenario
+
+    async with _asgi_client() as c:
+        run_id = (await c.post("/runs", json={"scp_id": "SCP-096", "scp_text": "stub SCP article text"})).json()["id"]
+        await _drain_bg_tasks()
+        assert (await _checkpoint(run_id))["story_archetype"] == _CASSETTE_ARCHETYPE
+
+        # A scenario reject is terminal (routes to END) — the redo is the retry route.
+        assert (await c.post(f"/runs/{run_id}/stages/scenario/gate",
+                             json={"action": "reject"})).status_code == 202
+        await _drain_bg_tasks()
+        assert (await c.get(f"/runs/{run_id}")).json()["status"] == "failed"
+
+        assert (await c.post(f"/runs/{run_id}/stages/scenario/retry")).status_code == 202
+        await _drain_bg_tasks()
+
+        rerun = (await c.get(f"/runs/{run_id}")).json()
+        assert rerun["error"] is None, rerun["error"]
+        assert (rerun["status"], rerun["current_stage"]) == ("awaiting_approval", "scenario")
+
+        values = await _checkpoint(run_id)
+        assert values["story_archetype"] == _CASSETTE_ARCHETYPE  # re-selected, not resurrected
+        assert values["story_archetype_fallback_used"] is False
+
+        # Now break the prose provider and retry again: the stage dies AFTER research
+        # already picked an archetype, which is exactly when a missed nullification
+        # would label the new error with the discarded draft's template.
+        async def dead_gemini(rendered, s):
+            raise httpx.HTTPStatusError("429 RESOURCE_EXHAUSTED", request=None, response=None)
+
+        monkeypatch.setattr(scenario, "_call_gemini", dead_gemini)
+        # retry needs a settled gate (approved/rejected/failed) — reject it again.
+        assert (await c.post(f"/runs/{run_id}/stages/scenario/gate",
+                             json={"action": "reject"})).status_code == 202
+        await _drain_bg_tasks()
+        assert (await c.post(f"/runs/{run_id}/stages/scenario/retry")).status_code == 202
+        await _drain_bg_tasks()
+        assert (await c.get(f"/runs/{run_id}")).json()["status"] == "failed"
+
+    failed_values = await _checkpoint(run_id)
+    assert failed_values["error"] and "stage=scenario" in failed_values["error"]
+    assert failed_values.get("story_archetype") is None
+    assert not failed_values.get("story_archetype_fallback_used")

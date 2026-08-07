@@ -46,10 +46,14 @@ from yt_flow.domain.state import (
     RepeatedPhrase,
     RuleCounts,
     RuleMetrics,
+    SOURCE_EVIDENCE_KEYS,
+    STORY_ARCHETYPE_FALLBACK,
+    STORY_ARCHETYPES,
     SceneRuleCounts,
     SceneState,
     ShotData,
     SlopPhraseHit,
+    missing_archetype_evidence,
 )
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
@@ -753,6 +757,25 @@ class RetentionError(ValueError):
         self.code = code
 
 
+class StoryArchetypeError(ValueError):
+    """The research packet is valid EXCEPT for its ``story_archetype`` (Story 12.4).
+
+    Narrow on purpose. It carries the otherwise-good packet so that — and only
+    when — the model still emits an unusable archetype on its one semantic
+    correction retry, ``_parse_with_retry``'s ``semantic_fallback`` seam can swap
+    in ``incident_first`` rather than throwing away a packet whose descriptors,
+    entity fields and logline are all fine. Every OTHER validation failure
+    (including a missing ``archetype_rationale``) stays a plain ``ValueError``
+    and still fails the stage after the retry — there is no general
+    "salvage the packet" path here.
+    """
+
+    def __init__(self, reason: str, *, research: dict):
+        super().__init__(f"research: story_archetype {reason}")
+        self.reason = reason
+        self.research = research
+
+
 def _canonicalize(scene: dict, key: str) -> object:
     """Strip surrounding/inner whitespace and ASCII-case a closed-vocabulary scalar.
 
@@ -1041,6 +1064,8 @@ def _normalize_freetext(text: str) -> str:
 FREETEXT_KEYS = (
     "narration", "image_prompt", "negative_prompt", "core_identity",
     "frozen_descriptor", "entity_sheet", "story_logline", "feedback",
+    "archetype_rationale",  # Story 12.4 — a rationale quoting the source will contain
+                            # ':' ("Addendum 173-1: ...") far more often than not
 )
 
 _FREETEXT_INLINE_RE = re.compile(
@@ -1124,6 +1149,7 @@ async def _call_stage_with_retry(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
     what: str | None = None,
+    semantic_fallback=None,
 ):
     """Every scenario-chain LLM call goes through here, so the truncation
     re-roll is wired ONCE, here, rather than per stage. Truncation is stochastic
@@ -1135,11 +1161,16 @@ async def _call_stage_with_retry(
     either the initial call or the semantic retry costs one independent re-roll
     and a second truncation propagates (see ``reroll_on_truncation``). ``what``
     only labels the re-roll log line — writing names the individual scene.
+
+    ``semantic_fallback``, when given, is consulted for exactly one error class:
+    a ``StoryArchetypeError`` from the RETRY's parse (Story 12.4). See
+    ``_parse_with_retry``.
     """
     return await reroll_on_truncation(
         what or prompt_name,
         lambda: _parse_with_retry(
-            prompt_name, variables, s, call_llm, parse, label=label, usage_sink=usage_sink
+            prompt_name, variables, s, call_llm, parse, label=label, usage_sink=usage_sink,
+            semantic_fallback=semantic_fallback,
         ),
     )
 
@@ -1153,6 +1184,7 @@ async def _parse_with_retry(
     *,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
+    semantic_fallback=None,
 ):
     """Bounded self-correcting retry for a stage's parse+validate step. A YAML
     *syntax* failure is repaired deterministically — the single free-text line
@@ -1167,6 +1199,14 @@ async def _parse_with_retry(
     Story 6.3's token/cache observability seam, additive to every existing
     caller. The deterministic YAML repair adds no provider call, so it appends
     nothing.
+
+    ``semantic_fallback`` is the ONE exception to "a second failure propagates",
+    and it is deliberately typed shut: it is invoked only when the retry's parse
+    raises ``StoryArchetypeError`` — the class that means "everything in this
+    packet is usable except its narrative-template choice" (Story 12.4). It adds
+    no third provider call. Any other error from the retry, including a plain
+    ``ValueError`` and a ``StoryArchetypeError`` from callers that pass no
+    callback, propagates exactly as before.
     """
     raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_llm, label=label)
     if usage_sink is not None:
@@ -1202,7 +1242,12 @@ async def _parse_with_retry(
         raw, usage = await _call_stage(prompt_name, retry_variables, s, call_llm, label=label)
         if usage_sink is not None:
             usage_sink.append(usage)
-        return parse(raw)
+        if semantic_fallback is None:
+            return parse(raw)
+        try:
+            return parse(raw)
+        except StoryArchetypeError as archetype_exc:
+            return semantic_fallback(archetype_exc)
 
 
 async def reroll_on_truncation(what: str, call):
@@ -1234,6 +1279,56 @@ async def reroll_on_truncation(what: str, call):
         return await call()
 
 
+def _parse_source_evidence(raw: object) -> dict[str, bool]:
+    """Normalize the reported addendum inventory to the closed key set (Story 12.4).
+
+    Unknown keys are dropped and every closed key gets an explicit bool, so the
+    evidence gate reads a total function rather than guessing at absence. A
+    non-mapping (or absent) inventory normalizes to "nothing reported", which
+    makes only ``incident_first`` eligible — the fidelity-safe direction, since
+    the alternative is letting an unverified archetype invent its framing device.
+    """
+    entries = raw if isinstance(raw, dict) else {}
+    return {
+        key: entries.get(key) is True or str(entries.get(key)).strip().lower() in ("true", "yes")
+        for key in SOURCE_EVIDENCE_KEYS
+    }
+
+
+def _parse_story_archetype(data: dict) -> str:
+    """The closed archetype value, casing/whitespace normalized (Story 12.4 AC2).
+
+    Raises ``StoryArchetypeError`` — the one class ``_parse_with_retry`` can
+    resolve deterministically — for a missing, non-string or unknown value.
+    """
+    raw = data.get("story_archetype")
+    if not isinstance(raw, str):
+        raise StoryArchetypeError(f"must be a string, got {type(raw).__name__}", research=data)
+    value = raw.strip().lower()
+    if value not in STORY_ARCHETYPES:
+        raise StoryArchetypeError(f"{raw!r} is not one of {STORY_ARCHETYPES}", research=data)
+    return value
+
+
+def _fallback_rationale(reason: str) -> str:
+    """The rationale that replaces the model's when code overrides its choice.
+
+    Not cosmetic. ``structure_step`` dumps the whole research packet into
+    ``{{research_packet}}``, directly under a prompt that names the injected guide
+    the sole authority — so a surviving rationale arguing for the *rejected*
+    archetype ("Addendum 173-4의 심문 기록이 증언 서사를 지지함") is a written
+    invitation to reintroduce the framing device the evidence gate just refused.
+    That is the invent-the-interview loss the gate exists to prevent, so the
+    override rewrites the field it invalidated. The model's original wording is
+    already in the WARNING beside it.
+    """
+    return (
+        f"[code override] 모델이 고른 아키타입은 사용할 수 없었습니다 ({reason}). "
+        f"파이프라인이 '{STORY_ARCHETYPE_FALLBACK}'로 결정했으므로, 모델이 제시한 원래 근거는 "
+        "이 에피소드에 적용되지 않습니다 — 그 근거가 가리켰던 서사 장치를 되살리지 마세요."
+    )
+
+
 async def research_step(
     scp_id: str,
     scp_text: str,
@@ -1247,7 +1342,8 @@ async def research_step(
     def parse(raw: str) -> dict:
         data = _parse_yaml(raw)
         if isinstance(data, dict):
-            for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline", "hooks"):
+            for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline",
+                        "hooks", "archetype_rationale"):
                 if isinstance(data.get(key), str):
                     data[key] = _normalize_freetext(data[key])
         if not isinstance(data, dict) or not str(data.get("frozen_descriptor") or "").strip():
@@ -1263,9 +1359,30 @@ async def research_step(
                 continue
             if not isinstance(data[key], str) or not data[key].strip():
                 raise ValueError(f"research: payload missing non-empty '{key}'")
+        # Story 12.4. Rationale FIRST and as a plain ValueError: it is an ordinary
+        # required field, so it stays fatal after the one retry — the archetype
+        # fallback must never smuggle a packet with no stated grounding past it.
+        if not isinstance(data.get("archetype_rationale"), str) or not data["archetype_rationale"].strip():
+            raise ValueError("research: payload missing non-empty 'archetype_rationale'")
+        data["story_archetype"] = _parse_story_archetype(data)
+        data["source_evidence"] = _parse_source_evidence(data.get("source_evidence"))
         return data
 
-    return await _call_stage_with_retry(
+    def resolve_invalid_archetype(exc: StoryArchetypeError) -> dict:
+        """Second invalid archetype in a row — resolve, never retry again (AC2)."""
+        logger.warning(
+            "research: story_archetype %s after one correction retry; falling back to %r",
+            exc.reason, STORY_ARCHETYPE_FALLBACK,
+        )
+        return {
+            **exc.research,
+            "story_archetype": STORY_ARCHETYPE_FALLBACK,
+            "source_evidence": _parse_source_evidence(exc.research.get("source_evidence")),
+            "archetype_rationale": _fallback_rationale(exc.reason),
+            "story_archetype_fallback_used": True,
+        }
+
+    research = await _call_stage_with_retry(
         "scenario/research",
         {
             "scp_id": scp_id,
@@ -1279,7 +1396,49 @@ async def research_step(
         parse,
         label=label,
         usage_sink=usage_sink,
+        semantic_fallback=resolve_invalid_archetype,
     )
+    research.setdefault("story_archetype_fallback_used", False)
+    # AFTER the await, deliberately — the evidence gate must NOT buy the model an
+    # LLM correction attempt (AC2). "You picked an archetype whose framing device
+    # isn't in the source" is not a formatting slip the model can talk its way out
+    # of; it is a fidelity verdict on the source, so it resolves in code.
+    if missing := missing_archetype_evidence(research["story_archetype"], research.get("source_evidence")):
+        logger.warning(
+            "research: story_archetype %r requires source evidence %s, none reported; "
+            "falling back to %r",
+            research["story_archetype"], list(missing), STORY_ARCHETYPE_FALLBACK,
+        )
+        research["story_archetype"] = STORY_ARCHETYPE_FALLBACK
+        research["archetype_rationale"] = _fallback_rationale(
+            f"requires source evidence {list(missing)}, none reported"
+        )
+        research["story_archetype_fallback_used"] = True
+    return research
+
+
+def archetype_guide(story_archetype: str, *, label: str | None = None) -> str:
+    """The one selected archetype's guide text, from the Prompt Hub (Story 12.4 AC5).
+
+    Fetched through the same label-aware seam every other stage prompt uses, so
+    the suspended candidate workflow keeps working and repo files stay authoring
+    sources rather than runtime reads. Only the SELECTED guide is fetched: four
+    guides in every structure call would be token bloat plus three templates the
+    model was told not to follow.
+    """
+    if story_archetype not in STORY_ARCHETYPES:
+        # Unreachable via research_step (which resolves before returning); a direct
+        # caller passing junk gets production's pre-12.4 behavior, not a crash.
+        logger.warning("structure: unknown story_archetype %r; using %r guide",
+                       story_archetype, STORY_ARCHETYPE_FALLBACK)
+        story_archetype = STORY_ARCHETYPE_FALLBACK
+    name = f"scenario/archetypes/{story_archetype}"
+    prompt = (
+        prompt_service.get_prompt_with_fallback(name, label=label)
+        if label
+        else prompt_service.get_prompt(name)
+    )
+    return prompt.compile()
 
 
 async def structure_step(
@@ -1289,6 +1448,7 @@ async def structure_step(
     s,
     call_llm,
     *,
+    story_archetype: str = STORY_ARCHETYPE_FALLBACK,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> list[dict]:
@@ -1315,6 +1475,11 @@ async def structure_step(
             "scp_visual_reference": research["frozen_descriptor"],
             "target_duration": TARGET_DURATION_MINUTES,
             "format_guide": format_guide,
+            # Passed explicitly rather than read out of `research_packet`: the choice
+            # was already made and this stage's job is to OBEY it, so the value it
+            # follows must be the same one the state/trace/eval record (AC3).
+            "story_archetype": story_archetype,
+            "archetype_guide": archetype_guide(story_archetype, label=label),
             "glossary_section": "",
         },
         s,

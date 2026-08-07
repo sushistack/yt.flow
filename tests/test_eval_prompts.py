@@ -430,6 +430,14 @@ class FakePrompt:
         return f"rendered:{sorted(variables.items())}"
 
 
+# Story 12.4 — research_step now also validates the archetype selection, so any
+# scripted research reply that must PASS carries these two fields.
+_ARCHETYPE_FIELDS = {
+    "story_archetype": "incident_first",
+    "archetype_rationale": "source has an incident log",
+}
+
+
 def _stub_stage_functions(monkeypatch, *, fail_at=None):
     calls = {"research": 0, "structure": 0, "writing": 0, "cast_decision": 0, "visual_breakdown": 0}
 
@@ -532,7 +540,7 @@ def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatc
     import json as jsonlib
 
     responses = [
-        (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (jsonlib.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
     ]
 
@@ -1672,7 +1680,7 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
 
     writing_reply = (jsonlib.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
     responses = [
-        (jsonlib.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (jsonlib.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
         writing_reply,  # writing is one call per structure scene (Gemini's seam)
         writing_reply,
@@ -1703,7 +1711,7 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
 
     writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
     responses = [
-        (json.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (json.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
         writing_reply,  # writing is one call per structure scene
         writing_reply,
@@ -1831,7 +1839,7 @@ def test_run_stage_chain_routes_the_writing_call_to_gemini(monkeypatch):
 
     writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
     planning = [
-        (json.dumps({"frozen_descriptor": "d"}), {}, "stop"),
+        (json.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
     ]
     seen = {"deepseek": 0, "gemini": 0}
@@ -1878,3 +1886,176 @@ def test_gemini_cache_wrapper_keys_on_the_gemini_pins():
     asyncio.run(wrapped("same text", OtherGeminiModel()))   # different pinned model -> miss
 
     assert calls["n"] == 2
+
+
+# ── Story 12.4: archetype observability ──────────────────────────────────────
+# Informational only. The categorical value must never touch numeric arithmetic,
+# and the runner must not be read as proving four-archetype coverage.
+
+import asyncio  # noqa: E402
+
+from yt_flow.domain.state import STORY_ARCHETYPES  # noqa: E402
+
+
+def _archetype_output(archetype, *, fallback_used=False):
+    return {
+        "scenes": [{"scene_num": 1, "narration": "hi", "shots": [{"image_prompt": "p"}]}],
+        "error": None,
+        "story_archetype": archetype,
+        "story_archetype_fallback_used": fallback_used,
+    }
+
+
+def _evals(output, monkeypatch):
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+    return {ev.name: ev for ev in asyncio.run(
+        ep._score_evaluator(input={"scp_text": "x"}, output=output)
+    )}
+
+
+@pytest.mark.parametrize("archetype", STORY_ARCHETYPES)
+def test_evaluator_records_the_selection_as_categorical(monkeypatch, archetype):
+    by_name = _evals(_archetype_output(archetype), monkeypatch)
+    assert by_name["story_archetype"].value == archetype
+    assert by_name["story_archetype"].data_type == "CATEGORICAL"
+    assert by_name["story_archetype_valid"].value is True
+    assert by_name["story_archetype_valid"].data_type == "BOOLEAN"
+    assert by_name["story_archetype_fallback_used"].value is False
+
+
+def test_evaluator_reports_an_invalid_or_missing_selection(monkeypatch):
+    by_name = _evals(_archetype_output("researcher_descent"), monkeypatch)
+    assert by_name["story_archetype_valid"].value is False
+
+    absent = _evals({"scenes": [{"scene_num": 1, "narration": "hi", "shots": []}], "error": None}, monkeypatch)
+    assert absent["story_archetype"].value == ""
+    assert absent["story_archetype_valid"].value is False
+
+
+def test_evaluator_reports_fallback_used_separately_from_validity(monkeypatch):
+    """The reason the boolean exists: post-resolution validity is always true, so
+    on its own it would hide a selector that stopped selecting."""
+    by_name = _evals(_archetype_output("incident_first", fallback_used=True), monkeypatch)
+    assert by_name["story_archetype_valid"].value is True
+    assert by_name["story_archetype_fallback_used"].value is True
+
+
+def test_item_result_keeps_the_categorical_out_of_numeric_rule_metrics(monkeypatch):
+    _wire_scenario_capturing_state(monkeypatch, [], scenes=_archetype_output("discovery_log")["scenes"])
+
+    async def fake_scenario_node(state, *, trace_sink=None):
+        return _archetype_output("discovery_log")
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    results = ep.evaluate_label(_client_with_seeded_dataset(), ep.DATASET_NAME, "production")
+
+    r = results[0]
+    assert r.story_archetype == "discovery_log"
+    assert "story_archetype" not in r.rule_metrics
+    # the two booleans DO stay numeric-safe metrics
+    assert r.rule_metrics["story_archetype_valid"] is True
+    assert r.rule_metrics["story_archetype_fallback_used"] is False
+    # nothing in rule_metrics may be a string — median/delta arithmetic runs over it
+    assert all(not isinstance(v, str) for v in r.rule_metrics.values())
+
+
+def test_debug_artifact_retains_both_archetype_fields(monkeypatch, tmp_path):
+    async def fake_scenario_node(state, *, trace_sink=None):
+        return _archetype_output("interview_testimony", fallback_used=True)
+
+    monkeypatch.setattr(ep, "scenario_node", fake_scenario_node)
+    _wire_score_run(monkeypatch, AxisScores(4, 4, 4, 12))
+
+    results = ep.evaluate_label(
+        _client_with_seeded_dataset(), ep.DATASET_NAME, "production", run_dir=tmp_path,
+    )
+
+    written = json.loads(Path(results[0].artifact_path).read_text(encoding="utf-8"))
+    assert written["parsed_state"]["story_archetype"] == "interview_testimony"
+    assert written["parsed_state"]["story_archetype_fallback_used"] is True
+
+
+def _scored(scp_id, archetype):
+    return ep.ItemResult(scp_id, failed=False, axes={ax: 4 for ax in ep.AXES}, total=12,
+                          story_archetype=archetype)
+
+
+def test_aggregate_reports_the_modal_archetype_without_numeric_arithmetic():
+    runs = [
+        [_scored("SCP-096", "discovery_log")],
+        [_scored("SCP-096", "discovery_log")],
+        [_scored("SCP-096", "incident_first")],
+    ]
+    agg = ep.aggregate_runs(runs)[0]
+    assert agg.story_archetype == "discovery_log"
+    assert [r.story_archetype for r in agg.run_results] == ["discovery_log", "discovery_log", "incident_first"]
+    assert agg.total == 12  # numeric aggregation untouched by the string field
+
+
+def test_aggregate_tolerates_reps_with_no_archetype():
+    agg = ep.aggregate_runs([[_scored("SCP-096", None)], [_scored("SCP-096", None)]])[0]
+    assert agg.story_archetype is None
+    assert agg.failed is False
+
+
+def test_selection_difference_is_not_a_quality_regression():
+    """AC6: candidate/baseline comparison stays limited to the quality axes."""
+    candidate = [_scored("SCP-096", "discovery_log")]
+    baseline = [_scored("SCP-096", "containment_breach_realtime")]
+    verdict, rows = ep.compare(candidate, baseline)
+    assert verdict == "PASS"
+    assert all("archetype" not in json.dumps(row) for row in rows)
+
+
+def test_the_three_golden_scps_are_not_claimed_to_cover_four_archetypes():
+    """Exhaustive catalogue coverage is proven by the deterministic parser/guide
+    tests, not by this fixed dataset — asserting otherwise would force selection
+    away from source fit (coverage theatre, AC6)."""
+    assert ep.GOLDEN_IDS == ("SCP-096", "SCP-173", "SCP-049")
+    assert len(ep.GOLDEN_IDS) < len(STORY_ARCHETYPES)
+
+
+def test_print_report_shows_the_observed_selection(capsys):
+    ep.print_report("production", [_scored("SCP-096", "discovery_log")])
+    assert "story_archetype: discovery_log" in capsys.readouterr().out
+
+
+def _chain_with_research(monkeypatch, research: dict) -> dict:
+    """Run the real `_run_stage_chain` up to writing with a scripted research packet,
+    returning the kwargs `structure_step` was called with."""
+    _stub_stage_functions(monkeypatch)
+    seen: dict = {}
+
+    async def fake_research_step(*a, **k):
+        return research
+
+    async def fake_structure_step(*a, **k):
+        seen.update(k)
+        return [{"scene_num": 1}]
+
+    monkeypatch.setattr(ep, "research_step", fake_research_step)
+    monkeypatch.setattr(ep, "structure_step", fake_structure_step)
+    failed, _stage, error, *_ = asyncio.run(
+        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+    )
+    assert failed is False, error
+    return seen
+
+
+@pytest.mark.parametrize("archetype", STORY_ARCHETYPES)
+def test_stage_chain_hands_the_research_choice_to_structure(monkeypatch, archetype):
+    """AC6: the runner's own chain must obey the same "research owns it" rule as
+    `scenario_node`. If it passed nothing, every eval outline would silently be
+    incident-first while the evaluator reported the archetype research asked for —
+    an observability lie, and one no evaluator test could catch."""
+    seen = _chain_with_research(
+        monkeypatch, {"frozen_descriptor": "d", "story_archetype": archetype},
+    )
+    assert seen["story_archetype"] == archetype
+
+
+def test_stage_chain_defaults_to_the_production_template_without_a_choice(monkeypatch):
+    seen = _chain_with_research(monkeypatch, {"frozen_descriptor": "d"})
+    assert seen["story_archetype"] == "incident_first"

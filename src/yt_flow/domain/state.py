@@ -35,6 +35,58 @@ CharacterMovementMode = Literal[
 CharacterMovementDirection = Literal["none", "left", "right", "in", "out"]
 CharacterMovementPace = Literal["slow", "medium", "fast"]
 
+# Story 12.4: closed narrative-archetype vocabulary. Research selects exactly one
+# per run from the SOURCE's anatomy; `structure`/`writing` obey it. Closed because
+# an unknown value would send the writer to a guide that doesn't exist — the
+# deterministic resolution is `incident_first`, the pre-12.4 production behavior.
+StoryArchetype = Literal[
+    "incident_first",               # consequential event -> expanding mystery -> identity -> residue
+    "discovery_log",                # dated evidence -> hypothesis shifts -> implication -> record gap
+    "interview_testimony",          # testimony -> credibility fractures -> corroborated core -> uncertainty
+    "containment_breach_realtime",  # baseline -> trigger -> compressed escalation -> aftermath
+]
+STORY_ARCHETYPES = get_args(StoryArchetype)  # source of truth: parser, guide lookup, tests, eval
+STORY_ARCHETYPE_FALLBACK: StoryArchetype = "incident_first"
+
+# Which SCP-document addendum types the supplied source actually contains. Research
+# reports this inventory; it is evidence ABOUT the source, never a story choice.
+SourceEvidenceKey = Literal[
+    "incident_log", "experiment_log", "interview_log", "recovery_report", "dated_chronology",
+]
+SOURCE_EVIDENCE_KEYS = get_args(SourceEvidenceKey)
+
+# The grounding gate (Story 12.4 AC2): an archetype whose framing device is absent
+# from the source forces the writer to INVENT it — an interview that was never
+# logged, a chronology that does not exist — and that loss lands on
+# `article_fidelity` (the Story 8.8 SCP-096 -1.00 failure class). Any ONE of an
+# archetype's listed keys satisfies it; an empty tuple means no evidence is needed.
+# Deliberately narrow: widening this to make more SCPs "eligible" trades fidelity
+# for diversity, which is the wrong direction.
+# Key stays `str`: `missing_archetype_evidence` is deliberately total over
+# unvalidated input, so it must be able to look up a value the parser rejected.
+ARCHETYPE_REQUIRED_EVIDENCE: dict[str, tuple[SourceEvidenceKey, ...]] = {
+    "incident_first": (),
+    "discovery_log": ("recovery_report", "dated_chronology"),
+    "interview_testimony": ("interview_log",),
+    "containment_breach_realtime": ("incident_log",),
+}
+assert set(ARCHETYPE_REQUIRED_EVIDENCE) == set(STORY_ARCHETYPES)  # lockstep with the vocabulary
+assert not set().union(*ARCHETYPE_REQUIRED_EVIDENCE.values()) - set(SOURCE_EVIDENCE_KEYS)
+
+
+def missing_archetype_evidence(archetype: str, evidence: dict[str, bool] | None) -> tuple[str, ...]:
+    """The evidence keys ``archetype`` needs and ``evidence`` does not report.
+
+    Empty tuple == satisfied (including every unknown archetype, which the parser
+    has already rejected on the vocabulary, and ``incident_first``, which needs
+    nothing). Pure function of the two arguments — no I/O, no LLM. [AD-2]
+    """
+    required = ARCHETYPE_REQUIRED_EVIDENCE.get(archetype, ())
+    if not required or any((evidence or {}).get(key) for key in required):
+        return ()
+    return required
+
+
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
 
 # Story 8.19 — controlled role descriptions for the stock cast. Diagnosed cause:
@@ -290,3 +342,11 @@ class PipelineState(TypedDict):
                                    # verdict + deterministic metrics, read by the scenario gate.
                                    # NotRequired so pre-12.3 checkpoints still deserialize;
                                    # None == cleared by a retry/restart (never "clean").
+    story_archetype: NotRequired[StoryArchetype | None]  # Story 12.4 — the narrative template
+                                   # research selected for THIS run. Observability only:
+                                   # non-authoritative outside LangGraph state, never read back
+                                   # to steer generation. None == not generated / cleared.
+    story_archetype_fallback_used: NotRequired[bool]  # Story 12.4 — True when the selection was
+                                   # resolved deterministically (invalid value or missing source
+                                   # evidence) instead of chosen. Required as its own signal:
+                                   # post-resolution validity is always true and would hide drift.

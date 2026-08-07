@@ -33,6 +33,19 @@ class FakePrompt:
         return "rendered"
 
 
+# Story 12.4: research also owns the narrative-template selection, so any payload
+# that is supposed to REACH the end of validation needs these two. Kept as YAML
+# text (not a dict) because most of these fixtures hand back raw strings.
+_ARCHETYPE_YAML = (
+    'story_archetype: "incident_first"\n'
+    "archetype_rationale: 원문에 사건 기록이 있어 사건 우선 구조가 근거를 갖는다\n"
+)
+_ARCHETYPE_FIELDS = {
+    "story_archetype": "incident_first",
+    "archetype_rationale": "원문에 사건 기록이 있어 사건 우선 구조가 근거를 갖는다",
+}
+
+
 # review/critic are batched per scene, so a `writing` with no scenes issues no call
 # at all — every single-call test needs exactly one scene.
 _ONE_SCENE = {"scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
@@ -124,7 +137,7 @@ async def test_research_step_tolerates_missing_entity_sheet_and_logline(monkeypa
     )
 
     async def call(rendered, s):
-        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x"}), {}, "stop"
+        return json.dumps({"core_identity": "x", "frozen_descriptor": "x", "dramatic_beats": "x", "environment": "x", "hooks": "x", **_ARCHETYPE_FIELDS}), {}, "stop"
 
     result = await chain.research_step("SCP-173", "text", "guide", None, call)
     assert result.get("entity_sheet") is None
@@ -1120,7 +1133,7 @@ def _truncatable_stages():
              "atmosphere": "dread", "characters_present": [], "narration": "문장 하나."}
     writing = {"scp_id": "SCP-173", "scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
     return [
-        ("research", "frozen_descriptor: desc\n",
+        ("research", "frozen_descriptor: desc\n" + _ARCHETYPE_YAML,
          lambda call: chain.research_step("SCP-173", "text", "guide", None, call)),
         # the re-rolled structure payload must satisfy the retention contract, or
         # the stage fails after the successful re-roll for an unrelated reason
@@ -1336,11 +1349,14 @@ async def test_research_step_collapses_embedded_newlines_in_freetext_fields(monk
             "entity_sheet: |\n  첫 줄.\n  둘째 줄.\n"
             "story_logline: |\n  첫 줄.\n  둘째 줄.\n"
             "hooks: |\n  첫 줄.\n  둘째 줄.\n"
+            "archetype_rationale: |\n  첫 줄.\n  둘째 줄.\n"
+            'story_archetype: "incident_first"\n'
         )
         return raw, {}, "stop"
 
     result = await chain.research_step("SCP-173", "text", "guide", None, call)
-    for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline", "hooks"):
+    for key in ("core_identity", "frozen_descriptor", "entity_sheet", "story_logline", "hooks",
+                "archetype_rationale"):  # Story 12.4 — same block-literal habit, same collapse
         assert result[key] == "첫 줄. 둘째 줄."
 
 
@@ -2229,8 +2245,8 @@ async def test_research_step_forwards_usage_into_sink(monkeypatch):
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
 
     async def call(rendered, s):
-        payload = {"frozen_descriptor": "desc"}
-        return yaml.dump(payload), {"prompt_tokens": 7, "completion_tokens": 4}, "stop"
+        payload = {"frozen_descriptor": "desc", **_ARCHETYPE_FIELDS}
+        return yaml.dump(payload, allow_unicode=True), {"prompt_tokens": 7, "completion_tokens": 4}, "stop"
 
     usage_sink: list[dict] = []
     await chain.research_step("SCP-173", "text", "guide", None, call, usage_sink=usage_sink)
@@ -2242,8 +2258,8 @@ async def test_research_step_usage_sink_defaults_to_none_without_error(monkeypat
     monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
 
     async def call(rendered, s):
-        payload = {"frozen_descriptor": "desc"}
-        return yaml.dump(payload), {"prompt_tokens": 7}, "stop"
+        payload = {"frozen_descriptor": "desc", **_ARCHETYPE_FIELDS}
+        return yaml.dump(payload, allow_unicode=True), {"prompt_tokens": 7}, "stop"
 
     result = await chain.research_step("SCP-173", "text", "guide", None, call)
     assert result["frozen_descriptor"] == "desc"
@@ -2260,7 +2276,7 @@ async def test_research_step_retries_once_on_semantic_failure_then_succeeds(monk
         [
             "core_identity: x",  # valid YAML but missing non-empty frozen_descriptor → ValueError
             "core_identity: x\nfrozen_descriptor: x\nentity_sheet: x\nstory_logline: x\n"
-            "dramatic_beats: x\nenvironment: x\nhooks: x",
+            "dramatic_beats: x\nenvironment: x\nhooks: x\n" + _ARCHETYPE_YAML,
         ]
     )
 
@@ -4150,3 +4166,475 @@ def test_review_prompt_documents_entity_sheet_and_evidence_rules():
     assert "grounded_contradictions" in content
     for field in ("narration_quote", "grounding_source", "grounding_quote", "explanation", "correction"):
         assert field in content
+
+
+# --- Story 12.4: story archetype selection ------------------------------------
+# Selection lives in research and resolves deterministically. The catalogue is the
+# closed vocabulary in domain.state; everything below either asserts lockstep with
+# it or asserts that an unusable choice resolves to production's pre-12.4 template
+# instead of failing the run or inventing a framing device the source lacks.
+
+from yt_flow.domain import state as domain_state  # noqa: E402
+
+_PROMPTS = Path(__file__).parent.parent.parent.parent / "prompts"
+_ARCHETYPE_DIR = _PROMPTS / "scenario" / "archetypes"
+
+_EVIDENCE_SATISFYING = {
+    "incident_first": {},
+    "discovery_log": {"recovery_report": True},
+    "interview_testimony": {"interview_log": True},
+    "containment_breach_realtime": {"incident_log": True},
+}
+
+
+def _research_yaml(**over) -> str:
+    payload = {
+        "core_identity": "x", "frozen_descriptor": "desc", "entity_sheet": "e",
+        "story_logline": "l", "dramatic_beats": "x", "environment": "x", "hooks": "x",
+        "story_archetype": "incident_first",
+        "archetype_rationale": "사건 기록이 존재한다",
+        "source_evidence": dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, True),
+    }
+    payload.update(over)
+    return yaml.safe_dump(payload, allow_unicode=True)
+
+
+def _scripted(*replies):
+    """A call seam handing back `replies` in order; asserts it isn't over-called."""
+    it = iter(replies)
+    calls = {"n": 0}
+
+    async def call(rendered, s):
+        calls["n"] += 1
+        return next(it), {}, "stop"
+
+    return call, calls
+
+
+# ── vocabulary + guide lockstep ───────────────────────────────────────────────
+
+
+def test_archetype_vocabulary_is_the_four_closed_values():
+    assert domain_state.STORY_ARCHETYPES == (
+        "incident_first", "discovery_log", "interview_testimony", "containment_breach_realtime",
+    )
+    # researcher_descent is deferred on purpose (story AC1) — its absence is the contract.
+    assert "researcher_descent" not in domain_state.STORY_ARCHETYPES
+    assert domain_state.STORY_ARCHETYPE_FALLBACK in domain_state.STORY_ARCHETYPES
+
+
+def test_required_evidence_table_is_lockstep_with_the_vocabulary():
+    assert set(domain_state.ARCHETYPE_REQUIRED_EVIDENCE) == set(domain_state.STORY_ARCHETYPES)
+    for archetype, required in domain_state.ARCHETYPE_REQUIRED_EVIDENCE.items():
+        assert set(required) <= set(domain_state.SOURCE_EVIDENCE_KEYS), archetype
+    # Only incident_first may be unconditional: an archetype needing no evidence
+    # could be selected for a source that cannot support its framing device.
+    unconditional = [a for a, r in domain_state.ARCHETYPE_REQUIRED_EVIDENCE.items() if not r]
+    assert unconditional == ["incident_first"]
+
+
+def test_guide_files_match_the_vocabulary_exactly():
+    on_disk = {p.stem for p in _ARCHETYPE_DIR.glob("*.md")}
+    assert on_disk == set(domain_state.STORY_ARCHETYPES)
+
+
+@pytest.mark.parametrize("archetype", domain_state.STORY_ARCHETYPES)
+def test_every_guide_is_non_empty_and_carries_an_example(archetype):
+    text = (_ARCHETYPE_DIR / f"{archetype}.md").read_text(encoding="utf-8")
+    assert len(text.strip()) > 400, "a guide has to actually teach the beats"
+    assert archetype in text  # names the value it belongs to
+    assert "```yaml" in text, "AC5: at least one concise YAML beat-sheet example"
+    example = text.split("```yaml", 1)[1].split("```", 1)[0]
+    parsed = yaml.safe_load(example)
+    assert isinstance(parsed, list) and parsed, "the example must parse as a scene list"
+    assert all("scene_num" in entry for entry in parsed)
+    # Examples teach structure, not SCP facts (AC5) — no real designation may leak in.
+    assert not re.search(r"SCP-\d", text), "examples must stay source-neutral"
+
+
+# ── the pure evidence map ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("archetype", domain_state.STORY_ARCHETYPES)
+def test_satisfying_evidence_clears_every_archetype(archetype):
+    assert domain_state.missing_archetype_evidence(archetype, _EVIDENCE_SATISFYING[archetype]) == ()
+
+
+@pytest.mark.parametrize("archetype", [a for a in domain_state.STORY_ARCHETYPES if a != "incident_first"])
+def test_absent_evidence_is_reported_for_every_non_default_archetype(archetype):
+    missing = domain_state.missing_archetype_evidence(archetype, dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False))
+    assert missing == domain_state.ARCHETYPE_REQUIRED_EVIDENCE[archetype]
+
+
+def test_discovery_log_accepts_either_of_its_two_evidence_keys():
+    assert domain_state.missing_archetype_evidence("discovery_log", {"dated_chronology": True}) == ()
+    assert domain_state.missing_archetype_evidence("discovery_log", {"recovery_report": True}) == ()
+    assert domain_state.missing_archetype_evidence("discovery_log", {"interview_log": True}) != ()
+
+
+def test_incident_first_needs_nothing_even_with_no_inventory():
+    assert domain_state.missing_archetype_evidence("incident_first", None) == ()
+
+
+def test_source_evidence_normalizes_to_the_closed_key_set():
+    parsed = chain._parse_source_evidence({"interview_log": True, "made_up_key": True})
+    assert set(parsed) == set(domain_state.SOURCE_EVIDENCE_KEYS)
+    assert parsed["interview_log"] is True
+    assert parsed["incident_log"] is False
+    assert "made_up_key" not in parsed
+
+
+def test_source_evidence_accepts_string_true_and_rejects_a_non_mapping():
+    assert chain._parse_source_evidence({"incident_log": "TRUE"})["incident_log"] is True
+    assert chain._parse_source_evidence("nope") == dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False)
+
+
+# ── research_step: selection, normalization, bounded correction ───────────────
+
+
+@pytest.mark.parametrize("archetype", domain_state.STORY_ARCHETYPES)
+async def test_research_step_accepts_every_catalogue_value_with_its_evidence(monkeypatch, archetype):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    evidence = dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False)
+    evidence.update(_EVIDENCE_SATISFYING[archetype])
+    call, calls = _scripted(_research_yaml(story_archetype=archetype, source_evidence=evidence))
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype"] == archetype
+    assert result["story_archetype_fallback_used"] is False
+    assert calls["n"] == 1  # no correction retry for a valid choice
+
+
+async def test_research_step_normalizes_casing_and_whitespace(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(_research_yaml(story_archetype="  Interview_Testimony \n"))
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype"] == "interview_testimony"
+    assert result["story_archetype_fallback_used"] is False
+    assert calls["n"] == 1
+
+
+async def test_research_step_gives_an_unknown_archetype_exactly_one_correction(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(
+        _research_yaml(story_archetype="researcher_descent"),   # not in the catalogue
+        _research_yaml(story_archetype="discovery_log"),        # corrected
+    )
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert (result["story_archetype"], result["story_archetype_fallback_used"]) == ("discovery_log", False)
+    assert calls["n"] == 2
+
+
+async def test_research_step_falls_back_after_a_second_invalid_archetype(monkeypatch, caplog):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(
+        _research_yaml(story_archetype="researcher_descent"),
+        _research_yaml(story_archetype="cosmic_horror_montage"),
+    )
+    with caplog.at_level(logging.WARNING):
+        result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype"] == "incident_first"
+    assert result["story_archetype_fallback_used"] is True
+    assert calls["n"] == 2  # bounded: never a third call
+    assert "cosmic_horror_montage" in caplog.text  # the rejected value is named
+    # the rest of the otherwise-valid packet survives the fallback
+    assert result["frozen_descriptor"] == "desc" and result["entity_sheet"] == "e"
+
+
+@pytest.mark.parametrize("bad", [None, 42, True, ["discovery_log"], {"pick": "x"}])
+async def test_research_step_resolves_a_non_string_archetype(monkeypatch, bad):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = _research_yaml() if bad is None else _research_yaml(story_archetype=bad)
+    if bad is None:  # "missing" rather than "None-valued"
+        payload = yaml.safe_dump(
+            {k: v for k, v in yaml.safe_load(payload).items() if k != "story_archetype"},
+            allow_unicode=True,
+        )
+    call, calls = _scripted(payload, payload)
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype"] == "incident_first"
+    assert result["story_archetype_fallback_used"] is True
+    assert calls["n"] == 2
+
+
+async def test_unrelated_schema_failure_is_never_salvaged_by_the_archetype_fallback(monkeypatch):
+    """The callback replaces only `story_archetype` — a missing descriptor still fails."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(_research_yaml(frozen_descriptor=""), _research_yaml(frozen_descriptor=""))
+    with pytest.raises(ValueError, match="frozen_descriptor"):
+        await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert calls["n"] == 2
+
+
+async def test_missing_rationale_is_fatal_even_with_a_valid_archetype(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = yaml.safe_dump(
+        {k: v for k, v in yaml.safe_load(_research_yaml()).items() if k != "archetype_rationale"},
+        allow_unicode=True,
+    )
+    call, calls = _scripted(payload, payload)
+    with pytest.raises(ValueError, match="archetype_rationale"):
+        await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert calls["n"] == 2
+
+
+async def test_blank_rationale_is_rejected(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, _ = _scripted(*[_research_yaml(archetype_rationale="   ")] * 2)
+    with pytest.raises(ValueError, match="archetype_rationale"):
+        await chain.research_step("SCP-173", "t", "guide", None, call)
+
+
+def test_rationale_is_in_the_deterministic_freetext_repair_set():
+    # Story 6.11 path: an inline rationale quoting "Addendum 173-1: ..." would
+    # otherwise be an unrepairable YAMLError.
+    assert "archetype_rationale" in chain.FREETEXT_KEYS
+    raw = "frozen_descriptor: desc\narchetype_rationale: Addendum 173-1: 회수 기록이 있다\n"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(raw)
+    repaired = chain._reparse_repairing_freetext(
+        raw, chain._parse_yaml, _yaml_error(raw),
+    )
+    assert repaired["archetype_rationale"] == "Addendum 173-1: 회수 기록이 있다"
+
+
+def _yaml_error(raw: str) -> yaml.YAMLError:
+    try:
+        yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        return exc
+    raise AssertionError("expected a YAMLError")
+
+
+# ── the evidence gate: deterministic, and NOT an LLM retry ────────────────────
+
+
+@pytest.mark.parametrize("archetype", [a for a in domain_state.STORY_ARCHETYPES if a != "incident_first"])
+async def test_archetype_without_its_source_evidence_falls_back_without_a_second_call(
+    monkeypatch, caplog, archetype,
+):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(_research_yaml(
+        story_archetype=archetype,
+        source_evidence=dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False),
+    ))
+    with caplog.at_level(logging.WARNING):
+        result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype"] == "incident_first"
+    assert result["story_archetype_fallback_used"] is True
+    # AC2: the grounding check reuses NO LLM call — one provider call total.
+    assert calls["n"] == 1
+    assert archetype in caplog.text
+    for key in domain_state.ARCHETYPE_REQUIRED_EVIDENCE[archetype]:
+        assert key in caplog.text  # the missing evidence key is named
+
+
+async def test_absent_inventory_leaves_only_incident_first_eligible(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = yaml.safe_dump(
+        {**yaml.safe_load(_research_yaml(story_archetype="interview_testimony")), "source_evidence": None},
+        allow_unicode=True,
+    )
+    call, _ = _scripted(payload)
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert (result["story_archetype"], result["story_archetype_fallback_used"]) == ("incident_first", True)
+
+
+async def test_incident_first_on_a_bare_source_is_not_a_fallback(monkeypatch):
+    """AC2: when the inventory supports only incident_first, staying there is the
+    correct OUTCOME, not a degradation — the fallback flag must stay false."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, _ = _scripted(_research_yaml(
+        story_archetype="incident_first",
+        source_evidence=dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False),
+    ))
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["story_archetype_fallback_used"] is False
+
+
+@pytest.mark.parametrize(
+    ("replies", "trace"),
+    [
+        # missing evidence: one call, gate resolves in code
+        ([_research_yaml(story_archetype="interview_testimony",
+                         source_evidence={"incident_log": True, "interview_log": False},
+                         archetype_rationale="Addendum 173-4의 심문 기록이 증언 서사를 지지함")], 1),
+        # two invalid values in a row: the semantic_fallback seam
+        ([_research_yaml(story_archetype="researcher_descent",
+                         archetype_rationale="연구원 하강 서사가 이 문서에 맞음")] * 2, 2),
+    ],
+)
+async def test_overridden_choice_does_not_leave_its_rationale_on_the_packet(monkeypatch, replies, trace):
+    """`structure_step` dumps the whole packet into `{{research_packet}}`, so a
+    rationale arguing for the REJECTED archetype would tell the structure model to
+    reintroduce the framing device the gate just refused (AC3: no contradictory
+    instruction; AC4: no invented framing device)."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, calls = _scripted(*replies)
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+
+    assert result["story_archetype"] == "incident_first"
+    assert result["story_archetype_fallback_used"] is True
+    assert calls["n"] == trace  # the override still costs no extra provider call
+    # still a non-empty rationale (AC2), but no longer the rejected argument
+    assert result["archetype_rationale"].strip()
+    assert "심문" not in result["archetype_rationale"]
+    assert "연구원 하강" not in result["archetype_rationale"]
+    assert "incident_first" in result["archetype_rationale"]
+
+
+async def test_a_kept_choice_keeps_the_models_own_rationale(monkeypatch):
+    """The override is scoped to the override — a valid selection is not rewritten."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, _ = _scripted(_research_yaml(
+        story_archetype="interview_testimony",
+        source_evidence={"interview_log": True},
+        archetype_rationale="Addendum 173-4의 심문 기록이 증언 서사를 지지함",
+    ))
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["archetype_rationale"] == "Addendum 173-4의 심문 기록이 증언 서사를 지지함"
+
+
+async def test_normalized_inventory_is_kept_on_the_packet(monkeypatch):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, _ = _scripted(_research_yaml(source_evidence={"interview_log": True, "junk": True}))
+    result = await chain.research_step("SCP-173", "t", "guide", None, call)
+    assert result["source_evidence"] == {
+        **dict.fromkeys(domain_state.SOURCE_EVIDENCE_KEYS, False), "interview_log": True,
+    }
+
+
+# ── structure_step: the selected guide, and only it ──────────────────────────
+
+
+class _RecordingPrompt:
+    def __init__(self, name, fetched, captured):
+        self._name, self._fetched, self._captured = name, fetched, captured
+
+    def compile(self, **variables):
+        self._fetched.append(self._name)
+        if self._name == "scenario/structure":
+            self._captured.update(variables)
+            return "rendered"
+        return f"GUIDE_TEXT:{self._name}"
+
+
+def _recording_prompt_service(monkeypatch):
+    fetched: list[str] = []
+    captured: dict = {}
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda name, **k: _RecordingPrompt(name, fetched, captured),
+    )
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback",
+        lambda name, **k: _RecordingPrompt(name, fetched, captured),
+    )
+    return fetched, captured
+
+
+@pytest.mark.parametrize("archetype", domain_state.STORY_ARCHETYPES)
+async def test_structure_step_injects_only_the_selected_guide(monkeypatch, archetype):
+    fetched, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(_retention_yaml(2))
+    await chain.structure_step(
+        "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype=archetype,
+    )
+    assert captured["story_archetype"] == archetype
+    assert captured["archetype_guide"] == f"GUIDE_TEXT:scenario/archetypes/{archetype}"
+    # exactly one guide compiled — not all four (AC5: no unrelated prompt bloat)
+    guides = [n for n in fetched if n.startswith("scenario/archetypes/")]
+    assert guides == [f"scenario/archetypes/{archetype}"]
+
+
+async def test_structure_step_defaults_to_the_production_template(monkeypatch):
+    """A caller that predates this story keeps producing incident-first outlines."""
+    _, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(_retention_yaml(2))
+    await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    assert captured["story_archetype"] == "incident_first"
+
+
+async def test_structure_step_never_infers_the_choice_from_the_research_packet(monkeypatch):
+    """AC3: the explicit argument wins. The packet still travels whole (it carries
+    every other research field), but it is not where the decision is read from."""
+    _, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(_retention_yaml(2))
+    await chain.structure_step(
+        "SCP-173", {"frozen_descriptor": "d", "story_archetype": "discovery_log"}, "guide", None, call,
+        story_archetype="interview_testimony",
+    )
+    assert captured["story_archetype"] == "interview_testimony"
+    assert captured["archetype_guide"].endswith("interview_testimony")
+
+
+async def test_unknown_archetype_reaching_structure_uses_the_default_guide(monkeypatch, caplog):
+    _, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(_retention_yaml(2))
+    with caplog.at_level(logging.WARNING):
+        await chain.structure_step(
+            "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype="nonsense",
+        )
+    assert captured["archetype_guide"].endswith("incident_first")
+    assert "nonsense" in caplog.text
+
+
+def test_archetype_guide_is_label_aware(monkeypatch):
+    """AC7: the suspended candidate workflow must keep working without redesign."""
+    seen: list[tuple[str, str | None]] = []
+
+    class P:
+        def compile(self, **v):
+            return "text"
+
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt_with_fallback",
+        lambda name, **k: (seen.append((name, k.get("label"))), P())[1],
+    )
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda name, **k: (seen.append((name, None)), P())[1],
+    )
+    chain.archetype_guide("discovery_log", label="candidate")
+    chain.archetype_guide("discovery_log")
+    assert seen == [
+        ("scenario/archetypes/discovery_log", "candidate"),
+        ("scenario/archetypes/discovery_log", None),
+    ]
+
+
+# ── prompt contract: no shared prompt may re-impose one template ──────────────
+
+
+def test_structure_prompt_is_driven_by_the_selected_archetype():
+    text = (_PROMPTS / "scenario" / "structure.md").read_text(encoding="utf-8")
+    assert "{{story_archetype}}" in text
+    assert "{{archetype_guide}}" in text
+
+
+@pytest.mark.parametrize("name", ["structure.md", "writing.md", "format_guide.md"])
+def test_common_prompts_no_longer_force_incident_first_universally(name):
+    """The Story 12.4 defect was three prompts each independently reasserting the
+    same reveal grammar. This fails if any of them starts doing it again."""
+    text = (_PROMPTS / "scenario" / name).read_text(encoding="utf-8")
+    assert "INCIDENT-FIRST format" not in text
+    # The old fixed act ladder, in any of the three prompts' phrasings.
+    for banned in ("Act 1 - 사건으로 시작", "Act 1: 사건으로 시작", "**앞부분 (Act 1-2)**"):
+        assert banned not in text, f"{name} re-imposes a fixed act order"
+
+
+def test_format_guide_points_at_the_archetype_guide_for_act_authority():
+    text = (_PROMPTS / "scenario" / "format_guide.md").read_text(encoding="utf-8")
+    assert "scenario/archetypes/" in text
+    # the universal retention principles it owns are still there (AC4)
+    for kept in ("Hook Type Library", "Progressive Disclosure", "Emotional Curve", "Viewer Immersion"):
+        assert kept in text
+
+
+def test_research_prompt_documents_the_closed_catalogue_and_inventory():
+    text = (_PROMPTS / "scenario" / "research.md").read_text(encoding="utf-8")
+    for archetype in domain_state.STORY_ARCHETYPES:
+        assert archetype in text
+    for key in domain_state.SOURCE_EVIDENCE_KEYS:
+        assert key in text
+    assert "archetype_rationale" in text
+    assert "researcher_descent" not in text  # deferred, must not be offered

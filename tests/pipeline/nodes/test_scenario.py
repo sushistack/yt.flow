@@ -1627,3 +1627,119 @@ async def test_quality_survives_a_langgraph_checkpoint_round_trip(monkeypatch, t
     out = await sc.scenario_node(_state())
     serde = JsonPlusSerializer()
     assert serde.loads_typed(serde.dumps_typed(out["scenario_quality"])) == out["scenario_quality"]
+
+
+# --- Story 12.4: archetype propagation ----------------------------------------
+# scenario.py's only job here is narrow: resolve the research-owned value ONCE,
+# hand it to structure, and report it. These tests pin "once" and "reported",
+# because a second selection is exactly what would make an episode's outline and
+# its recorded archetype disagree.
+
+_RESEARCH_WITH_ARCHETYPE = {
+    **RESEARCH,
+    "story_archetype": "discovery_log",
+    "story_archetype_fallback_used": False,
+    "archetype_rationale": "회수 기록과 날짜 항목이 있다",
+}
+
+
+def _stub_chain_with_research(monkeypatch, research, **over):
+    """`_stub_chain`, plus a research seam returning `research` and a recorder for
+    every `story_archetype` kwarg structure_step was handed."""
+    calls = _stub_chain(monkeypatch, **over)
+    seen: list[str] = []
+    real_structure = sc.structure_step
+
+    async def fake_research(*a, **k):
+        calls["research"] += 1
+        return research
+
+    async def fake_structure(*a, **k):
+        seen.append(k.get("story_archetype"))
+        return await real_structure(*a, **k)
+
+    monkeypatch.setattr(sc, "research_step", fake_research)
+    monkeypatch.setattr(sc, "structure_step", fake_structure)
+    return calls, seen
+
+
+async def test_selected_archetype_is_returned_and_passed_to_structure(monkeypatch):
+    calls, seen = _stub_chain_with_research(monkeypatch, _RESEARCH_WITH_ARCHETYPE)
+    out = await sc.scenario_node(_state())
+    assert out["story_archetype"] == "discovery_log"
+    assert out["story_archetype_fallback_used"] is False
+    assert seen == ["discovery_log"]  # resolved once, handed over explicitly
+    assert calls["structure"] == 1
+
+
+async def test_fallback_flag_reaches_the_state(monkeypatch):
+    _stub_chain_with_research(monkeypatch, {
+        **RESEARCH, "story_archetype": "incident_first", "story_archetype_fallback_used": True,
+    })
+    out = await sc.scenario_node(_state())
+    assert (out["story_archetype"], out["story_archetype_fallback_used"]) == ("incident_first", True)
+
+
+async def test_research_without_the_field_degrades_to_the_production_template(monkeypatch):
+    """A stubbed/older research seam must not crash the stage (AD-10) — but a seam
+    that has stopped selecting IS a selector failure, so the flag AC6 added to
+    expose exactly that drift must not read clean while it happens."""
+    _, seen = _stub_chain_with_research(monkeypatch, RESEARCH)
+    out = await sc.scenario_node(_state())
+    assert out["story_archetype"] == "incident_first"
+    assert out["story_archetype_fallback_used"] is True
+    assert seen == ["incident_first"]
+
+
+async def test_scene_scoped_repair_does_not_reselect(monkeypatch):
+    # A scoped repair never calls writing_step, so `_stub_chain`'s writing-count
+    # retry switch (full-rewrite only) can't drive it — flag scene 1 in `review`
+    # and let the repair pass clear it, exactly as the 12.1 repair tests do.
+    calls, seen = _stub_chain_with_research(
+        monkeypatch, _RESEARCH_WITH_ARCHETYPE, review=REVIEW_FAIL, review_retry=REVIEW_PASS,
+    )
+    out = await sc.scenario_node(_state())
+    assert calls["repair"] == 1                    # the repair pass really ran
+    assert calls["structure"] == 1 and seen == ["discovery_log"]
+    assert out["story_archetype"] == "discovery_log"
+
+
+async def test_full_rewrite_fallback_does_not_reselect(monkeypatch):
+    # review fails with no usable scene_num → the full-rewrite branch
+    review_fail = {**REVIEW_PASS, "overall_pass": False,
+                   "issues": [{"scene_num": "nope", "description": "bad", "correction": "fix"}]}
+    calls, seen = _stub_chain_with_research(
+        monkeypatch, _RESEARCH_WITH_ARCHETYPE, review=review_fail, review_retry=REVIEW_PASS,
+    )
+    out = await sc.scenario_node(_state())
+    assert calls["writing"] == 2 and calls["repair"] == 0  # full rewrite, not scoped repair
+    assert calls["structure"] == 1 and seen == ["discovery_log"]
+    assert out["story_archetype"] == "discovery_log"
+
+
+async def test_research_and_structure_traces_carry_the_selection(monkeypatch):
+    _stub_chain_with_research(monkeypatch, _RESEARCH_WITH_ARCHETYPE)
+    sink: list[dict] = []
+    await sc.scenario_node(_state(), trace_sink=sink)
+    by_name = {stage["name"]: stage for stage in sink}
+    assert by_name["research"]["story_archetype"] == "discovery_log"
+    assert by_name["research"]["story_archetype_fallback_used"] is False
+    assert by_name["structure"]["story_archetype"] == "discovery_log"
+    # stage names and token accounting are untouched (AC8)
+    assert [s["name"] for s in sink][:2] == ["research", "structure"]
+    assert all("prompt_tokens" in s for s in sink)
+
+
+async def test_a_failed_run_reports_no_archetype(monkeypatch):
+    """AC8: a failed rerun must never show the previous attempt's template beside a
+    new error — the failure path returns only stage + error."""
+    _stub_chain_with_research(monkeypatch, _RESEARCH_WITH_ARCHETYPE)
+
+    async def boom(*a, **k):
+        raise RuntimeError("writing exploded")
+
+    monkeypatch.setattr(sc, "writing_step", boom)
+    out = await sc.scenario_node(_state())
+    assert out["error"].startswith("stage=scenario run_id=run-123:")
+    assert "story_archetype" not in out
+    assert "story_archetype_fallback_used" not in out

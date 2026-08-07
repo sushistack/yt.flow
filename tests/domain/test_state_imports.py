@@ -44,6 +44,9 @@ EXPECTED_FIELDS = {
         "run_id", "scp_id", "scp_text", "scenes", "video_path", "current_stage",
         "gate_states", "prompt_variant", "error", "ending_credit_error",
         "scenario_quality",  # Story 12.3 — NotRequired, so pre-12.3 checkpoints still load
+        # Story 12.4 — both NotRequired for the same reason; observability only, never
+        # read back to steer generation.
+        "story_archetype", "story_archetype_fallback_used",
     },
     # Story 12.3 quality contract — checkpoint- AND interrupt-serialized, so its shape
     # is as much a compatibility surface as PipelineState's.

@@ -8,19 +8,25 @@ Apply the following storytelling principles when designing scene structure, emot
 
 ## Structure Requirements
 
-Design the scene structure following the **INCIDENT-FIRST format**. This is NOT a wiki article — viewers don't care about classification. They care about WHAT HAPPENED.
+이 에피소드의 서사 아키타입은 **`{{story_archetype}}`** 입니다. Stage 1(리서치)이 원문의 기록
+구조를 근거로 이미 선택했습니다. **다시 고르지 마세요. 다른 아키타입으로 바꾸지 마세요.**
+아래 가이드가 이 에피소드의 비트 순서·시점·공개 타이밍·결말에 대한 **유일한 권위**입니다.
 
-**Structure (4 acts, but the order is different from a wiki):**
-- **Act 1 - 사건으로 시작** (~15%): 가장 충격적인 사건, 피해, 또는 미스터리로 시작. 개체 이름이나 등급을 말하지 마세요. "무슨 일이 일어났는지"만 보여주세요.
-- **Act 2 - 미스터리 확장** (~30%): 사건의 맥락을 더 주되, 정체는 아직 완전히 드러내지 마세요. "왜 이런 일이 일어났을까?"를 시청자가 궁금해하게. 격리 절차를 통해 위험성을 간접적으로 암시.
-- **Act 3 - 정체 공개 + 더 깊은 사건** (~40%): 이제서야 개체가 뭔지 본격적으로 밝힘. 추가 사건/실험 로그/목격담으로 공포를 극대화. 가장 무서운 디테일은 여기에.
-- **Act 4 - 미해결 미스터리** (~15%): 재단도 모르는 것, 해결 안 된 질문, 시청자에게 여운을 남기는 결말.
+{{archetype_guide}}
 
-**핵심 원칙:**
-- ❌ "SCP-173은 유클리드 등급 개체입니다. 1993년에 발견되었습니다." (위키 순서)
-- ✅ "14명의 인원이 목이 꺾인 채 발견되었습니다. 어떤 무기도 사용되지 않았습니다." (사건 순서)
-- 개체의 정체와 능력은 **미스터리처럼 천천히 드러내세요**
-- 격리 절차는 "이렇게까지 해야 하는 이유"를 암시하는 장치로 사용
+> ⚠️ 위 가이드의 **예시 아웃라인은 비트 순서만 보여주는 발췌**입니다. 씬 일부와 필수 필드
+> (`key_points`, `hook_type`, `loops_planted`, `loops_closed`, `pattern_interrupt`,
+> `word_budget`, `fact_references`, `mood`, `title`, `kicker`, `estimated_duration_sec`)가
+> 생략되어 있고 `scene_num`도 띄어져 있습니다. 예시의 씬 개수·필드 집합을 그대로 따라가지
+> 마세요. 실제 출력은 **8~12개 연속 씬**이며 아래 Task 섹션의 스키마와 Retention Contract를
+> **모든 씬에서** 충족해야 합니다 — 하나라도 빠지면 아웃라인이 기각되고 런이 실패합니다.
+
+**모든 아키타입에 공통인 것 (위 가이드가 덮어쓰지 않는 부분):**
+- 이것은 위키 문서가 아닙니다. 시청자는 분류가 아니라 **일어난 일**에 반응합니다. 어떤
+  아키타입이든 분류·등급 낭독으로 시작하지 마세요.
+- 정보는 한 번에 쏟지 말고 단계적으로 공개하세요. **어떤 순서로** 공개할지는 위 가이드가 정합니다.
+- 격리 절차는 설명 대상이 아니라 "이렇게까지 해야 하는 이유"를 암시하는 장치입니다.
+- 마지막 씬은 여운을 남깁니다. **무엇으로** 남길지는 위 가이드의 결말 계약을 따르세요.
 
 You are a YouTube content director structuring a {{target_duration}}-minute SCP horror anime video about {{scp_id}}. Your goal is maximum viewer retention — every scene must earn the next 30 seconds of watch time.
 
@@ -91,8 +97,8 @@ Hook Type Library와 동일한 어휘. 새 유형을 만들지 마세요).
 - 각 ID는 정확히 한 번 심고(`loops_planted`), **더 뒤의 씬에서** 정확히 한 번 닫습니다(`loops_closed`).
 - 같은 씬에서 심고 닫기 금지, 심지 않은 ID 닫기 금지, 중복 금지.
 - 마지막 씬이 끝난 시점에 **열려 있는 루프가 하나도 없어야 합니다.**
-- ⚠️ **"미해결 미스터리 결말"과 혼동하지 마세요.** Act 4는 여전히 여운을 남기는 열린 함의로
-  끝나야 합니다 — 재단도 모르는 것, 답이 없는 질문. 그건 분위기이지 *추적 대상 약속*이 아닙니다.
+- ⚠️ **"여운을 남기는 결말"과 혼동하지 마세요.** 마지막 비트는 아키타입 가이드의 결말 계약대로
+  열린 함의로 끝나야 합니다. 그건 분위기이지 *추적 대상 약속*이 아닙니다.
   `loops_planted`에 올린 것은 "이 영상 안에서 답을 주겠다"는 약속이므로 반드시 닫습니다.
   결말의 여운은 원장에 올리지 않습니다.
 
@@ -142,8 +148,8 @@ viewer after a scene jump, not a wiki label:
 2. Scenes must cover all Key Dramatic Beats from the research
 3. Each fact from the source data should appear in at least one scene's `fact_references` — since every entry is now a full fact statement, this rule is checkable by reading the outline alone
 4. **Pacing variation is MANDATORY**: alternate between slower atmospheric scenes (60-90s) and faster incident scenes (30-45s). Never use the same duration for 3+ consecutive scenes.
-5. **The first scene must hook within 5 seconds** — use one of the candidate hooks from the research packet
-6. The last scene must leave an unresolved mystery
+5. **The first scene must hook within 5 seconds** — use one of the candidate hooks from the research packet, shaped by the selected archetype's opening beat
+6. The last scene must satisfy the selected archetype's ending contract (all four leave something unresolved; *what* is left open differs)
 7. **Adjacent scenes MUST have different emotional beats** — never repeat the same mood consecutively
 8. **Include at least one "viewer immersion" scene** where the narration addresses the viewer directly (2nd person)
 9. **`title`/`kicker` are viewer-facing Korean, not internal labels**: no reveal-spoilers, one line each, no reveal of the emotional_beat name itself
@@ -158,6 +164,10 @@ viewer after a scene jump, not a wiki label:
 - [ ] `pattern_interrupt: "none"`이 3연속으로 나오는 구간이 없는가
 - [ ] 모든 `word_budget`이 20~90 정수이고 총합이 180~360인가
 - [ ] 모든 `fact_references` 항목이 라벨이 아니라 읽히는 사실 문장인가
+- [ ] 씬 순서가 `{{story_archetype}}` 가이드의 비트 문법 순서를 따르고, 마지막 씬이 그 가이드의
+      결말 계약을 지키는가 (다른 아키타입의 순서를 섞지 않았는가)
+- [ ] 가이드가 "만들지 마세요"라고 명시한 것(없는 날짜, 없는 발언, 없는 시각 표기)을 하나도
+      추가하지 않았는가
 
 하나라도 어긋나면 출력 전에 고치세요.
 

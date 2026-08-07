@@ -226,6 +226,8 @@ def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any 
         "error": None,
         "scenario_quality": None,  # Story 12.3 — a full restart must not inherit the
                                    # prior draft's review verdict (AC8)
+        "story_archetype": None,   # Story 12.4 — same rule for the selected template
+        "story_archetype_fallback_used": False,
     }
 
 
@@ -765,7 +767,13 @@ def _nullify(stage: str, scenes: list) -> dict:
         # it goes with it. Leaving it would label the NEXT script with the old
         # script's warning — worse than no warning at all. Only the scenario branch
         # clears it: a downstream retry does not invalidate the scenario review.
-        return {"scenes": [], "video_path": None, "scenario_quality": None}
+        # Story 12.4 AC8: the archetype describes the discarded draft too. Left
+        # behind, a FAILED rerun would show the previous attempt's template beside
+        # the new error, reading as "this error happened under that archetype".
+        return {
+            "scenes": [], "video_path": None, "scenario_quality": None,
+            "story_archetype": None, "story_archetype_fallback_used": False,
+        }
     new = deepcopy(scenes)
     for scene in new:
         if i <= 1:  # image + downstream

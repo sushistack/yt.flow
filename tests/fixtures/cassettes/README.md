@@ -18,6 +18,15 @@ Gemini's compatibility endpoint shares byte-for-byte with DeepSeek's. Only the
 seam changed, not the shape — renaming the files would churn every reference for
 no behavioural difference.
 
+Since Story 12.4 the research cassette also carries the narrative-template
+contract — `source_evidence` (the closed addendum inventory), `story_archetype`
+and `archetype_rationale`. `research_step` validates all three, so dropping them
+from the cassette fails the offline profile at the research stage, not later.
+`structure_step` then fetches `scenario/archetypes/<story_archetype>` through the
+same prompt seam; `tests/stubs/fakes.py` serves that name from
+`_FakeChainPrompt`, which needs no cassette because the guide text is a *prompt
+variable*, never a provider call.
+
 | File | Seam | Shape source |
 |------|------|--------------|
 | `deepseek_scenario.json` | `scenario._call_deepseek` | OpenAI-compatible chat completion; `choices[0].message.content` is a JSON string parsed by `_parse_scenes` |

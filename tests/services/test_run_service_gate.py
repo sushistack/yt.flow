@@ -620,3 +620,64 @@ def test_nullify_clears_quality_only_for_scenario():
 
 def test_initial_state_starts_with_no_quality():
     assert run_service._initial_state("r", "SCP-096", "t")["scenario_quality"] is None
+
+
+# Story 12.4 — the selected archetype is scenario-owned state, cleared on exactly
+# the same boundary as the quality verdict.
+
+
+def test_nullify_clears_the_archetype_only_for_scenario():
+    update = run_service._nullify("scenario", [])
+    assert update["story_archetype"] is None
+    assert update["story_archetype_fallback_used"] is False
+    for stage in ("image", "tts", "subtitle", "video"):
+        downstream = run_service._nullify(stage, [dict(_SCENE)])
+        assert "story_archetype" not in downstream, stage
+        assert "story_archetype_fallback_used" not in downstream, stage
+
+
+def test_initial_state_starts_with_no_archetype():
+    state = run_service._initial_state("r", "SCP-096", "t")
+    assert state["story_archetype"] is None
+    assert state["story_archetype_fallback_used"] is False
+
+
+@pytest.fixture
+def archetype_scenario(monkeypatch):
+    """A scenario stage that reports an archetype on its FIRST run and FAILS on the
+    next — so a stale selection surviving the rerun would be visible."""
+    from yt_flow.pipeline import nodes
+
+    runs = {"n": 0}
+
+    async def node(state):
+        runs["n"] += 1
+        if runs["n"] == 1:
+            return {
+                "current_stage": "scenario", "error": None, "scenes": [dict(_SCENE)],
+                "story_archetype": "discovery_log", "story_archetype_fallback_used": True,
+            }
+        return {"current_stage": "scenario", "error": "stage=scenario run_id=x: boom"}
+
+    monkeypatch.setitem(nodes.STAGE_NODES, "scenario", node)
+    return runs
+
+
+async def test_failed_scenario_retry_cannot_retain_the_previous_archetype(
+    stub_stage_nodes, archetype_scenario, env,
+):
+    """AC8: the rerun failed, so state must show the new error and NO archetype —
+    never the discarded draft's template sitting beside it."""
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    await run_service.start_run(run_id, "SCP-096", "t", None)
+    await run_service.resume_run(run_id, "scenario", "reject", None)  # → failed, retryable
+
+    await run_service.retry_stage(run_id, "scenario", None)
+    await asyncio.gather(*list(run_service._bg_tasks))
+
+    assert archetype_scenario["n"] == 2
+    snap = await run_service._graph.aget_state({"configurable": {"thread_id": run_id}})
+    assert snap.values["error"]  # the rerun really did fail
+    assert snap.values.get("story_archetype") is None
+    assert not snap.values.get("story_archetype_fallback_used")

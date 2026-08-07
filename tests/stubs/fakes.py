@@ -200,7 +200,10 @@ def fake_get_prompt_for_chain(name: str, *, label: str | None = None):
 
     ``scenario/format_guide`` has no variables and is only ever compiled once
     for its static text — the existing zero-arg ``_FakePrompt`` fake covers it.
-    Every other name is one of the six chain stages.
+    Every other name is one of the six chain stages, or (Story 12.4) one of the
+    four ``scenario/archetypes/*`` guide components, whose compiled text is a
+    *variable* injected into structure rather than a provider call — so a marker
+    is all it needs and no cassette exists for it.
     """
     if name == "scenario/format_guide":
         return _FakePrompt()
