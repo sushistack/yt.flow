@@ -85,6 +85,84 @@ async def test_await_image_retries_transient_http_error():
         assert calls["n"] == 2  # retried past the transient error
 
 
+async def test_await_image_timeout_reports_poll_and_error_counts():
+    """Every poll erroring must not read as "ComfyUI produced nothing".
+
+    The old silent `except httpx.HTTPError: entry = None` made a broken poll
+    indistinguishable from a slow generation — the error names the counts and
+    the last exception so the next incident is diagnosable from the journal.
+    """
+    async def handler(req):
+        raise httpx.ReadTimeout("read timed out")
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError) as exc_info:
+            await cc._await_image(c, "pid", interval=0.0, max_polls=3)
+    msg = str(exc_info.value)
+    assert "3 polls" in msg and "3 errored" in msg
+    assert "ReadTimeout" in msg and "read timed out" in msg
+    assert "never appeared in history" in msg
+
+
+async def test_await_image_timeout_distinguishes_present_but_imageless():
+    """Prompt in history with no images is a different failure from a dead poll."""
+    async def handler(req):
+        return httpx.Response(200, json={"pid": {"outputs": {"9": {"gifs": []}}}})
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError) as exc_info:
+            await cc._await_image(c, "pid", interval=0.0, max_polls=2)
+    msg = str(exc_info.value)
+    assert "in history but it carried no image" in msg
+    assert "['9']" in msg  # which output nodes were actually present
+    assert "2 polls, 0 errored" in msg
+
+
+async def test_await_outputs_timeout_reports_counts_and_nodes():
+    async def handler(req):
+        return httpx.Response(200, json={"pid": {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}})
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError) as exc_info:
+            await cc._await_outputs(c, "pid", ["42"], interval=0.0, max_polls=2)
+    msg = str(exc_info.value)
+    assert "node(s) ['42']" in msg and "output nodes seen: ['9']" in msg
+    assert "2 polls, 0 errored" in msg
+
+
+async def test_await_image_logs_transient_error_but_still_retries(caplog):
+    """Logging the swallowed exception must not break the retry path."""
+    calls = {"n": 0}
+
+    async def handler(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json={
+            "pid": {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}
+        })
+
+    with caplog.at_level("WARNING", logger=cc.logger.name):
+        async with _client(handler) as c:
+            ref = await cc._await_image(c, "pid", interval=0.0, max_polls=3)
+    assert ref["filename"] == "f.png"
+    assert calls["n"] == 2
+    assert "HTTPStatusError" in caplog.text and "prompt_id=pid" in caplog.text
+
+
+async def test_poll_error_logging_is_rate_limited(caplog):
+    """First error at WARNING, the rest at DEBUG — 900 polls can't flood the log."""
+    async def handler(req):
+        raise httpx.ConnectError("refused")
+
+    with caplog.at_level("DEBUG", logger=cc.logger.name):
+        async with _client(handler) as c:
+            with pytest.raises(cc.ComfyUIError):
+                await cc._await_image(c, "pid", interval=0.0, max_polls=5)
+    levels = [r.levelname for r in caplog.records]
+    assert levels == ["WARNING", "DEBUG", "DEBUG", "DEBUG", "DEBUG"]
+
+
 async def test_poll_budget_comes_from_settings(monkeypatch):
     """The generation budget is config-driven, not the old hardcoded 180 polls.
 

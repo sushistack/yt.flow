@@ -10,12 +10,15 @@ so no new dependency is added. [Ponytail]
 """
 
 import asyncio
+import logging
 import math
 import mimetypes
 
 import httpx
 
 from yt_flow.config import Settings
+
+logger = logging.getLogger(__name__)
 
 # Story 5.14: bounded retry for connection-class failures only (DNS, refused,
 # transport timeout). Any non-2xx response (validation rejection, 5xx) and
@@ -197,27 +200,66 @@ async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
     return prompt_id
 
 
-async def _await_image(client: httpx.AsyncClient, prompt_id: str, interval: float, max_polls: int) -> dict:
-    """Poll history until the prompt's outputs carry an image ref, or time out.
+async def _poll_history(client, prompt_id: str, interval: float, max_polls: int, extract, want: str):
+    """Poll ``/history/{prompt_id}`` until ``extract(outputs)`` is truthy, or time out.
 
-    Transient HTTP errors during polling (e.g. a brief 5xx while ComfyUI is busy
-    or restarting) are swallowed and retried within the poll budget rather than
-    aborting the whole submission on the first blip. [review]
+    Transient HTTP errors (a brief 5xx while ComfyUI is busy, a reset, a 404) are
+    retried within the poll budget rather than aborting the submission — but they
+    are *counted and logged*, and the timeout error reports them. A silent
+    ``except`` here made "no image within timeout" indistinguishable between
+    "ComfyUI never ran it", "it ran and we couldn't see it" and "every poll
+    errored", which is exactly the state that resists diagnosis.
     """
-    for _ in range(max_polls):
+    polls = errors = 0
+    last_exc: Exception | None = None
+    last_outputs: dict | None = None
+    for polls in range(1, max_polls + 1):
+        entry = None
         try:
             resp = await client.get(f"/history/{prompt_id}")
             resp.raise_for_status()
             entry = resp.json().get(prompt_id)
-        except httpx.HTTPError:
-            entry = None  # transient; fall through to sleep + retry
-        if entry:
-            for out in entry.get("outputs", {}).values():
-                images = out.get("images")
-                if images:
-                    return images[0]  # {"filename", "subfolder", "type"}
+        except httpx.HTTPError as exc:
+            errors += 1
+            last_exc = exc
+            # ponytail: first error and every 50th at WARNING, rest at DEBUG —
+            # a real incident is always visible, 900 polls can't flood the log.
+            logger.log(
+                logging.WARNING if errors == 1 or errors % 50 == 0 else logging.DEBUG,
+                "ComfyUI history poll %d for prompt_id=%s failed (%d errored so far): %s: %s",
+                polls, prompt_id, errors, type(exc).__name__, exc,
+            )
+        if entry is not None:
+            last_outputs = entry.get("outputs", {})
+            found = extract(last_outputs)
+            if found:
+                return found
         await asyncio.sleep(interval)
-    raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
+
+    detail = f"{polls} polls, {errors} errored"
+    if last_exc is not None:
+        detail += f", last error {type(last_exc).__name__}: {last_exc}"
+    if last_outputs is not None:
+        raise ComfyUIError(
+            f"ComfyUI has prompt_id={prompt_id} in history but it carried no image "
+            f"for {want} (output nodes seen: {sorted(last_outputs) or 'none'}); {detail}"
+        )
+    raise ComfyUIError(
+        f"ComfyUI produced no image for prompt_id={prompt_id} within timeout — the "
+        f"prompt never appeared in history ({detail})"
+    )
+
+
+def _first_image(outputs: dict) -> dict | None:
+    for out in outputs.values():
+        if out.get("images"):
+            return out["images"][0]  # {"filename", "subfolder", "type"}
+    return None
+
+
+async def _await_image(client: httpx.AsyncClient, prompt_id: str, interval: float, max_polls: int) -> dict:
+    """Poll history until the prompt's outputs carry an image ref, or time out."""
+    return await _poll_history(client, prompt_id, interval, max_polls, _first_image, "any output node")
 
 
 async def _await_outputs(
@@ -232,24 +274,16 @@ async def _await_outputs(
     ComfyUI writes all outputs atomically, so once any requested node appears the
     rest are also available. Missing node IDs simply won't be in the returned dict.
     """
-    for _ in range(max_polls):
-        try:
-            resp = await client.get(f"/history/{prompt_id}")
-            resp.raise_for_status()
-            entry = resp.json().get(prompt_id)
-        except httpx.HTTPError:
-            entry = None  # transient; retry within budget
-        if entry:
-            outputs = entry.get("outputs", {})
-            found = {
-                nid: outputs[nid]["images"][0]
-                for nid in node_ids
-                if nid in outputs and outputs[nid].get("images")
-            }
-            if found:
-                return found
-        await asyncio.sleep(interval)
-    raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
+    def extract(outputs: dict) -> dict[str, dict]:
+        return {
+            nid: outputs[nid]["images"][0]
+            for nid in node_ids
+            if outputs.get(nid, {}).get("images")
+        }
+
+    return await _poll_history(
+        client, prompt_id, interval, max_polls, extract, f"node(s) {node_ids}"
+    )
 
 
 async def _download(client: httpx.AsyncClient, image_ref: dict) -> bytes:
