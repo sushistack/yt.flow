@@ -13,6 +13,7 @@ import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -153,14 +154,37 @@ _configs: dict[str, dict] = {}
 # Strong refs to fire-and-forget background tasks — the event loop only keeps a weak
 # ref, so without this a running resume/retry can be GC'd and silently cancelled.
 _bg_tasks: set = set()
+# run_id -> the task currently driving that run's graph in THIS process. Guards a
+# second execution against one thread_id (double-resume); empty after a restart,
+# which is correct — the orphaned run then has no live driver here.
+_run_tasks: dict[str, "asyncio.Task"] = {}
 
 
-def spawn(coro) -> "asyncio.Task":
-    """Schedule a background task and retain a strong reference until it finishes."""
+def spawn(coro, run_id: str | None = None) -> "asyncio.Task":
+    """Schedule a background task and retain a strong reference until it finishes.
+
+    Pass ``run_id`` to also register the task as that run's in-process driver
+    (see ``is_executing``).
+    """
     task = asyncio.create_task(coro)
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
+    if run_id is not None:
+        _run_tasks[run_id] = task
+        task.add_done_callback(partial(_forget_run_task, run_id))
     return task
+
+
+def _forget_run_task(run_id: str, task: "asyncio.Task") -> None:
+    """Drop a finished/cancelled task so it cannot block a later resume."""
+    if _run_tasks.get(run_id) is task:
+        del _run_tasks[run_id]
+
+
+def is_executing(run_id: str) -> bool:
+    """True if a live task in this process is already driving this run's graph."""
+    task = _run_tasks.get(run_id)
+    return task is not None and not task.done()
 
 
 def configure(graph: Any) -> None:
