@@ -77,6 +77,20 @@ _VALID_MOVEMENT_MODES = {"anchored", "drift", "enter", "exit", "cross", "approac
 _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
+# Stand-in when a writing scene reaches image work without a `location`. Both
+# consumers (visual_breakdown's prompt variable, _fallback_prompt) share it so
+# they can't disagree: the strict one used to hard-index and killed live run
+# cd2f1fb8 (SCP-999) with a bare KeyError while the other already degraded fine.
+_DEFAULT_LOCATION = "an unmarked containment area"
+# Same story for `color_palette`/`atmosphere`: visual_breakdown hard-indexed both
+# on the lines next to `location`, so the identical KeyError was one output
+# variance away. The atmosphere text is the one `_fallback_prompt` already used.
+_DEFAULT_COLOR_PALETTE = "desaturated grey, cold fluorescent white"
+_DEFAULT_ATMOSPHERE = "tense silence"
+# Writing fields the image stages consume directly, all three marked REQUIRED by
+# `scenario/writing` — absence is model variance, not a prompt-variant gap, so it
+# earns the one corrective retry (see writing_step's parse).
+_REQUIRED_WRITING_VISUAL_FIELDS = ("location", "color_palette", "atmosphere")
 
 # --- Story 12.1 retention contract -------------------------------------------
 # Hand-set starting constants for TARGET_DURATION_MINUTES = 3, kept beside the
@@ -1187,15 +1201,26 @@ async def _parse_with_retry(
     semantic_fallback=None,
 ):
     """Bounded self-correcting retry for a stage's parse+validate step. A YAML
-    *syntax* failure is repaired deterministically — the single free-text line
-    PyYAML flagged is rewritten as a block literal and re-parsed, bounded by the
-    line count (Story 6.11, no LLM call); a *semantic* validation failure feeds
-    the error back into the original stage prompt for exactly one retry. A
-    failure the repair can't fix propagates unchanged — never an LLM fallback,
-    never an unbounded retry loop.
+    *syntax* failure is repaired deterministically first — the single free-text
+    line PyYAML flagged is rewritten as a block literal and re-parsed, bounded by
+    the line count (Story 6.11, no LLM call). Anything the repair can't fix —
+    syntax OR semantic — feeds the error back into the ORIGINAL stage prompt via
+    ``parse_error`` for exactly one retry. Never a second corrective call, never
+    an unbounded loop, and never a dedicated repair prompt: this is the one
+    generic self-correction, not 6.11's deleted ``scenario/yaml_syntax_repair``.
+
+    The syntax fall-through exists because a response can miss the output
+    contract entirely: live run 23ce9a6a (SCP-999) got a chatty reply — prose
+    about an invented ``1_0|260|640|760`` marker, finish_reason=stop, not
+    truncation — from ``scenario/visual_breakdown``. No line was repairable, so
+    the run died, even though feeding "that wasn't YAML" back is exactly the fix.
+
+    Truncation short-circuits ahead of all of this: ``_call_stage`` raises
+    ``TruncationError`` before any parse, so it reaches the re-roll in
+    ``_call_stage_with_retry`` and is never treated as a syntax failure.
 
     ``usage_sink``, when given, collects each underlying provider call's raw
-    ``usage`` dict (one entry normally, two if the semantic retry fires) —
+    ``usage`` dict (one entry normally, two if the corrective retry fires) —
     Story 6.3's token/cache observability seam, additive to every existing
     caller. The deterministic YAML repair adds no provider call, so it appends
     nothing.
@@ -1220,34 +1245,38 @@ async def _parse_with_retry(
         try:
             return _reparse_repairing_freetext(raw, parse, exc)
         except yaml.YAMLError as exc2:
-            # The flagged line isn't the free-text-colon class this repairs. Dump
-            # the raw so the novel class can be characterized, then propagate.
+            # Not the free-text-colon class. Dump the raw for characterization,
+            # then fall through to the one corrective retry below.
             try:
                 dump = _dump_bad_output("unfixed", prompt_name, raw)
                 logger.warning(
                     "%s YAML parse failed and deterministic normalization did not fix it "
-                    "(%s); broken raw -> %s",
+                    "(%s); retrying once with the error fed back; broken raw -> %s",
                     prompt_name, " ".join(str(exc2).split())[:160], dump,
                 )
             except OSError:  # capture must never mask the real failure
                 pass
-            raise
+            parse_error = (
+                f"Previous output was not valid YAML: {' '.join(str(exc2).split())[:500]}. "
+                "Your ENTIRE response must be the YAML document itself — no prose, no "
+                "commentary, no markdown code fences, no backticks. Start at the first key."
+            )
     except ValueError as exc:
-        error_text = " ".join(str(exc).split())[:500]
-        retry_variables = {
-            **variables,
-            "parse_error": f"Previous output failed validation: {error_text}. "
-            "Output ONLY valid YAML, no prose, no markdown code fences.",
-        }
-        raw, usage = await _call_stage(prompt_name, retry_variables, s, call_llm, label=label)
-        if usage_sink is not None:
-            usage_sink.append(usage)
-        if semantic_fallback is None:
-            return parse(raw)
-        try:
-            return parse(raw)
-        except StoryArchetypeError as archetype_exc:
-            return semantic_fallback(archetype_exc)
+        parse_error = (
+            f"Previous output failed validation: {' '.join(str(exc).split())[:500]}. "
+            "Output ONLY valid YAML, no prose, no markdown code fences."
+        )
+    raw, usage = await _call_stage(
+        prompt_name, {**variables, "parse_error": parse_error}, s, call_llm, label=label
+    )
+    if usage_sink is not None:
+        usage_sink.append(usage)
+    if semantic_fallback is None:
+        return parse(raw)
+    try:
+        return parse(raw)
+    except StoryArchetypeError as archetype_exc:
+        return semantic_fallback(archetype_exc)
 
 
 async def reroll_on_truncation(what: str, call):
@@ -1605,6 +1634,14 @@ async def writing_step(
             if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
                 raise ValueError(f"writing: scene[{idx + 1}] has empty narration")
             scene["narration"] = _normalize_freetext(scene["narration"])
+            # The fields the image stages consume directly, all REQUIRED by the prompt
+            # since it was repatriated from production — so absence is model variance,
+            # not a prompt-variant gap, and is worth the one corrective retry. Ungated
+            # (unlike `title`): no writing variant omits them. A scene still missing one
+            # after the retry degrades to the _DEFAULT_* stand-in rather than crashing.
+            for field in _REQUIRED_WRITING_VISUAL_FIELDS:
+                if not str(scene.get(field) or "").strip():
+                    raise ValueError(f"writing: scene[{idx + 1}] missing non-empty {field!r}")
             return scene
 
         # Per-scene re-roll: a truncated scene costs one small re-call, not the
@@ -1861,10 +1898,10 @@ async def visual_breakdown_step(
         "scenario/visual_breakdown",
         {
             "scene_num": scene["scene_num"],
-            "location": scene["location"],
+            "location": scene.get("location") or _DEFAULT_LOCATION,
             "characters_present": json.dumps(scene.get("characters_present", []), ensure_ascii=False),
-            "color_palette": scene["color_palette"],
-            "atmosphere": scene["atmosphere"],
+            "color_palette": scene.get("color_palette") or _DEFAULT_COLOR_PALETTE,
+            "atmosphere": scene.get("atmosphere") or _DEFAULT_ATMOSPHERE,
             "scp_visual_reference": frozen_descriptor,
             "entity_sheet": entity_sheet,
             "story_logline": story_logline,
@@ -2276,41 +2313,73 @@ async def tts_normalize_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> dict:
-    """Rewrite each scene's narration for natural Korean TTS, matching scenes positionally.
+    """Rewrite each scene's narration for natural Korean TTS — ONE call per scene.
+
+    Batched 2026-08-06 (live run bad091eb, SCP-999) for the same reason as
+    ``writing`` (f7639b2) and ``review``/``critic`` (53e5c8f): the dump header
+    ``completion_tokens=32768 raw_chars=77634`` on the whole-script call is
+    reasoning-token exhaustion, not narration volume. This was the last scenario
+    stage still sending every scene in one completion.
+
+    The three validations the single call enforced are unchanged, just relocated:
+    the per-scene ``parse`` rejects a malformed scene and an empty narration for
+    ITS scene, and issuing exactly one call per original scene — each of which
+    must return exactly one scene — is what makes the aggregate scene count equal
+    ``len(original_scenes)``.
 
     A scene whose normalized sentence count doesn't match the original (per
     ``split_sentences()``) keeps its original narration instead of failing the
     whole scenario stage — see story 5-4-tts-korean-naturalization.md.
     """
     original_scenes = writing["scenes"]
-    scenes_input = [
-        {"scene_num": scene.get("scene_num"), "narration": scene.get("narration", "")} for scene in original_scenes
-    ]
-    def parse(raw: str) -> list[dict]:
-        data = _parse_yaml(raw)
-        normalized_scenes = data.get("scenes") if isinstance(data, dict) else None
-        if not isinstance(normalized_scenes, list) or len(normalized_scenes) != len(original_scenes):
-            got = len(normalized_scenes) if isinstance(normalized_scenes, list) else "non-list"
-            raise ValueError(f"tts_normalize: expected {len(original_scenes)} scenes, got {got}")
-        for scene in normalized_scenes:
+    total = len(original_scenes)
+
+    async def _normalize_one(idx: int, original: dict) -> dict:
+        def parse(raw: str) -> dict:
+            data = _parse_yaml(raw)
+            scenes = data.get("scenes") if isinstance(data, dict) else None
+            if not isinstance(scenes, list) or len(scenes) != 1:
+                got = len(scenes) if isinstance(scenes, list) else "non-list"
+                raise ValueError(f"tts_normalize: scene {idx + 1} call must return exactly 1 scene, got {got}")
+            scene = scenes[0]
             if not isinstance(scene, dict):
                 raise ValueError(f"tts_normalize: malformed scene {scene!r}")
             if not isinstance(scene.get("narration"), str) or not scene["narration"].strip():
-                raise ValueError(f"tts_normalize: scene[{scene.get('scene_num')}] has empty narration")
-            scene["narration"] = _normalize_freetext(scene["narration"])
-        return normalized_scenes
+                raise ValueError(f"tts_normalize: scene[{idx + 1}] has empty narration")
+            return {"narration": _normalize_freetext(scene["narration"])}
 
-    normalized_scenes = await _call_stage_with_retry(
-        "scenario/tts_normalize",
-        {
-            "scenes_json": json.dumps(scenes_input, ensure_ascii=False),
-            "format_guide": format_guide,
-        },
-        s,
-        call_llm,
-        parse,
-        label=label,
-        usage_sink=usage_sink,
+        return await _call_stage_with_retry(
+            "scenario/tts_normalize",
+            {
+                # The steering prefix rides the free-text `scenes_json` variable, so
+                # no Langfuse prompt version has to move — the same trick
+                # `_writing_scene_brief` / `_scene_review_brief` use.
+                "scenes_json": (
+                    f"You are normalizing SCENE {idx + 1} OF {total} ONLY. The list below holds "
+                    "that one scene and nothing else. Output a `scenes` list containing exactly "
+                    f"ONE scene object with `scene_num: {idx + 1}`. Rule 5's scene-order/count "
+                    "invariant is satisfied by returning that single scene; Rule 2's sentence-count "
+                    "invariant still applies within it.\n"
+                    + json.dumps(
+                        [{"scene_num": idx + 1, "narration": original.get("narration", "")}], ensure_ascii=False
+                    )
+                ),
+                "format_guide": format_guide,
+            },
+            s,
+            call_llm,
+            parse,
+            label=label,
+            usage_sink=usage_sink,
+            what=f"tts_normalize scene {idx + 1}",
+        )
+
+    # gather returns results in ARGUMENT order, not completion order, so zipping
+    # against `original_scenes` below stays aligned however the calls interleave.
+    # scene_num is never read back off the model — the aggregation keeps each
+    # ORIGINAL scene dict wholesale and replaces only its narration text.
+    normalized_scenes = await asyncio.gather(
+        *(_normalize_one(idx, original) for idx, original in enumerate(original_scenes))
     )
 
     updated_scenes = []
@@ -2336,8 +2405,8 @@ async def tts_normalize_step(
 
 def _fallback_prompt(scene: dict) -> str:
     """Minimal prompt for a leading transition-only sentence with nothing to merge into."""
-    location = scene.get("location") or "an unmarked containment area"
-    atmosphere = scene.get("atmosphere") or "tense silence"
+    location = scene.get("location") or _DEFAULT_LOCATION
+    atmosphere = scene.get("atmosphere") or _DEFAULT_ATMOSPHERE
     return f"static wide shot, {location}, {atmosphere}, no visible subject"
 
 

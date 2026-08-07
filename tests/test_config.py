@@ -136,6 +136,26 @@ def test_qwen_tts_speed_out_of_range_raises(monkeypatch):
     assert "qwen_tts_speed" in errors
 
 
+def test_deepseek_reasoning_defaults_low_and_budget_unchanged(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.delenv("YTFLOW_DEEPSEEK_REASONING", raising=False)
+    monkeypatch.delenv("YTFLOW_DEEPSEEK_MAX_TOKENS", raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.deepseek_reasoning == "low"
+    assert s.deepseek_max_tokens == 32768
+
+
+def test_deepseek_reasoning_rejects_unknown_value(monkeypatch):
+    """Fail at config load, not mid-run with an API-rejected request field."""
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YTFLOW_DEEPSEEK_REASONING", "off")
+    from yt_flow.config import Settings
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "deepseek_reasoning" in {err["loc"][0] for err in exc_info.value.errors()}
+
+
 def test_observe_is_noop_when_flag_off():
     """With the flag off, the observability seam's @observe runs the fn and
     get_client().update_current_span(...) never raises (no trace emitted).

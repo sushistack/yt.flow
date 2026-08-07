@@ -1678,7 +1678,17 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
         def compile(self, **variables):
             return "identical rendered text for every stage"
 
-    writing_reply = (jsonlib.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
+    writing_reply = (
+        jsonlib.dumps({"scenes": [{
+            "scene_num": 1,
+            "narration": "Hello world.",
+            "location": "containment room",
+            "color_palette": "cold gray",
+            "atmosphere": "tense",
+        }]}),
+        {},
+        "stop",
+    )
     responses = [
         (jsonlib.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
@@ -1709,7 +1719,17 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
     scp_id/scp_text/settings hits cache for every stage; no second real call is made."""
     import asyncio
 
-    writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
+    writing_reply = (
+        json.dumps({"scenes": [{
+            "scene_num": 1,
+            "narration": "Hello world.",
+            "location": "containment room",
+            "color_palette": "cold gray",
+            "atmosphere": "tense",
+        }]}),
+        {},
+        "stop",
+    )
     responses = [
         (json.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
@@ -1837,7 +1857,17 @@ def test_run_stage_chain_routes_the_writing_call_to_gemini(monkeypatch):
     this asserts per-stage routing, not that DeepSeek is untouched."""
     import asyncio
 
-    writing_reply = (json.dumps({"scenes": [{"scene_num": 1, "narration": "Hello world."}]}), {}, "stop")
+    writing_reply = (
+        json.dumps({"scenes": [{
+            "scene_num": 1,
+            "narration": "Hello world.",
+            "location": "containment room",
+            "color_palette": "cold gray",
+            "atmosphere": "tense",
+        }]}),
+        {},
+        "stop",
+    )
     planning = [
         (json.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),

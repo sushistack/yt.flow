@@ -10,12 +10,16 @@ so no new dependency is added. [Ponytail]
 """
 
 import asyncio
+import logging
 import math
 import mimetypes
+import uuid
 
 import httpx
 
 from yt_flow.config import Settings
+
+logger = logging.getLogger(__name__)
 
 # Story 5.14: bounded retry for connection-class failures only (DNS, refused,
 # transport timeout). Any non-2xx response (validation rejection, 5xx) and
@@ -24,9 +28,37 @@ from yt_flow.config import Settings
 CONNECT_ATTEMPTS = 3
 CONNECT_RETRY_DELAY = 2.0
 
+# Health probe: a *dead* server refuses the TCP connection, so crash detection
+# lives entirely in the connect timeout. The read timeout is the long,
+# configurable one (see Settings.comfyui_health_read_timeout_sec).
+HEALTH_CONNECT_TIMEOUT = 5.0
+
+# Dropped-prompt recovery. MEASURED over many live runs (2026-08-08): ComfyUI
+# intermittently *accepts* a submission — POST /prompt returns HTTP 200 with a
+# prompt_id and node_errors={} — and then never queues or executes it. The
+# prompt is in neither GET /queue nor GET /history, so the poller used to wait
+# out the whole 900s budget and then kill the image stage, losing a multi-hour
+# run. It dropped after 1, 2 and 5 successful shots on different attempts;
+# hand-submitting the same workflow completes in ~20s, so the graph is valid.
+#
+# DROP_GRACE_SEC is both the grace before a missing prompt is judged dropped (a
+# fresh submission takes a moment to appear in /queue) and the re-check cadence
+# afterwards — ~180 cheap /queue calls across a full 900s budget.
+# ponytail: module constants like CONNECT_ATTEMPTS above, not Settings fields —
+# nothing configures these per-environment.
+DROP_GRACE_SEC = 5.0
+DROP_RESUBMITS = 2
+
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
+
+
+class _PromptDropped(Exception):
+    """ComfyUI acknowledged the prompt but holds it in neither queue nor history.
+
+    Internal: never escapes :func:`_submit_and_await`, which resubmits.
+    """
 
 
 def _poll_budget(poll_interval: float | None, max_polls: int | None) -> tuple[float, int]:
@@ -70,8 +102,18 @@ async def check_health(base_url: str) -> None:
     ``GET /system_stats`` with the same bounded transport retry as prompt
     submission. Raises :class:`ComfyUIError` on final failure so callers can
     fail fast without submitting anything.
+
+    A slow answer is not a crash: ComfyUI is single-threaded on the GPU and
+    stops serving ``/system_stats`` while a prompt runs (~20s/generation,
+    measured run fdd69699). So the probe uses a short connect timeout — a real
+    crash means connection refused / no listener, which still fails promptly —
+    and a long, configurable read timeout.
     """
-    async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(5.0)) as client:
+    timeout = httpx.Timeout(
+        Settings().comfyui_health_read_timeout_sec,  # type: ignore[call-arg]
+        connect=HEALTH_CONNECT_TIMEOUT,
+    )
+    async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
         try:
             resp = await _request_with_retry(lambda: client.get("/system_stats"))
             resp.raise_for_status()
@@ -91,11 +133,13 @@ async def submit_and_fetch(
     Raises :class:`ComfyUIError` on validation (`error`/`node_errors`), HTTP
     failure, or if no image appears within the poll budget. The budget defaults
     to ``comfyui_generation_timeout_sec`` / ``comfyui_poll_interval_sec``.
+
+    A prompt ComfyUI accepts but never queues is resubmitted up to
+    :data:`DROP_RESUBMITS` times rather than waiting out the budget.
     """
     poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
-        prompt_id = await _submit(client, workflow)
-        image_ref = await _await_image(client, prompt_id, poll_interval, max_polls)
+        image_ref = await _submit_and_await(client, workflow, _await_image, poll_interval, max_polls)
         return await _download(client, image_ref)
 
 
@@ -128,8 +172,11 @@ async def submit_and_fetch_outputs(
     """
     poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
-        prompt_id = await _submit(client, workflow)
-        node_refs = await _await_outputs(client, prompt_id, output_node_ids, poll_interval, max_polls)
+        node_refs = await _submit_and_await(
+            client, workflow,
+            lambda c, pid, i, m: _await_outputs(c, pid, output_node_ids, i, m),
+            poll_interval, max_polls,
+        )
         result = {}
         for node_id, ref in node_refs.items():
             result[node_id] = await _download(client, ref)
@@ -164,7 +211,38 @@ async def _upload(client: httpx.AsyncClient, image_bytes: bytes, filename: str) 
     return f"{name} [{subfolder}]" if subfolder else name
 
 
+def _bust_save_cache(workflow: dict) -> dict:
+    """Return a copy whose save nodes have a unique ``filename_prefix``.
+
+    ComfyUI has an execution cache: resubmitting a byte-identical graph serves
+    every node from cache, so ``SaveImage`` never re-executes and the history
+    entry carries **no outputs at all** (``status_str=success, completed=True,
+    messages=[..., execution_cached, ...], outputs=[]``). The poller then waits
+    for an image that can never appear. Story 11.1 makes seeds deterministic per
+    (run_id, scene, shot), so any retry of a shot inside a run hits this exactly.
+
+    Only the save node's ``filename_prefix`` widget changes, which is enough to
+    miss that one node's cache key: the sampler (seed, prompts, model, steps) is
+    untouched and still served from cache, so the pixels are identical and the
+    seed recorded in sidecars still describes the image. Only the file's name on
+    ComfyUI's disk differs — the client fetches it by the filename history
+    reports, so nothing downstream cares.
+    """
+    token = uuid.uuid4().hex[:8]
+    out = dict(workflow)
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict) or not isinstance(inputs.get("filename_prefix"), str):
+            continue
+        prefix = inputs["filename_prefix"]
+        out[nid] = {**node, "inputs": {**inputs, "filename_prefix": f"{prefix}_{token}"}}
+    return out
+
+
 async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
+    workflow = _bust_save_cache(workflow)
     try:
         resp = await _request_with_retry(lambda: client.post("/prompt", json={"prompt": workflow}))
         resp.raise_for_status()
@@ -182,27 +260,150 @@ async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
     return prompt_id
 
 
-async def _await_image(client: httpx.AsyncClient, prompt_id: str, interval: float, max_polls: int) -> dict:
-    """Poll history until the prompt's outputs carry an image ref, or time out.
+async def _poll_history(client, prompt_id: str, interval: float, max_polls: int, extract, want: str):
+    """Poll ``/history/{prompt_id}`` until ``extract(outputs)`` is truthy, or time out.
 
-    Transient HTTP errors during polling (e.g. a brief 5xx while ComfyUI is busy
-    or restarting) are swallowed and retried within the poll budget rather than
-    aborting the whole submission on the first blip. [review]
+    Transient HTTP errors (a brief 5xx while ComfyUI is busy, a reset, a 404) are
+    retried within the poll budget rather than aborting the submission — but they
+    are *counted and logged*, and the timeout error reports them. A silent
+    ``except`` here made "no image within timeout" indistinguishable between
+    "ComfyUI never ran it", "it ran and we couldn't see it" and "every poll
+    errored", which is exactly the state that resists diagnosis.
     """
-    for _ in range(max_polls):
+    polls = errors = 0
+    last_exc: Exception | None = None
+    last_outputs: dict | None = None
+    next_live_check = DROP_GRACE_SEC
+    for polls in range(1, max_polls + 1):
+        entry = history_ok = None
         try:
             resp = await client.get(f"/history/{prompt_id}")
             resp.raise_for_status()
             entry = resp.json().get(prompt_id)
-        except httpx.HTTPError:
-            entry = None  # transient; fall through to sleep + retry
-        if entry:
-            for out in entry.get("outputs", {}).values():
-                images = out.get("images")
-                if images:
-                    return images[0]  # {"filename", "subfolder", "type"}
+            history_ok = True
+        except httpx.HTTPError as exc:
+            errors += 1
+            last_exc = exc
+            # ponytail: first error and every 50th at WARNING, rest at DEBUG —
+            # a real incident is always visible, 900 polls can't flood the log.
+            logger.log(
+                logging.WARNING if errors == 1 or errors % 50 == 0 else logging.DEBUG,
+                "ComfyUI history poll %d for prompt_id=%s failed (%d errored so far): %s: %s",
+                polls, prompt_id, errors, type(exc).__name__, exc,
+            )
+        if entry is not None:
+            last_outputs = entry.get("outputs", {})
+            found = extract(last_outputs)
+            if found:
+                return found
+            finished = _finished_status(entry)
+            if finished is not None:
+                raise ComfyUIError(
+                    f"ComfyUI finished prompt_id={prompt_id} without an image for {want} "
+                    f"(output nodes seen: {sorted(last_outputs or {}) or 'none'}; {finished}) — "
+                    f"terminal after {polls} poll(s), not waiting out the budget"
+                )
+        elif history_ok and polls * interval >= next_live_check:
+            # Absent from history *and* the read succeeded: the one state where
+            # a silent drop is possible. Anything short of a clean "ComfyUI does
+            # not know this prompt" keeps us waiting. [drop recovery]
+            next_live_check += DROP_GRACE_SEC
+            if not await _is_live(client, prompt_id):
+                raise _PromptDropped(
+                    f"prompt_id={prompt_id} is in neither /queue nor /history after "
+                    f"{polls} poll(s) (~{polls * interval:.0f}s)"
+                )
         await asyncio.sleep(interval)
-    raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
+
+    detail = f"{polls} polls, {errors} errored"
+    if last_exc is not None:
+        detail += f", last error {type(last_exc).__name__}: {last_exc}"
+    if last_outputs is not None:
+        raise ComfyUIError(
+            f"ComfyUI has prompt_id={prompt_id} in history but it carried no image "
+            f"for {want} (output nodes seen: {sorted(last_outputs) or 'none'}); {detail}"
+        )
+    raise ComfyUIError(
+        f"ComfyUI produced no image for prompt_id={prompt_id} within timeout — the "
+        f"prompt never appeared in history ({detail})"
+    )
+
+
+async def _is_live(client: httpx.AsyncClient, prompt_id: str) -> bool:
+    """Does ComfyUI still hold ``prompt_id`` in ``queue_running`` or ``queue_pending``?
+
+    Unknown counts as live, deliberately: a slow or failing ``/queue`` (ComfyUI
+    stalls HTTP while the GPU runs, see :func:`check_health`) must never be read
+    as a drop. A busy server that parks our prompt in ``queue_pending`` for
+    minutes is live and keeps polling — only a healthy ``/queue`` that does not
+    mention the prompt at all, while history has no entry either, is a drop.
+    """
+    try:
+        resp = await client.get("/queue")
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return True
+    # Entries are [number, prompt_id, prompt, extra_data, outputs]; `in` compares
+    # by == so non-matching dicts/ints are harmless, and being lenient here errs
+    # toward "still live", which is the safe direction.
+    return any(
+        isinstance(item, list | tuple) and prompt_id in item
+        for key in ("queue_running", "queue_pending")
+        for item in data.get(key) or []
+    )
+
+
+async def _submit_and_await(client, workflow: dict, awaiter, interval: float, max_polls: int):
+    """Submit, poll, and resubmit if ComfyUI silently drops the prompt.
+
+    Each attempt goes through :func:`_submit`, so cache-busting is re-applied to
+    every resubmission — a resubmit must not be served from the execution cache.
+    Bounded at :data:`DROP_RESUBMITS`; the final error reports the drop count.
+    """
+    dropped = 0
+    while True:
+        prompt_id = await _submit(client, workflow)
+        try:
+            return await awaiter(client, prompt_id, interval, max_polls)
+        except _PromptDropped as exc:
+            dropped += 1
+            if dropped > DROP_RESUBMITS:
+                raise ComfyUIError(
+                    f"ComfyUI dropped the prompt {dropped} time(s) — accepted it with "
+                    f"HTTP 200 + prompt_id but never queued or executed it (last: {exc})"
+                ) from exc
+            logger.warning(
+                "ComfyUI dropped a prompt (%s); resubmitting (%d/%d)",
+                exc, dropped, DROP_RESUBMITS,
+            )
+
+
+def _finished_status(entry: dict) -> str | None:
+    """Describe ``entry``'s status if ComfyUI is done with it, else ``None``.
+
+    A finished prompt with no image is terminal, not slow: the missing output
+    will never arrive, so polling on is pure latency. Only a status ComfyUI
+    actually wrote counts — an entry without one (or mid-flight) keeps polling.
+    """
+    status = entry.get("status") or {}
+    if not (status.get("completed") or status.get("status_str") == "error"):
+        return None
+    # messages are [event_name, payload] pairs; the names are the diagnosis.
+    events = [m[0] if isinstance(m, list | tuple) and m else m for m in status.get("messages") or []]
+    return f"status_str={status.get('status_str')!r}, events={events}"
+
+
+def _first_image(outputs: dict) -> dict | None:
+    for out in outputs.values():
+        if out.get("images"):
+            return out["images"][0]  # {"filename", "subfolder", "type"}
+    return None
+
+
+async def _await_image(client: httpx.AsyncClient, prompt_id: str, interval: float, max_polls: int) -> dict:
+    """Poll history until the prompt's outputs carry an image ref, or time out."""
+    return await _poll_history(client, prompt_id, interval, max_polls, _first_image, "any output node")
 
 
 async def _await_outputs(
@@ -217,24 +418,16 @@ async def _await_outputs(
     ComfyUI writes all outputs atomically, so once any requested node appears the
     rest are also available. Missing node IDs simply won't be in the returned dict.
     """
-    for _ in range(max_polls):
-        try:
-            resp = await client.get(f"/history/{prompt_id}")
-            resp.raise_for_status()
-            entry = resp.json().get(prompt_id)
-        except httpx.HTTPError:
-            entry = None  # transient; retry within budget
-        if entry:
-            outputs = entry.get("outputs", {})
-            found = {
-                nid: outputs[nid]["images"][0]
-                for nid in node_ids
-                if nid in outputs and outputs[nid].get("images")
-            }
-            if found:
-                return found
-        await asyncio.sleep(interval)
-    raise ComfyUIError(f"ComfyUI produced no image for prompt_id={prompt_id} within timeout")
+    def extract(outputs: dict) -> dict[str, dict]:
+        return {
+            nid: outputs[nid]["images"][0]
+            for nid in node_ids
+            if outputs.get(nid, {}).get("images")
+        }
+
+    return await _poll_history(
+        client, prompt_id, interval, max_polls, extract, f"node(s) {node_ids}"
+    )
 
 
 async def _download(client: httpx.AsyncClient, image_ref: dict) -> bytes:

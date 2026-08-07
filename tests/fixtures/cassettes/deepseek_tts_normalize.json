@@ -8,7 +8,7 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "scenes:\n  - scene_num: 1\n    narration: |\n      열네 명. 단 하룻밤에 목이 꺾인 채 발견된, 재단 인원의 수입니다. (정적) 아무도 무기를 찾지 못했습니다.\n  - scene_num: 2\n    narration: |\n      그리고 그날 밤. 복도의 조명이 한 번 깜빡였습니다. (정적) 그게 마지막 기록이었습니다.\n"
+        "content": "scenes:\n  - scene_num: 1\n    narration: |\n      열네 명. 단 하룻밤에 목이 꺾인 채 발견된, 재단 인원의 수입니다. (정적) 아무도 무기를 찾지 못했습니다.\n"
       }
     }
   ],

@@ -79,7 +79,7 @@ async def create_run(body: RunCreate, request: Request, session: Session = Depen
     session.commit()
     session.refresh(run)
     registry = getattr(request.app.state, "sse_registry", None)
-    run_service.spawn(run_service.start_run(run.id, body.scp_id, scp_text, registry))
+    run_service.spawn(run_service.start_run(run.id, body.scp_id, scp_text, registry), run_id=run.id)
     return RunRead.model_validate(run, from_attributes=True)
 
 
@@ -130,6 +130,42 @@ async def gate(run_id: str, stage: str, body: GateAction, request: Request,
     registry = getattr(request.app.state, "sse_registry", None)
     run_service.spawn(run_service.resume_run(run_id, stage, body.action, registry))
     return {"status": "accepted", "run_id": run_id, "stage": stage, "action": body.action}
+
+
+@router.post("/{run_id}/resume", status_code=202)
+async def resume_from_checkpoint(run_id: str, request: Request,
+                                 session: Session = Depends(get_session)):
+    """Resume an interrupted run from its last checkpoint (FR-7).
+
+    ``running`` is resumable on purpose: after an API restart the row still says
+    running but nothing is driving it — that orphan is exactly what this rescues.
+
+    Two mechanisms, picked from the run's own gate states:
+    a *failed* stage needs re-execution (AD-10 nodes return their error rather than
+    raising, so the checkpoint marks the broken node as done and replaying forward
+    would skip it and finish "complete" with no artifacts); an orphan with no failed
+    stage really was cut mid-node, so its last checkpoint is a valid resume point.
+    """
+    run = session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status not in ("failed", "running"):
+        raise HTTPException(status_code=409, detail=f"Cannot resume a run with status '{run.status}'")
+    if run_service.is_executing(run_id):
+        raise HTTPException(status_code=409, detail="Run is already executing in this process")
+    registry = getattr(request.app.state, "sse_registry", None)
+    stage = run_service.failed_stage(run.gate_states)
+    if stage is None:
+        run_service.spawn(run_service.resume_run_from_failure(run_id, registry), run_id=run_id)
+        return {"status": "accepted", "run_id": run_id}
+    if run.status == "running":
+        # Orphan with a failed stage: the row is lying (nothing drives it, see guard above)
+        # and retry_stage refuses a "running" run. Settle it first so the retry is allowed.
+        run.status = "failed"
+        session.add(run)
+        session.commit()
+    # retry_stage raises its own 404/409 (unknown stage, non-retryable gate) — let them through.
+    return await run_service.retry_stage(run_id, stage, registry)
 
 
 @router.get("/{run_id}/stages/{stage}/artifacts")

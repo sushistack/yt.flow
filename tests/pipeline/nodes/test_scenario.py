@@ -25,6 +25,7 @@ class FakeSettings:
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model = "deepseek-v4-flash"
     deepseek_max_tokens = 8192
+    deepseek_reasoning = "low"
     # Story 12.2 model split — the prose/judge provider.
     gemini_api_key = "gm-test-secret"
     gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -282,7 +283,7 @@ async def test_batched_writing_output_satisfies_the_retry_scope_scene_num_guard(
     structure = [{"scene_num": i + 1, "act": "act", "synopsis": f"syn{i + 1}", "mood": "dread"} for i in range(4)]
 
     async def call(rendered, s):
-        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n", {}, "stop"
+        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
 
     writing = await sc.writing_step("SCP-173", structure, "desc", "guide", "", FakeSettings(), call)
     assert [scene["scene_num"] for scene in writing["scenes"]] == [1, 2, 3, 4]
@@ -326,6 +327,7 @@ class _FakeResponse:
 class _FakeHttpClient:
     def __init__(self, payload):
         self._payload = payload
+        self.sent = None  # request body of the last post, for request-shape assertions
 
     async def __aenter__(self):
         return self
@@ -334,6 +336,7 @@ class _FakeHttpClient:
         return False
 
     async def post(self, url, **kwargs):
+        self.sent = kwargs.get("json")
         return _FakeResponse(self._payload)
 
 
@@ -365,6 +368,27 @@ async def test_call_deepseek_ignores_reasoning_content_on_a_complete_response(mo
     monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: _FakeHttpClient(payload))
     raw, _, finish_reason = await sc._call_deepseek("rendered", FakeSettings())
     assert (raw, finish_reason) == ("scenes: []", "stop")
+
+
+@pytest.mark.parametrize("setting,expected", [
+    ("low", {"reasoning_effort": "low"}),
+    ("medium", {"reasoning_effort": "medium"}),
+    ("high", {"reasoning_effort": "high"}),
+    ("disabled", {"thinking": {"type": "disabled"}}),  # the only form that probed reasoning_tokens=0
+    ("default", {}),  # API default → send neither field, request unchanged
+])
+async def test_call_deepseek_sends_one_reasoning_field_per_setting(monkeypatch, setting, expected):
+    payload = {"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}], "usage": {}}
+    client = _FakeHttpClient(payload)
+    monkeypatch.setattr(sc.httpx, "AsyncClient", lambda **kw: client)
+
+    class S(FakeSettings):
+        deepseek_reasoning = setting
+
+    await sc._call_deepseek("rendered", S())
+    body = client.sent
+    assert {k: body[k] for k in ("reasoning_effort", "thinking") if k in body} == expected
+    assert body["max_tokens"] == 8192  # batching/budget untouched by the reasoning knob
 
 
 async def test_scene_retry_repairs_only_flagged_position_and_reuses_other_objects(monkeypatch):
@@ -1200,7 +1224,10 @@ async def test_gemini_stage_semantic_retry_stays_on_gemini(monkeypatch):
         gemini["n"] += 1
         if gemini["n"] == 1:
             return "scenes:\n  - scene_num: 1\n", {}, "stop"  # no narration -> semantic failure
-        return "scenes:\n  - scene_num: 1\n    narration: 문장.\n", {}, "stop"
+        return (
+            "scenes:\n  - scene_num: 1\n    narration: 문장.\n"
+            "    location: 격리실\n    color_palette: 차가운 회색\n    atmosphere: 긴장감\n"
+        ), {}, "stop"
 
     async def fake_deepseek(rendered, s):
         raise AssertionError("a Gemini-owned stage must never fall back to DeepSeek")
@@ -1223,7 +1250,10 @@ async def test_gemini_writing_text_survives_deepseek_tts_normalize(monkeypatch):
     received: list[str] = []
 
     async def fake_gemini(rendered, s):
-        return "scenes:\n  - scene_num: 1\n    narration: 제미나이가 쓴 문장입니다.\n", {}, "stop"
+        return (
+            "scenes:\n  - scene_num: 1\n    narration: 제미나이가 쓴 문장입니다.\n"
+            "    location: 격리실\n    color_palette: 차가운 회색\n    atmosphere: 긴장감\n"
+        ), {}, "stop"
 
     async def fake_deepseek(rendered, s):
         received.append(rendered)

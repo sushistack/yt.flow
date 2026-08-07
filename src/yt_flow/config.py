@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +36,21 @@ class Settings(BaseSettings):
     # budget. This value is sized for the largest single call that remains,
     # structure, with headroom over its measured 16384 failure / 32768 pass.
     deepseek_max_tokens: int = 32768
+    # ROOT CAUSE of the 2026-08-05/06 truncation class (finish_reason=length,
+    # content=="", the whole budget spent inside discarded reasoning_content).
+    # Batching stages per scene treated the symptom — live run 4c85f66d had
+    # writing already at one call PER SCENE and still burned all 32768 tokens on
+    # 67k–77k characters of reasoning for a single scene, re-roll included.
+    # Probed directly against api.deepseek.com (deepseek-v4-flash), measuring
+    # completion_tokens_details.reasoning_tokens:
+    #   baseline (no field)             -> 26
+    #   "reasoning_effort": "low"       -> 16
+    #   "thinking": {"type":"disabled"} -> 0
+    # So reasoning depth is the real lever. Mapped to a request field in
+    # scenario._REASONING_BODY: low/medium/high -> reasoning_effort,
+    # "disabled" -> thinking (the only mechanism that reached 0), "default" ->
+    # send neither field. Literal so an unknown value fails at config load.
+    deepseek_reasoning: Literal["low", "medium", "high", "disabled", "default"] = "low"
     # A/B evaluation judge (Story 4.2). Same OpenAI-compatible endpoint; the model is
     # config-pinned so the judge can be swapped independently of the content generator.
     # Kept after the Story 12.2 split moved judging to Gemini: it is the zero-new-provider
@@ -85,6 +102,16 @@ class Settings(BaseSettings):
     comfyui_health_poll_every_n_shots: int = Field(20, ge=1)
     comfyui_crash_recovery_poll_sec: float = Field(15.0, gt=0)
     comfyui_crash_recovery_timeout_sec: float = Field(300.0, gt=0)
+
+    # Read timeout for the /system_stats health probe. ComfyUI's server is
+    # single-threaded on the GPU: while it executes a prompt it does not answer
+    # /system_stats at all. Measured 2026-08-06 (run fdd69699): 28/28 prompts
+    # succeeded at ~20s each, yet the old 5s probe timeout misread the
+    # healthy-but-busy server as crashed and stalled the image stage after
+    # 1/68 shots. So this must tolerate at least one full generation. Crash
+    # detection does NOT depend on it — a dead server fails at connect
+    # (5s, see comfyui_client.HEALTH_CONNECT_TIMEOUT), not at read.
+    comfyui_health_read_timeout_sec: float = Field(120.0, gt=0)
 
     # Per-generation poll budget for submit_and_fetch*. Measured 2026-08-04 on
     # RX 9060 XT / ROCm: a cold character card (SDXL + LoRA + IPAdapter +
