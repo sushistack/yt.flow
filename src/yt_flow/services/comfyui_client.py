@@ -13,6 +13,7 @@ import asyncio
 import logging
 import math
 import mimetypes
+import uuid
 
 import httpx
 
@@ -182,7 +183,38 @@ async def _upload(client: httpx.AsyncClient, image_bytes: bytes, filename: str) 
     return f"{name} [{subfolder}]" if subfolder else name
 
 
+def _bust_save_cache(workflow: dict) -> dict:
+    """Return a copy whose save nodes have a unique ``filename_prefix``.
+
+    ComfyUI has an execution cache: resubmitting a byte-identical graph serves
+    every node from cache, so ``SaveImage`` never re-executes and the history
+    entry carries **no outputs at all** (``status_str=success, completed=True,
+    messages=[..., execution_cached, ...], outputs=[]``). The poller then waits
+    for an image that can never appear. Story 11.1 makes seeds deterministic per
+    (run_id, scene, shot), so any retry of a shot inside a run hits this exactly.
+
+    Only the save node's ``filename_prefix`` widget changes, which is enough to
+    miss that one node's cache key: the sampler (seed, prompts, model, steps) is
+    untouched and still served from cache, so the pixels are identical and the
+    seed recorded in sidecars still describes the image. Only the file's name on
+    ComfyUI's disk differs — the client fetches it by the filename history
+    reports, so nothing downstream cares.
+    """
+    token = uuid.uuid4().hex[:8]
+    out = dict(workflow)
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict) or not isinstance(inputs.get("filename_prefix"), str):
+            continue
+        prefix = inputs["filename_prefix"]
+        out[nid] = {**node, "inputs": {**inputs, "filename_prefix": f"{prefix}_{token}"}}
+    return out
+
+
 async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
+    workflow = _bust_save_cache(workflow)
     try:
         resp = await _request_with_retry(lambda: client.post("/prompt", json={"prompt": workflow}))
         resp.raise_for_status()
@@ -234,6 +266,13 @@ async def _poll_history(client, prompt_id: str, interval: float, max_polls: int,
             found = extract(last_outputs)
             if found:
                 return found
+            finished = _finished_status(entry)
+            if finished is not None:
+                raise ComfyUIError(
+                    f"ComfyUI finished prompt_id={prompt_id} without an image for {want} "
+                    f"(output nodes seen: {sorted(last_outputs or {}) or 'none'}; {finished}) — "
+                    f"terminal after {polls} poll(s), not waiting out the budget"
+                )
         await asyncio.sleep(interval)
 
     detail = f"{polls} polls, {errors} errored"
@@ -248,6 +287,21 @@ async def _poll_history(client, prompt_id: str, interval: float, max_polls: int,
         f"ComfyUI produced no image for prompt_id={prompt_id} within timeout — the "
         f"prompt never appeared in history ({detail})"
     )
+
+
+def _finished_status(entry: dict) -> str | None:
+    """Describe ``entry``'s status if ComfyUI is done with it, else ``None``.
+
+    A finished prompt with no image is terminal, not slow: the missing output
+    will never arrive, so polling on is pure latency. Only a status ComfyUI
+    actually wrote counts — an entry without one (or mid-flight) keeps polling.
+    """
+    status = entry.get("status") or {}
+    if not (status.get("completed") or status.get("status_str") == "error"):
+        return None
+    # messages are [event_name, payload] pairs; the names are the diagnosis.
+    events = [m[0] if isinstance(m, list | tuple) and m else m for m in status.get("messages") or []]
+    return f"status_str={status.get('status_str')!r}, events={events}"
 
 
 def _first_image(outputs: dict) -> dict | None:

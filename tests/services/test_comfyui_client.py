@@ -118,6 +118,119 @@ async def test_await_image_timeout_distinguishes_present_but_imageless():
     assert "2 polls, 0 errored" in msg
 
 
+# ── execution cache: finished-with-no-outputs is terminal, not slow ──────────
+# ComfyUI serves an identical graph from its execution cache: SaveImage never
+# re-executes, so the history entry is success/completed with outputs=[]. The old
+# poller waited out the whole budget and then blamed a timeout.
+
+_CACHED_ENTRY = {
+    "outputs": {},
+    "status": {
+        "status_str": "success",
+        "completed": True,
+        "messages": [["execution_start", {}], ["execution_cached", {}], ["execution_success", {}]],
+    },
+}
+
+
+async def test_await_image_cached_entry_fails_fast_without_burning_budget():
+    calls = {"n": 0}
+
+    async def handler(req):
+        calls["n"] += 1
+        return httpx.Response(200, json={"pid": _CACHED_ENTRY})
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError) as exc_info:
+            await cc._await_image(c, "pid", interval=0.0, max_polls=900)
+    assert calls["n"] == 1  # terminal on the first poll, not 900
+    msg = str(exc_info.value)
+    assert "finished prompt_id=pid without an image" in msg
+    assert "execution_cached" in msg and "'success'" in msg
+    assert "terminal after 1 poll(s)" in msg
+
+
+async def test_await_outputs_cached_entry_fails_fast():
+    calls = {"n": 0}
+
+    async def handler(req):
+        calls["n"] += 1
+        return httpx.Response(200, json={"pid": _CACHED_ENTRY})
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError, match="without an image for node\\(s\\) \\['9', '13'\\]"):
+            await cc._await_outputs(c, "pid", ["9", "13"], interval=0.0, max_polls=900)
+    assert calls["n"] == 1
+
+
+async def test_await_image_errored_entry_fails_fast():
+    """A prompt that ended in error is terminal too — don't wait out the budget."""
+    async def handler(req):
+        return httpx.Response(200, json={"pid": {"outputs": {}, "status": {
+            "status_str": "error", "completed": False,
+            "messages": [["execution_error", {"exception_message": "OOM"}]],
+        }}})
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError, match="status_str='error'"):
+            await cc._await_image(c, "pid", interval=0.0, max_polls=900)
+
+
+async def test_await_image_unfinished_entry_still_polls():
+    """No status yet = mid-flight: the entry must not be mistaken for terminal."""
+    calls = {"n": 0}
+
+    async def handler(req):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(200, json={"pid": {"outputs": {}}})
+        return httpx.Response(200, json={
+            "pid": {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}
+        })
+
+    async with _client(handler) as c:
+        ref = await cc._await_image(c, "pid", interval=0.0, max_polls=5)
+    assert ref["filename"] == "f.png"
+    assert calls["n"] == 3
+
+
+# ── cache busting on submit (the fix: SaveImage must re-execute) ─────────────
+
+async def test_submit_makes_save_prefix_unique_but_leaves_seed_alone():
+    """Only filename_prefix changes — the Story 11.1 seed contract is untouched."""
+    sent = []
+
+    async def handler(req):
+        import json
+        sent.append(json.loads(req.content)["prompt"])
+        return httpx.Response(200, json={"prompt_id": "abc"})
+
+    wf = {
+        "3": {"class_type": "KSampler", "inputs": {"seed": 1234567, "steps": 30}},
+        "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ytflow_bg", "images": ["8", 0]}},
+        "13": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ytflow_char", "images": ["12", 0]}},
+    }
+    async with _client(handler) as c:
+        await cc._submit(c, wf)
+        await cc._submit(c, wf)
+
+    for body in sent:
+        assert body["3"]["inputs"] == {"seed": 1234567, "steps": 30}  # sampler identical
+        assert body["9"]["inputs"]["filename_prefix"].startswith("ytflow_bg_")
+        assert body["13"]["inputs"]["filename_prefix"].startswith("ytflow_char_")
+    # two submissions of the same graph -> different save keys -> no cache hit
+    assert sent[0]["9"]["inputs"]["filename_prefix"] != sent[1]["9"]["inputs"]["filename_prefix"]
+    assert wf["9"]["inputs"]["filename_prefix"] == "ytflow_bg"  # caller's dict untouched
+
+
+async def test_submit_tolerates_workflow_without_save_node():
+    async def handler(req):
+        return httpx.Response(200, json={"prompt_id": "abc"})
+
+    async with _client(handler) as c:
+        assert await cc._submit(c, {"3": {"inputs": {"seed": 1}}, "x": "not-a-node"}) == "abc"
+
+
 async def test_await_outputs_timeout_reports_counts_and_nodes():
     async def handler(req):
         return httpx.Response(200, json={"pid": {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}})
