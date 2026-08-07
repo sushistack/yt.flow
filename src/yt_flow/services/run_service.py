@@ -698,6 +698,23 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
 # ── Failure recovery: resume from checkpoint & explicit full restart (Story 1.10) ──
 
 
+def failed_stage(gate_states: str | None) -> str | None:
+    """First stage marked ``failed`` in a run's persisted gate_states, in pipeline order.
+
+    AD-10 nodes return their error in the state dict instead of raising, so LangGraph
+    records a failed node as *successful* — the checkpoint cannot tell us what broke and
+    ``astream(None)`` would replay straight past it. The gate state is the only durable
+    record. Unknown keys and corrupt JSON yield ``None`` (nothing failed we can name).
+    """
+    try:
+        states = json.loads(gate_states) if gate_states else {}
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(states, dict):
+        return None
+    return next((s for s in _STAGES if states.get(s) == "failed"), None)
+
+
 async def resume_run_from_failure(run_id: str, sse_registry: "SSEQueueRegistry | None" = None) -> None:
     """Resume a failed run from its last checkpoint without re-running completed nodes.
 
