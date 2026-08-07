@@ -33,9 +33,32 @@ CONNECT_RETRY_DELAY = 2.0
 # configurable one (see Settings.comfyui_health_read_timeout_sec).
 HEALTH_CONNECT_TIMEOUT = 5.0
 
+# Dropped-prompt recovery. MEASURED over many live runs (2026-08-08): ComfyUI
+# intermittently *accepts* a submission — POST /prompt returns HTTP 200 with a
+# prompt_id and node_errors={} — and then never queues or executes it. The
+# prompt is in neither GET /queue nor GET /history, so the poller used to wait
+# out the whole 900s budget and then kill the image stage, losing a multi-hour
+# run. It dropped after 1, 2 and 5 successful shots on different attempts;
+# hand-submitting the same workflow completes in ~20s, so the graph is valid.
+#
+# DROP_GRACE_SEC is both the grace before a missing prompt is judged dropped (a
+# fresh submission takes a moment to appear in /queue) and the re-check cadence
+# afterwards — ~180 cheap /queue calls across a full 900s budget.
+# ponytail: module constants like CONNECT_ATTEMPTS above, not Settings fields —
+# nothing configures these per-environment.
+DROP_GRACE_SEC = 5.0
+DROP_RESUBMITS = 2
+
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
+
+
+class _PromptDropped(Exception):
+    """ComfyUI acknowledged the prompt but holds it in neither queue nor history.
+
+    Internal: never escapes :func:`_submit_and_await`, which resubmits.
+    """
 
 
 def _poll_budget(poll_interval: float | None, max_polls: int | None) -> tuple[float, int]:
@@ -110,11 +133,13 @@ async def submit_and_fetch(
     Raises :class:`ComfyUIError` on validation (`error`/`node_errors`), HTTP
     failure, or if no image appears within the poll budget. The budget defaults
     to ``comfyui_generation_timeout_sec`` / ``comfyui_poll_interval_sec``.
+
+    A prompt ComfyUI accepts but never queues is resubmitted up to
+    :data:`DROP_RESUBMITS` times rather than waiting out the budget.
     """
     poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
-        prompt_id = await _submit(client, workflow)
-        image_ref = await _await_image(client, prompt_id, poll_interval, max_polls)
+        image_ref = await _submit_and_await(client, workflow, _await_image, poll_interval, max_polls)
         return await _download(client, image_ref)
 
 
@@ -147,8 +172,11 @@ async def submit_and_fetch_outputs(
     """
     poll_interval, max_polls = _poll_budget(poll_interval, max_polls)
     async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(60.0)) as client:
-        prompt_id = await _submit(client, workflow)
-        node_refs = await _await_outputs(client, prompt_id, output_node_ids, poll_interval, max_polls)
+        node_refs = await _submit_and_await(
+            client, workflow,
+            lambda c, pid, i, m: _await_outputs(c, pid, output_node_ids, i, m),
+            poll_interval, max_polls,
+        )
         result = {}
         for node_id, ref in node_refs.items():
             result[node_id] = await _download(client, ref)
@@ -245,12 +273,14 @@ async def _poll_history(client, prompt_id: str, interval: float, max_polls: int,
     polls = errors = 0
     last_exc: Exception | None = None
     last_outputs: dict | None = None
+    next_live_check = DROP_GRACE_SEC
     for polls in range(1, max_polls + 1):
-        entry = None
+        entry = history_ok = None
         try:
             resp = await client.get(f"/history/{prompt_id}")
             resp.raise_for_status()
             entry = resp.json().get(prompt_id)
+            history_ok = True
         except httpx.HTTPError as exc:
             errors += 1
             last_exc = exc
@@ -273,6 +303,16 @@ async def _poll_history(client, prompt_id: str, interval: float, max_polls: int,
                     f"(output nodes seen: {sorted(last_outputs or {}) or 'none'}; {finished}) — "
                     f"terminal after {polls} poll(s), not waiting out the budget"
                 )
+        elif history_ok and polls * interval >= next_live_check:
+            # Absent from history *and* the read succeeded: the one state where
+            # a silent drop is possible. Anything short of a clean "ComfyUI does
+            # not know this prompt" keeps us waiting. [drop recovery]
+            next_live_check += DROP_GRACE_SEC
+            if not await _is_live(client, prompt_id):
+                raise _PromptDropped(
+                    f"prompt_id={prompt_id} is in neither /queue nor /history after "
+                    f"{polls} poll(s) (~{polls * interval:.0f}s)"
+                )
         await asyncio.sleep(interval)
 
     detail = f"{polls} polls, {errors} errored"
@@ -287,6 +327,56 @@ async def _poll_history(client, prompt_id: str, interval: float, max_polls: int,
         f"ComfyUI produced no image for prompt_id={prompt_id} within timeout — the "
         f"prompt never appeared in history ({detail})"
     )
+
+
+async def _is_live(client: httpx.AsyncClient, prompt_id: str) -> bool:
+    """Does ComfyUI still hold ``prompt_id`` in ``queue_running`` or ``queue_pending``?
+
+    Unknown counts as live, deliberately: a slow or failing ``/queue`` (ComfyUI
+    stalls HTTP while the GPU runs, see :func:`check_health`) must never be read
+    as a drop. A busy server that parks our prompt in ``queue_pending`` for
+    minutes is live and keeps polling — only a healthy ``/queue`` that does not
+    mention the prompt at all, while history has no entry either, is a drop.
+    """
+    try:
+        resp = await client.get("/queue")
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return True
+    # Entries are [number, prompt_id, prompt, extra_data, outputs]; `in` compares
+    # by == so non-matching dicts/ints are harmless, and being lenient here errs
+    # toward "still live", which is the safe direction.
+    return any(
+        isinstance(item, list | tuple) and prompt_id in item
+        for key in ("queue_running", "queue_pending")
+        for item in data.get(key) or []
+    )
+
+
+async def _submit_and_await(client, workflow: dict, awaiter, interval: float, max_polls: int):
+    """Submit, poll, and resubmit if ComfyUI silently drops the prompt.
+
+    Each attempt goes through :func:`_submit`, so cache-busting is re-applied to
+    every resubmission — a resubmit must not be served from the execution cache.
+    Bounded at :data:`DROP_RESUBMITS`; the final error reports the drop count.
+    """
+    dropped = 0
+    while True:
+        prompt_id = await _submit(client, workflow)
+        try:
+            return await awaiter(client, prompt_id, interval, max_polls)
+        except _PromptDropped as exc:
+            dropped += 1
+            if dropped > DROP_RESUBMITS:
+                raise ComfyUIError(
+                    f"ComfyUI dropped the prompt {dropped} time(s) — accepted it with "
+                    f"HTTP 200 + prompt_id but never queued or executed it (last: {exc})"
+                ) from exc
+            logger.warning(
+                "ComfyUI dropped a prompt (%s); resubmitting (%d/%d)",
+                exc, dropped, DROP_RESUBMITS,
+            )
 
 
 def _finished_status(entry: dict) -> str | None:

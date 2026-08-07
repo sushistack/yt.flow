@@ -323,6 +323,152 @@ async def test_download_raises_on_empty_body():
             await cc._download(c, {"filename": "f.png"})
 
 
+# ── dropped prompts: accepted with 200 + prompt_id, then never queued ───────
+# MEASURED over many live runs: the prompt exists in neither /queue nor
+# /history and the poller burned all 900s before killing the image stage.
+# interval=0.0 makes elapsed 0, so DROP_GRACE_SEC is patched to 0.0 to put the
+# liveness check on poll 1 instead of waiting the real few seconds.
+
+
+def _drop_server(*, queue=None, image_after=None):
+    """A ComfyUI that answers /prompt + /queue + /history, counting submissions.
+
+    ``queue`` is the ``GET /queue`` body; ``image_after`` (1-based) is the
+    submission number whose prompt actually executes — earlier ones are dropped.
+    """
+    state = {"submits": 0, "prompts": [], "queue_polls": 0}
+
+    async def handler(req):
+        if req.url.path == "/prompt":
+            import json
+            state["submits"] += 1
+            state["prompts"].append(json.loads(req.content)["prompt"])
+            return httpx.Response(200, json={"prompt_id": f"pid{state['submits']}", "node_errors": {}})
+        if req.url.path == "/queue":
+            state["queue_polls"] += 1
+            return httpx.Response(200, json=queue or {"queue_running": [], "queue_pending": []})
+        pid = req.url.path.rsplit("/", 1)[-1]
+        if image_after is not None and pid == f"pid{image_after}":
+            return httpx.Response(200, json={pid: {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}})
+        return httpx.Response(200, json={})  # not in history at all
+
+    return handler, state
+
+
+async def test_dropped_prompt_is_resubmitted_instead_of_burning_the_budget(monkeypatch):
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    handler, state = _drop_server(image_after=2)  # first submission silently dropped
+
+    async with _client(handler) as c:
+        ref = await cc._submit_and_await(c, {"9": {"inputs": {"filename_prefix": "p"}}},
+                                         cc._await_image, 0.0, 900)
+    assert ref["filename"] == "f.png"
+    assert state["submits"] == 2
+    assert state["queue_polls"] == 1  # detected on the first liveness check, not poll 900
+
+
+async def test_prompt_sitting_in_queue_pending_is_not_treated_as_dropped(monkeypatch):
+    """The false-positive guard: a busy queue must never trigger a resubmit."""
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    polls = {"n": 0}
+
+    async def handler(req):
+        if req.url.path == "/prompt":
+            return httpx.Response(200, json={"prompt_id": "pid1"})
+        if req.url.path == "/queue":
+            return httpx.Response(200, json={
+                "queue_running": [[7, "someone-else", {}]],
+                "queue_pending": [[8, "another"], [9, "pid1", {"3": {}}, {}, {}]],
+            })
+        polls["n"] += 1
+        if polls["n"] < 4:  # parked in the queue behind other work
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"pid1": {"outputs": {"9": {"images": [{"filename": "f.png"}]}}}})
+
+    async with _client(handler) as c:
+        ref = await cc._submit_and_await(c, {}, cc._await_image, 0.0, 10)
+    assert ref["filename"] == "f.png"
+
+
+async def test_unreadable_queue_is_not_treated_as_dropped(monkeypatch):
+    """ComfyUI stalls HTTP while the GPU runs — a failing /queue means "unknown"."""
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+
+    async def handler(req):
+        if req.url.path == "/queue":
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json={})
+
+    async with _client(handler) as c:
+        assert await cc._is_live(c, "pid1") is True
+        with pytest.raises(cc.ComfyUIError, match="never appeared in history"):
+            await cc._await_image(c, "pid1", interval=0.0, max_polls=2)
+
+
+async def test_resubmission_is_bounded_and_error_reports_the_drop_count(monkeypatch):
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    monkeypatch.setattr(cc, "DROP_RESUBMITS", 2)
+    handler, state = _drop_server()  # every submission is dropped
+
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError) as exc_info:
+            await cc._submit_and_await(c, {"9": {"inputs": {"filename_prefix": "p"}}},
+                                       cc._await_image, 0.0, 900)
+    assert state["submits"] == 3  # original + DROP_RESUBMITS, then it gives up
+    msg = str(exc_info.value)
+    assert "dropped the prompt 3 time(s)" in msg
+    assert "never queued or executed" in msg
+
+
+async def test_resubmits_are_cache_busted_too(monkeypatch):
+    """A resubmit that hits the execution cache produces no outputs at all (b36aaa0)."""
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    handler, state = _drop_server(image_after=3)
+
+    async with _client(handler) as c:
+        await cc._submit_and_await(c, {"9": {"class_type": "SaveImage",
+                                             "inputs": {"filename_prefix": "ytflow_bg"}}},
+                                   cc._await_image, 0.0, 900)
+    prefixes = [p["9"]["inputs"]["filename_prefix"] for p in state["prompts"]]
+    assert len(prefixes) == 3 and len(set(prefixes)) == 3
+    assert all(p.startswith("ytflow_bg_") for p in prefixes)
+
+
+async def test_dropped_prompt_recovery_also_covers_submit_and_fetch_outputs(monkeypatch):
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    handler, state = _drop_server(image_after=2)
+
+    async with _client(handler) as c:
+        refs = await cc._submit_and_await(
+            c, {}, lambda cl, pid, i, m: cc._await_outputs(cl, pid, ["9"], i, m), 0.0, 900)
+    assert refs["9"]["filename"] == "f.png"
+    assert state["submits"] == 2
+
+
+async def test_normal_first_execution_returns_the_image_without_touching_the_queue(monkeypatch):
+    """No drop, one submission, no liveness traffic, image unchanged."""
+    monkeypatch.setattr(cc, "DROP_GRACE_SEC", 0.0)
+    handler, state = _drop_server(image_after=1)
+
+    async with _client(handler) as c:
+        ref = await cc._submit_and_await(c, {}, cc._await_image, 0.0, 900)
+    assert ref["filename"] == "f.png"
+    assert (state["submits"], state["queue_polls"]) == (1, 0)
+
+
+async def test_grace_period_delays_the_first_liveness_check(monkeypatch):
+    """A prompt missing for less than DROP_GRACE_SEC is not judged yet."""
+    async def handler(req):
+        if req.url.path == "/queue":
+            raise AssertionError("liveness checked before the grace period elapsed")
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(cc.asyncio, "sleep", lambda _d: _done(None))  # 1s of simulated elapsed
+    async with _client(handler) as c:
+        with pytest.raises(cc.ComfyUIError, match="never appeared in history"):
+            await cc._await_image(c, "pid", interval=1.0, max_polls=4)  # 4s < DROP_GRACE_SEC
+
+
 # ── upload_image (Story 5.10 — LoadImage needs a real uploaded filename, not base64) ─
 
 async def test_upload_returns_bare_name_without_subfolder():
