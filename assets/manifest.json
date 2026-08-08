@@ -1,5 +1,19 @@
 {
   "assets": {
+    "SCP-049-2/hint:475c8a9231_front": {
+      "angle": "front",
+      "approved_at": "2026-08-07T16:44:03.790929+00:00",
+      "card_key": "SCP-049-2",
+      "created_at": "2026-08-07T16:44:03.789165+00:00",
+      "path": "characters/SCP-049-2/epoch_2/hint_475c8a9231_front.png",
+      "pose": "hint:475c8a9231",
+      "sha256": "e5e0d740e5412a9a7bd1060826e258a9c983f5176fb50b7cbf4dc2119592dc68",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
     "SCP-049-2/standing_back": {
       "angle": "back",
       "approved_at": "2026-07-12T05:58:19.849183+00:00",
@@ -375,6 +389,34 @@
         "type": "comfyui_generation"
       },
       "status": "retired"
+    },
+    "STOCK-d-class/hint:970ede32f4_front": {
+      "angle": "front",
+      "approved_at": "2026-08-06T15:14:15.208406+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-06T15:14:15.206296+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/hint_970ede32f4_front.png",
+      "pose": "hint:970ede32f4",
+      "sha256": "f47cd6a85d8faa10c6ecc32876f062d5fab0b794b8d56637ab5b660357564769",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/hint:a40ec9c170_front": {
+      "angle": "front",
+      "approved_at": "2026-08-07T16:43:38.924538+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-07T16:43:38.922010+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/hint_a40ec9c170_front.png",
+      "pose": "hint:a40ec9c170",
+      "sha256": "ea2b9a1787c9ec73728c3938ee4294f0573192d08d1d6bad46e7b9e244ce4984",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
     },
     "STOCK-d-class/hint:aabd2f03df_front": {
       "angle": "front",
