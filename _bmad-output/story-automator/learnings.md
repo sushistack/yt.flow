@@ -35,3 +35,11 @@
 - 최종 verification summary와 sprint-status 설명을 command-derived로 만든다.
 - judge-provider independence를 Story 13.4 promotion 권한 복구 전에 결정한다.
 - Qwen clone 운영 전환은 별도 승인으로 처리하고 약 34% 속도 차이의 전체 에피소드 페이싱 영향을 먼저 측정한다.
+
+## 2026-08-08 — Epic 10 / Story 10.1 (grounding live verification)
+
+- **A "live verification" story survives contact with the automator only if the create session is allowed to overrule the literal instruction.** The directive said "new run on the same SCP, then pair the frames". `_shot_seed(run_id, ...)` makes that impossible — a new run has different backgrounds, shots and narration. The create session caught it and redesigned the primary evidence as a **video-stage-only re-render of the existing run**, which is a genuinely controlled off/on pair. Bake "verify the comparison is actually possible" into the story, not into the reviewer's hindsight.
+- **Two h264 encodes are never bit-identical (~0.87 mean luminance noise floor), so a frame diff needs an in-frame control band.** Sampling the region under test *and* a background region at the same y turned an eyeball "no contact shadow" into a measured +15.7 vs +0.05/-0.02. Absolute diff values without a control are meaningless at this scale.
+- **Extract the off-state frames BEFORE anything re-renders.** `video.py:1885` unlinks every `shots/scene_NNN_*.mp4` before re-rendering a scene. The off-state only survived because the story's task order forced the copy-out first.
+- **`commit-story` uses `git add -A`.** On a tree carrying other sessions' leftovers it sweeps them into the story commit. Commit explicit pathspecs when the working tree isn't clean.
+- **The feature-on state can introduce a new regression while fixing the targeted one.** Grounding put the cards at the right height and simultaneously erased heads on ~4% of cards via the occlusion mask. A verification story must look for what got *worse*, not only whether the target defect moved.
