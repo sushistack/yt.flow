@@ -1,14 +1,23 @@
 # IC-Light Re-lighting Workflow (Story 8.7, Tier 3)
 
-## Status: unverified — no local IC-Light custom-node install
+## Status: unverified graph — but the nodes and weights ARE installed now
+
+> **2026-08-08 correction.** The paragraph below used to say this host had no
+> IC-Light nodes. That is **no longer true** and was the basis of a wrong
+> "blocked on hardware" conclusion during Story 10.1. Measured on this host:
+> [kijai's ComfyUI-IC-Light](https://github.com/kijai/ComfyUI-IC-Light) is
+> installed at rev `22811d9` (2026-08-02), `models/unet/iclight_sd15_fbc.safetensors`
+> (1.7 GB) is present, and the SD1.5 base that `fbc` needs
+> (`models/checkpoints/cyberrealistic_v90.safetensors`, 2.1 GB) is present.
+> That is a **~4 GB VRAM class** route. The 16 GB OOM figures in
+> `8-20-live-validation/DECISION-RECORD.md` belong to a *different* route
+> (Qwen-Image-Edit-2511 GGUF, 13.24 GB, card+pose-guide → new card) and do not
+> apply here. So step 1 of "Before enabling" below is **already done**; what
+> remains is steps 2–5. Owned by Story 10.8.
 
 `data/workflows/comfyui_iclight_relight_api.json` is a **structural
-placeholder**, not a verified graph. This project's local ComfyUI instance
-(`$HOME/workspaces/ComfyUI/custom_nodes/`) has IPAdapter, ControlNet-aux,
-Impact-Pack, InSPyReNet, and rembg installed — but no IC-Light nodes (the most
-common implementation is [kijai's ComfyUI-IC-Light](https://github.com/kijai/ComfyUI-IC-Light)
-or the original [lllyasviel/IC-Light](https://github.com/lllyasviel/IC-Light)).
-Unlike `comfyui_character_multi_angle_api.json`/`comfyui_location_plate_api.json`,
+placeholder**, not a verified graph. Unlike
+`comfyui_character_multi_angle_api.json`/`comfyui_location_plate_api.json`,
 this workflow's node graph has **not** been live-verified against a real
 ComfyUI submission.
 
@@ -41,7 +50,10 @@ this file.
 
 ## Before enabling `composite_harmonization_tier=3` for real
 
-1. Install an IC-Light custom-node pack into `$HOME/workspaces/ComfyUI/custom_nodes/`.
+1. ~~Install an IC-Light custom-node pack into `$HOME/workspaces/ComfyUI/custom_nodes/`.~~
+   **Done 2026-08-02** — kijai `ComfyUI-IC-Light` @ `22811d9`, plus
+   `iclight_sd15_fbc.safetensors`. Use **v1 `fbc` only**: v2/Flux variants are
+   non-commercial and this pipeline is monetized.
 2. Replace nodes `"3"`–`"9"` with the real IC-Light node graph (unet patch,
    foreground/background conditioning, matching checkpoint).
 3. Re-run `composite_harmonization.relight_sprite()` against a live ComfyUI
