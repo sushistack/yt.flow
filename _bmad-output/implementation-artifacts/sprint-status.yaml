@@ -180,7 +180,21 @@ development_status:
   # ── Epic 10: 서사 구조 다양화 → Epic 12로 흡수 (2026-08-03, Jay) ─────────────
   # 스토리 1개뿐이고 Epic 12와 동일 계층(scenario, GPU 불필요)이라 흡수. 10-1 → 12-4로 이동.
   # 운영 잡일(챕터 카드 표시시간 2배, 씬 경계 음성 fade 원인 조사)은 Epic 11 소관으로 이관.
-  epic-10: absorbed-into-epic-12
+  # ── Epic 10: 시청 판정 결함 정정 (2026-08-08 Jay E2E 리뷰) ─────────────────
+  # 구 Epic 10(서사 구조 다양화)은 Epic 12로 흡수됨(10-1 → 12-4, done). 비워진 번호를 재사용.
+  # 발의: 런 8a9a288b(SCP-049) 시청 후 결함 16건. ⚠️ 그 런은 depth_placement_enabled=false로
+  # 렌더되어 8.16 지면배치 + 11.5 패럴랙스가 둘 다 꺼진 상태였음(오케스트레이터가 처리량 병목을
+  # depth로 오진; 실제 원인은 GPU DPM 최저클럭 고착). 지적 3·11은 "기능 무효"의 증거가 아님 — 10-1이 먼저 구분.
+  # 공통 AC: 각 스토리는 해당 지적 번호가 산출물에서 실제로 사라졌음을 보여야 닫힌다(테스트 통과만으로는 불가).
+  10-1-grounding-composite-live-verification: backlog  # 지적 3·11 카드가 찢어붙인 듯·둥둥 뜸. 8.16+11.5 켠 상태로 SCP-049 재렌더 → 동일 샷 off/on 프레임 쌍 비교(에픽 전체 기준선). 켜도 안 붙어 보이면 접지선/스케일/접촉그림자/8.7 harmonization 중 어디가 끊겼는지 프레임 단위 규명. 8.16 자체 게이트(추적 3.9px vs 정적 57.2px)를 통과하고도 체감이 그대로면 게이트 지표가 체감을 대리 못 한다는 뜻 → 13-2에 반영. 최우선.
+  10-2-background-must-be-unpopulated: backlog  # 지적 5·12 배경에 인물(대형 여성 얼굴·애니 캐릭터)이 이미 있는데 카드가 또 합성됨. 카드 컴포지팅의 전제가 무인 배경이라 배치·접지를 아무리 고쳐도 해결 안 되는 계층. visual_breakdown 배경 프롬프트가 인물 생성 못 하게(네거티브 강화는 역효과 실증 — gotcha_negative-prompt-overstuffing, 구도 지시로 통제) + 생성 후 인물 검출 시 재생성 결정론 가드(8.18/8.19 패턴). 검출은 기존 Qwen-VL 재사용, 신규 의존성 금지.
+  10-3-style-consistency-lora-mismatch: backlog  # 지적 10·12 화풍이 튐. 원인 일부 규명 완료: darkness_xl_v2.safetensors가 이름과 달리 SD1.5 레이아웃(output_blocks_3_1...attn1_to_k가 [640,8], SDXL은 1280 기대) → 로드마다 수백 건 ERROR lora shape invalid로 패치 대부분이 조용히 실패, 의도한 화풍 통제가 실제로 안 걸림. 제거 또는 SDXL판 교체 + horror.safetensors도 동일 검증. 참고: 제거만으로 렌더 느려짐은 해소 안 됨(별개 문제).
+  10-4-image-narration-semantic-match: backlog  # 지적 2·4·7·9·16(최다). 무슨 배경인지 모름 / 나레이션과 안 맞음. visual_breakdown이 "이 프레임만 보고 상황이 읽히는가"를 요구도 검증도 안 함. 프롬프트가 사건(누가/무엇을/결과)을 담도록 — 12-1의 형용사→사건 전환을 시각 계층에 적용. 판정 축: 프레임+나레이션 문장을 VLM에 함께 주고 표현 일치 판정(13-2 연계). 도입부 첫 샷은 훅이라 별도 강한 기준. 의존 10-2(배경에 인물 없어야 의미 판정 성립).
+  10-5-action-state-on-cards: backlog  # 지적 6 "쓰러졌습니다"인데 서 있음. 카드가 기립 정면 1종뿐. 8-20이 맡았으나 기법 기각(Qwen-Image-Edit-2511: 가이드가 조건화 아닌 콘텐츠로 주입돼 화면에 그려짐 + 16GB 미적합, 5런 중 2 OOM — 8-20-live-validation/DECISION-RECORD.md). 남은 후보는 실제 ControlNet 또는 edit_only(가이드 없이 텍스트만으로 요청 동작 달성 실측 있음). 최소 상태집합(쓰러짐/앉음)만 우선. 8-20 Task 2 산출물(pose_conditioning 컬럼, 닫힌 pose_guide_key, 가이드 6종) 재사용. 의존 8-20 결정.
+  10-6-cast-visual-identity: backlog  # 지적 14·15. 실측: 66샷에서 샷 내 캐스트 키 중복 0건, 사용 키는 SCP-049(41)/STOCK-d-class(19)/SCP-049-2(13). 즉 15번은 데이터 중복이 아니라 SCP-049와 파생 049-2가 둘 다 흑사병 의사 복장이라 같은 인물로 보이는 문제 — 049-2는 "되살아난 피해자"이므로 복장이 달라야 함. 파생 카드 생성 규칙 정정 + D계급 카드 실물 재검(8-15 승인 자산).
+  10-7-scene-sound-replacement: backlog  # 지적 13 사이렌 소리 교체. 7.1 무드→오디오 베드 매핑에서 해당 큐 교체. 작지만 체감 직접적.
+  # 범위 밖으로 보낸 지적: ①도입부 나레이션 문장 이상 → Epic 12(단 이 런은 deepseek_reasoning=low, 나레이션 2.8분 vs 목표 8분·베이스라인 7.87분으로 1/3 — 절단 방지 설정이 분량·품질을 함께 떨어뜨렸는지 검증 필요). ⑧셋 재사용 의심 → 이 런은 stock_plate_substitution_enabled=false로 의도적 미사용(8.17 치환이 배경 다양성 155→41 붕괴시켜 차단), 재사용 되살리려면 플레이트-프롬프트 화해 선행 = Epic 8 별도 스토리(8-19 리뷰 인계분).
+  epic-10-retrospective: optional
 
   # ── Epic 11: 시네마틱 모션 & 프레임 품질 하드닝 ─────────────────────────────
   # 2026-08-01 품질 리서치 발의(research/technical-yt-flow-quality-strategy-research-2026-08-01.md) — Epic 8이 안 다루는 "조잡함"의 나머지 절반(모션+생성 파라미터).
