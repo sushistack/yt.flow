@@ -2242,6 +2242,36 @@ async def test_compose_scene_sound_design_terminates_and_matches_duration(tmp_pa
         )
 
 
+async def test_assemble_scene_normalizes_sar_before_concat(monkeypatch, tmp_path):
+    """[Story 8.11] Every clip is scale/pad/setsar-normalized before concat.
+
+    Regression guard: a 1344x768 generated background scaled to the canvas
+    leaves SAR 4600:4599, and mixing it with SAR 1:1 clips made concat abort
+    the whole video stage ("Input link ... do not match the corresponding
+    output link").
+    """
+    captured = _capture_filter(monkeypatch)
+    clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+
+    await video._assemble_scene_from_clips(
+        clips, 2.0, tmp_path / "seg_001.mp4",
+        audio_path=str(tmp_path / "n.wav"), subtitle_path=str(tmp_path / "s.srt"),
+        mood="clinical", sound_design_enabled=False, post_fx_enabled=False,
+        include_stinger=False,
+    )
+
+    fc = captured[0]
+    for i in range(len(clips)):
+        assert (
+            f"[{i}:v]scale={video.COMP_W}:{video.COMP_H}:force_original_aspect_ratio=decrease,"
+            f"pad={video.COMP_W}:{video.COMP_H}:(ow-iw)/2:(oh-ih)/2,setsar=1[cn{i}]"
+        ) in fc
+    # concat consumes the normalized labels, not the raw inputs — and stays a hard cut.
+    assert "[cn0][cn1]concat=n=2:v=1:a=0[concat_v]" in fc
+    assert "[0:v][1:v]concat" not in fc
+    assert "xfade" not in fc
+
+
 # ── Per-shot cut assembly integration (Story 8.11) ────────────────────────────
 
 

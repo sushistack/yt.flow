@@ -1717,8 +1717,19 @@ async def _assemble_scene_from_clips(
     post_filter = build_post_filter(mood) if post_fx_enabled else ""
     post_label = f"{post_filter}[graded];[graded]" if post_fx_enabled else ""
 
-    concat_labels = "".join(f"[{i}:v]" for i in range(n_clips))
+    # concat demands identical w/h/SAR on every input. Generated 1344x768
+    # backgrounds scaled to the canvas land on SAR 4600:4599 while stock-sized
+    # ones stay 1:1, and the mix aborts the whole scene ("Input link ... do not
+    # match"). Normalize each clip first — identity for an already-correct
+    # 1920x1080 SAR-1:1 clip, so nothing that worked before changes.
+    norm_parts = [
+        f"[{i}:v]scale={COMP_W}:{COMP_H}:force_original_aspect_ratio=decrease,"
+        f"pad={COMP_W}:{COMP_H}:(ow-iw)/2:(oh-ih)/2,setsar=1[cn{i}]"
+        for i in range(n_clips)
+    ]
+    concat_labels = "".join(f"[cn{i}]" for i in range(n_clips))
     video_chain = (
+        f"{';'.join(norm_parts)};"
         f"{concat_labels}concat=n={n_clips}:v=1:a=0[concat_v];"
         f"[concat_v]{post_label}subtitles='{sub}':fontsdir='{fontsdir}'[vout]"
     )
