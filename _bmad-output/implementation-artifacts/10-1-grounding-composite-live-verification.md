@@ -8,7 +8,7 @@ findings: [3, 11]
 
 # Story 10.1: Grounding & Compositing Live Verification — Are the Cards Attached to the Plate? (findings 3·11)
 
-Status: review
+Status: done
 
 <!-- Epic 10 gives scope prose, not a formal user story or numbered BDD ACs. The Story and ACs below are derived implementation contracts grounded in the epic entry, Jay's 2026-08-08 custom instructions, the 8.16/11.5/8.7 code as it exists at `ab0b7568`, and live inspection of the running services and of run `8a9a288b`. -->
 
@@ -138,7 +138,7 @@ This is also Epic 10's ground truth exercise: the epic exists because the previo
   - [x] Use the **pre-verified shot slate** below (already checked against this run: cast-bearing, clip present, all three depth bands, three positions, one- and two-card cases). Substitute only if a clip turns out unreadable. — **all six verified present in `shots/` and their depth/position re-confirmed against the scenario artifacts; no substitution needed.**
   - [x] For each: `ffmpeg -i workspace/8a9a288b-.../shots/scene_NNN_SNNNNN.mp4 -ss <t> -frames:v 1 .../off/scene_NNN_SNNNNN_t<t>.png`. Use a mid-clip timestamp (Ken Burns drift is largest away from t=0 — that is where a static anchor visibly slides off the floor). — **t = duration/2 rounded to 0.1 s. `-nostdin` is required: without it ffmpeg consumes the loop's stdin and silently skips every other shot.**
   - [x] Copy `video.mp4` to `.../off/video_off.mp4` (56 MB — keep it out of git; note the path, do not commit the mp4). — **done, plus the six source clips.**
-  - [x] Record the chosen shot list + timestamps in the story so the on-state extraction is identical. — **recorded in the Frame Pairs table and encoded in `make_pairs.sh`, which is what actually re-extracted the on-state.**
+  - [x] Record the chosen shot list + timestamps in the story so the on-state extraction is identical. — **recorded in the Frame Pairs table and encoded in `make_pairs.sh`.** (Corrected at review: `make_pairs.sh` was written *after* the on-state frames, as the reproduction recipe, not as the tool that produced them — the frames predate it by 25 minutes. It does reproduce them: re-extracting `scene_002_S00202` through the script yields a frame bit-identical to the committed one, mean |diff| = 0.0.)
 
 - [x] **Task 2 — Restart the API with depth on (AC3, AC5)**
   - [x] The unit is **transient** (`/run/user/1000/systemd/transient/ytflow-api.service`) — `systemctl --user restart` re-uses the same `ExecStart` and would keep `depth=false`. It must be stopped and re-created:
@@ -182,6 +182,16 @@ This is also Epic 10's ground truth exercise: the epic exists because the previo
   - [x] Route any non-grounding observations to 10.2–10.7 as notes; fix none of them (AC9). — **six routed, none fixed.**
   - [x] `_bmad-output/implementation-artifacts/10-1-live-validation/README.md` — what each file is, following the `8-9-live-validation/README.md` precedent.
   - [x] Commit the PNGs and README; **do not commit the mp4s.** — **`10-1-live-validation/.gitignore` holds `*.mp4`, so exclusion is structural rather than a thing to remember at `git add` time.**
+
+### Review Follow-ups (AI)
+
+The verdict's five follow-ups live in prose in the Dev Agent Record, where they die with the story. Restated here as tracked items so they survive closure. **None is in scope for 10.1** — AC6 forbids implementing the named link here.
+
+- [ ] [AI-Review][High] Occlusion mask erases heads on ~4% of cards — a regression that exists *only* when `depth_placement_enabled=true`. Worst case removes 54% of a card (`scene_007_S00704`). Needs an owning story before depth placement ships. Guard candidates in Dev Agent Record follow-up #5. [`compositing_service.py:465` `occlusion_mask`]
+- [ ] [AI-Review][High] Harmonization tier ≥ 2 adjudicated on frames — the named broken link. Reuse this story's slate; `off/` is a permanent third reference point. [`composite_harmonization_tier`]
+- [ ] [AI-Review][Med] Near-band ground line vs motion headroom — `_GROUND_Y_MAX` overrides the depth answer for 85% of near cards. **Requirements conflict, needs Jay's decision, not a patch.** [`video.py:1332`]
+- [ ] [AI-Review][Med] Parallax-on comparison still owed (AC4) — blocked on the same missing `YTFLOW_GEMINI_API_KEY` that blocks every new run on this box.
+- [ ] [AI-Review][Low] Contact shadow strength — present and correctly tracked at +19.1 luminance; whether 64/255 under `boxblur=12` is right is cheap to A/B on the existing slate. [`video.py:1465`]
 
 ## Dev Notes
 
@@ -332,7 +342,7 @@ For 85% of near-band cards the depth map's answer is discarded and replaced by o
 
 ### Parallax Rung (AC4)
 
-- **renderer fallback reason observed:** `no_depth_map` — logged verbatim once per shot, e.g. `shot S00101 fell back to legacy zoompan (no_depth_map)`. Observed for every shot in the render, not a sample.
+- **renderer fallback reason observed:** `no_depth_map` — logged verbatim once per shot, e.g. `shot S00101 fell back to legacy zoompan (no_depth_map)`. **42 distinct shot ids, which is every shot the render actually produced a clip for** — not a sample, and not 66: only 42 of the 66 images survive 8.11's per-shot cut assembly into `shots/`. The 0-of-66 figure below counts checkpoint entries; the 42 counts rendered shots. Both are complete over their own population.
 - **11.5 exercised in the controlled pair? NO.** `depth_map_path` is absent on **0 of 66** shots in the checkpoint (measured, not assumed): the image stage that produced them ran with `inject_depth_resolver` gated off, and a video-only re-render does not re-enter the image stage, so nothing writes that key. `parallax_25d_enabled` was `True` the whole time and was inert — precisely the asymmetry AC4 exists to prevent misreporting.
 - **Therefore the controlled pair isolates 8.16 ground placement + contact shadow + 8.7 harmonization (tier 1) only.** A parallax-on comparison is still owed and is *not* delivered by this story; it requires re-running the **image** stage with depth on, which would destroy this run's 66 plates and with them the shot-matched pairing. It belongs in a story that can afford a fresh run.
 
@@ -363,14 +373,16 @@ Rebuild command: `10-1-live-validation/make_pairs.sh` (re-extracts `on/` and reb
 
 The two findings this story was asked to settle do not have the same answer, and the verdict follows the one that is still open.
 
-**Finding 11 ("characters float") is substantially fixed by 8.16, and the frames prove it.** In `scene_001_S00102_pair.png` the `far` card hovers 280 px above the debris floor with the flag off; with it on it lands at the base of the slope and reads as standing on it. In `scene_004_S00403_pair.png` both `near` cards drop from a ledge in mid-frame onto the reflective floor and share one ground line, which is exactly what two same-band cards should do. In `scene_001_S00104_pair.png` both cards land on the container's bottom lip and the `near` card stays 57 px below its `mid` sibling — depth ordering preserved inside one frame. Four of six shots read as standing where none did before. This is not a placebo: every card's `ground_y` resolved non-null, the band means order correctly, and the drop measured in the pixels matches the resolved value (`scene_002_S00202` on-state feet land at y = 1018, against the clamped 0.9421 × 1080 = 1017).
+**Finding 11 ("characters float") is substantially fixed by 8.16, and the frames prove it.** In `scene_001_S00102_pair.jpg` the `far` card hovers 280 px above the debris floor with the flag off; with it on it lands at the base of the slope and reads as standing on it. In `scene_004_S00403_pair.jpg` both `near` cards drop from a ledge in mid-frame onto the reflective floor and share one ground line, which is exactly what two same-band cards should do. In `scene_001_S00104_pair.jpg` both cards land on the container's bottom lip and the `near` card stays 57 px below its `mid` sibling — depth ordering preserved inside one frame. Four of six shots read as standing where none did before. This is not a placebo: every card's `ground_y` resolved non-null, the band means order correctly, and the drop measured in the pixels matches the resolved value (`scene_002_S00202` on-state feet land at y = 1018, against the clamped 0.9421 × 1080 = 1017).
 
-**Finding 3 ("torn out and pasted onto the background") is not fixed, and that is why the verdict is STILL FLOATING.** Grounding moved the cards to the right height; it did nothing about their being cutouts. `scene_004_S00403_pair.png` is the clearest case — the two cards now stand *on* a mirror-polished floor that reflects every object in the plate and reflects neither of them. `scene_001_S00101_pair.png` keeps a flat saturated orange jumpsuit against a desaturated grey-green plate with no shared light. The alpha edges stay hard at every card boundary in all six pairs. `composite_harmonization_tier` was `1` (tint + contact shadow) for this render; tier 2 (light wrap) and tier 3 (IC-Light relight) exist in the code and were not exercised. **The link the frames name is harmonization** — what remains after grounding is precisely "card and plate do not share light".
+**Finding 3 ("torn out and pasted onto the background") is not fixed, and that is why the verdict is STILL FLOATING.** Grounding moved the cards to the right height; it did nothing about their being cutouts. `scene_004_S00403_pair.jpg` is the clearest case — the two cards now stand *on* a mirror-polished floor that reflects every object in the plate and reflects neither of them. `scene_001_S00101_pair.jpg` keeps a flat saturated orange jumpsuit against a desaturated grey-green plate with no shared light. The alpha edges stay hard at every card boundary in all six pairs. `composite_harmonization_tier` was `1` (tint + contact shadow) for this render; tier 2 (light wrap) and tier 3 (IC-Light relight) exist in the code and were not exercised. **The link the frames name is harmonization** — what remains after grounding is precisely "card and plate do not share light".
 
 Two measured contributors, both real, neither sufficient to be the primary:
 
-1. **Ground line, near band — the clamp discards the depth answer 85% of the time.** `_GROUND_Y_MAX = 0.9421` (`video.py:1332`) truncates 23 of 27 near-band cards, mean excess 29.4 px, live-logged as `Clamped ground_y 0.972 to 0.942 so the card's motion stays in frame`. The near band's ground line is therefore a near-constant, not a measurement. Visible consequence in `scene_001_S00104_pair.png`: the near/mid separation is compressed from the resolved 95 px to 57 px. The clamp is doing its documented job (keeping idle motion in frame) — this is a **conflict between two correct requirements**, not a bug, and resolving it needs a decision, not a patch.
-2. **Contact shadow is present and correctly tracked, but too weak to read as contact.** My first pass through the frames called it absent; measuring proved that wrong and the measurement is the record. Signed luminance difference between the off and on frames of `scene_002_S00202` (identical backgrounds, so this isolates the overlay): the ON-shadow-only band under the feet is **+15.7** darker than off, against **+0.05** and **−0.02** in two control bands at the same y away from the card, with 78% of the band's pixels shifted by more than 8 levels. The ellipse is where the card is, at the y the card is anchored to. It is `boxblur=12:1` over a 64/255 alpha, and at that strength it does not sell contact on a lit plate.
+1. **Ground line, near band — the clamp discards the depth answer 85% of the time.** `_GROUND_Y_MAX = 0.9421` (`video.py:1332`) truncates 23 of 27 near-band cards, mean excess 29.4 px, live-logged as `Clamped ground_y 0.972 to 0.942 so the card's motion stays in frame`. The near band's ground line is therefore a near-constant, not a measurement. Visible consequence in `scene_001_S00104_pair.jpg`: the near/mid separation is compressed from the resolved 95 px to 57 px. The clamp is doing its documented job (keeping idle motion in frame) — this is a **conflict between two correct requirements**, not a bug, and resolving it needs a decision, not a patch.
+2. **Contact shadow is present and correctly tracked, but too weak to read as contact.** My first pass through the frames called it absent; measuring proved that wrong and the measurement is the record. Signed luminance difference between the off and on frames of `scene_002_S00202` (identical backgrounds, so this isolates the overlay): the ON-shadow-only band under the feet is **+19.1** darker than off, against **−0.02** in each of two control bands at the same rows away from the card, with 89% of the band's pixels shifted by more than 8 levels. The ellipse is where the card is, at the y the card is anchored to. It is `boxblur=12:1` over a 64/255 alpha, and at that strength it does not sell contact on a lit plate.
+
+   **Bands, so this is re-checkable** (added at review; the first pass reported +15.7 / +0.05 / −0.02 / 78% without recording where it sampled, so those figures could be read but not reproduced): shadow `x=1172..1392, y=1019..1051` — x is the card's own diff footprint, y starts one row below the rendered anchor (1018) so the band is shadow and not boot; controls are the same rows at `x=772..992` and `x=1572..1792`. Noise floor on a card-free strip (`x=0..250`): 0.90 mean |diff|. Run `10-1-live-validation/measure.py` to reproduce this and every other number in this record.
 
 **A regression the on-state introduces: the occlusion mask erases heads.** This is the one thing in this experiment that makes a frame *worse* than the off-state, and it was found by zooming into `scene_002_S00203` — see `pairs/_zoom_S00203_card.jpg`. Off, SCP-049 is whole. On, the plague-doctor mask and the top of the hood are gone; a hard-edged notch is cut out of the silhouette and what remains is a headless coat. `_card_occlusion_mask` decided the plate's geometry sits in front of the card's head and masked it out.
 
@@ -479,6 +491,7 @@ Three things worth carrying forward beyond this story:
 
 | Date | Change |
 |---|---|
+| 2026-08-08 | Senior Developer Review (AI) — **approved, status → done.** Verdict independently substantiated: every load-bearing number re-derived from the committed evidence and the frames read directly. 6 findings fixed, 0 critical. See "Senior Developer Review (AI)". |
 | 2026-08-08 | Story 10.1 executed. Off-state preserved, video-only re-render with `depth_placement_enabled=true`, 6 off/on frame pairs adjudicated. Verdict **STILL FLOATING → `harmonization`**, with a new `occlusion` head-erasure regression (3/14 masks), the near-band `_GROUND_Y_MAX` clamp (85% of near cards), and contact-shadow strength recorded as measured contributors. AC4 recorded honestly: 11.5 parallax not exercised (`no_depth_map`, 0/66 shots carry a depth map). AC7 handed to Story 13.2. AC5 attempted and abandoned on a missing `YTFLOW_GEMINI_API_KEY`. **No production code changed.** |
 
 ### File List
@@ -488,6 +501,8 @@ Three things worth carrying forward beyond this story:
 - `_bmad-output/implementation-artifacts/10-1-live-validation/README.md`
 - `_bmad-output/implementation-artifacts/10-1-live-validation/.gitignore`
 - `_bmad-output/implementation-artifacts/10-1-live-validation/make_pairs.sh`
+- `_bmad-output/implementation-artifacts/10-1-live-validation/measure.py` (added at review — re-derives every number in this record from the committed evidence, with the sample bands stated)
+- `tests/api/test_lifespan_injection_gates.py` (existed untracked in the working tree; this story rests its premise on it and ran it, so it is committed with the review)
 - `_bmad-output/implementation-artifacts/10-1-live-validation/off/scene_001_S00101_t1.5.png`
 - `_bmad-output/implementation-artifacts/10-1-live-validation/off/scene_001_S00102_t1.5.png`
 - `_bmad-output/implementation-artifacts/10-1-live-validation/off/scene_001_S00104_t1.2.png`
@@ -519,3 +534,44 @@ Three things worth carrying forward beyond this story:
 - `10-1-live-validation/on/video_on.mp4` — 56 MB, the depth-on 3:06 render
 
 **Production source files changed: none.**
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Jay · **Date:** 2026-08-08 · **Outcome: Approve → done** (0 critical, 6 findings fixed)
+
+This is a live-verification story, so it was reviewed the way AC8 demands: by looking at the frames and re-deriving the numbers, not by reading the narrative or running tests. Tests were never treated as evidence.
+
+### What was independently verified
+
+| Claim | How it was checked | Result |
+|---|---|---|
+| AC1 — off-state preserved *before* the destructive call | `off/` mtimes 18:22 vs `POST …/stages/video/retry → 202` at **18:24:27** in `journalctl` | ✅ ordering holds |
+| AC2 — the pair is controlled | same run, video-only retry, 6 shots × 3 depth bands × 3 positions; re-extracted `scene_002_S00202` through `make_pairs.sh` and diffed against the committed frame | ✅ **mean \|diff\| = 0.0**, bit-identical |
+| AC2 — backgrounds get identical treatment | `\|off−on\|` confined to rows 208–1045 in the card's column; card-free strip = 0.90 | ✅ the diff *is* the overlay |
+| AC3 — 73 cards, 0 nulls, 14 masks | replayed `resolve_cast_cards` → `resolve_placements` against the same checkpoint | ✅ exact |
+| AC3 — band means far 0.8052 < mid 0.8538 < near 0.9470 | same replay | ✅ exact to 4 dp |
+| Clamp — 25/73 = 34.2%, near 23/27 = 85%, excess 29.4 px | same replay, plus **25 `Clamped ground_y` log lines** in the render, and the verbatim quoted line `0.972 to 0.942` present | ✅ exact, corroborated two ways |
+| AC4 — 11.5 not exercised | `depth_map_path` on **0 / 66** shots in the checkpoint; 42 distinct `no_depth_map` shot ids | ✅ the honesty requirement is met, not merely claimed |
+| Occlusion head-erasure | recomputed black share of all 14 masks: **68.9 / 57.7 / 34.8%** of the top quarter, `S00704` **54.4%** of the whole card, **3/14** over threshold | ✅ exact |
+| Contact shadow | re-measured against stated control bands: **−0.02** in both controls | ✅ structure confirmed (see finding 2 on the value) |
+| AC7 — handed to 13.2 | `13-2-visual-eval-axes.md:208` handoff section + sprint-status note | ✅ present, substantive |
+| AC9 — no scope drift | `git diff ab0b756..HEAD -- src/` is **empty**; 10-2…10-7 all `backlog`; 11-6 untouched | ✅ zero production code |
+| Routed observations | reproduced live: 6× `no sitting card … falling back to standing` (→10.5), `invalid JSON from LLM: ''` (→10.6) | ✅ |
+| Three escalations | `ExecStart` carries `YTFLOW_DEPTH_PLACEMENT_ENABLED=true`; run reads `awaiting_approval` / video gate `pending`; `video.mp4` is the 18:42 depth-on render (56 484 631 B) with the original preserved at `off/video_off.mp4` (56 429 013 B) | ✅ all three accurate |
+
+**The verdict is supported by the frames, not asserted.** `scene_001_S00102_pair.jpg` shows the `far` card genuinely dropping from mid-wall onto the debris slope. `scene_004_S00403_pair.jpg` shows both `near` cards sharing one ground line on a mirror floor that reflects every plate object and neither card — that image alone carries the harmonization verdict. `_zoom_S00203_card.jpg` shows the head-erasure regression unmistakably: the mask and hood are gone and a hard notch is cut out of the silhouette, leaving a headless coat. The split verdict (finding 11 substantially fixed, finding 3 not) is the honest reading of these six pairs.
+
+One claim was checked and **held** rather than becoming a finding: "card scale is not gated on the flag". `_DEPTH_SCALE` (near 1.0 / mid 0.75 / far 0.55) is applied in `video.py:976` unconditionally, and with 832×1216 sprites against caps of 743 / 557 / 409 px the downscale always binds — so the bands are genuinely differentiated and identical in both halves. AC6's `card scale` link is correctly excluded.
+
+### Findings (all fixed in this review)
+
+1. **[Med] Five dead evidence paths in the VERDICT section** — cited `*_pair.png`; the committed files are `*_pair.jpg`. Broken links in the one section that *is* the deliverable. → corrected.
+2. **[Med] The contact-shadow measurement was not reproducible** — "+15.7 / +0.05 / −0.02 / 78%" was reported without the sample rectangles, in the very passage arguing that measurement beats eyeballing. Re-measured over a stated, defensible shadow-only band: **+19.1 / −0.02 / −0.02 / 89%**, controls matching. → bands recorded, value corrected, and `measure.py` added so every number in this record re-derives in one command.
+3. **[Med] `tests/api/test_lifespan_injection_gates.py` untracked and absent from the File List** — the story rests its premise on it and reports running it (2 passed, reproduced), but it was left out of commit `758f4bf`. → added to File List and committed.
+4. **[Med] The five follow-ups existed only as prose** — including the head-erasure regression the story itself calls its highest-severity item, with no owner anywhere. Left as-is they die when the story closes, while `depth_placement_enabled=true` is still running on the box. → restated as tracked `Review Follow-ups (AI)` items.
+5. **[Low] AC4 "every shot" vs "0 of 66"** — the log carries 42 distinct shot ids, not 66, because only 42 images survive 8.11's cut assembly. True as written but conflatable with the 66 next to it. → both populations now stated.
+6. **[Low] False provenance on `make_pairs.sh`** — Task 1 claimed the script "is what actually re-extracted the on-state"; the frames predate it by 25 minutes. Harmless (it reproduces them bit-exactly, verified) but it is exactly the kind of unverified assertion this story exists to stamp out. → corrected, with the reproduction check recorded.
+
+### Standing risk for Jay, not fixed here
+
+`ytflow-api` is still running with `YTFLOW_DEPTH_PLACEMENT_ENABLED=true` while this story's own verdict says the feature decapitates ~4% of cards. The transient unit means a reboot clears it, and the dev session's reasoning for leaving it (state matches the evidence on disk) is sound — but until follow-up 1 lands, **this box is one render away from shipping the regression**. Reverting is one command; it is Jay's call, and it is why finding 4 mattered.
