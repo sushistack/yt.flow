@@ -13,7 +13,7 @@
 > `8-20-live-validation/DECISION-RECORD.md` belong to a *different* route
 > (Qwen-Image-Edit-2511 GGUF, 13.24 GB, card+pose-guide → new card) and do not
 > apply here. So step 1 of "Before enabling" below is **already done**; what
-> remains is steps 2–5. Owned by Story 10.8.
+> remains is steps 2–5. Owned by Story 10.1b.
 
 `data/workflows/comfyui_iclight_relight_api.json` is a **structural
 placeholder**, not a verified graph. Unlike
