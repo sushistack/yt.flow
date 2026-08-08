@@ -54,9 +54,20 @@ async def lifespan(app: FastAPI):
     # Story 11.5: inject the depth-companion resolver into image_node so every
     # shot carries the depth map its 2.5D parallax render needs. Shares Story
     # 8.16's content-addressed cache — one estimation per distinct plate, ever.
-    # Gated on the same kill switch as the renderer: off, shots carry no
-    # depth_map_path and the video stage keeps its pre-11.5 zoompan behaviour.
-    if settings.parallax_25d_enabled:
+    #
+    # Gated on depth_placement_enabled, NOT parallax_25d_enabled: depth maps
+    # exist only to feed 8.16 ground placement and 11.5 parallax, so with
+    # placement off there is no consumer left worth the cost. And the cost is
+    # not the estimation — measured live, the image stage alternated
+    # image 503s / depth 1.2s / image 504s / depth 1.2s, because each depth
+    # prompt evicts the 6.9GB SDXL checkpoint from VRAM and every shot then
+    # pays a full ~500s reload. Two image workflows submitted back to back with
+    # no depth between them ran in 16.1s and 15.2s.
+    #
+    # Off, image_node's existing `_depth_resolver is None` path applies: the shot
+    # simply carries no depth_map_path, and render_motion_clip takes its NO_DEPTH
+    # rung down to the 7.3/11.3 zoompan chain — so this also mutes 11.5 parallax.
+    if settings.depth_placement_enabled:
         async def _resolve_depth(image_path: str) -> dict:
             # [review fix] `cached` asks the SAME strict question depth_map_file
             # asks (verify_depth_pair), not just "is a file there". A map present
@@ -75,9 +86,10 @@ async def lifespan(app: FastAPI):
 
         inject_depth_resolver(_resolve_depth)
 
-        # Story 11.5: inject the 2.5D renderer ladder into video_node. Same gate
-        # as the depth resolver above — a run must never composite cards against
-        # layer ratios for a plate that got no depth companion.
+    # Story 11.5: inject the 2.5D renderer ladder into video_node. Keeps its own
+    # kill switch; a plate with no depth companion is already handled by the
+    # ladder's NO_DEPTH rung, not by compositing against absent layer ratios.
+    if settings.parallax_25d_enabled:
         inject_motion_renderer(
             lambda **kw: parallax_service.render_motion_clip(settings=settings, **kw)
         )
