@@ -1,0 +1,62 @@
+[
+  {
+    "standing_room": true,
+    "floor_fraction": 0.3,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "A clear section of floor is visible in the center, large enough for a person to stand.",
+    "path": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_001_S00101.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame shows only a corner of a wall with no visible floor.",
+    "path": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_002_S00202.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a confined space with no visible floor for a person to stand on.",
+    "path": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_001_S00104.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.3,
+    "camera_distance": "medium",
+    "best_spot": "left",
+    "reason": "There is a visible floor area large enough for a person to stand, primarily on the left side of the frame.",
+    "path": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_002_S00203.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a window with no visible floor.",
+    "path": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_004_S00403.png",
+    "size": [
+      1344,
+      768
+    ]
+  }
+]

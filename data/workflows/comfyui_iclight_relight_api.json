@@ -1,6 +1,6 @@
 {
-    "ytflow_verified_iclight": false,
-    "_ytflow_note": "PARKED, not broken. This graph executes correctly on the installed IC-Light v1 fbc nodes and satisfies the sprite contract (832x1216 in, 832x1216 RGBA out, alpha preserved to within 1/255 of the source silhouette) \u2014 the first time Tier 3 has ever produced an image since Story 8.7 built the plumbing. It is left unverified because the OUTPUT is not good enough, not because the wiring is wrong: IC-Light v1 is trained on photoreal subjects and these cards are flat anime illustration, so the relight drags the art toward photoreal shading and loses skin tone and contrast. Probed denoise 0.45 / 0.60 / 0.85 (2026-08-02): washed grey, near-black, and blue-monochrome respectively \u2014 non-monotonic, all worse than the unlit card. Jay's call was to ship the ground-plane fix with Tier 1/2 harmonization instead, which approximates without re-rendering the art. Keeping ytflow_verified_iclight=false means _load_iclight_workflow treats this as a cache miss and Tier 3 never fires.",
+    "ytflow_verified_iclight": true,
+    "_ytflow_note": "VERIFIED 2026-08-08 (Story 10.1b), live single-pair probe SCP-049 x containment-chamber (plate workspace/8a9a288b-.../images/scene_002_S00202.png), output at _bmad-output/implementation-artifacts/10-1b-live-validation/probe/. WHAT WAS WRONG (the 2026-08-02 park said 'IC-Light v1 is photoreal-trained and these cards are flat anime' \u2014 that was a hypothesis; these two are measurements): (1) the foreground latent was node 1 straight out of LoadImage, whose convert(\"RGB\") zeroes the alpha channel \u2014 71.65% of this card's pixels are alpha<8 with RGB exactly [0,0,0], so fbc was conditioned on a subject in a black void, which is precisely the 'near-black' the old probe reported. Now node 21 mattes the card onto #7F7F7F first, as kijai's own fbc example does. (2) the init latent was ICLightConditioning's third output, which is torch.zeros_like, sampled at denoise 0.85 \u2014 neither a relight nor a generation. Now node 23 encodes a LightSource gradient at denoise 1.0, matching the example. Also fixed outside this file: _inject_relight_inputs used to submit these two top-level metadata keys as if they were nodes, and ComfyUI's validate_prompt does `'class_type' not in prompt[x]` \u2014 a bool there raises TypeError and every submission came back 500. PROBE RESULT: alpha correlation to the source silhouette +1.0000, max alpha diff 0/255, canvas 832x1216 unchanged; in-silhouette mean RGB moved 42.7/42.8/55.1 (L=46.8, cool) -> 30.1/26.2/37.8 (L=31.4), i.e. 4.7 levels of blue-minus-red toward the plate's warm cast (plate as fbc sees it, centre-cropped to 832x1216: 77.9/69.2/68.2, L=71.8). No washing, no monochrome, line art and pose intact. KNOWN LIMITS: the card comes back darker than the unlit sprite while the plate region it lands in is brighter, because node 11 centre-crops the whole plate rather than the local band under the card (the cache key is card x location, not shot, so the local band is not knowable here). And light_position is effectively inert: at denoise 1.0 ComfyUI ignores the init latent's content, so 'Top Light' vs 'Top Left Light' measured dL=0.6 and <=0.8 per channel \u2014 within sampler variance. The node is kept because the official example keeps it and it fixes the latent shape.",
     "1": {
         "class_type": "LoadImage",
         "_meta": {
@@ -57,14 +57,49 @@
             "crop": "center"
         }
     },
+    "20": {
+        "class_type": "EmptyImage",
+        "_meta": {
+            "title": "Neutral grey #7F7F7F matte — the card canvas, filled"
+        },
+        "inputs": {
+            "width": 832,
+            "height": 1216,
+            "batch_size": 1,
+            "color": 8355711
+        }
+    },
+    "21": {
+        "class_type": "ImageCompositeMasked",
+        "_meta": {
+            "title": "Card matted onto grey. LoadImage's convert(\"RGB\") zeroes the transparent region (71.65% of this card is alpha<8 and RGB [0,0,0]) — fbc would be conditioned on a subject in a black void, which is exactly the near-black output the 2026-08-02 probe saw. LoadImage's MASK is already 1-alpha and ImageCompositeMasked pastes source where mask==1, so grey lands in the transparent region with NO InvertMask."
+        },
+        "inputs": {
+            "destination": [
+                "1",
+                0
+            ],
+            "source": [
+                "20",
+                0
+            ],
+            "x": 0,
+            "y": 0,
+            "resize_source": false,
+            "mask": [
+                "1",
+                1
+            ]
+        }
+    },
     "12": {
         "class_type": "VAEEncode",
         "_meta": {
-            "title": "Foreground latent"
+            "title": "Foreground latent — the grey-matted card, matching kijai's own fbc example"
         },
         "inputs": {
             "pixels": [
-                "1",
+                "21",
                 0
             ],
             "vae": [
@@ -141,13 +176,43 @@
                 "13",
                 0
             ],
-            "multiplier": 0.18
+            "multiplier": 0.18215
+        }
+    },
+    "22": {
+        "class_type": "LightSource",
+        "_meta": {
+            "title": "Light-shape gradient — IC-Light's own node. This IS the light direction; the fbc example seeds the sampler with it instead of a zero latent. (The example uses CreateShapeMask + GrowMaskWithBlur, which are KJNodes and not installed here.)"
+        },
+        "inputs": {
+            "light_position": "Top Light",
+            "multiplier": 1.0,
+            "start_color": "#FFFFFF",
+            "end_color": "#000000",
+            "width": 832,
+            "height": 1216
+        }
+    },
+    "23": {
+        "class_type": "VAEEncode",
+        "_meta": {
+            "title": "Init latent = the light gradient (NOT ICLightConditioning's third output, which is torch.zeros_like)"
+        },
+        "inputs": {
+            "pixels": [
+                "22",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
         }
     },
     "3": {
         "class_type": "KSampler",
         "_meta": {
-            "title": "cfg 2.0 is the IC-Light norm; denoise below 1 keeps the drawing and moves only the light"
+            "title": "cfg 2.0 is the IC-Light norm. denoise 1.0 because the init latent is the light gradient, not the card — identity and pose come from ICLightConditioning.foreground, exactly as in the official fbc example."
         },
         "inputs": {
             "seed": 0,
@@ -155,7 +220,7 @@
             "cfg": 2.0,
             "sampler_name": "dpmpp_2m",
             "scheduler": "karras",
-            "denoise": 0.85,
+            "denoise": 1.0,
             "model": [
                 "10",
                 0
@@ -169,8 +234,8 @@
                 1
             ],
             "latent_image": [
-                "14",
-                2
+                "23",
+                0
             ]
         }
     },

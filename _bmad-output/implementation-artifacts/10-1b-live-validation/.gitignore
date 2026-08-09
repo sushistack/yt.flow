@@ -1,0 +1,29 @@
+# Story 10.1b/10.1c live-validation artifacts.
+#
+# What is committed: the ADJUDICATION images — the side-by-side grids and pair sheets a
+# reader needs to check the verdicts in the story files — plus the scripts and reports that
+# re-derive every number. Roughly 20 MB of the ~520 MB this directory holds.
+#
+# What is ignored: the raw renders those grids were built FROM (per-plate sweep outputs,
+# per-variant probe frames, extracted stills, full videos). They are large, they are
+# regenerable from the committed scripts against the same run, and no claim in the stories
+# rests on a reader opening one of them directly.
+#
+# Exception worth knowing: `off/` holds the ONLY surviving copy of the pre-8.16 render Jay
+# originally watched (video.py:1885 unlinks shot clips on every re-render, so it cannot be
+# rebuilt). It stays out of git for size, but do not delete it from disk.
+
+*.mp4
+*.png
+
+# …except the comparison sheets the verdicts cite.
+!*_pair.jpg
+!grid_*.jpg
+!pair*.jpg
+!chk_*.jpg
+!diff_*.jpg
+!_zoom_*.jpg
+!*.md
+!*.py
+!*.sh
+!*.json

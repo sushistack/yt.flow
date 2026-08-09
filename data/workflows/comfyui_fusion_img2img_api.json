@@ -1,0 +1,101 @@
+{
+    "ytflow_verified_fusion": false,
+    "_ytflow_note": "Card/plate fusion — Epic 10 '확정 방향: 카드-배경은 최종적으로 한 장으로 융합한다'. Takes the composited still (plate + cards, rendered motionless through video.py's own card chain) and re-draws it so the frame becomes ONE image instead of a sprite on a plate. MASKED, per Jay's spec: node '2' carries the card coverage mask, which is eroded and inverted so the pass re-draws the plate and a ring straddling each card's edge while protecting the card's interior. Unmasked probing (2026-08-08, S00403) showed why the mask is not optional — at denoise 0.40 the D-class badge '213 5' collapsed into nonsense glyphs and the face became a different person; 0.20 was safe but barely fused. The mask decouples the two: the seam can be re-drawn hard while identity and insignia are untouched. Injection points: node '1' (still), node '2' (mask), node '3'.denoise. NO LoRAs — the background workflow loads darkness_xl_v2.safetensors, which Story 10.3 measured as an SD1.5-layout file that silently fails to patch an SDXL checkpoint. Marker stays false until a live probe passes.",
+    "1": {
+        "class_type": "LoadImage",
+        "_meta": { "title": "The composited still — plate + cards, motion off, 1920x1080" },
+        "inputs": { "image": "placeholder.png" }
+    },
+    "2": {
+        "class_type": "LoadImage",
+        "_meta": { "title": "Card coverage — white where a card covers the frame. Measured by rendering the same card chain over black and over white, never re-derived from placement arithmetic." },
+        "inputs": { "image": "placeholder.png" }
+    },
+    "4": {
+        "class_type": "CheckpointLoaderSimple",
+        "_meta": { "title": "Same checkpoint the plates were generated with, so the redraw stays in the plate's style" },
+        "inputs": { "ckpt_name": "AnimagineXL_v31.safetensors" }
+    },
+    "20": {
+        "class_type": "ImageToMask",
+        "_meta": { "title": "Coverage image -> mask" },
+        "inputs": { "image": ["2", 0], "channel": "red" }
+    },
+    "21": {
+        "class_type": "GrowMask",
+        "_meta": { "title": "Erode 16px INTO the card: everything outside this is fair game to re-draw, so the ring that gets fused straddles the card's edge rather than stopping at it." },
+        "inputs": { "mask": ["20", 0], "expand": -16, "tapered_corners": true }
+    },
+    "22": {
+        "class_type": "InvertMask",
+        "_meta": { "title": "Denoise where this is 1: the plate everywhere, plus the 16px rim inside each card. The card's interior is 0 and survives untouched." },
+        "inputs": { "mask": ["21", 0] }
+    },
+    "23": {
+        "class_type": "MaskToImage",
+        "_meta": { "title": "Round-trip through IMAGE only because ImageBlur is the available blur; there is no MaskBlur on this install." },
+        "inputs": { "mask": ["22", 0] }
+    },
+    "24": {
+        "class_type": "ImageBlur",
+        "_meta": { "title": "Soften the mask edge so the protected/re-drawn transition does not print a hard seam of its own" },
+        "inputs": { "image": ["23", 0], "blur_radius": 12, "sigma": 6.0 }
+    },
+    "25": {
+        "class_type": "ImageToMask",
+        "_meta": { "title": "…and back to a mask" },
+        "inputs": { "image": ["24", 0], "channel": "red" }
+    },
+    "12": {
+        "class_type": "VAEEncode",
+        "_meta": { "title": "The still IS the init latent — this is img2img, not generation" },
+        "inputs": { "pixels": ["1", 0], "vae": ["4", 2] }
+    },
+    "13": {
+        "class_type": "SetLatentNoiseMask",
+        "_meta": { "title": "The whole point: noise is only applied where the mask allows, so denoise can be raised without touching the approved card" },
+        "inputs": { "samples": ["12", 0], "mask": ["25", 0] }
+    },
+    "6": {
+        "class_type": "CLIPTextEncode",
+        "_meta": { "title": "Positive — describes the medium, not the content; the content is the still" },
+        "inputs": {
+            "text": "a single cohesive illustration, consistent lighting and grain across the whole frame, figures integrated into the environment",
+            "clip": ["4", 1]
+        }
+    },
+    "7": {
+        "class_type": "CLIPTextEncode",
+        "_meta": { "title": "Negative — deliberately short. Overstuffing this wrecked renders twice (gotcha_negative-prompt-overstuffing); do not add a clause per defect." },
+        "inputs": {
+            "text": "collage, sticker, cutout, pasted, lowres, worst quality",
+            "clip": ["4", 1]
+        }
+    },
+    "3": {
+        "class_type": "KSampler",
+        "_meta": { "title": "denoise is injected per shot (0.15-0.45 clamp) and applies only inside the mask" },
+        "inputs": {
+            "seed": 0,
+            "steps": 24,
+            "cfg": 6.0,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "karras",
+            "denoise": 0.35,
+            "model": ["4", 0],
+            "positive": ["6", 0],
+            "negative": ["7", 0],
+            "latent_image": ["13", 0]
+        }
+    },
+    "8": {
+        "class_type": "VAEDecode",
+        "_meta": { "title": "The fused frame — one image, no alpha, ready to be animated" },
+        "inputs": { "samples": ["3", 0], "vae": ["4", 2] }
+    },
+    "9": {
+        "class_type": "SaveImage",
+        "_meta": { "title": "Fused still" },
+        "inputs": { "filename_prefix": "ytflow_fusion", "images": ["8", 0] }
+    }
+}

@@ -1,0 +1,275 @@
+{
+    "ytflow_verified_recompose": false,
+    "_ytflow_note": "SHOT RECOMPOSE — Epic 10 '확정 방향'. The composited still is NOT the output: it is the STRUCTURE SOURCE. The frame is re-generated so background and characters are drawn as one image, with nothing pasted. Structure (plate composition + where each character stands) is held by ControlNet on the still; character identity is held by IPAdapter on the card. This is the opposite of the rejected masked-img2img route, where the card's own pixels survived into the output — see the epic's '얹어놓기 vs 재창조' table. Judgement rule: if the output's card region is nearly identical to the source card, it is stitching, not recomposition. Wiring mirrors comfyui_location_plate_api.json, which already runs ControlNet+IPAdapter in production for plate seeding; only the inputs differ (structure ref -> composite still, style anchor -> character card). Background must NOT be re-invented: plates are a reused fixed source set by policy, so ControlNet strength stays high and the background has to survive. Injection points: '1' still, '20' card, '3'.denoise/'3'.seed, '32'.strength. Marker stays false until a live probe passes.",
+    "1": {
+        "class_type": "LoadImage",
+        "_meta": {
+            "title": "Composite still — plate + cards, motion off. STRUCTURE ONLY; its pixels are not the answer."
+        },
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "20": {
+        "class_type": "LoadImage",
+        "_meta": {
+            "title": "Character card — the identity reference. Fed to IPAdapter, never composited."
+        },
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "4": {
+        "class_type": "CheckpointLoaderSimple",
+        "_meta": {
+            "title": "Same checkpoint the plates were generated with"
+        },
+        "inputs": {
+            "ckpt_name": "AnimagineXL_v31.safetensors"
+        }
+    },
+    "21": {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {
+            "clip_name": "clip_vision_vit_h.safetensors"
+        }
+    },
+    "22": {
+        "class_type": "IPAdapterModelLoader",
+        "inputs": {
+            "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+        }
+    },
+    "23": {
+        "class_type": "IPAdapterAdvanced",
+        "_meta": {
+            "title": "Identity conditioning, SCOPED. Without attn_mask IPAdapter drives the WHOLE frame's palette: measured on S00403, colour cast vs the IPAdapter-off control was 7.4 (off) -> 22.3 (style 0.60) -> 33.3 (linear 0.85). The card is dark navy, so the room went blue. This mask limits WHERE the conditioning applies; it does NOT protect card pixels — the card is still fully re-drawn, which is what separates this from the rejected masked-img2img route."
+        },
+        "inputs": {
+            "model": [
+                "4",
+                0
+            ],
+            "ipadapter": [
+                "22",
+                0
+            ],
+            "image": [
+                "20",
+                0
+            ],
+            "clip_vision": [
+                "21",
+                0
+            ],
+            "weight": 0.85,
+            "weight_type": "linear",
+            "combine_embeds": "average",
+            "start_at": 0.0,
+            "end_at": 0.9,
+            "embeds_scaling": "V only",
+            "attn_mask": [
+                "37",
+                0
+            ]
+        }
+    },
+    "30": {
+        "class_type": "ControlNetLoader",
+        "_meta": {
+            "title": "SDXL union (canny/depth/pose in one). The SD1.5 controlnets in this folder cannot patch an SDXL checkpoint."
+        },
+        "inputs": {
+            "control_net_name": "controlnet-union-sdxl-1.0-promax.safetensors"
+        }
+    },
+    "34": {
+        "class_type": "SetUnionControlNetType",
+        "_meta": {
+            "title": "Union needs its conditioning type declared — the literal must be one of the server COMBO options (\"canny\" alone is rejected)"
+        },
+        "inputs": {
+            "control_net": [
+                "30",
+                0
+            ],
+            "type": "canny/lineart/anime_lineart/mlsd"
+        }
+    },
+    "33": {
+        "class_type": "CannyEdgePreprocessor",
+        "_meta": {
+            "title": "Edges of the WHOLE still — the plate's architecture and each character's silhouette in place. This is what stops the recompose from moving anything."
+        },
+        "inputs": {
+            "image": [
+                "1",
+                0
+            ],
+            "low_threshold": 100,
+            "high_threshold": 200,
+            "resolution": 1024
+        }
+    },
+    "32": {
+        "class_type": "ControlNetApplyAdvanced",
+        "_meta": {
+            "title": "High strength and full duration: the background is a reused fixed source by policy and must survive the regeneration."
+        },
+        "inputs": {
+            "positive": [
+                "6",
+                0
+            ],
+            "negative": [
+                "7",
+                0
+            ],
+            "control_net": [
+                "34",
+                0
+            ],
+            "image": [
+                "33",
+                0
+            ],
+            "strength": 0.9,
+            "start_percent": 0.0,
+            "end_percent": 1.0
+        }
+    },
+    "6": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {
+            "title": "Positive — the shot's own image_prompt is injected here, so per-shot intent is not discarded"
+        },
+        "inputs": {
+            "text": "a single cohesive illustration, figures standing in the room, consistent lighting and rendering across the whole frame",
+            "clip": [
+                "4",
+                1
+            ]
+        }
+    },
+    "7": {
+        "class_type": "CLIPTextEncode",
+        "_meta": {
+            "title": "Negative — short on purpose (gotcha_negative-prompt-overstuffing: two renders wrecked by clause-per-defect)"
+        },
+        "inputs": {
+            "text": "collage, sticker, cutout, pasted, lowres, worst quality",
+            "clip": [
+                "4",
+                1
+            ]
+        }
+    },
+    "12": {
+        "class_type": "VAEEncode",
+        "_meta": {
+            "title": "The still anchors colour and value; ControlNet anchors structure. denoise decides how much is re-drawn on top of that."
+        },
+        "inputs": {
+            "pixels": [
+                "1",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
+        }
+    },
+    "3": {
+        "class_type": "KSampler",
+        "_meta": {
+            "title": "denoise injected per probe. High is the point: the card's pixels must NOT survive."
+        },
+        "inputs": {
+            "seed": 0,
+            "steps": 28,
+            "cfg": 6.5,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "karras",
+            "denoise": 0.85,
+            "model": [
+                "23",
+                0
+            ],
+            "positive": [
+                "32",
+                0
+            ],
+            "negative": [
+                "32",
+                1
+            ],
+            "latent_image": [
+                "12",
+                0
+            ]
+        }
+    },
+    "8": {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [
+                "3",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
+        }
+    },
+    "9": {
+        "class_type": "SaveImage",
+        "_meta": {
+            "title": "Recomposed frame — one image"
+        },
+        "inputs": {
+            "filename_prefix": "ytflow_recompose",
+            "images": [
+                "8",
+                0
+            ]
+        }
+    },
+    "35": {
+        "class_type": "LoadImage",
+        "_meta": {
+            "title": "Card coverage mask — white where a character stands. Measured by rendering the card chain over black and over white (video.render_card_coverage_mask), never re-derived from placement arithmetic."
+        },
+        "inputs": {
+            "image": "placeholder.png"
+        }
+    },
+    "36": {
+        "class_type": "ImageToMask",
+        "_meta": {
+            "title": "coverage -> MASK"
+        },
+        "inputs": {
+            "image": [
+                "35",
+                0
+            ],
+            "channel": "red"
+        }
+    },
+    "37": {
+        "class_type": "GrowMask",
+        "_meta": {
+            "title": "Dilate so identity conditioning reaches slightly past the silhouette and the contact edge is drawn as part of the figure, not the room."
+        },
+        "inputs": {
+            "mask": [
+                "36",
+                0
+            ],
+            "expand": 24,
+            "tapered_corners": true
+        }
+    }
+}

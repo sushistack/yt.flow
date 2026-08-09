@@ -1,0 +1,79 @@
+[
+  {
+    "sid": "scene_001_S00101",
+    "plate": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_001_S00101.png",
+    "cast": [
+      {
+        "position": "left",
+        "depth": "mid",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "key": "STOCK-d-class"
+      }
+    ],
+    "prompt": "Place the character from the second image on the left side of the frame, at mid distance, full body in frame, standing, into the scene of the first image. Feet firmly on the ground with contact shadows, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration."
+  },
+  {
+    "sid": "scene_001_S00104",
+    "plate": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_001_S00104.png",
+    "cast": [
+      {
+        "position": "right",
+        "depth": "near",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "key": "SCP-049"
+      },
+      {
+        "position": "left",
+        "depth": "mid",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "key": "STOCK-d-class"
+      }
+    ],
+    "prompt": "Place the character from the second image on the right side of the frame, close to camera, filling much of the frame height, standing; and the character from the third image on the left side of the frame, at mid distance, full body in frame, standing, into the scene of the first image. Feet firmly on the ground with contact shadows, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration."
+  },
+  {
+    "sid": "scene_002_S00202",
+    "plate": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_002_S00202.png",
+    "cast": [
+      {
+        "position": "right",
+        "depth": "near",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "key": "SCP-049"
+      }
+    ],
+    "prompt": "Place the character from the second image on the right side of the frame, close to camera, filling much of the frame height, standing, into the scene of the first image. Feet firmly on the ground with contact shadows, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration."
+  },
+  {
+    "sid": "scene_002_S00203",
+    "plate": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_002_S00203.png",
+    "cast": [
+      {
+        "position": "center",
+        "depth": "mid",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "key": "SCP-049"
+      }
+    ],
+    "prompt": "Place the character from the second image in the centre of the frame, at mid distance, full body in frame, standing, into the scene of the first image. Feet firmly on the ground with contact shadows, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration."
+  },
+  {
+    "sid": "scene_004_S00403",
+    "plate": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_004_S00403.png",
+    "cast": [
+      {
+        "position": "right",
+        "depth": "near",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "key": "SCP-049"
+      },
+      {
+        "position": "left",
+        "depth": "near",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "key": "STOCK-d-class"
+      }
+    ],
+    "prompt": "Place the character from the second image on the right side of the frame, close to camera, filling much of the frame height, standing; and the character from the third image on the left side of the frame, close to camera, filling much of the frame height, standing, into the scene of the first image. Feet firmly on the ground with contact shadows, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration."
+  }
+]

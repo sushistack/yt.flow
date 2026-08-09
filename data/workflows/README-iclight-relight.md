@@ -1,67 +1,119 @@
-# IC-Light Re-lighting Workflow (Story 8.7, Tier 3)
+# IC-Light Re-lighting Workflow (Story 8.7 Tier 3, live-verified in Story 10.1b)
 
-## Status: unverified graph — but the nodes and weights ARE installed now
+## Status: verified — live-submitted, and rendering into video
 
-> **2026-08-08 correction.** The paragraph below used to say this host had no
-> IC-Light nodes. That is **no longer true** and was the basis of a wrong
-> "blocked on hardware" conclusion during Story 10.1. Measured on this host:
-> [kijai's ComfyUI-IC-Light](https://github.com/kijai/ComfyUI-IC-Light) is
-> installed at rev `22811d9` (2026-08-02), `models/unet/iclight_sd15_fbc.safetensors`
-> (1.7 GB) is present, and the SD1.5 base that `fbc` needs
-> (`models/checkpoints/cyberrealistic_v90.safetensors`, 2.1 GB) is present.
-> That is a **~4 GB VRAM class** route. The 16 GB OOM figures in
-> `8-20-live-validation/DECISION-RECORD.md` belong to a *different* route
-> (Qwen-Image-Edit-2511 GGUF, 13.24 GB, card+pose-guide → new card) and do not
-> apply here. So step 1 of "Before enabling" below is **already done**; what
-> remains is steps 2–5. Owned by Story 10.1b.
+`data/workflows/comfyui_iclight_relight_api.json` carries
+`"ytflow_verified_iclight": true` as of **2026-08-08 (Story 10.1b)**. It is a
+complete IC-Light **v1 `fbc`** graph, submitted live against this host's
+ComfyUI, and its output is cached under `assets/relit/{card_variant}/{location_key}/`
+and composited by `video.py` at `composite_harmonization_tier=3`.
 
-`data/workflows/comfyui_iclight_relight_api.json` is a **structural
-placeholder**, not a verified graph. Unlike
-`comfyui_character_multi_angle_api.json`/`comfyui_location_plate_api.json`,
-this workflow's node graph has **not** been live-verified against a real
-ComfyUI submission.
+Installed here (measured, not assumed): kijai
+[`ComfyUI-IC-Light`](https://github.com/kijai/ComfyUI-IC-Light) @ `22811d9`,
+`models/unet/iclight_sd15_fbc.safetensors` (1.6 GiB), and the SD1.5 base `fbc`
+requires, `models/checkpoints/cyberrealistic_v90.safetensors` (1.99 GiB).
+`LoadAndApplyICLightUnet` hard-rejects anything that is not SD1.5, so this
+project's SDXL checkpoint cannot carry it. **v1 `fbc` only** — v2/Flux variants
+are non-commercial and this pipeline is monetized.
 
-This is by design, not an oversight: Story 8.7's Tier 3 is the last rung of a
-cost-ordered ladder (Tier 1 ffmpeg tint+shadow → Tier 2 ffmpeg light wrap →
-Tier 3 IC-Light), gated on Tiers 1/2 proving insufficient in A/B review.
-`composite_harmonization.relight_sprite()` treats every failure mode —
-missing custom nodes included — as non-fatal (AC:11). Code review added a
-second guard: a workflow must be explicitly marked with
-`"ytflow_verified_iclight": true` before the runtime will submit it. This
-placeholder intentionally lacks that marker, so Tier 3 degrades to cache miss
-without ever caching a bogus text-to-image output. No run ever fails because of
-this file.
+> **Two earlier versions of this file were wrong, in opposite directions.** It
+> first said the host had no IC-Light nodes (false since 2026-08-02). It then
+> said nodes `"3"`–`"9"` were a placeholder SDXL text-to-image chain (false —
+> that chain was replaced by the real `fbc` graph on 2026-08-02, and the JSON's
+> own `_ytflow_note` said so). Both claims outlived the code and each cost a
+> session. The JSON is the source of truth; this file describes it.
 
-## What's real vs placeholder
+## The graph
 
-- **Nodes `"1"`/`"2"` (LoadImage) — real, load-bearing.** These are the only
-  nodes `composite_harmonization.py` reads/writes
-  (`CARD_IMAGE_NODE`/`BACKGROUND_IMAGE_NODE`): the card sprite and the
-  location plate are uploaded via `comfyui_client.upload_image` and injected
-  here before submission.
-- **Nodes `"3"`–`"9"` — structural placeholder.** A plain SDXL
-  checkpoint→CLIPTextEncode→KSampler→VAEDecode→SaveImage chain, reusing this
-  project's existing checkpoint. The real IC-Light pipeline patches the UNet
-  with a foreground/background-conditioned latent (typically over an SD1.5
-  checkpoint) — this placeholder does **not** do that; it will produce a
-  generic text-to-image render unrelated to the two input images once IC-Light
-  nodes are actually available, or fail validation entirely if the checkpoint
-  key doesn't resolve locally.
+| Node | Class | Role |
+|---|---|---|
+| `"1"` | `LoadImage` | **Injection point.** The card sprite, uploaded per pair by `composite_harmonization.relight_sprite`. Slot 0 = RGB, slot 1 = MASK. |
+| `"2"` | `LoadImage` | **Injection point.** The location plate. |
+| `"4"` | `CheckpointLoaderSimple` | SD1.5 base. |
+| `"10"` | `LoadAndApplyICLightUnet` | Patches the SD1.5 unet with the `fbc` weights. |
+| `"20"` | `EmptyImage` | 832×1216 of `#7F7F7F` (`color: 8355711`). |
+| `"21"` | `ImageCompositeMasked` | Card matted onto that grey. See *Mask polarity* below. |
+| `"12"` | `VAEEncode` | Foreground latent — **node `"21"`, not node `"1"`.** |
+| `"11"` → `"13"` | `ImageScale` → `VAEEncode` | Plate resized to the card canvas, then encoded: the `bc` in `fbc`. |
+| `"6"` / `"7"` | `CLIPTextEncode` | Positive / negative. Do **not** enlarge the negative — `gotcha_negative-prompt-overstuffing`. |
+| `"14"` | `ICLightConditioning` | `multiplier` 0.18215. `opt_background` is what makes this background-conditioned; the `fbc` weights require it. |
+| `"22"` → `"23"` | `LightSource` → `VAEEncode` | Init latent, a light-shape gradient. |
+| `"3"` | `KSampler` | `denoise 1.0`, `cfg 2.0`, `dpmpp_2m`, `karras`, 25 steps. |
+| `"8"` → `"15"` | `VAEDecode` → `DetailTransfer` | Relit RGB, then the card's own line detail added back. |
+| `"17"` | `JoinImageWithAlpha` | Re-attaches the source alpha. **The sprite contract.** |
+| `"9"` | `SaveImage` | Output. Retrieval is node-id-agnostic (first output node). |
 
-## Before enabling `composite_harmonization_tier=3` for real
+Only `"1"` and `"2"` are read or written by `composite_harmonization.py`
+(`CARD_IMAGE_NODE` / `BACKGROUND_IMAGE_NODE`). Everything else is opaque to the
+runtime — but `tests/pipeline/nodes/test_composite_harmonization.py` now loads
+this actual file and asserts the injection points, the marker, the grey matte,
+the light-shape init latent and the alpha re-attachment, so a renumbering or an
+undone fix fails a test instead of failing silently in a live render.
 
-1. ~~Install an IC-Light custom-node pack into `$HOME/workspaces/ComfyUI/custom_nodes/`.~~
-   **Done 2026-08-02** — kijai `ComfyUI-IC-Light` @ `22811d9`, plus
-   `iclight_sd15_fbc.safetensors`. Use **v1 `fbc` only**: v2/Flux variants are
-   non-commercial and this pipeline is monetized.
-2. Replace nodes `"3"`–`"9"` with the real IC-Light node graph (unet patch,
-   foreground/background conditioning, matching checkpoint).
-3. Re-run `composite_harmonization.relight_sprite()` against a live ComfyUI
-   instance with a real card+plate pair and confirm a plausible relit PNG
-   comes back — this is the "live validation" step the story's own Tasks
-   list defers pending Tiers 1/2's A/B outcome.
-4. Add `"ytflow_verified_iclight": true` to the workflow JSON only after that
-   live validation passes.
-5. Update this README once verified, mirroring
-   [`README-character-multi-angle.md`](README-character-multi-angle.md)'s
-   documented/live-checked node list.
+## Why it was parked, and what actually fixed it
+
+Parked 2026-08-02 on output quality: denoise 0.45 / 0.60 / 0.85 gave washed
+grey, near-black and blue-monochrome. The recorded explanation — "IC-Light v1 is
+photoreal-trained and these cards are flat anime" — was a hypothesis. Story
+10.1b found two measurable wiring defects instead:
+
+1. **The foreground latent was 72% black.** ComfyUI's `LoadImage` does
+   `image.convert("RGB")` (`ComfyUI/nodes.py:1727`), discarding alpha. Measured
+   on the actual SCP-049 card: **71.65% of pixels have alpha < 8, and their RGB
+   is exactly `[0,0,0]`**. `fbc` was told the subject stands in a void, and a
+   background-conditioned relight of a void is exactly "near-black". Fixed by
+   nodes `"20"`/`"21"` — the official example mattes onto `#7F7F7F` too.
+2. **The init latent was a zero tensor.** `ICLightConditioning`'s third output
+   is `torch.zeros_like(...)`; sampling it at denoise 0.85 is neither a relight
+   nor a generation. Fixed by nodes `"22"`/`"23"` at denoise 1.0, matching the
+   example. Identity and pose survive because they come from
+   `ICLightConditioning.foreground`, not from the init latent.
+
+A third defect lived outside this directory: `_inject_relight_inputs` used to
+deep-copy the whole file, so `ytflow_verified_iclight` and `_ytflow_note` were
+submitted as if they were nodes. ComfyUI's `validate_prompt` runs
+`'class_type' not in prompt[x]` over every top-level key, and a bool there
+raises `TypeError` — **every** submission returned 500. It now copies only
+entries carrying a `class_type`. Any future top-level metadata key is therefore
+safe to add.
+
+## Mask polarity — the thing that keeps getting "fixed" and breaking
+
+- `LoadImage` slot 1 is a MASK equal to **`1 - alpha`** (1 where *transparent*),
+  `ComfyUI/nodes.py:1739`.
+- `ImageCompositeMasked` pastes `source` where the mask is 1. So
+  `destination=["1",0]`, `source=grey`, `mask=["1",1]` puts grey precisely in
+  the transparent region — **no `InvertMask`**.
+- `JoinImageWithAlpha` internally applies `alpha = 1.0 - mask`, which cancels
+  `LoadImage`'s inversion. Node `"17"` therefore takes `["1", 1]` directly.
+
+An `InvertMask` was added here once and produced a perfectly inverted
+silhouette (alpha correlation **−1.0**). The verified graph measures **+1.0000**
+with a max alpha difference of 0/255.
+
+## Known limits (measured, not guessed)
+
+- **The relit card is darker than the unlit one.** Node `"11"` centre-crops the
+  whole plate to the card canvas, so `fbc` sees the plate's average light, not
+  the band the card is actually composited into. On `S00202` the crop reads
+  L=71.8 while the region the card lands in reads L=113.4. The cache key is
+  `(card_variant, location_key)` — card_key+pose+angle — not the shot, so the local band is not knowable at
+  relight time — closing this means changing the cache granularity.
+- **`light_position` is effectively inert.** At `denoise 1.0` ComfyUI ignores
+  the init latent's *content*; only its shape survives. "Top Light" vs
+  "Top Left Light" measured ΔL = 0.6 and ≤0.8 per channel — sampler variance.
+  The node stays because the official example keeps it and it sets the latent
+  shape. In `fbc`, the background latent *is* the light source.
+- **~11.5 min for the first pair, ~13 s after.** `LoadAndApplyICLightUnet`
+  spends most of a cold pair adding patches; subsequent pairs reuse the patched
+  model.
+
+## Changing this file
+
+1. Edit the graph. **Never** flip `ytflow_verified_iclight` in the same change —
+   that marker exists so an unproven graph cannot reach a render.
+2. Probe one card+plate pair live and look at the sprite next to the unlit card.
+3. Only then set the marker back to `true`, as its own edit, and rewrite
+   `_ytflow_note` with what the probe showed.
+4. Renumbering nodes? Check `CARD_IMAGE_NODE` / `BACKGROUND_IMAGE_NODE` and the
+   shipped-workflow tests — the injection points are hardcoded node-id strings.
