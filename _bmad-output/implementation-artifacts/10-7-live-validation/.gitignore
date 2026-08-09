@@ -1,0 +1,22 @@
+# Story 10.7 live-validation artifacts.
+#
+# What is committed: the scripts (`make_ab.sh`, `make_identify.sh`, `measure.py`) and the
+# two retained BASELINE assets — `old_escalation_siren.mp3` (438 KB) and
+# `old_escalation_klaxon.mp3` (32 KB). Roughly 0.5 MB.
+#
+# The baselines are not optional. The story advertises "one command re-derives every
+# number", and both the `before` half of the A/B and every OLD row in `measure.py`'s
+# tables read those two files. They are the only copies left — the swap overwrote
+# `data/audio/**` in place, and git's history of a binary is not something a reviewer
+# can hand to ffmpeg without extra steps. The other input, run 8a9a288b's narration
+# (`workspace/8a9a288b-…/audio/scene_005.wav`), is under a gitignored `workspace/` and
+# cannot be shipped at all — so on a fresh clone the scene-path renders are not
+# reproducible no matter what, while the CARD-path renders and every asset-level table
+# are, precisely because these two mp3s are tracked.
+#
+# What is ignored: the generated `.wav` renders — ~13 MB of output that
+# `make_ab.sh` / `make_identify.sh` rebuild from the tracked scripts plus the tracked
+# baselines, and that no claim in the spec rests on a reader opening directly (the
+# numbers are in the spec, `data/audio/README.md`, and `measure.py`'s own output).
+
+*.wav
