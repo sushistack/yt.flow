@@ -1,0 +1,28 @@
+
+== horror.safetensors: 1050 tensors, metadata=None
+   text-encoder prefixes: ['lora_te']
+   down_blocks_0 attention keys (SD1.5 has these, SDXL does not): 72
+   lora_unet_down_blocks_0_attentions_0_proj_in
+     down=[16, 320, 1, 1] up=[320, 16, 1, 1] -> delta=[320, 320, 1, 1]
+   lora_unet_up_blocks_0_resnets_0_conv1
+     down=[16, 2560, 3, 3] up=[1280, 16, 1, 1] -> delta=[1280, 2560, 3, 3]
+   lora_unet_mid_block_attentions_0_transformer_blocks_0_attn1_to_k
+     down=[16, 1280] up=[1280, 16] -> delta=[1280, 1280]
+
+== darkness_xl_v2.safetensors: 2364 tensors, metadata={'sshs_legacy_hash': 'd490a8e9', 'ss_network_args': '{"conv_dim": 4, "conv_alpha": 4}', 's
+   text-encoder prefixes: []
+   down_blocks_0 attention keys (SD1.5 has these, SDXL does not): 0
+   lora_unet_output_blocks_2_0_in_layers_2
+     down=[4, 1920, 3, 3] up=[1280, 4, 1, 1] -> delta=[1280, 1920, 3, 3]
+   lora_unet_output_blocks_3_0_in_layers_2
+     down=[4, 1920, 3, 3] up=[640, 4, 1, 1] -> delta=[640, 1920, 3, 3]
+   lora_unet_output_blocks_3_1_transformer_blocks_0_attn1_to_k
+     down=[8, 640] up=[640, 8] -> delta=[640, 640]
+   lora_unet_input_blocks_4_1_transformer_blocks_0_attn1_to_q
+     down=[8, 640] up=[640, 8] -> delta=[640, 640]
+
+== AnimagineXL_v31.safetensors: 2514 tensors
+   model.diffusion_model.output_blocks.2.0.in_layers.2.weight = [1280, 1920, 3, 3]
+   model.diffusion_model.output_blocks.3.0.in_layers.2.weight = [640, 1920, 3, 3]
+   model.diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_k.weight = [640, 640]
+   model.diffusion_model.input_blocks.4.1.transformer_blocks.0.attn1.to_q.weight = [640, 640]

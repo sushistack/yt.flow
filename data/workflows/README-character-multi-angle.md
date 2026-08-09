@@ -11,8 +11,8 @@ real local ComfyUI instance rejected it with `prompt_outputs_failed_validation`.
 `data/workflows/comfyui_character_multi_angle_api.json` — reuses the same
 checkpoint/LoRA generation branch as the layered background/character
 workflows (see [`README-layered-assets.md`](README-layered-assets.md)):
-`AnimagineXL_v31.safetensors` (node `"4"`) → `horror.safetensors` LoRA (node
-`"10"`) → `darkness_xl_v2.safetensors` LoRA (node `"11"`) →
+`AnimagineXL_v31.safetensors` (node `"4"`) → `darkness_xl_v2.safetensors` LoRA
+(node `"11"`) →
 `CLIPTextEncode` positive/negative (nodes `"6"`/`"7"`) → `KSampler` (node
 `"3"`) → `VAEDecode` (node `"8"`) → `InspyrenetRembg` (node `"12"`) →
 `SaveImage` (node `"9"`). Single output — one transparent RGBA character sprite
@@ -72,7 +72,6 @@ fallback for any workflow that still uses that older shape).
 | File | Expected location |
 |------|-------------------|
 | `AnimagineXL_v31.safetensors` | `<ComfyUI>/models/checkpoints/` |
-| `horror.safetensors` | `<ComfyUI>/models/loras/` |
 | `darkness_xl_v2.safetensors` | `<ComfyUI>/models/loras/` |
 | `clip_vision_vit_h.safetensors` | `<ComfyUI>/models/clip_vision/` |
 | `ip-adapter-plus_sdxl_vit-h.safetensors` | `<ComfyUI>/models/ipadapter/` |
@@ -128,14 +127,26 @@ features) produced a near-solid-color output — expected given IPAdapter has
 no character detail to transfer from a textureless swatch, not a workflow
 defect.
 
-## Known limitation — LoRA shape-mismatch warnings
+## Resolved — LoRA shape-mismatch warnings (Story 10.3, 2026-08-09)
 
-Both `horror.safetensors` and `darkness_xl_v2.safetensors` log a large batch
-of `ERROR lora <key> shape ... is invalid for input of size ...` lines on
-every load in this ComfyUI/LoRA-version combination. This is **pre-existing**
-or the already-validated layered background/character workflow ([Story
-5.2/5.6/5.7](README-layered-assets.md)) — confirmed by re-submitting that
-workflow directly and observing the identical warning set. ComfyUI skips the
-mismatched tensors and continues; generation still succeeds
-(`node_errors: {}`, `Prompt executed`). Not addressed here — same
-pre-existing behavior as the already-shipped layered workflow.
+This section previously blamed *both* LoRAs and dismissed the errors as
+pre-existing. That was wrong on both counts, and it is exactly the kind of note
+that gets a broken LoRA re-added. Measured attribution, one LoRA at a time
+against AnimagineXL v3.1 on live ComfyUI:
+
+| config | `lora key not loaded` | `ERROR lora ... invalid for input of size` |
+|---|---:|---:|
+| `horror.safetensors` only | 342 | 73 |
+| `darkness_xl_v2.safetensors` only | 0 | 0 |
+
+`horror.safetensors` is SD1.5-layout (diffusers naming, a single
+`lora_te_text_model_*` encoder where SDXL has two, attention in `down_blocks_0`
+where SDXL has none), so its whole UNet half was silently dropped on every load.
+`darkness_xl_v2.safetensors` is a genuine SDXL LoRA and matches the checkpoint
+exactly. Node `"10"` (`horror`) was removed from all five SDXL workflows and
+`darkness_xl_v2` chains directly off node `"4"`.
+
+Do not re-add `horror.safetensors` to an SDXL graph.
+`tests/test_workflow_definitions.py` enforces this with a per-base-model
+allowlist. Evidence and recompute commands:
+`_bmad-output/implementation-artifacts/10-3-live-validation/`.

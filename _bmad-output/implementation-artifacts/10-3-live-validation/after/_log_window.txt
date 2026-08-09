@@ -1,0 +1,57 @@
+workflow=data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json offset=538761 lines=56 key_not_loaded=0 invalid_size=0
+[2026-08-09 22:08:50.674] got prompt
+[2026-08-09 22:08:50.765] Requested to load SDXLClipModel
+[2026-08-09 22:08:50.798] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:08:51.933] Requested to load SDXL
+[2026-08-09 22:08:54.485] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:09:06.625] 
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+[2026-08-09 22:09:06.626] Requested to load AutoencoderKL
+[2026-08-09 22:09:06.736] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:09:07.462] Prompt executed in 16.79 seconds
+[2026-08-09 22:09:08.769] got prompt
+[2026-08-09 22:09:09.391] Requested to load SDXL
+[2026-08-09 22:09:10.432] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:09:22.576] 
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+[2026-08-09 22:09:22.577] Requested to load AutoencoderKL
+[2026-08-09 22:09:22.688] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:09:23.397] Prompt executed in 14.63 seconds
+[2026-08-09 22:09:23.858] got prompt
+[2026-08-09 22:09:24.452] Requested to load SDXL
+[2026-08-09 22:09:25.493] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:09:37.623] 
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+[2026-08-09 22:09:37.624] Requested to load AutoencoderKL
+[2026-08-09 22:09:37.736] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:09:38.451] Prompt executed in 14.59 seconds
+[2026-08-09 22:09:38.931] got prompt
+[2026-08-09 22:09:39.951] Requested to load SDXL
+[2026-08-09 22:09:40.991] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:09:53.129] 
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+[2026-08-09 22:09:53.130] Requested to load AutoencoderKL
+[2026-08-09 22:09:53.239] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:09:53.971] Prompt executed in 15.04 seconds
+[2026-08-09 22:09:57.014] got prompt
+[2026-08-09 22:09:57.615] Requested to load SDXL
+[2026-08-09 22:09:58.664] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:10:10.797] 
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+[2026-08-09 22:10:10.798] Requested to load AutoencoderKL
+[2026-08-09 22:10:10.908] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:10:11.629] Prompt executed in 14.61 seconds
+[2026-08-09 22:10:12.060] got prompt
+[2026-08-09 22:10:12.923] Requested to load SDXL
+[2026-08-09 22:10:13.976] loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:10:26.112] 
+100%|██████████| 30/30 [00:12<00:00,  2.48it/s]
+100%|██████████| 30/30 [00:12<00:00,  2.47it/s]
+[2026-08-09 22:10:26.113] Requested to load AutoencoderKL
+[2026-08-09 22:10:26.222] loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:10:26.944] Prompt executed in 14.88 seconds

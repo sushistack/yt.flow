@@ -1,0 +1,923 @@
+[0] both           seed=770300   31.7s img=385408B new_log_lines= 436 key_not_loaded= 342 invalid_size=  73
+[1] none           seed=770301    7.1s img=368734B new_log_lines=  10 key_not_loaded=   0 invalid_size=   0
+[2] horror_only    seed=770302    7.1s img=394251B new_log_lines= 428 key_not_loaded= 342 invalid_size=  73
+[3] none           seed=770303    7.0s img=354968B new_log_lines=  10 key_not_loaded=   0 invalid_size=   0
+[4] darkness_only  seed=770304    7.1s img=410995B new_log_lines=  11 key_not_loaded=   0 invalid_size=   0
+[5] none           seed=770305    7.1s img=393048B new_log_lines=  10 key_not_loaded=   0 invalid_size=   0
+
+config             lora key not loaded   ERROR lora invalid size
+both                               342                        73
+horror_only                        342                        73
+darkness_only                        0                         0
+none                                 0                         0
+
+======================================================================
+--- window [0] both (offset 313368) ---
+[2026-08-09 22:03:44.066] got prompt
+[2026-08-09 22:03:44.945] model weight dtype torch.float16, manual cast: None
+[2026-08-09 22:03:44.959] model_type EPS
+[2026-08-09 22:03:50.480] Using split attention in VAE
+[2026-08-09 22:03:50.482] Using split attention in VAE
+[2026-08-09 22:03:50.603] VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+[2026-08-09 22:04:01.466] Requested to load SDXLClipModel
+[2026-08-09 22:04:01.497] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:01.501] CLIP/text encoder model load device: cpu, offload device: cpu, current: cpu, dtype: torch.float16
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.807] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.808] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.lora_up.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.alpha
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:02.809] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.810] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.811] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.812] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.813] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.814] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:02.815] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.alpha
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.lora_down.weight
+[2026-08-09 22:04:02.816] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.alpha
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:02.817] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:02.832] NOT LOADED diffusion_model.input_blocks.9.0.op.weight
+[2026-08-09 22:04:02.832] NOT LOADED diffusion_model.output_blocks.8.1.conv.weight
+[2026-08-09 22:04:02.995] Requested to load SDXLClipModel
+[2026-08-09 22:04:03.161] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:09.385] Requested to load SDXL
+[2026-08-09 22:04:09.489] ERROR lora diffusion_model.output_blocks.2.0.in_layers.2.weight shape '[1280, 1920, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:09.822] ERROR lora diffusion_model.output_blocks.3.0.in_layers.2.weight shape '[640, 1920, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:09.830] ERROR lora diffusion_model.output_blocks.4.0.in_layers.2.weight shape '[640, 1280, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:09.966] ERROR lora diffusion_model.output_blocks.5.0.in_layers.2.weight shape '[640, 960, 3, 3]' is invalid for input of size 22118400
+[2026-08-09 22:04:09.969] ERROR lora diffusion_model.output_blocks.5.2.conv.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:09.971] ERROR lora diffusion_model.output_blocks.5.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:09.973] ERROR lora diffusion_model.output_blocks.4.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:09.975] ERROR lora diffusion_model.output_blocks.3.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:09.986] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:09.989] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:09.992] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:10.003] ERROR lora diffusion_model.output_blocks.6.0.in_layers.2.weight shape '[320, 960, 3, 3]' is invalid for input of size 11059200
+[2026-08-09 22:04:10.081] ERROR lora diffusion_model.middle_block.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.083] ERROR lora diffusion_model.middle_block.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.101] ERROR lora diffusion_model.input_blocks.8.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.102] ERROR lora diffusion_model.input_blocks.8.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.121] ERROR lora diffusion_model.input_blocks.7.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.123] ERROR lora diffusion_model.input_blocks.7.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.124] ERROR lora diffusion_model.output_blocks.2.0.skip_connection.weight shape '[1280, 1920, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:10.127] ERROR lora diffusion_model.output_blocks.8.0.in_layers.2.weight shape '[320, 640, 3, 3]' is invalid for input of size 5529600
+[2026-08-09 22:04:10.129] ERROR lora diffusion_model.output_blocks.7.0.in_layers.2.weight shape '[320, 640, 3, 3]' is invalid for input of size 7372800
+[2026-08-09 22:04:10.237] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:10.239] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:10.240] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:10.423] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.424] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.427] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.428] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.430] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.431] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:10.433] ERROR lora diffusion_model.input_blocks.5.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:10.434] ERROR lora diffusion_model.input_blocks.5.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:10.436] ERROR lora diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:10.437] ERROR lora diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:10.438] ERROR lora diffusion_model.output_blocks.3.0.skip_connection.weight shape '[640, 1920, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:10.439] ERROR lora diffusion_model.output_blocks.8.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:10.440] ERROR lora diffusion_model.output_blocks.7.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:10.441] ERROR lora diffusion_model.output_blocks.6.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:10.447] ERROR lora diffusion_model.output_blocks.5.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.448] ERROR lora diffusion_model.output_blocks.4.0.skip_connection.weight shape '[640, 1280, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:10.449] ERROR lora diffusion_model.output_blocks.4.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.450] ERROR lora diffusion_model.output_blocks.3.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.452] ERROR lora diffusion_model.output_blocks.5.0.skip_connection.weight shape '[640, 960, 1, 1]' is invalid for input of size 2457600
+[2026-08-09 22:04:10.454] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.455] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.456] ERROR lora diffusion_model.output_blocks.5.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.456] ERROR lora diffusion_model.output_blocks.5.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.458] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.459] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.460] ERROR lora diffusion_model.output_blocks.4.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.461] ERROR lora diffusion_model.output_blocks.4.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.462] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.463] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.464] ERROR lora diffusion_model.output_blocks.3.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.465] ERROR lora diffusion_model.output_blocks.3.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.474] ERROR lora diffusion_model.output_blocks.8.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:10.474] ERROR lora diffusion_model.output_blocks.7.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:10.475] ERROR lora diffusion_model.output_blocks.6.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:10.480] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.481] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.482] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.483] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.486] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.486] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.487] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.488] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.491] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.491] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.492] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.493] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:10.503] ERROR lora diffusion_model.output_blocks.6.0.skip_connection.weight shape '[320, 960, 1, 1]' is invalid for input of size 1228800
+[2026-08-09 22:04:10.505] ERROR lora diffusion_model.output_blocks.8.0.skip_connection.weight shape '[320, 640, 1, 1]' is invalid for input of size 614400
+[2026-08-09 22:04:10.506] ERROR lora diffusion_model.output_blocks.7.0.skip_connection.weight shape '[320, 640, 1, 1]' is invalid for input of size 819200
+[2026-08-09 22:04:10.559] loaded completely; 13740.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:11.178] 100%|██████████| 4/4 [00:00<00:00,  7.51it/s]100%|██████████| 4/4 [00:00<00:00,  6.76it/s]
+[2026-08-09 22:04:11.179] Requested to load AutoencoderKL
+[2026-08-09 22:04:11.292] loaded completely; 11581.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:11.516] Prompt executed in 27.45 seconds
+
+
+--- window [1] none (offset 367673) ---
+[2026-08-09 22:04:15.708] got prompt
+[2026-08-09 22:04:15.750] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:16.591] Requested to load SDXL
+[2026-08-09 22:04:17.214] loaded completely; 13734.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:17.689] 100%|██████████| 4/4 [00:00<00:00,  8.68it/s]100%|██████████| 4/4 [00:00<00:00,  8.66it/s]
+[2026-08-09 22:04:17.691] Requested to load AutoencoderKL
+[2026-08-09 22:04:18.402] loaded completely; 6777.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:18.616] Prompt executed in 2.91 seconds
+
+
+--- window [2] horror_only (offset 368313) ---
+[2026-08-09 22:04:22.787] got prompt
+[2026-08-09 22:04:22.883] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.alpha
+[2026-08-09 22:04:22.883] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:22.883] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:22.883] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.884] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.885] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_0_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv1.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_conv2.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_0_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv1.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_conv2.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_down_blocks_3_resnets_1_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.886] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.887] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.888] lora key not loaded: lora_unet_up_blocks_2_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_in.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_proj_out.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.889] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_2_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_in.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_proj_out.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.890] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_0_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_in.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_proj_out.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.891] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_1_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_in.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_proj_out.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_k.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_q.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn1_to_v.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_k.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_down.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_out_0.lora_up.weight
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.alpha
+[2026-08-09 22:04:22.892] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_q.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_attn2_to_v.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_0_proj.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv1.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv2.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_0_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv1.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv2.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.alpha
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_1_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:22.893] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.alpha
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.lora_down.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv1.lora_up.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.alpha
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.lora_down.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv2.lora_up.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.alpha
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.lora_down.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_conv_shortcut.lora_up.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.alpha
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.lora_down.weight
+[2026-08-09 22:04:22.894] lora key not loaded: lora_unet_up_blocks_3_resnets_2_time_emb_proj.lora_up.weight
+[2026-08-09 22:04:22.902] NOT LOADED diffusion_model.input_blocks.9.0.op.weight
+[2026-08-09 22:04:22.902] NOT LOADED diffusion_model.output_blocks.8.1.conv.weight
+[2026-08-09 22:04:22.903] Requested to load SDXLClipModel
+[2026-08-09 22:04:23.056] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:23.863] Requested to load SDXL
+[2026-08-09 22:04:23.928] ERROR lora diffusion_model.output_blocks.2.0.in_layers.2.weight shape '[1280, 1920, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:23.996] ERROR lora diffusion_model.output_blocks.3.0.in_layers.2.weight shape '[640, 1920, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:24.001] ERROR lora diffusion_model.output_blocks.4.0.in_layers.2.weight shape '[640, 1280, 3, 3]' is invalid for input of size 29491200
+[2026-08-09 22:04:24.012] ERROR lora diffusion_model.output_blocks.5.0.in_layers.2.weight shape '[640, 960, 3, 3]' is invalid for input of size 22118400
+[2026-08-09 22:04:24.014] ERROR lora diffusion_model.output_blocks.5.2.conv.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:24.016] ERROR lora diffusion_model.output_blocks.5.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:24.017] ERROR lora diffusion_model.output_blocks.4.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:24.019] ERROR lora diffusion_model.output_blocks.3.0.out_layers.3.weight shape '[640, 640, 3, 3]' is invalid for input of size 14745600
+[2026-08-09 22:04:24.026] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:24.027] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:24.029] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.ff.net.0.proj.weight shape '[5120, 640]' is invalid for input of size 13107200
+[2026-08-09 22:04:24.035] ERROR lora diffusion_model.output_blocks.6.0.in_layers.2.weight shape '[320, 960, 3, 3]' is invalid for input of size 11059200
+[2026-08-09 22:04:24.038] ERROR lora diffusion_model.middle_block.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.039] ERROR lora diffusion_model.middle_block.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.041] ERROR lora diffusion_model.input_blocks.8.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.041] ERROR lora diffusion_model.input_blocks.8.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.043] ERROR lora diffusion_model.input_blocks.7.1.transformer_blocks.0.attn2.to_v.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.044] ERROR lora diffusion_model.input_blocks.7.1.transformer_blocks.0.attn2.to_k.weight shape '[1280, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.045] ERROR lora diffusion_model.output_blocks.2.0.skip_connection.weight shape '[1280, 1920, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:24.046] ERROR lora diffusion_model.output_blocks.8.0.in_layers.2.weight shape '[320, 640, 3, 3]' is invalid for input of size 5529600
+[2026-08-09 22:04:24.047] ERROR lora diffusion_model.output_blocks.7.0.in_layers.2.weight shape '[320, 640, 3, 3]' is invalid for input of size 7372800
+[2026-08-09 22:04:24.066] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:24.067] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:24.068] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.ff.net.2.weight shape '[640, 2560]' is invalid for input of size 6553600
+[2026-08-09 22:04:24.085] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.086] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.087] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.088] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.088] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.089] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 983040
+[2026-08-09 22:04:24.090] ERROR lora diffusion_model.input_blocks.5.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:24.091] ERROR lora diffusion_model.input_blocks.5.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:24.092] ERROR lora diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_v.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:24.092] ERROR lora diffusion_model.input_blocks.4.1.transformer_blocks.0.attn2.to_k.weight shape '[640, 2048]' is invalid for input of size 491520
+[2026-08-09 22:04:24.093] ERROR lora diffusion_model.output_blocks.3.0.skip_connection.weight shape '[640, 1920, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:24.094] ERROR lora diffusion_model.output_blocks.8.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:24.094] ERROR lora diffusion_model.output_blocks.7.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:24.095] ERROR lora diffusion_model.output_blocks.6.0.out_layers.3.weight shape '[320, 320, 3, 3]' is invalid for input of size 3686400
+[2026-08-09 22:04:24.099] ERROR lora diffusion_model.output_blocks.5.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.100] ERROR lora diffusion_model.output_blocks.4.0.skip_connection.weight shape '[640, 1280, 1, 1]' is invalid for input of size 3276800
+[2026-08-09 22:04:24.101] ERROR lora diffusion_model.output_blocks.4.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.101] ERROR lora diffusion_model.output_blocks.3.0.emb_layers.1.weight shape '[640, 1280]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.103] ERROR lora diffusion_model.output_blocks.5.0.skip_connection.weight shape '[640, 960, 1, 1]' is invalid for input of size 2457600
+[2026-08-09 22:04:24.104] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.104] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.105] ERROR lora diffusion_model.output_blocks.5.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.105] ERROR lora diffusion_model.output_blocks.5.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.106] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.107] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.107] ERROR lora diffusion_model.output_blocks.4.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.108] ERROR lora diffusion_model.output_blocks.4.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.109] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.109] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_out.0.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.110] ERROR lora diffusion_model.output_blocks.3.1.proj_out.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.110] ERROR lora diffusion_model.output_blocks.3.1.proj_in.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.115] ERROR lora diffusion_model.output_blocks.8.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:24.116] ERROR lora diffusion_model.output_blocks.7.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:24.116] ERROR lora diffusion_model.output_blocks.6.0.emb_layers.1.weight shape '[320, 1280]' is invalid for input of size 819200
+[2026-08-09 22:04:24.118] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.119] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.120] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.120] ERROR lora diffusion_model.output_blocks.5.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.121] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.121] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.122] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.123] ERROR lora diffusion_model.output_blocks.4.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.123] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn2.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.124] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_v.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.124] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_q.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.125] ERROR lora diffusion_model.output_blocks.3.1.transformer_blocks.0.attn1.to_k.weight shape '[640, 640]' is invalid for input of size 1638400
+[2026-08-09 22:04:24.130] ERROR lora diffusion_model.output_blocks.6.0.skip_connection.weight shape '[320, 960, 1, 1]' is invalid for input of size 1228800
+[2026-08-09 22:04:24.131] ERROR lora diffusion_model.output_blocks.8.0.skip_connection.weight shape '[320, 640, 1, 1]' is invalid for input of size 614400
+[2026-08-09 22:04:24.132] ERROR lora diffusion_model.output_blocks.7.0.skip_connection.weight shape '[320, 640, 1, 1]' is invalid for input of size 819200
+[2026-08-09 22:04:24.571] loaded completely; 13734.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:25.046] 100%|██████████| 4/4 [00:00<00:00,  8.69it/s]100%|██████████| 4/4 [00:00<00:00,  8.68it/s]
+[2026-08-09 22:04:25.047] Requested to load AutoencoderKL
+[2026-08-09 22:04:25.628] loaded completely; 8361.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:25.843] Prompt executed in 3.06 seconds
+
+
+--- window [3] none (offset 422030) ---
+[2026-08-09 22:04:29.833] got prompt
+[2026-08-09 22:04:29.868] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:30.718] Requested to load SDXL
+[2026-08-09 22:04:31.352] loaded completely; 13734.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:31.827] 100%|██████████| 4/4 [00:00<00:00,  8.68it/s]100%|██████████| 4/4 [00:00<00:00,  8.66it/s]
+[2026-08-09 22:04:31.828] Requested to load AutoencoderKL
+[2026-08-09 22:04:32.552] loaded completely; 6843.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:32.765] Prompt executed in 2.93 seconds
+
+
+--- window [4] darkness_only (offset 422670) ---
+[2026-08-09 22:04:36.894] got prompt
+[2026-08-09 22:04:37.026] Requested to load SDXLClipModel
+[2026-08-09 22:04:37.056] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:37.974] Requested to load SDXL
+[2026-08-09 22:04:39.019] loaded completely; 13734.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:39.494] 100%|██████████| 4/4 [00:00<00:00,  8.68it/s]100%|██████████| 4/4 [00:00<00:00,  8.66it/s]
+[2026-08-09 22:04:39.495] Requested to load AutoencoderKL
+[2026-08-09 22:04:39.609] loaded completely; 11581.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:39.823] Prompt executed in 2.93 seconds
+
+
+--- window [5] none (offset 423369) ---
+[2026-08-09 22:04:43.978] got prompt
+[2026-08-09 22:04:44.013] loaded completely;  1560.80 MB loaded, full load: True
+[2026-08-09 22:04:44.844] Requested to load SDXL
+[2026-08-09 22:04:45.480] loaded completely; 13734.80 MB usable, 4897.05 MB loaded, full load: True
+[2026-08-09 22:04:45.956] 100%|██████████| 4/4 [00:00<00:00,  8.68it/s]100%|██████████| 4/4 [00:00<00:00,  8.66it/s]
+[2026-08-09 22:04:45.957] Requested to load AutoencoderKL
+[2026-08-09 22:04:46.670] loaded completely; 6937.03 MB usable, 159.56 MB loaded, full load: True
+[2026-08-09 22:04:46.885] Prompt executed in 2.91 seconds

@@ -329,7 +329,7 @@ As Jay,
 I want `image_node` to submit shot prompts to ComfyUI and write generated images to disk,
 So that each `ShotData` has an `image_path` for downstream composition.
 
-*Workflow baseline: `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json` (animagineXL_v31 + horror_and_creepy LoRA 0.6 + darkness_sdxl_v2 LoRA 0.5; 1216×832; prompt injection at nodes 6/7). Copy from `~/Documents/myWorkflows/` before starting.*
+*Workflow baseline: `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json` (animagineXL_v31 + darkness_xl_v2 LoRA 0.5; 1216×832; prompt injection at nodes 6/7). Copy from `~/Documents/myWorkflows/` before starting. **2026-08-09 (Story 10.3): the `horror` LoRA that used to sit at 0.6 in this stack was removed — it is SD1.5-layout and was silently failing to load against the SDXL checkpoint. Do not re-add it.***
 
 **Acceptance Criteria:**
 
@@ -1552,7 +1552,7 @@ Jay 지적: 배경 자체에 인물(대형 여성 얼굴, 애니 캐릭터)이 �
 
 ### Story 10.3: 화풍 일관성 + LoRA 정합 (지적 10·12)
 
-Jay 지적: "이상한 화풍의 이미지가 나오는 경우가 있음", "갑자기 애니메이션 캐릭터가 나옴". **원인 일부는 이미 규명됨**: `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json`이 로드하는 `darkness_xl_v2.safetensors`는 이름과 달리 **SD1.5 레이아웃**이다 — `lora_unet_output_blocks_3_1_transformer_blocks_0_attn1_to_k`가 `[640, 8]`인데 SDXL 체크포인트(AnimagineXL v3.1)는 1280을 기대하므로, 매 로드마다 수백 건의 `ERROR lora ... shape '[640, 640]' is invalid for input of size 1638400`을 내며 **패치 대부분이 조용히 실패**한다. 즉 의도한 화풍 통제가 실제로는 걸리지 않고 있다. ① 해당 LoRA 제거 또는 SDXL판으로 교체. ② `horror.safetensors`도 동일 방식으로 검증. ③ 화풍 드리프트를 샷 간 비교로 검출하는 축을 13.2에 추가할지 판단. 참고: 제거만으로 느려짐이 해소되지는 않았다(별개 문제였음). (draft — 상세 스토리 파일은 create-story로 별도 생성)
+Jay 지적: "이상한 화풍의 이미지가 나오는 경우가 있음", "갑자기 애니메이션 캐릭터가 나옴". **원인 규명 완료 — 이전에 여기 적혀 있던 귀속은 뒤집혀 있었고 라이브 측정으로 정정한다**(2026-08-09, `10-3-live-validation/`): 범인은 `darkness_xl_v2.safetensors`가 아니라 **`horror.safetensors`** 다. 네 가지 LoRA 조합을 AnimagineXL v3.1에 각각 로드해 로그 윈도를 센 결과 `both` = 342 `lora key not loaded` + 73 `ERROR lora ... invalid for input of size`, `horror_only` = **동일한 342 + 73**, `darkness_only` = **0 + 0**, `none` = 0 + 0. 텐서 shape도 같은 결론이다 — `horror`는 diffusers 명명에 `lora_te_text_model_*` 텍스트 인코더가 하나(SDXL은 `lora_te1`/`lora_te2` 둘)이고 `down_blocks_0`에 어텐션이 있으며(SDXL에는 없음), `lora_unet_up_blocks_0_resnets_0_conv1`이 `down=[16,2560,3,3]`이라 델타가 `[1280,2560,3,3]`(=29,491,200개)로 만들어져 SDXL의 `output_blocks.2.0.in_layers.2.weight` `[1280,1920,3,3]`에 들어가지 못한다 — 로그의 `is invalid for input of size 29491200`이 바로 이것이다. 반면 `darkness_xl_v2`는 sd-scripts 명명의 순정 SDXL UNet LoRA로 `output_blocks_2_0_in_layers_2 down=[4,1920,3,3]`, `output_blocks_3_1...attn1_to_k down=[8,640]`처럼 체크포인트와 정확히 일치하고 미로드 키가 0이다. ① **`horror.safetensors` 로더 노드를 5개 워크플로에서 제거**하고 `darkness_xl_v2`를 체크포인트에 직결(완료). ② 재발 방지는 `tests/test_workflow_definitions.py`의 LoRA 허용목록으로 고정(완료). ③ 화풍 드리프트를 샷 간 비교로 검출하는 축을 13.2에 추가할지 판단. 참고: 제거만으로 느려짐이 해소되지는 않았다(별개 문제였음). (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
 ### Story 10.4: 이미지-나레이션 의미 정합 (지적 2·4·7·9·16)
 

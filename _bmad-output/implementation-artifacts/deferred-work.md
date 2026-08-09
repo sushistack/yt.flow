@@ -456,3 +456,23 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-16-depth-aware-placement-iclight.md`
   summary: `scripts/score_composites.py` cannot detect placement drift, only gross placement failure.
   evidence: Measured 2026-08-03 — qwen-vl-plus returned `grounded: 5` for both the ground-tracked render and the static-anchor render whose feet were 57px off the floor by the final frame. It catches mid-air / on-a-wall / doll-sized, and is a useful regression net over many frames, but a "how far off" question needs the pixel measurement. Raising resolution or cropping to the feet before scoring is the obvious next attempt.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-7-scene-sound-replacement.md`
+  summary: The bed `amix` in `build_sound_design_filter` runs at ffmpeg's default `normalize=1`, so bgm+ambient+stinger are attenuated by the active-input count before they ever reach the narration duck.
+  evidence: `src/yt_flow/pipeline/nodes/sound_design.py:90` — `{bed_labels}amix=inputs={bed_count}:duration=first[bgmix]` has no `normalize=0`, unlike the final narration mix on line 95 and unlike `_compose_chapter_card` in `video.py:2142-2168`, which does pass it. With three continuous inputs that is roughly −9.5 dB of unintended attenuation on every mood. Measured 2026-08-09 on the real graph over run `8a9a288b` scene 5 (16.14s narration at −23.3 dBFS): the isolated bed (`before.wav − control_narration_only.wav`, exact because the final amix is `normalize=0`) sits at −36.2 dBFS, i.e. 12.9 dB under the narration, before the sidechain has done anything a listener would call ducking. Deliberately not fixed in Story 10.7: raising it lifts bgm+ambient+stinger for all four moods at once and is a global mix decision, not a side effect of swapping one asset. Note the coupling — the escalation ambient was loudness-matched to the outgoing siren precisely because `normalize=1` is there; if it is removed, re-check all four ambient beds by ear rather than assuming the levels still hold.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-style-consistency-lora-mismatch.md`
+  summary: Cards and stock plates in `assets/manifest.json` were all rendered with `horror.safetensors` @0.6 applied; generating one new angle for an existing character now yields a style its three approved siblings do not share.
+  evidence: Story 10.3 removed the LoRA from `comfyui_character_multi_angle_api.json` and `comfyui_location_plate_api.json` but regenerating approved assets was explicitly out of scope, so the library and the generator now disagree. Needs an epoch bump or a re-render decision from Jay.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-style-consistency-lora-mismatch.md`
+  summary: Story 8.15's `STOCK_NEGATIVE` suppression list was designed against `horror.safetensors`'s skull-mask bias, which Story 10.3 removed; the suffix may now be over-suppressing.
+  evidence: `spec-8-15-stock-face-mask-bias-fix.md:40` states "do not lower/remove the `horror` LoRA (shared with entity cards)" and `:72` adds the suppression terms for that reason. 10.3 measured that the LoRA's whole UNet half never loaded and removed it, so the bias link 8.15 was compensating for is gone. Re-render a STOCK card with and without the suffix before trusting either.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-style-consistency-lora-mismatch.md`
+  summary: The card/plate/layered workflows were rewired with zero rendered evidence — only `api2` has before/after frames.
+  evidence: The rewire is mechanically identical and `tests/test_workflow_definitions.py` guards its structure, but the aesthetic effect on character cards and location plates is unmeasured. The 10.3 slate method transfers directly if it is ever worth spending the renders.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-style-consistency-lora-mismatch.md`
+  summary: `data/workflows/comfyui_fusion_img2img_api.json`'s `_ytflow_note` repeats the inverted claim that `darkness_xl_v2.safetensors` is SD1.5-layout.
+  evidence: 10.3 measured the opposite (`darkness_xl_v2` loads 0 + 0 against AnimagineXL v3.1). The file is another session's in-flight Story 10.1b work so it was left untouched; it has no `LoraLoader`, so only the comment is wrong.

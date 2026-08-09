@@ -90,8 +90,10 @@ workflow. ComfyUI must be able to resolve them before prompt submission:
 | File | Expected location |
 |------|-------------------|
 | `AnimagineXL_v31.safetensors` | `<ComfyUI>/models/checkpoints/` |
-| `horror.safetensors` | `<ComfyUI>/models/loras/` |
 | `darkness_xl_v2.safetensors` | `<ComfyUI>/models/loras/` |
+
+`horror.safetensors` was removed from every SDXL workflow by Story 10.3 — it is
+SD1.5-layout and its UNet half was silently failing to load. Do not re-add it.
 
 ## Workflow file
 
