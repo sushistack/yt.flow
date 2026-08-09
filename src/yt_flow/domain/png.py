@@ -6,6 +6,18 @@ import zlib
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+def dimensions(png_bytes: bytes) -> tuple[int, int] | None:
+    """(width, height) from a PNG IHDR, or ``None`` if it isn't a readable PNG.
+
+    Stdlib-only, same posture as :func:`has_alpha`. Callers use this to size a
+    generation canvas to the sprite it must come back matching.
+    """
+    if len(png_bytes) < 24 or png_bytes[:8] != _PNG_SIGNATURE or png_bytes[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", png_bytes[16:24])
+    return (width, height) if width and height else None
+
+
 def has_alpha(png_bytes: bytes) -> bool:
     """Check a valid PNG IHDR color type for an alpha channel.
 

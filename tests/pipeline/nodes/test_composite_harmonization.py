@@ -1,5 +1,6 @@
 """Tests for src/yt_flow/pipeline/nodes/composite_harmonization.py (Story 8.7)."""
 
+import json
 import re
 import struct
 import zlib
@@ -9,9 +10,15 @@ from typing import cast
 import pytest
 
 from yt_flow.pipeline.nodes.composite_harmonization import (
+    BACKGROUND_IMAGE_NODE,
+    CARD_IMAGE_NODE,
     RelightCache,
     MOOD_TINT_PARAMS,
+    _inject_relight_inputs,
+    _load_iclight_workflow,
+    _upload_name,
     build_contact_shadow,
+    card_variant,
     build_light_wrap,
     build_sprite_tint,
     precompute_relights,
@@ -260,8 +267,10 @@ class _FakeComfyUIClient:
     def __init__(self, *, fail=False):
         self.fail = fail
         self.calls = 0
+        self.uploaded: list[str] = []
 
     async def upload_image(self, url, image_bytes, filename):
+        self.uploaded.append(filename)
         return filename
 
     async def submit_and_fetch(self, url, workflow):
@@ -328,22 +337,70 @@ async def test_precompute_relights_only_stock_pairs(tmp_path, workflow_path):
     relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
     )
-    assert ("STOCK-d-class", "corridor") in relit_map
+    assert ("STOCK-d-class__standing__front", "corridor") in relit_map
     assert len(relit_map) == 1
     assert stats == {"computed": 1, "failed": 0}
 
 
 @pytest.mark.asyncio
-async def test_precompute_relights_excludes_non_stock_card(tmp_path, workflow_path):
-    scenes = [_scene(1, [_shot("S001", location_key="corridor")])]
+async def test_precompute_relights_includes_entity_card(tmp_path, workflow_path):
+    """Story 10.1b: an entity card over a verified location is eligible.
+
+    Until 10.1b the ``STOCK_CAST_KEYS`` gate excluded these, which on run
+    8a9a288b left exactly one eligible pair and relit none of the SCP-049
+    cards the finding-3 adjudication frames are built from.
+    """
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "SCP-049", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
+    svc.add_approved_asset(
+        "SCP-049/standing_front", "card.png",
+        source={"type": "comfyui_generation"}, card_key="SCP-049", pose="standing", angle="front",
+    )
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, svc, _FakeComfyUIClient(), workflow_path, tmp_path, "http://fake",
+    )
+    assert ("SCP-049__standing__front", "corridor") in relit_map
+    assert stats == {"computed": 1, "failed": 0}
+
+
+@pytest.mark.asyncio
+async def test_precompute_relights_excludes_unverified_card(tmp_path, workflow_path):
+    """Widening eligibility to entity cards must not widen it to unverified ones."""
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
+    cast_cards = {"1:S001": [{"card_key": "SCP-049", "path": str(tmp_path / "card.png")}]}
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)  # location verified, SCP-049 card never registered
     client = _FakeComfyUIClient()
     relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
     assert stats == {"computed": 0, "failed": 0}
+    assert client.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_precompute_relights_skips_shot_without_location_key(tmp_path, workflow_path):
+    """A free-text background has no stable identity to cache against — a skip, not an error."""
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    scenes = [_scene(1, [_shot("S001", location_key=None, image_path=str(tmp_path / "bg.png"))])]
+    cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
+    client = _FakeComfyUIClient()
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
+    )
+    assert relit_map == {}
+    assert stats == {"computed": 0, "failed": 0}
+    assert client.calls == 0
 
 
 @pytest.mark.asyncio
@@ -402,10 +459,209 @@ async def test_precompute_relights_cache_hit_skips_comfyui(tmp_path, workflow_pa
     (tmp_path / "card.png").write_bytes(b"card")
     svc = _FakeAssetService(tmp_path)
     _seed_stock_assets(svc)
-    RelightCache(tmp_path, svc).store("STOCK-d-class", "corridor", 1, _make_png(6))
+    RelightCache(tmp_path, svc).store("STOCK-d-class__standing__front", "corridor", 1, _make_png(6))
     client = _FakeComfyUIClient()
     _relit_map, stats = await precompute_relights(
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
     )
     assert client.calls == 0
     assert stats == {"computed": 1, "failed": 0}
+
+
+# ── the shipped workflow file (Story 10.1b) ──────────────────────────────────
+# Nothing guarded data/workflows/comfyui_iclight_relight_api.json before 10.1b:
+# every test above builds its own two-node stub, so an edit that renumbered the
+# injection points or undid a wiring fix would land silently.
+
+
+@pytest.fixture()
+def shipped_workflow() -> dict:
+    import json
+
+    from yt_flow.config import Settings
+
+    path = Path(Settings().iclight_comfyui_workflow_path)
+    assert path.exists(), f"shipped IC-Light workflow missing at {path}"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_shipped_workflow_matches_injection_contract(shipped_workflow):
+    """The two nodes ``_inject_relight_inputs`` writes must exist and be LoadImage."""
+    for node_id in (CARD_IMAGE_NODE, BACKGROUND_IMAGE_NODE):
+        assert shipped_workflow[node_id]["class_type"] == "LoadImage"
+        assert "image" in shipped_workflow[node_id]["inputs"]
+
+
+def test_shipped_workflow_is_marked_verified(shipped_workflow):
+    """The shipped graph is live-verified, and the marker must stay `true`.
+
+    The previous version of this test branched on the file's current value and
+    asserted consistency either way, so it passed whether the marker was `true`
+    or `false` — zero protection for the single bit Story 10.1b flipped after the
+    live probe. Tier 3 silently produces nothing if this regresses, so pin it.
+    """
+    assert shipped_workflow.get("ytflow_verified_iclight") is True
+
+
+def test_unverified_workflow_is_rejected(tmp_path, shipped_workflow):
+    """...and the gate still refuses a graph that has not been verified."""
+    unverified = dict(shipped_workflow)
+    unverified["ytflow_verified_iclight"] = False
+    path = tmp_path / "unverified.json"
+    path.write_text(json.dumps(unverified), encoding="utf-8")
+    with pytest.raises(ValueError, match="ytflow_verified_iclight"):
+        _load_iclight_workflow(str(path))
+
+
+def test_shipped_workflow_foreground_latent_is_grey_matted(shipped_workflow):
+    """LoadImage drops alpha, so the card's transparent region is pure black.
+
+    Encoding that straight into ICLightConditioning.foreground tells fbc the
+    subject sits in a void — the near-black output of the 2026-08-02 probe.
+    The foreground VAEEncode must read the grey composite, not node "1".
+    """
+    fg_encode = shipped_workflow[shipped_workflow["14"]["inputs"]["foreground"][0]]
+    assert fg_encode["class_type"] == "VAEEncode"
+    matte = shipped_workflow[fg_encode["inputs"]["pixels"][0]]
+    assert matte["class_type"] == "ImageCompositeMasked"
+    assert matte["inputs"]["destination"] == [CARD_IMAGE_NODE, 0]
+    # LoadImage's MASK is already 1-alpha and ImageCompositeMasked pastes source
+    # where mask == 1 — an InvertMask here inverts the silhouette (correlation -1.0).
+    assert matte["inputs"]["mask"] == [CARD_IMAGE_NODE, 1]
+    grey = shipped_workflow[matte["inputs"]["source"][0]]
+    assert grey["class_type"] == "EmptyImage"
+    assert grey["inputs"]["color"] == 0x7F7F7F
+
+
+def test_shipped_workflow_init_latent_is_a_light_shape(shipped_workflow):
+    """ICLightConditioning's third output is torch.zeros_like — never the init latent."""
+    ksampler = shipped_workflow["3"]
+    assert ksampler["inputs"]["latent_image"] != ["14", 2]
+    assert ksampler["inputs"]["denoise"] == 1.0
+    init_encode = shipped_workflow[ksampler["inputs"]["latent_image"][0]]
+    assert init_encode["class_type"] == "VAEEncode"
+    assert shipped_workflow[init_encode["inputs"]["pixels"][0]]["class_type"] == "LightSource"
+
+
+def test_shipped_workflow_alpha_is_reattached_from_loadimage_mask(shipped_workflow):
+    """The sprite contract: a relit card keeps the source silhouette."""
+    join = shipped_workflow["17"]
+    assert join["class_type"] == "JoinImageWithAlpha"
+    # JoinImageWithAlpha applies alpha = 1.0 - mask, cancelling LoadImage's inversion.
+    assert join["inputs"]["alpha"] == [CARD_IMAGE_NODE, 1]
+
+
+# ── pose-blind relight key (Story 10.1b regression) ──────────────────────────
+
+
+def test_card_variant_separates_poses_and_folds_unsafe_pose():
+    """Two poses of one card_key are different sprites, so different keys.
+
+    Story 8.7 keyed the relight on card_key alone. On run 8a9a288b that handed
+    STOCK-d-class's `hint:a40ec9c170` relit sprite to all 12 of its `standing`
+    shots — silhouette IoU 0.63, i.e. a visible pose swap. `:` is not a safe
+    path component and must fold to `_` rather than raise.
+    """
+    standing = card_variant({"card_key": "STOCK-d-class", "pose": "standing", "angle": "front"})
+    hinted = card_variant({"card_key": "STOCK-d-class", "pose": "hint:a40ec9c170", "angle": "front"})
+    assert standing == "STOCK-d-class__standing__front"
+    assert hinted == "STOCK-d-class__hint_a40ec9c170__front"
+    assert standing != hinted
+    # angle separates too, and the pose/angle defaults match resolve_cast_cards'
+    assert card_variant({"card_key": "SCP-049"}) == "SCP-049__standing__front"
+    assert card_variant({"card_key": "SCP-049", "angle": "side"}) == "SCP-049__standing__side"
+
+
+@pytest.mark.asyncio
+async def test_precompute_relights_keys_two_poses_separately(tmp_path, workflow_path):
+    """Two poses of one card in one location produce two pairs, not one."""
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")  # what _seed_stock_assets verifies against
+    (tmp_path / "standing.png").write_bytes(b"standing")
+    (tmp_path / "hinted.png").write_bytes(b"hinted")
+    scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
+    cast_cards = {
+        "1:S001": [
+            {"card_key": "STOCK-d-class", "pose": "standing", "angle": "front",
+             "path": str(tmp_path / "standing.png")},
+            {"card_key": "STOCK-d-class", "pose": "hint:a40ec9c170", "angle": "front",
+             "path": str(tmp_path / "hinted.png")},
+        ],
+    }
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
+    svc.add_approved_asset(
+        "STOCK-d-class/hint:a40ec9c170_front", "hinted.png",
+        source={"type": "comfyui_generation"}, card_key="STOCK-d-class",
+        pose="hint:a40ec9c170", angle="front",
+    )
+    client = _FakeComfyUIClient()
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
+    )
+    assert ("STOCK-d-class__standing__front", "corridor") in relit_map
+    assert ("STOCK-d-class__hint_a40ec9c170__front", "corridor") in relit_map
+    assert len(relit_map) == 2
+    assert stats == {"computed": 2, "failed": 0}
+    # and the two relights were computed from different source sprites — uploads are
+    # digest-named (see test_upload_name_disambiguates_shared_basenames), so compare
+    # against the names the two distinct paths resolve to.
+    assert {_upload_name(tmp_path / "standing.png"), _upload_name(tmp_path / "hinted.png")} <= set(client.uploaded)
+
+
+# ── ComfyUI input-namespace collisions (Story 10.1b review, HIGH) ─────────────
+
+
+def test_upload_name_disambiguates_shared_basenames():
+    """`front_candidate_1.png` is the basename of eight different characters' cards.
+
+    ComfyUI keys its input dir on the basename and uploads with overwrite=true,
+    and LoadImage reads at node-execution time, not submit time — so two
+    concurrent relights of same-named cards would make the later upload win for
+    the earlier, still-queued job. That relights one character from another's
+    sprite and caches it, auto-approved, under the first one's key.
+    """
+    a = Path("/assets/characters/SCP-049/epoch_1/front_candidate_1.png")
+    b = Path("/assets/characters/SCP-049-2/epoch_1/front_candidate_1.png")
+    assert a.name == b.name  # the hazard
+    assert _upload_name(a) != _upload_name(b)  # the fix
+    assert _upload_name(a) == _upload_name(a)  # stable across calls
+    assert _upload_name(a).endswith(".png")
+    # the uploaded name must itself be a safe, path-free basename
+    assert "/" not in _upload_name(a) and not _upload_name(a).startswith(".")
+
+
+def test_inject_relight_sizes_generated_canvases_to_the_card():
+    """The graph ships 832x1216, but eight approved cards are 1664x928.
+
+    LoadImage loads a card natively; the grey matte and the light-source gradient
+    are generated. If those stay hardcoded, ICLightConditioning center-crops the
+    subject to the graph's aspect while JoinImageWithAlpha re-attaches the full
+    original mask — a garbage sprite that still passes has_alpha and gets cached.
+    """
+    template = {
+        "ytflow_verified_iclight": True,
+        "_ytflow_note": "not a node",
+        "1": {"class_type": "LoadImage", "inputs": {"image": "x.png"}},
+        "2": {"class_type": "LoadImage", "inputs": {"image": "y.png"}},
+        "20": {"class_type": "EmptyImage", "inputs": {"width": 832, "height": 1216, "color": 8355711}},
+        "22": {"class_type": "LightSource", "inputs": {"width": 832, "height": 1216, "multiplier": 1.0}},
+    }
+    out = _inject_relight_inputs(template, "card.png", "bg.png", (1664, 928))
+    assert (out["20"]["inputs"]["width"], out["20"]["inputs"]["height"]) == (1664, 928)
+    assert (out["22"]["inputs"]["width"], out["22"]["inputs"]["height"]) == (1664, 928)
+    assert out["20"]["inputs"]["color"] == 8355711  # untouched
+    # non-node keys must not reach ComfyUI's validate_prompt
+    assert "ytflow_verified_iclight" not in out and "_ytflow_note" not in out
+    # and the template itself is never mutated
+    assert template["20"]["inputs"]["width"] == 832
+
+
+def test_inject_relight_without_size_leaves_canvases_alone():
+    template = {
+        "1": {"class_type": "LoadImage", "inputs": {"image": "x.png"}},
+        "2": {"class_type": "LoadImage", "inputs": {"image": "y.png"}},
+        "20": {"class_type": "EmptyImage", "inputs": {"width": 832, "height": 1216}},
+    }
+    out = _inject_relight_inputs(template, "card.png", "bg.png", None)
+    assert (out["20"]["inputs"]["width"], out["20"]["inputs"]["height"]) == (832, 1216)

@@ -4,7 +4,7 @@ Tier 1/2: pure ffmpeg filter-string builders (tint, contact shadow, light
 wrap). No I/O, no ComfyUI — import-safe even when tier=0 (video.py only
 imports this module behind the tier>=1 check).
 
-Tier 3: IC-Light ComfyUI re-lighting with pre-computed (card_key, location_key)
+Tier 3: IC-Light ComfyUI re-lighting with pre-computed (card_variant, location_key)
 caching. ``asset_service``/``comfyui_client`` are accepted as duck-typed
 ``Any`` parameters rather than imported concretely — this module stays
 domain/config-only (no db/, api/, services/) per AD-1; the real instances are
@@ -17,6 +17,7 @@ Layer rule: domain and config only; no db/, api/, services/. [AD-1]
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
 import re
@@ -24,8 +25,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from yt_flow.domain.png import has_alpha
-from yt_flow.domain.state import CastDepth, CastMember, STOCK_CAST_KEYS, SceneState
+from yt_flow.domain.png import dimensions, has_alpha
+from yt_flow.domain.state import CastDepth, CastMember, SceneState
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 
 logger = logging.getLogger(__name__)
@@ -178,26 +179,34 @@ def build_light_wrap(
 
 CARD_IMAGE_NODE = "1"
 BACKGROUND_IMAGE_NODE = "2"
+# Nodes whose canvas must match the card, so a non-832x1216 sprite is not
+# center-cropped to the graph's hardcoded aspect (Story 10.1b review).
+GREY_MATTE_NODE = "20"
+LIGHT_SOURCE_NODE = "22"
 
 _RELIGHT_CONCURRENCY = 3  # ponytail: fixed cap, matches Story 5.10-era ComfyUI concurrency norms
 
 
 class RelightCache:
-    """assets/relit/{card_key}/{location_key}/epoch_{style_epoch}.png cache. [AC:8]"""
+    """assets/relit/{card_variant}/{location_key}/epoch_{style_epoch}.png cache. [AC:8]
+
+    ``card_variant`` is ``card_key__pose__angle`` (see :func:`card_variant`), not
+    the bare ``card_key`` — the relight belongs to a sprite, not a character.
+    """
 
     def __init__(self, assets_path: Path, asset_service: Any) -> None:
         self._assets_path = Path(assets_path)
         self._asset_service = asset_service
 
     @staticmethod
-    def _key(card_key: str, location_key: str) -> str:
-        return f"relit/{_safe_cache_part(card_key)}/{_safe_cache_part(location_key)}"
+    def _key(card_variant: str, location_key: str) -> str:
+        return f"relit/{_safe_cache_part(card_variant)}/{_safe_cache_part(location_key)}"
 
     @staticmethod
-    def _relative_path(card_key: str, location_key: str, style_epoch: int) -> str:
-        return f"relit/{_safe_cache_part(card_key)}/{_safe_cache_part(location_key)}/epoch_{style_epoch}.png"
+    def _relative_path(card_variant: str, location_key: str, style_epoch: int) -> str:
+        return f"relit/{_safe_cache_part(card_variant)}/{_safe_cache_part(location_key)}/epoch_{style_epoch}.png"
 
-    def get_or_compute(self, card_key: str, location_key: str, style_epoch: int) -> Path | None:
+    def get_or_compute(self, card_variant: str, location_key: str, style_epoch: int) -> Path | None:
         """Cache lookup only, despite the name (Interfaces AC:8) — a hit
         returns the verified path; a miss returns ``None`` so the caller
         triggers ComfyUI generation and calls :meth:`store`.
@@ -206,7 +215,7 @@ class RelightCache:
         underlying card/plate assets have moved on, so the cached relight no
         longer matches what it was composited against.
         """
-        key = self._key(card_key, location_key)
+        key = self._key(card_variant, location_key)
         entry = self._asset_service.get_asset(key)
         if entry is None or entry.get("style_epoch") != style_epoch:
             return None
@@ -226,8 +235,8 @@ class RelightCache:
             return None
         return path
 
-    def store(self, card_key: str, location_key: str, style_epoch: int, image_bytes: bytes) -> Path:
-        rel_path = self._relative_path(card_key, location_key, style_epoch)
+    def store(self, card_variant: str, location_key: str, style_epoch: int, image_bytes: bytes) -> Path:
+        rel_path = self._relative_path(card_variant, location_key, style_epoch)
         abs_path = self._assets_path / rel_path
         if not has_alpha(image_bytes):
             raise ValueError("IC-Light relight output is not a valid alpha PNG")
@@ -235,12 +244,12 @@ class RelightCache:
         tmp_path = abs_path.with_name(f"{abs_path.name}.{uuid.uuid4().hex}.tmp")
         previous_bytes = abs_path.read_bytes() if abs_path.exists() else None
         tmp_path.write_bytes(image_bytes)
-        key = self._key(card_key, location_key)
+        key = self._key(card_variant, location_key)
         try:
             tmp_path.replace(abs_path)
             self._asset_service.add_asset(
                 key, rel_path,
-                source={"type": "iclight_relight", "card_key": card_key, "location_key": location_key},
+                source={"type": "iclight_relight", "card_variant": card_variant, "location_key": location_key},
                 style_epoch=style_epoch,
             )
             # Auto-approve: a pipeline-derived asset, same precedent as Story 8.6's
@@ -263,6 +272,29 @@ def _safe_cache_part(value: str) -> str:
     if not isinstance(value, str) or not _SAFE_CACHE_PART_RE.fullmatch(value):
         raise ValueError(f"unsafe relight cache key component: {value!r}")
     return value
+
+
+def card_variant(card: dict) -> str:
+    """Cache identity of a resolved card: ``{card_key}__{pose}__{angle}``.
+
+    The relight is a function of the *sprite*, not of the character — two poses
+    of the same ``card_key`` are different silhouettes. Keying on ``card_key``
+    alone (Story 8.7) made the substitution in ``video.py`` hand a shot the
+    relit sprite of whichever pose happened to be precomputed first, silently
+    swapping the pose: on run 8a9a288b that put ``STOCK-d-class``'s
+    ``hint:a40ec9c170`` sprite (silhouette IoU 0.63 against ``standing``) onto
+    all 12 of its ``standing`` shots. Latent while only STOCK single-pose cards
+    were eligible; live once Story 10.1b widened eligibility to entity cards.
+
+    ``pose`` carries a ``hint:<digest>`` form, and ``:`` is not a safe path
+    component, so it is folded to ``_`` before validation.
+    """
+    card_key = card.get("card_key")
+    pose = (card.get("pose") or "standing").replace(":", "_")
+    angle = card.get("angle") or "front"
+    if not isinstance(card_key, str):
+        raise ValueError(f"card has no usable card_key: {card!r}")
+    return _safe_cache_part(f"{card_key}__{pose}__{angle}")
 
 
 def _asset_path_under_root(root: Path, relative_path: Any) -> Path:
@@ -329,11 +361,54 @@ def _load_iclight_workflow(path: str) -> dict:
     return workflow
 
 
-def _inject_relight_inputs(template: dict, card_image_name: str, background_image_name: str) -> dict:
-    """Deep-copy the workflow with the uploaded image filenames injected."""
-    workflow = copy.deepcopy(template)
+def _upload_name(path: Path) -> str:
+    """Collision-proof name for ComfyUI's shared input dir.
+
+    ``upload_image`` POSTs with ``overwrite=true`` and ComfyUI keys inputs on the
+    **basename**, while ``LoadImage`` reads the file at node-execution time, not
+    submit time. Card basenames are not unique — ``front_candidate_1.png`` is the
+    filename of eight different characters' cards — so with concurrent uploads the
+    last writer wins for every job still queued, and a card can be relit from a
+    different character's sprite, then cached and auto-approved under the first
+    one's key. Qualify with a digest of the full source path (Story 10.1b review, HIGH).
+    """
+    digest = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()[:12]
+    return f"ytflow_relight_{digest}{path.suffix or '.png'}"
+
+
+def _inject_relight_inputs(
+    template: dict,
+    card_image_name: str,
+    background_image_name: str,
+    card_size: tuple[int, int] | None = None,
+) -> dict:
+    """Deep-copy the workflow's **nodes** with the uploaded image filenames injected.
+
+    Only entries carrying a ``class_type`` survive: the file also holds the
+    ``ytflow_verified_iclight`` marker and ``_ytflow_note``, and ComfyUI's
+    ``validate_prompt`` walks every top-level key with ``'class_type' not in
+    prompt[x]`` — a bool there raises ``TypeError`` and the submission comes
+    back 500 (live-verified 2026-08-08).
+
+    ``card_size`` re-sizes the graph's two generated canvases — the grey matte and
+    the light-source gradient — to the card actually being relit. The graph ships
+    832x1216 because that is what the character generator emits, but eight approved
+    cards are 1664x928, and ``LoadImage`` loads a card at its native size. Leaving
+    the canvases hardcoded would make ``ICLightConditioning`` center-crop the
+    subject to the canvas aspect while ``JoinImageWithAlpha`` re-attaches the full
+    original mask — a garbage sprite that still passes ``has_alpha`` and would be
+    cached and auto-approved (Story 10.1b review, HIGH).
+    """
+    workflow = {k: copy.deepcopy(v) for k, v in template.items() if isinstance(v, dict) and "class_type" in v}
     workflow[CARD_IMAGE_NODE]["inputs"]["image"] = card_image_name
     workflow[BACKGROUND_IMAGE_NODE]["inputs"]["image"] = background_image_name
+    if card_size:
+        width, height = card_size
+        for node_id in (GREY_MATTE_NODE, LIGHT_SOURCE_NODE):
+            node = workflow.get(node_id)
+            if isinstance(node, dict) and {"width", "height"} <= node.get("inputs", {}).keys():
+                node["inputs"]["width"] = width
+                node["inputs"]["height"] = height
     return workflow
 
 
@@ -354,9 +429,12 @@ async def relight_sprite(
     """
     try:
         template = _load_iclight_workflow(workflow_path)
-        card_name = await comfyui_client.upload_image(comfyui_url, card_path.read_bytes(), card_path.name)
-        bg_name = await comfyui_client.upload_image(comfyui_url, background_path.read_bytes(), background_path.name)
-        workflow = _inject_relight_inputs(template, card_name, bg_name)
+        card_bytes = card_path.read_bytes()
+        card_name = await comfyui_client.upload_image(comfyui_url, card_bytes, _upload_name(card_path))
+        bg_name = await comfyui_client.upload_image(
+            comfyui_url, background_path.read_bytes(), _upload_name(background_path)
+        )
+        workflow = _inject_relight_inputs(template, card_name, bg_name, dimensions(card_bytes))
         return await comfyui_client.submit_and_fetch(comfyui_url, workflow)
     except Exception as exc:  # noqa: BLE001 — AC:11: IC-Light failure is always non-fatal
         logger.warning("IC-Light relight failed for %s over %s: %s", card_path, background_path, exc)
@@ -372,16 +450,21 @@ async def precompute_relights(
     assets_path: Path,
     comfyui_url: str,
 ) -> tuple[dict[tuple[str, str], Path], dict[str, int]]:
-    """Pre-compute IC-Light relit sprites for every STOCK (card, location) pair
-    in this run's shots. Non-fatal per pair (AC:11); returns the successful
+    """Pre-compute IC-Light relit sprites for every (card, location) pair in
+    this run's shots. Non-fatal per pair (AC:11); returns the successful
     lookup map plus ``{"computed": n, "failed": n}`` counts for tracing.
     [AC:9,11]
 
-    Only STOCK cards (``STOCK_CAST_KEYS``) over STOCK backgrounds (a shot with
-    ``location_key`` set) are eligible — entity-specific cards and free-text
-    backgrounds are excluded (AC:9: finite combinations is the whole point of
-    pre-computing; a free-text background has no stable identity to cache
-    against, and IC-Light needs a reference plate, not a prompt).
+    Eligibility is **any verified card** over a shot with a verified
+    ``location_key``. Free-text backgrounds stay excluded — a free-text
+    background has no stable identity to cache against, and IC-Light needs a
+    reference plate, not a prompt. Entity cards were excluded too until Story
+    10.1b: 8.7 deferred them as "YAGNI until proven needed", and 10.1's
+    STILL FLOATING verdict named harmonization as the broken link, which is
+    the proof. On run 8a9a288b the old ``STOCK_CAST_KEYS`` gate left exactly
+    one eligible pair and excluded every ``SCP-049`` card — the subject of the
+    adjudication frames. The cache key is (card_variant, location_key), so
+    cost scales with combinations, not shots.
 
     Deviation from the story's literal signature
     (``precompute_relights(scenes, asset_service)``): takes ``cast_cards``,
@@ -412,34 +495,35 @@ async def precompute_relights(
                 logger.warning("Skipping relight shot %r after metadata error: %s", shot, exc)
                 continue
             for card in cast_cards.get(shot_key, []):
-                card_key = None
+                variant = None
                 try:
                     if not isinstance(card, dict):
                         continue
-                    card_key = card.get("card_key")
                     card_path = card.get("path")
-                    if card_key not in STOCK_CAST_KEYS or not card_path:
+                    if not card_path:
                         continue
-                    _safe_cache_part(card_key)
+                    variant = card_variant(card)
                     _safe_cache_part(location_key)
                     if not _verified_card_asset(asset_service, card):
                         continue
                 except ValueError:
-                    logger.warning("Skipping unsafe relight cache pair: %r/%r", card_key, location_key)
+                    # `variant` is still None here — card_variant() raises before it binds — so
+                    # log the card itself or the failure is undiagnosable.
+                    logger.warning("Skipping unsafe relight cache pair: %r over %r", card, location_key)
                     continue
                 except Exception as exc:  # noqa: BLE001 — one bad card must not disable all relights
                     logger.warning("Skipping relight card %r after metadata error: %s", card, exc)
                     continue
-                pairs.setdefault((card_key, location_key), (Path(card_path), Path(bg_path)))
+                pairs.setdefault((variant, location_key), (Path(card_path), Path(bg_path)))
 
     relit_map: dict[tuple[str, str], Path] = {}
     stats = {"computed": 0, "failed": 0}
     sem = asyncio.Semaphore(_RELIGHT_CONCURRENCY)
 
     async def _resolve_pair(pair: tuple[str, str], paths: tuple[Path, Path]) -> None:
-        card_key, location_key = pair
+        variant, location_key = pair
         try:
-            cached = cache.get_or_compute(card_key, location_key, style_epoch)
+            cached = cache.get_or_compute(variant, location_key, style_epoch)
             if cached is not None:
                 relit_map[pair] = cached
                 stats["computed"] += 1
@@ -449,10 +533,10 @@ async def precompute_relights(
             if image_bytes is None or not has_alpha(image_bytes):
                 stats["failed"] += 1
                 return
-            relit_map[pair] = cache.store(card_key, location_key, style_epoch, image_bytes)
+            relit_map[pair] = cache.store(variant, location_key, style_epoch, image_bytes)
             stats["computed"] += 1
         except Exception as exc:  # noqa: BLE001 — AC:11: per-pair relight is non-fatal
-            logger.warning("IC-Light relight failed for %s/%s: %s", card_key, location_key, exc)
+            logger.warning("IC-Light relight failed for %s/%s: %s", variant, location_key, exc)
             stats["failed"] += 1
 
     if pairs:

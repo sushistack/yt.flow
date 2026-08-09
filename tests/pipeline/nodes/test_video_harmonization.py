@@ -296,7 +296,7 @@ async def test_tier3_relit_map_substitution(monkeypatch, tmp_path, assets):
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
 
     async def _resolver(scenes, cast_cards):
-        return {("STOCK-d-class", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+        return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
 
     monkeypatch.setattr(video, "_relight_resolver", _resolver)
     captured_paths = []
@@ -362,7 +362,7 @@ async def test_tier3_opaque_relit_sprite_uses_original(monkeypatch, tmp_path, as
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
 
     async def _resolver(scenes, cast_cards):
-        return {("STOCK-d-class", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+        return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
 
     monkeypatch.setattr(video, "_relight_resolver", _resolver)
     captured_paths = []
@@ -395,7 +395,7 @@ async def test_tier3_malformed_card_without_key_uses_original(monkeypatch, tmp_p
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
 
     async def _resolver(scenes, cast_cards):
-        return {("STOCK-d-class", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+        return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
 
     monkeypatch.setattr(video, "_relight_resolver", _resolver)
     captured_paths = []
@@ -562,3 +562,55 @@ async def test_tier2_two_cards_no_label_collision_real_ffmpeg(tmp_path):
     assert has_char is True
     assert seg_path.exists()
     assert seg_path.stat().st_size > 0
+
+
+@pytest.mark.asyncio
+async def test_tier3_two_poses_of_one_card_key_get_their_own_sprites(monkeypatch, tmp_path, assets):
+    """The pose-swap symptom, pinned at the substitution site (Story 10.1b).
+
+    `precompute_relights` keying by variant is only half the fix — video.py has to
+    look up by the same key. Keyed on bare `card_key`, both cards in this shot
+    would collapse onto whichever sprite the map happened to hold, which is the
+    defect: on run 8a9a288b, STOCK-d-class's `hint:` sprite (silhouette IoU 0.63
+    against `standing`) landed on all 12 of its `standing` shots.
+    """
+    source = Path(assets.character).read_bytes()
+    relit_standing = tmp_path / "relit_standing.png"
+    relit_hinted = tmp_path / "relit_hinted.png"
+    relit_standing.write_bytes(source)
+    relit_hinted.write_bytes(source)
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
+
+    async def _resolver(scenes, cast_cards):
+        return {
+            ("STOCK-d-class__standing__front", "corridor"): relit_standing,
+            ("STOCK-d-class__hint_a40ec9c170__front", "corridor"): relit_hinted,
+        }, {"computed": 2, "failed": 0}
+
+    monkeypatch.setattr(video, "_relight_resolver", _resolver)
+    captured = []
+
+    async def _fake(*args):
+        captured.extend(list(args))
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    standing_card = _card(assets.character, card_key="STOCK-d-class", position="left")
+    hinted_card = {**_card(assets.character, card_key="STOCK-d-class", position="right"),
+                   "pose": "hint:a40ec9c170"}
+    _inject_resolver(monkeypatch, {"1:S001": [standing_card, hinted_card]})
+
+    scene = _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member(card_key="STOCK-d-class", position="left"),
+              _cast_member(card_key="STOCK-d-class", position="right")],
+        location_key="corridor",
+    )
+    out = await video_node(_state([scene]))
+
+    assert out.get("error") is None
+    # each pose got ITS OWN sprite — not one sprite twice
+    assert str(relit_standing) in captured
+    assert str(relit_hinted) in captured
+    assert assets.character not in captured
