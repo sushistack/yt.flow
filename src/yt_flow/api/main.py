@@ -17,9 +17,10 @@ from yt_flow.pipeline.nodes.video import (
     inject_cast_resolver,
     inject_ground_resolver,
     inject_motion_renderer,
+    inject_recompose_resolver,
     inject_relight_resolver,
 )
-from yt_flow.services import compositing_service, parallax_service, run_service
+from yt_flow.services import compositing_service, parallax_service, run_service, recompose_service
 from yt_flow.services.character_service import CharacterService
 from yt_flow.services.location_service import LocationService
 
@@ -100,6 +101,14 @@ async def lifespan(app: FastAPI):
             return await run_service.precompute_relights_for_run(scenes, cast_cards, session, settings)
 
     inject_relight_resolver(_precompute_relights)
+
+    # Story 10.1c: regenerate each shot from plate + cards + a placement instruction.
+    # Gated off by default — the overlay path is untouched until the full-run viewing
+    # verdict lands. Injected unconditionally so flipping the flag needs no restart.
+    async def _recompose_shots(scenes: list, cast_cards: dict) -> tuple[dict, dict]:
+        return await recompose_service.recompose_run_shots(scenes, cast_cards, settings)
+
+    inject_recompose_resolver(_recompose_shots)
 
     # Story 8.16: inject depth-aware ground-plane placement into video_node.
     # Gated: off, video.py keeps its pre-8.16 frame-centre anchor byte-for-byte.

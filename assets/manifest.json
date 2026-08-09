@@ -453,7 +453,7 @@
       "created_at": "2026-08-02T03:37:27.361877+00:00",
       "path": "characters/STOCK-d-class/epoch_2/front_candidate_1.png",
       "pose": "standing",
-      "sha256": "41e71b552025c61f0e9dbdfce23660e1a35d04155a05573379280611e1df67c5",
+      "sha256": "bdc98174ed06f276f05a5de987d2eccff45eb54ac0570ba736c3831efcc8b8fb",
       "source": {
         "story": "8.15",
         "type": "comfyui_generation"
@@ -1607,6 +1607,110 @@
         "type": "authored_diagram"
       },
       "status": "approved"
+    },
+    "relit/SCP-049-2__hint_475c8a9231__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:32:54.666644+00:00",
+      "created_at": "2026-08-08T12:32:54.664678+00:00",
+      "path": "relit/SCP-049-2__hint_475c8a9231__front/containment-chamber/epoch_2.png",
+      "sha256": "3f8268a4c4101df2364d6be3b5d5a325188ed59b9083f439df44865af8e5d0ba",
+      "source": {
+        "card_variant": "SCP-049-2__hint_475c8a9231__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/SCP-049-2__standing__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:33:07.690776+00:00",
+      "created_at": "2026-08-08T12:33:07.688852+00:00",
+      "path": "relit/SCP-049-2__standing__front/containment-chamber/epoch_2.png",
+      "sha256": "b1a177c795ea7f1e07c67391572487b51014658f0eec50df5e8b3de81f08ae87",
+      "source": {
+        "card_variant": "SCP-049-2__standing__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/SCP-049__hint_7031f483b8__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:32:01.352289+00:00",
+      "created_at": "2026-08-08T12:32:01.345128+00:00",
+      "path": "relit/SCP-049__hint_7031f483b8__front/containment-chamber/epoch_2.png",
+      "sha256": "8b5a4cb0a9e8f3c0f4487f98d465dd46e977d6e3b4ac7aa0abbbd8571ab34602",
+      "source": {
+        "card_variant": "SCP-049__hint_7031f483b8__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/SCP-049__standing__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:32:27.517006+00:00",
+      "created_at": "2026-08-08T12:32:27.515135+00:00",
+      "path": "relit/SCP-049__standing__front/containment-chamber/epoch_2.png",
+      "sha256": "76bfc12113e2e8acf9b272793f3e72489800c458866496c00094427167888eee",
+      "source": {
+        "card_variant": "SCP-049__standing__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/SCP-049__standing__front/observation-room": {
+      "approved_at": "2026-08-08T12:32:14.489196+00:00",
+      "created_at": "2026-08-08T12:32:14.487403+00:00",
+      "path": "relit/SCP-049__standing__front/observation-room/epoch_2.png",
+      "sha256": "c8351e5e4c4780b6f57d2eeff12cd686b64a8cb06095cd6f6fcb48061e7b53b9",
+      "source": {
+        "card_variant": "SCP-049__standing__front",
+        "location_key": "observation-room",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/STOCK-d-class__hint_a40ec9c170__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:32:41.545858+00:00",
+      "created_at": "2026-08-08T12:32:41.543858+00:00",
+      "path": "relit/STOCK-d-class__hint_a40ec9c170__front/containment-chamber/epoch_2.png",
+      "sha256": "4edd2012a86b63f794875014db4401ade9801be35bb00aabed86821cab83a7a0",
+      "source": {
+        "card_variant": "STOCK-d-class__hint_a40ec9c170__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/STOCK-d-class__standing__front/containment-chamber": {
+      "approved_at": "2026-08-08T12:56:54.379139+00:00",
+      "created_at": "2026-08-08T12:56:54.377135+00:00",
+      "path": "relit/STOCK-d-class__standing__front/containment-chamber/epoch_2.png",
+      "sha256": "c3f5b06158872e76122a8fdecc4d8f1a50efa323a922196ae7c123dadd6a0736",
+      "source": {
+        "card_variant": "STOCK-d-class__standing__front",
+        "location_key": "containment-chamber",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
+    },
+    "relit/STOCK-d-class__standing__front/observation-room": {
+      "approved_at": "2026-08-08T12:57:07.446244+00:00",
+      "created_at": "2026-08-08T12:57:07.444046+00:00",
+      "path": "relit/STOCK-d-class__standing__front/observation-room/epoch_2.png",
+      "sha256": "2572fd8cc0466644a2d450eade44f52c2f5cd618ece526e273dc77909a419374",
+      "source": {
+        "card_variant": "STOCK-d-class__standing__front",
+        "location_key": "observation-room",
+        "type": "iclight_relight"
+      },
+      "status": "approved",
+      "style_epoch": 2
     },
     "server-room/a": {
       "approved_at": "2026-08-02T09:05:18.027278+00:00",

@@ -244,6 +244,11 @@ class Settings(BaseSettings):
     # until a plate-vs-prompt reconciliation story makes plate reuse per-shot and
     # prompt-aware. ON reproduces 8.17 behaviour exactly.
     stock_plate_substitution_enabled: bool = False
+    # Story 10.1c — regenerate each shot from plate + cards + a placement instruction
+    # instead of compositing cards onto the plate. Off by default until the full-run
+    # viewing verdict lands; the overlay path stays intact behind it.
+    shot_recompose_enabled: bool = False
+    shot_recompose_workflow_path: str = "data/workflows/comfyui_shot_recompose_qwen_api.json"
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
     # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,

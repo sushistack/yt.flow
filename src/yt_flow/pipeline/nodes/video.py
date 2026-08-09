@@ -76,6 +76,33 @@ def inject_relight_resolver(fn: Any) -> None:
     _relight_resolver = fn
 
 
+# ── Shot recompose injection (Story 10.1c) ────────────────────────────────────
+# Same AD-1-avoidance pattern as the resolvers above. This one is different in kind:
+# it does not annotate the cards, it REPLACES the shot's plate with a frame that already
+# contains the characters, and then removes those cards so nothing is composited on top.
+_recompose_resolver: Any = None
+
+
+def inject_recompose_resolver(fn: Any) -> None:
+    """Inject the Story 10.1c shot-recompose callable.
+
+    ``fn`` signature:
+    ``async fn(scenes: list, cast_cards: dict) -> tuple[dict, dict]``
+
+    The callable regenerates each cast-bearing shot from its plate, its cards and a
+    natural-language placement instruction, writes the result beside the run's images, and
+    **rewrites that shot's ``image_path`` in ``scenes``**. It returns ``(cast_cards, stats)``
+    where the returned mapping has the recomposed shots' entries **removed** — that is how
+    the composition stage learns to take the background-only path for them. A shot the
+    callable could not recompose keeps its cards and renders through the old overlay, so a
+    partial failure degrades per shot rather than per run.
+
+    ``stats`` carries ``recomposed``/``skipped``/``failed`` counts for tracing.
+    """
+    global _recompose_resolver
+    _recompose_resolver = fn
+
+
 # ── Depth-aware ground plane injection (Story 8.16) ───────────────────────────
 # Same AD-1-avoidance pattern as the two resolvers above: the depth map lives in
 # services/compositing_service.py (ComfyUI + PIL/numpy), never imported here.
@@ -1358,6 +1385,130 @@ def _apply_placement(card: dict, placement: object) -> dict:
     return {**card, **clean}
 
 
+_FUSION_STILL_SPEC = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=1.0)
+"""Motionless Ken Burns: zoom 1.0→1.0 on a non-``out-center`` direction.
+
+``ground_y_expr`` then reduces to ``main_h*ground_y - overlay_h`` — the static
+bottom anchor — while ``_zoompan_filter`` still emits its exact framing chain
+(``scale=1728:-2 → crop=1728:972 → scale=8000 → zoompan``). So the still is framed
+identically to the moving render's first frame, and re-animating the fused still
+afterwards puts the plate through that chain once more with no change of framing.
+"""
+
+
+async def render_composite_still(
+    shot: ShotData,
+    cards: list[dict],
+    out_path: Path,
+    *,
+    mood: str | None,
+    composite_harmonization_tier: int,
+    background_override: str | None = None,
+) -> Path | None:
+    """Render one shot's plate+cards composite as a single motionless PNG.
+
+    This is the input to Story 10.1b-stage-2 fusion. It drives the **existing**
+    ``_build_card_chain``, so every placement rule — card scale, x anchor,
+    bottom-anchored ``ground_y``, the ``_GROUND_Y_MAX`` clamp, edge feather,
+    occlusion alpha multiply, mood tint, contact shadow, far→near z-order — comes
+    from the one implementation the moving render uses. Nothing is re-derived here.
+
+    Motion is switched off through the seams the chain already exposes rather than
+    by bypassing it: a zoom-1.0 spec (static ground expression and no plate move),
+    ``trajectory=None`` (no 11.5 layer terms), ``parallax_enabled=False`` (no card
+    zoom, no 7.3 macro pan), and per-card ``motion_style="hold"`` /
+    ``movement_mode="anchored"`` (no idle sine, no 8.9 entrance offsets). Those
+    terms are the ones that are non-zero at t=0, so leaving any of them on would
+    bake a fraction of a frame's animation into the still.
+    """
+    image_path = shot.get("image_path")
+    if (not image_path and not background_override) or not cards:
+        return None
+    duration = 1.0
+    bg_input = (
+        ["-f", "lavfi", "-i", f"color={background_override}:s={COMP_W}x{COMP_H}:r={FPS}"]
+        if background_override
+        else ["-loop", "1", "-framerate", str(FPS), "-i", str(image_path)]
+    )
+    motion = MotionSource(
+        bg_input=bg_input,
+        bg_chain=_zoompan_filter(_FUSION_STILL_SPEC, duration),
+        spec=_FUSION_STILL_SPEC,
+        camera_shake="",
+        parallax_enabled=False,
+        trajectory=None,
+        renderer="fusion-still",
+    )
+    frozen = [{**c, "motion_style": "hold", "movement_mode": "anchored"} for c in cards]
+    ordered = sorted(frozen, key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
+    inputs = list(motion.bg_input)
+    for card in ordered:
+        inputs += ["-loop", "1", "-framerate", str(FPS), "-i", str(card["path"])]
+    chain_parts, prev_label = _build_card_chain(
+        motion, ordered, duration, mood, composite_harmonization_tier=composite_harmonization_tier,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    code, err = await _run_ffmpeg(
+        "-y", *inputs,
+        "-filter_complex", ";".join(chain_parts),
+        "-map", f"[{prev_label}]", "-frames:v", "1", "-update", "1",
+        str(out_path),
+    )
+    if code != 0 or not out_path.exists():
+        logger.warning("Composite still failed for shot %s: %s", shot.get("shot_id"), err[-400:])
+        return None
+    return out_path
+
+
+async def render_card_coverage_mask(
+    shot: ShotData,
+    cards: list[dict],
+    out_path: Path,
+    *,
+    mood: str | None,
+) -> Path | None:
+    """White where the cards cover the frame, black where the plate shows through.
+
+    The fusion pass needs to know which pixels are *card* so it can protect them
+    while it re-draws the seam. That region could be computed from ``ground_y`` ×
+    position × depth × sprite aspect — and must not be, because it would be the
+    third copy of placement arithmetic that already lives in ``_build_card_chain``.
+
+    Instead it is *measured*: render the same chain twice, once over solid black
+    and once over solid white. A pixel the card covers opaquely is identical in
+    both; a pixel showing plate differs by the full 255. So ``255 - |black-white|``
+    is the coverage, and a feathered edge at alpha ``a`` lands on ``255a`` for free
+    — exactly the soft mask the fusion wants, with no threshold to tune.
+
+    Harmonization is forced to tier 0 here: the contact shadow is drawn onto the
+    *background*, not the card, so including it would mark the shadow as protected
+    when re-drawing it is precisely what fuses the contact into the plate.
+    """
+    if not cards:
+        return None
+    black = out_path.with_name(f"{out_path.stem}.k.png")
+    white = out_path.with_name(f"{out_path.stem}.w.png")
+    for colour, path in (("black", black), ("white", white)):
+        if await render_composite_still(
+            shot, cards, path, mood=mood, composite_harmonization_tier=0, background_override=colour,
+        ) is None:
+            return None
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    code, err = await _run_ffmpeg(
+        "-y", "-i", str(black), "-i", str(white),
+        "-filter_complex",
+        "[0:v]format=gray[k];[1:v]format=gray[w];"
+        "[k][w]blend=all_mode=difference,negate,format=gray[m]",
+        "-map", "[m]", "-frames:v", "1", "-update", "1", str(out_path),
+    )
+    black.unlink(missing_ok=True)
+    white.unlink(missing_ok=True)
+    if code != 0 or not out_path.exists():
+        logger.warning("Card coverage mask failed for shot %s: %s", shot.get("shot_id"), err[-400:])
+        return None
+    return out_path
+
+
 def _build_card_chain(
     motion: MotionSource,
     ordered_cards: list[dict],
@@ -2259,10 +2410,32 @@ async def video_node(state: PipelineState) -> dict:
             except Exception as exc:  # noqa: BLE001 — AD-10: degrades to the frame-centre anchor
                 logger.warning("Depth-aware placement failed, keeping centre anchor: %s", exc)
 
+        # ── Story 10.1c: shot recompose ───────────────────────────────────
+        # Regenerate each shot from its plate + cards + a placement instruction, then
+        # composite NOTHING: the returned frame already contains the characters, so the
+        # shot renders through the background-only path and the motion stage animates one
+        # image. This replaces the overlay, so everything below that exists to make a
+        # pasted card look attached — ground placement, occlusion, contact shadow,
+        # harmonization tiers, 11.5 layer parallax — is bypassed for recomposed shots by
+        # construction, not by flag checks.
+        # getattr, not attribute access: Settings stubs in tests are SimpleNamespaces built
+        # per test, so a hard reference makes every unrelated video test fail on a field they
+        # never opted into. Absent == off, which is also the production default.
+        if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is not None and cast_cards:
+            try:
+                cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
+                logger.info("Shot recompose: %s", recompose_stats)
+            except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
+                logger.warning("Shot recompose failed, keeping the overlay path: %s", exc)
+
         # ── Story 8.7 Tier 3: IC-Light relight precomputation ─────────────
         relit_map: dict[tuple[str, str], Path] = {}
         relight_stats = {"computed": 0, "failed": 0}
+        card_variant = None
         if s.composite_harmonization_tier >= 3 and _relight_resolver is not None:
+            # Lazy, like the tier 1/2 builders below — this module stays
+            # import-safe at tier 0.
+            from yt_flow.pipeline.nodes.composite_harmonization import card_variant
             try:
                 relit_map, relight_stats = await _relight_resolver(scenes, cast_cards)
             except Exception as exc:  # noqa: BLE001 — AD-10/AC:11: IC-Light never fails the run
@@ -2295,15 +2468,23 @@ async def video_node(state: PipelineState) -> dict:
                     card for card in cast_cards.get(shot_key, [])
                     if isinstance(card, dict) and card.get("path")
                 ]
-                # Tier 3 (Story 8.7 AC:10): substitute the re-lit sprite for a STOCK
-                # (card, location) pair before composition — never inside
+                # Tier 3 (Story 8.7 AC:10): substitute the re-lit sprite for a
+                # (card variant, location) pair before composition — never inside
                 # _compose_scene, so the composition loop makes no ComfyUI calls.
                 # Each shot substitutes using its OWN location_key (Story 8.11).
+                # The key is the card *variant* (key+pose+angle), not card_key:
+                # keying on card_key alone handed a shot whichever pose was
+                # precomputed first and silently swapped the pose (Story 10.1b).
                 location_key = sh.get("location_key")
                 if relit_map and location_key:
                     relit_shot_cards = []
                     for card in shot_cards:
-                        relit_path = relit_map.get((card.get("card_key"), location_key))
+                        try:
+                            variant = card_variant(card)
+                        except (ValueError, TypeError, AttributeError):
+                            relit_shot_cards.append(card)
+                            continue
+                        relit_path = relit_map.get((variant, location_key))
                         if relit_path is None:
                             relit_shot_cards.append(card)
                             continue
