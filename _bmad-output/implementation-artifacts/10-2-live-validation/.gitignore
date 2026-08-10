@@ -1,0 +1,2 @@
+# scratch workspace the gate run writes into (frames are copied out as gate_*.png)
+gate_workspace/

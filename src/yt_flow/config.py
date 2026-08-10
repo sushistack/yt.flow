@@ -3,6 +3,27 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Story 10.2 — hard ceiling on the background-person guard's regeneration ladder.
+# It bounds the config field below AND fixes the ladder's length: image_node derives
+# the same number of candidate seeds regardless of the run's current knob value, so
+# lowering the knob (or losing the vision key) never invalidates a shot that was
+# already accepted on a bumped seed. ponytail: a module constant, not a second knob.
+# RESUME CONTRACT: this number may only GROW, never shrink. It is the length of the
+# seed ladder `_existing_complete_shot` accepts; shrinking it orphans every shot a
+# previous run accepted on a now-missing rung, which regenerates them forever.
+BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS = 4
+
+# Story 10.2 — after this many consecutive undecidable verdicts (no key, HTTP error,
+# unparseable reply) the guard switches itself off for the rest of the run: a dead
+# detector would otherwise spend a 120s timeout on every remaining shot.
+BACKGROUND_PERSON_GUARD_BREAKER_STREAK = 3
+
+# Story 10.2 — same breaker, total rather than consecutive: an intermittently failing
+# detector (fail, ok, fail, ok…) resets the streak every other call and never trips it,
+# so the 120s-per-call cost the breaker exists to bound comes back. Set above the
+# streak so a hard-dead detector still trips on the streak first.
+BACKGROUND_PERSON_GUARD_BREAKER_TOTAL = 6
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -244,6 +265,15 @@ class Settings(BaseSettings):
     # until a plate-vs-prompt reconciliation story makes plate reuse per-shot and
     # prompt-aware. ON reproduces 8.17 behaviour exactly.
     stock_plate_substitution_enabled: bool = False
+    # Story 10.2 — extra renders image_node may spend when Qwen-VL says the generated
+    # background already contains a person (a card composited onto it would make two
+    # figures). 0 (default) disables the guard entirely; enable with
+    # YTFLOW_BACKGROUND_PERSON_GUARD_ATTEMPTS=2. Off by default like every other new
+    # path in this epic (stock_plate_substitution_enabled, shot_recompose_enabled):
+    # each rung costs a full ~17s render plus one vision call. The live evidence for
+    # turning it on is in `_bmad-output/implementation-artifacts/10-2-live-validation/`
+    # — its one hit needed attempt 2, so a budget of 1 would have kept a populated frame.
+    background_person_guard_attempts: int = Field(0, ge=0, le=BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS)
     # Story 10.1c — regenerate each shot from plate + cards + a placement instruction
     # instead of compositing cards onto the plate. Off by default until the full-run
     # viewing verdict lands; the overlay path stays intact behind it.

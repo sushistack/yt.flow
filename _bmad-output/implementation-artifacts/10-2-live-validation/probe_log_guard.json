@@ -1,0 +1,148 @@
+{
+  "generated_at": "2026-08-09T23:10:06",
+  "arm": "guard",
+  "source_run": "c6be1954-da0f-4dee-ab07-a2b4f3bcf21e",
+  "checkpoint_workflow": "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json",
+  "vision_model": "qwen-vl-plus",
+  "corpus_size": 155,
+  "person_bearing_prompts_in_corpus": 17,
+  "probe_offset": 0,
+  "probe_limit": 40,
+  "guard_attempts": 2,
+  "probes": [
+    {
+      "index": 0,
+      "shot_id": "S00100",
+      "scene_num": 1,
+      "seed": 3799175823,
+      "has_person": false,
+      "sec": 20.5
+    },
+    {
+      "index": 1,
+      "shot_id": "S00101",
+      "scene_num": 1,
+      "seed": 2939948592,
+      "has_person": false,
+      "sec": 16.4
+    },
+    {
+      "index": 2,
+      "shot_id": "S00102",
+      "scene_num": 1,
+      "seed": 3790463317,
+      "has_person": false,
+      "sec": 16.4
+    },
+    {
+      "index": 3,
+      "shot_id": "S00103",
+      "scene_num": 1,
+      "seed": 3062087091,
+      "has_person": false,
+      "sec": 16.4
+    },
+    {
+      "index": 4,
+      "shot_id": "S00104",
+      "scene_num": 1,
+      "seed": 673840615,
+      "has_person": false,
+      "sec": 16.6
+    },
+    {
+      "index": 5,
+      "shot_id": "S00105",
+      "scene_num": 1,
+      "seed": 3972208232,
+      "has_person": false,
+      "sec": 16.7
+    },
+    {
+      "index": 6,
+      "shot_id": "S00106",
+      "scene_num": 1,
+      "seed": 482038045,
+      "has_person": false,
+      "sec": 16.7
+    },
+    {
+      "index": 7,
+      "shot_id": "S00107",
+      "scene_num": 1,
+      "seed": 1060933073,
+      "has_person": false,
+      "sec": 16.5
+    },
+    {
+      "index": 8,
+      "shot_id": "S00108",
+      "scene_num": 1,
+      "seed": 4289363638,
+      "has_person": false,
+      "sec": 16.5
+    },
+    {
+      "index": 9,
+      "shot_id": "S00109",
+      "scene_num": 1,
+      "seed": 1289088785,
+      "has_person": false,
+      "sec": 16.5
+    },
+    {
+      "index": 10,
+      "shot_id": "S00110",
+      "scene_num": 1,
+      "seed": 2686978088,
+      "has_person": false,
+      "sec": 16.5
+    },
+    {
+      "index": 11,
+      "shot_id": "S00111",
+      "scene_num": 1,
+      "seed": 610800791,
+      "has_person": false,
+      "sec": 16.6
+    },
+    {
+      "index": 12,
+      "shot_id": "S00112",
+      "scene_num": 1,
+      "seed": 3385758850,
+      "has_person": false,
+      "sec": 20.8
+    },
+    {
+      "index": 13,
+      "shot_id": "S00113",
+      "scene_num": 1,
+      "seed": 1072695668,
+      "has_person": false,
+      "sec": 16.6
+    },
+    {
+      "index": 14,
+      "shot_id": "S00114",
+      "scene_num": 1,
+      "seed": 3285965459,
+      "has_person": true,
+      "sec": 16.6
+    }
+  ],
+  "probe_set_size": 15,
+  "guard": [
+    {
+      "attempt": 1,
+      "seed": 1753844506,
+      "has_person": true
+    },
+    {
+      "attempt": 2,
+      "seed": 3292677910,
+      "has_person": false
+    }
+  ],
+  "result": "caught after 15 probes, cleared on guard attempt 2"
+}

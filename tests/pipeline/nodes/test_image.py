@@ -13,6 +13,8 @@ module rather than the stub. [mirrors test_scenario.py]
 """
 
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -32,8 +34,13 @@ class FakeSettings:
         self, *, mock, workflow_path,
         health_poll_every_n_shots=20, crash_recovery_poll_sec=15.0, crash_recovery_timeout_sec=300.0,
         stock_plate_substitution=False,  # mirrors the real Settings default
+        # Story 10.2: guard OFF by default here so pre-10.2 tests keep asserting
+        # exactly one render per shot; the guard tests below opt in explicitly.
+        guard_attempts=0, vision_api_key="",
     ):
         self.stock_plate_substitution_enabled = stock_plate_substitution
+        self.background_person_guard_attempts = guard_attempts
+        self.character_vision_api_key = vision_api_key
         self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
         self.comfyui_url = "http://comfy.test:8188"
         self.comfyui_workflow_path = workflow_path
@@ -1062,3 +1069,464 @@ async def test_one_resolve_per_distinct_image_path(monkeypatch, tmp_path):
     state = _state()
     await img.image_node(state)
     assert len(calls) == len(set(calls))
+
+
+# ── Background-person guard (Story 10.2) ────────────────────────────────────
+#
+# The guard is the only enforcement that looks at pixels, and its whole design
+# constraint is that it may degrade a shot but never a run. Every test below is
+# written against that: a detector that says nothing, breaks, or hates the shot
+# still leaves error=None and an image on disk.
+
+GUARD_WF = {**GOOD_WF, "3": {"class_type": "KSampler", "inputs": {"seed": 0}}}
+
+
+def _guard_settings(tmp_path, **over):
+    over.setdefault("guard_attempts", 2)
+    over.setdefault("vision_api_key", "vision-key")
+    return FakeSettings(mock=False, workflow_path=_wf_file(tmp_path, GUARD_WF), **over)
+
+
+def _one_shot_state(run_id="run-img-1"):
+    state = _state(run_id=run_id)
+    state["scenes"] = [{**state["scenes"][0], "shots": state["scenes"][0]["shots"][:1]}]
+    return state
+
+
+def _fake_detector(monkeypatch, verdicts, *, calls=None):
+    """Detector returning `verdicts` in order, then its last value forever."""
+    seq = list(verdicts)
+
+    async def detector(image_bytes, settings):
+        if calls is not None:
+            calls.append(image_bytes)
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+    monkeypatch.setattr(img.vision_check, "background_has_person", detector)
+
+
+def _counting_fetch(monkeypatch, seeds=None):
+    """submit_and_fetch stub recording the KSampler seed of every submission."""
+    seeds = [] if seeds is None else seeds
+
+    async def fake_fetch(url, workflow):
+        seeds.append(workflow["3"]["inputs"]["seed"])
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+    return seeds
+
+
+def _read_sidecar(tmp_path, run_id="run-img-1", base="scene_001_S001"):
+    return json.loads(
+        (tmp_path / "workspace" / run_id / "images" / f"{base}_done.json").read_text(encoding="utf-8"))
+
+
+def test_bg_negative_suffix_is_frozen():
+    """Story 10.2 closes WITHOUT growing any negative prompt — negative
+    accumulation has backfired three times (gotcha_negative-prompt-overstuffing).
+    Pinning the literal makes that a test rather than a claim."""
+    assert img.BG_NEGATIVE_SUFFIX == ", person, people, human, character, creature, figure, silhouette"
+
+
+def test_attempt_zero_seed_is_byte_identical_to_pre_10_2():
+    """Existing workspaces must keep resuming: rung 0 hashes the old string."""
+    import hashlib
+    expected = int(hashlib.sha256(b"run-1:1:S001").hexdigest(), 16) % 2**32
+    assert img._shot_seed("run-1", 1, "S001") == expected
+    assert img._shot_seed("run-1", 1, "S001", 0) == expected
+    assert img._shot_seed("run-1", 1, "S001", 1) != expected
+
+
+def test_seed_ladder_length_is_fixed_and_starts_at_attempt_zero():
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS as MAX
+    ladder = img._seed_ladder("run-1", 1, "S001")
+    assert len(ladder) == MAX + 1
+    assert ladder[0] == img._shot_seed("run-1", 1, "S001")
+    assert len(set(ladder)) == len(ladder)
+
+
+async def test_guard_accepts_clean_render_on_attempt_zero(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [False])
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert seeds == [img._shot_seed("run-img-1", 1, "S001")]  # one render, rung 0
+    assert _read_sidecar(tmp_path)["seed"] == seeds[0]
+
+
+async def test_guard_regenerates_then_accepts_and_pins_the_accepted_seed(monkeypatch, tmp_path):
+    """The accepted rung — not rung 0 — is what the sidecar records, otherwise
+    every resume regenerates the shot forever."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True, False])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert seeds == [img._shot_seed("run-img-1", 1, "S001", a) for a in (0, 1)]
+    assert _read_sidecar(tmp_path)["seed"] == img._shot_seed("run-img-1", 1, "S001", 1)
+    assert captured["guard_counts"] == {
+        "regenerated": 1, "exhausted": 0, "unavailable": 0, "unscreened": 0}
+
+
+async def test_guard_exhausted_keeps_the_last_render_and_warns(monkeypatch, tmp_path, caplog):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_one_shot_state())
+
+    assert out.get("error") is None
+    assert len(seeds) == 3  # attempts=2 → rungs 0,1,2
+    shot = out["scenes"][0]["shots"][0]
+    assert (tmp_path / shot["image_path"]).is_file()
+    assert _read_sidecar(tmp_path)["seed"] == seeds[-1]  # the kept render's rung
+    assert captured["guard_counts"]["exhausted"] == 1
+    assert "still populated after 3 attempt(s)" in caplog.text
+    assert "NOT verified unpopulated" in caplog.text  # run-level summary
+
+
+async def test_guard_budget_bounds_the_number_of_renders(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path, guard_attempts=1))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert len(seeds) == 2
+
+
+async def test_undecidable_verdict_accepts_the_frame_and_is_counted(monkeypatch, tmp_path, caplog):
+    """None is 'not checked', never 'clean' — it accepts, but it must show up."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [None])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_one_shot_state())
+
+    assert out.get("error") is None
+    assert len(seeds) == 1
+    assert captured["guard_counts"]["unavailable"] == 1
+    assert "NOT verified unpopulated" in caplog.text
+
+
+async def test_a_raising_detector_cannot_fail_the_image_stage(monkeypatch, tmp_path):
+    """AD-10 + this story's Boundaries: no exception from the detector may reach
+    image_node's error boundary, and the image is still produced."""
+    async def boom(image_bytes, settings):
+        raise RuntimeError("detector exploded")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    monkeypatch.setattr(img.vision_check, "background_has_person", boom)
+
+    out = await img.image_node(_one_shot_state())
+    assert out["error"] is None
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["image_path"] and (tmp_path / shot["image_path"]).is_file()
+
+
+async def test_guard_disables_itself_after_consecutive_undecidable_verdicts(monkeypatch, tmp_path, caplog):
+    """A dead detector costs a 120s timeout per call; the breaker stops calling it."""
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_STREAK as STREAK
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    calls: list = []
+    _fake_detector(monkeypatch, [None], calls=calls)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_state(run_id="run-breaker"))  # 3 shots
+
+    assert out.get("error") is None
+    assert len(calls) == STREAK  # 3 shots, 3 calls, then off — the 4th never happens
+    assert captured["guard_counts"]["unavailable"] == STREAK
+    assert "disabled for the rest of the run" in caplog.text
+
+
+async def test_missing_vision_key_disables_the_guard_with_one_warning(monkeypatch, tmp_path, caplog):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path, vision_api_key=""))
+    seeds = _counting_fetch(monkeypatch)
+
+    async def boom(image_bytes, settings):
+        raise AssertionError("detector must not be called without a key")
+    monkeypatch.setattr(img.vision_check, "background_has_person", boom)
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_state())  # 3 shots
+
+    assert out.get("error") is None
+    assert len(seeds) == 3  # one render per shot, exactly as before this story
+    assert caplog.text.count("YTFLOW_CHARACTER_VISION_API_KEY is unset") == 1
+
+
+async def test_guard_knob_zero_never_calls_the_detector(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path, guard_attempts=0))
+    seeds = _counting_fetch(monkeypatch)
+
+    async def boom(image_bytes, settings):
+        raise AssertionError("detector must not be called when the guard is off")
+    monkeypatch.setattr(img.vision_check, "background_has_person", boom)
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert len(seeds) == 1
+
+
+async def test_guard_not_invoked_in_mock_mode(monkeypatch, tmp_path):
+    _mock_settings(monkeypatch, tmp_path, guard_attempts=2, vision_api_key="vision-key")
+
+    async def boom(image_bytes, settings):
+        raise AssertionError("mock mode renders nothing to screen")
+    monkeypatch.setattr(img.vision_check, "background_has_person", boom)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+
+
+async def test_guard_not_invoked_on_the_stock_plate_path(monkeypatch, tmp_path):
+    """Plates are screened for has_person at seeding; re-screening them would
+    burn a vision call on an already-approved asset."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, stock_plate_substitution=True))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    async def boom(image_bytes, settings):
+        raise AssertionError("the guard must not screen a stock plate")
+    monkeypatch.setattr(img.vision_check, "background_has_person", boom)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    assert out["scenes"][0]["shots"][0]["image_path"].endswith("scene_001_S001.png")
+
+
+async def test_resume_accepts_a_bumped_seed_after_the_knob_is_lowered_to_zero(monkeypatch, tmp_path):
+    """The ladder's length is the config MAXIMUM, not the run's current knob:
+    turning the guard off (or losing the key) must not invalidate a shot a prior
+    run accepted on a bumped rung and regenerate it forever."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, guard_attempts=0, vision_api_key=""))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_shot(d, "scene_001_S001", "a dark room", "blurry",
+                         seed=img._shot_seed("run-img-1", 1, "S001", 2))
+    seeds = _counting_fetch(monkeypatch)
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert seeds == []  # skipped, not regenerated
+
+
+# ── Guard accounting / cadence / breaker fixes (review pass 2) ──────────────
+
+
+async def test_regenerated_counts_only_rungs_a_render_actually_follows(monkeypatch, tmp_path):
+    """attempts=2 + an always-populated detector is 3 renders = 2 regenerations.
+    Counting the last rung too would report one more regeneration than happened."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert len(seeds) == 3
+    assert captured["guard_counts"]["regenerated"] == len(seeds) - 1 == 2
+    assert captured["guard_counts"]["exhausted"] == 1
+
+
+async def test_unscreened_counts_every_shot_the_guard_never_looked_at(monkeypatch, tmp_path, caplog):
+    """AC(d): a dead guard must not read as a clean pass. With the knob at 0 the
+    trace must say the backgrounds were never screened, not stay silent."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path, guard_attempts=0))
+    _counting_fetch(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_state())  # 3 shots
+
+    assert out.get("error") is None
+    assert captured["guard_counts"]["unscreened"] == 3
+    assert "3 shot(s) never screened" in caplog.text
+    assert "NOT verified unpopulated" in caplog.text
+
+
+async def test_unscreened_counts_the_shots_after_the_breaker_trips(monkeypatch, tmp_path):
+    """The breaker leaves the rest of the run unverified; those shots are the ones
+    the 'unavailable' count cannot see, because the detector is no longer called."""
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_STREAK as STREAK
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    calls: list = []
+    _fake_detector(monkeypatch, [None], calls=calls)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_many_shots_state(6))
+    assert out.get("error") is None
+    assert len(calls) == STREAK
+    # the shot that tripped it + the 3 that followed it were never screened
+    assert captured["guard_counts"]["unscreened"] == 6 - STREAK + 1
+    assert captured["guard_counts"]["unavailable"] == STREAK
+
+
+async def test_error_path_still_reports_guard_and_depth_counts(monkeypatch, tmp_path):
+    """A stage that fails mid-run must not lose its guard accounting — otherwise
+    the only trace of an exhausted ladder disappears with the exception."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _fake_detector(monkeypatch, [True])
+    fetches = 0
+
+    async def fetch_then_die(url, workflow):
+        nonlocal fetches
+        fetches += 1
+        if fetches > 3:  # shot 1 exhausted its 3 rungs; shot 2 explodes
+            raise RuntimeError("comfy went away")
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fetch_then_die)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_state())
+    assert out["error"] and "stage=image" in out["error"]
+    assert captured["guard_counts"] == {
+        "regenerated": 2, "exhausted": 1, "unavailable": 0, "unscreened": 0}
+    assert captured["depth_counts"] == {"hit": 0, "miss": 0, "unavailable": 0}
+
+
+async def test_exhausted_shot_is_recorded_in_the_sidecar_and_refires_on_resume(monkeypatch, tmp_path):
+    """A known-populated frame kept by the guard must not resume as a clean pass."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+
+    assert (await img.image_node(_one_shot_state())).get("error") is None
+    assert _read_sidecar(tmp_path)["guard_exhausted"] is True
+
+    # Second pass over the same workspace: the shot is skipped, and the run-level
+    # warning still fires because the sidecar remembers the verdict.
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+    seeds = _counting_fetch(monkeypatch)
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert seeds == []  # resumed, not regenerated
+    assert captured["guard_counts"]["exhausted"] == 1
+
+
+async def test_guard_exhausted_key_does_not_participate_in_the_resume_match(monkeypatch, tmp_path):
+    """Sidecars written before this key existed must keep resuming."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_shot(d, "scene_001_S001", "a dark room", "blurry")  # no guard_exhausted key
+    assert "guard_exhausted" not in json.loads((d / "scene_001_S001_done.json").read_text())
+    seeds = _counting_fetch(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_one_shot_state())
+    assert out.get("error") is None
+    assert seeds == []
+    assert captured["guard_counts"]["exhausted"] == 0
+
+
+async def test_health_check_cadence_holds_when_the_guard_retries(monkeypatch, tmp_path):
+    """A shot now fires 1..N submissions, so `request_count % N == 0` evaluated once
+    per shot steps over its multiples: 3 shots × 3 renders with N=4 crossed 4 and 8
+    but fired one check. The bound is 'requests since the last check', not a modulo."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, health_poll_every_n_shots=4))
+    _fake_detector(monkeypatch, [True])  # every shot exhausts → 3 submissions per shot
+    submissions: list[int] = []
+    checks: list[int] = []
+
+    async def count_health(url):
+        checks.append(len(submissions))
+    monkeypatch.setattr(img.comfyui_client, "check_health", count_health)
+
+    async def fake_fetch(url, workflow):
+        submissions.append(workflow["3"]["inputs"]["seed"])
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())  # 3 shots × 3 rungs = 9 submissions
+    assert out.get("error") is None
+    assert len(submissions) == 9
+    assert checks == [0, 6]  # initial, then the first shot boundary past 4 requests
+    # the real invariant: never more than N submissions between two health checks
+    boundaries = [*checks, len(submissions)]
+    assert max(b - a for a, b in zip(boundaries, boundaries[1:])) <= 4 + 3
+
+
+def test_importing_the_image_node_does_not_pull_in_the_db_layer():
+    """vision_check duplicates the DashScope URL instead of importing it from
+    character_service precisely so this stays true: pipeline/ must not reach the
+    DB layer (AD-1). A fresh interpreter is the only honest way to ask."""
+    probe = (
+        "import importlib, sys;"
+        "importlib.import_module('yt_flow.pipeline.nodes.image');"
+        "print([m for m in sys.modules if m == 'sqlmodel' or m.startswith('yt_flow.db')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", out.stdout
+
+
+async def test_breaker_trips_on_total_undecidables_not_only_consecutive(monkeypatch, tmp_path, caplog):
+    """An intermittent detector (fail, ok, fail, ok…) resets the streak every other
+    call and would never trip a consecutive-only breaker — the exact 120s-per-shot
+    cost the breaker exists to bound."""
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_TOTAL as TOTAL
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    calls: list = []
+
+    async def alternating(image_bytes, settings):
+        calls.append(image_bytes)
+        return None if len(calls) % 2 else False
+    monkeypatch.setattr(img.vision_check, "background_has_person", alternating)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_many_shots_state(20))
+
+    assert out.get("error") is None
+    assert captured["guard_counts"]["unavailable"] == TOTAL
+    assert len(calls) == 2 * TOTAL - 1  # the TOTAL-th undecidable is the last call
+    assert "total undecidable verdicts" in caplog.text

@@ -1,0 +1,34 @@
+{
+  "generated_at": "2026-08-10T00:00:07",
+  "arm": "confirm",
+  "source_run": "c6be1954-da0f-4dee-ab07-a2b4f3bcf21e",
+  "checkpoint_workflow": "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json",
+  "vision_model": "qwen-vl-plus",
+  "corpus_size": 155,
+  "probe_offset": 0,
+  "guard_attempts": 2,
+  "probes": [
+    {
+      "index": 0,
+      "shot_id": "S00114",
+      "scene_num": 1,
+      "seed": 3285965459,
+      "has_person": true,
+      "sec": 16.7
+    }
+  ],
+  "probe_set_size": 1,
+  "guard": [
+    {
+      "attempt": 1,
+      "seed": 1753844506,
+      "has_person": true
+    },
+    {
+      "attempt": 2,
+      "seed": 3292677910,
+      "has_person": false
+    }
+  ],
+  "result": "caught after 1 probe(s), cleared on guard attempt 2"
+}

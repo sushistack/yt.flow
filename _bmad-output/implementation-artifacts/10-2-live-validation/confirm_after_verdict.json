@@ -1,0 +1,9 @@
+{
+  "file": "confirm_after.png",
+  "shot_id": "S00114",
+  "seed": 3292677910,
+  "attempt": 2,
+  "has_person": false,
+  "change": "same prompt, guard-derived retry seed _shot_seed(run,scene,shot,attempt)",
+  "image_prompt": "extreme close-up with shallow depth of field, the background is a bright white wall with a shadow that flickers, a single droplet of water on the camera lens throwing a distorted blur, the floor is wet with reflection, air particles dancing in the light, overwhelming presence, impossible intimacy"
+}

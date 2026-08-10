@@ -1,0 +1,129 @@
+{
+  "generated_at": "2026-08-10T00:31:16",
+  "arm": "gate — real image_node",
+  "source_run": "c6be1954-da0f-4dee-ab07-a2b4f3bcf21e",
+  "checkpoint_workflow": "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json",
+  "vision_model": "qwen-vl-plus",
+  "guard_attempts": 2,
+  "shot_set": [
+    {
+      "scene_num": 1,
+      "shot_id": "S00114",
+      "why": "recorded hit (prompt from before_verdict.json)"
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "why": "finding 5.12 handoff shot, never run through the node"
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "S00305",
+      "why": "depicted human: medical diagram of a human body"
+    },
+    {
+      "scene_num": 4,
+      "shot_id": "S00403",
+      "why": "finding 5.12 handoff shot, never run through the node"
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "S00713",
+      "why": "depicted human: a human skull on a shelf"
+    }
+  ],
+  "renders": [
+    {
+      "shot_id": "S00114",
+      "rung": 0,
+      "seed": 3285965459,
+      "file": "gate_S00114_a0.png",
+      "render_sec": 16.1,
+      "has_person": true,
+      "verdict_sec": 1.4
+    },
+    {
+      "shot_id": "S00114",
+      "rung": 1,
+      "seed": 1753844506,
+      "file": "gate_S00114_a1.png",
+      "render_sec": 15.1,
+      "has_person": true,
+      "verdict_sec": 5.3
+    },
+    {
+      "shot_id": "S00114",
+      "rung": 2,
+      "seed": 3292677910,
+      "file": "gate_S00114_a2.png",
+      "render_sec": 15.1,
+      "has_person": false,
+      "verdict_sec": 1.4
+    },
+    {
+      "shot_id": "S00104",
+      "rung": 0,
+      "seed": 673840615,
+      "file": "gate_S00104_a0.png",
+      "render_sec": 15.1,
+      "has_person": false,
+      "verdict_sec": 1.4
+    },
+    {
+      "shot_id": "S00305",
+      "rung": 0,
+      "seed": 4095645782,
+      "file": "gate_S00305_a0.png",
+      "render_sec": 16.1,
+      "has_person": false,
+      "verdict_sec": 1.4
+    },
+    {
+      "shot_id": "S00403",
+      "rung": 0,
+      "seed": 2851396408,
+      "file": "gate_S00403_a0.png",
+      "render_sec": 15.2,
+      "has_person": false,
+      "verdict_sec": 1.4
+    },
+    {
+      "shot_id": "S00713",
+      "rung": 0,
+      "seed": 4063513675,
+      "file": "gate_S00713_a0.png",
+      "render_sec": 16.1,
+      "has_person": false,
+      "verdict_sec": 5.4
+    }
+  ],
+  "guard_counts": {
+    "regenerated": 2,
+    "exhausted": 0,
+    "unavailable": 0,
+    "unscreened": 0
+  },
+  "request_count": 7,
+  "image_count": 5,
+  "skipped_count": 0,
+  "error": null,
+  "accepted_seed_per_shot": {
+    "S00114": 3292677910,
+    "S00104": 673840615,
+    "S00305": 4095645782,
+    "S00403": 2851396408,
+    "S00713": 4063513675
+  },
+  "guard_exhausted_per_shot": {
+    "S00114": false,
+    "S00104": false,
+    "S00305": false,
+    "S00403": false,
+    "S00713": false
+  },
+  "elapsed_sec": 126.3,
+  "log": [
+    "INFO yt_flow.pipeline.nodes.image: shot S00114: generated background is populated (seed 3285965459), regenerating",
+    "INFO yt_flow.pipeline.nodes.image: shot S00114: generated background is populated (seed 1753844506), regenerating"
+  ]
+}

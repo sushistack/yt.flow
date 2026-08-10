@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-08-10T00:32:14",
+  "arm": "gate — real image_node",
+  "source_run": "c6be1954-da0f-4dee-ab07-a2b4f3bcf21e",
+  "checkpoint_workflow": "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json",
+  "vision_model": "qwen-vl-plus",
+  "guard_attempts": 2,
+  "shot_set": [
+    {
+      "scene_num": 1,
+      "shot_id": "S00114",
+      "why": "recorded hit (prompt from before_verdict.json)"
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "why": "finding 5.12 handoff shot, never run through the node"
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "S00305",
+      "why": "depicted human: medical diagram of a human body"
+    },
+    {
+      "scene_num": 4,
+      "shot_id": "S00403",
+      "why": "finding 5.12 handoff shot, never run through the node"
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "S00713",
+      "why": "depicted human: a human skull on a shelf"
+    }
+  ],
+  "renders": [],
+  "guard_counts": {
+    "regenerated": 0,
+    "exhausted": 0,
+    "unavailable": 0,
+    "unscreened": 0
+  },
+  "request_count": 0,
+  "image_count": 5,
+  "skipped_count": 5,
+  "error": null,
+  "accepted_seed_per_shot": {
+    "S00114": 3292677910,
+    "S00104": 673840615,
+    "S00305": 4095645782,
+    "S00403": 2851396408,
+    "S00713": 4063513675
+  },
+  "guard_exhausted_per_shot": {
+    "S00114": false,
+    "S00104": false,
+    "S00305": false,
+    "S00403": false,
+    "S00713": false
+  },
+  "elapsed_sec": 0.0,
+  "log": [
+    "INFO yt_flow.pipeline.nodes.image: image stage resume: skipped 5 complete shot(s), generated 0"
+  ]
+}

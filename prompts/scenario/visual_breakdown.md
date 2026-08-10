@@ -112,7 +112,7 @@ Every non-empty `image_prompt` MUST follow this structure in order:
 - One element that the eye goes to first. A pop of color in a desaturated scene. A shape that doesn't belong. A reflection that shows something the main view doesn't.
 
 **Use negative space as a storytelling tool:**
-- Large empty areas in the frame create unease. A figure small in an enormous space. An empty hallway stretching to a vanishing point. The space where something SHOULD be but isn't.
+- Large empty areas in the frame create unease. A single overturned chair small in an enormous space. An empty hallway stretching to a vanishing point. The space where something SHOULD be but isn't.
 
 **Vary framing, not just distance:**
 - Not every shot needs a central vanishing point. When this sentence's

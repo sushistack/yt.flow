@@ -18,6 +18,11 @@ resolves and composites transparent character cards from ``ShotData.cast``
 (Story 8.1/8.2/8.3). ``BG_NEGATIVE_SUFFIX`` is the code-side belt to the
 prompt-side (8.1) suspenders keeping entities out of the generated image.
 
+Story 10.2 adds the only enforcement that looks at pixels: each generated
+background is shown to Qwen-VL and, if it already contains a person, re-rendered
+on the next rung of a fixed-length seed ladder. Bounded, fail-open, and never
+able to fail the stage — an undecidable verdict accepts the frame and is counted.
+
 Mock mode (``YTFLOW_COMFYUI_MOCK=true``) never instantiates the HTTP client: a
 fixture image from ``tests/fixtures/images/`` is materialized into the run
 workspace so downstream code sees an identical artifact layout in mock and real
@@ -36,9 +41,14 @@ from typing import Any
 
 from yt_flow.observability import get_client, observe
 
-from yt_flow.config import Settings
+from yt_flow.config import (
+    BACKGROUND_PERSON_GUARD_BREAKER_STREAK,
+    BACKGROUND_PERSON_GUARD_BREAKER_TOTAL,
+    BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS,
+    Settings,
+)
 from yt_flow.domain.state import PipelineState, SceneState, ShotData
-from yt_flow.services import comfyui_client
+from yt_flow.services import comfyui_client, vision_check
 from yt_flow.services.comfyui_client import ComfyUIError
 
 logger = logging.getLogger(__name__)
@@ -128,16 +138,32 @@ def _effective_negative_prompt(negative_prompt: str) -> str:
     return negative_prompt + BG_NEGATIVE_SUFFIX
 
 
-def _shot_seed(run_id: str, scene_num: int, shot_id: str) -> int:
+def _shot_seed(run_id: str, scene_num: int, shot_id: str, attempt: int = 0) -> int:
     """Deterministic per-shot KSampler seed (Story 11.1 AC1).
 
     Uses sha256, not the builtin ``hash()`` — CPython salts str hashing per
     process (PYTHONHASHSEED), so ``hash()`` would compute a different seed for
     the same shot after a process restart (e.g. a resumed run), breaking the
     sidecar seed comparison. Same rationale as ``_plate_variant_index``.
+
+    ``attempt`` is Story 10.2's regeneration rung. Attempt 0 hashes the pre-10.2
+    string byte-identically, so every workspace written before this story keeps
+    resuming; only bumped rungs get the suffix.
     """
-    digest = hashlib.sha256(f"{run_id}:{scene_num}:{shot_id}".encode()).hexdigest()
-    return int(digest, 16) % 2**32
+    key = f"{run_id}:{scene_num}:{shot_id}" if attempt == 0 else f"{run_id}:{scene_num}:{shot_id}:{attempt}"
+    return int(hashlib.sha256(key.encode()).hexdigest(), 16) % 2**32
+
+
+def _seed_ladder(run_id: str, scene_num: int, shot_id: str) -> list[int]:
+    """Every seed this shot could legitimately have been accepted on (Story 10.2).
+
+    Fixed length — ``BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS`` rungs — deliberately
+    NOT derived from the run's current ``background_person_guard_attempts``. The
+    resume check compares against the whole ladder, so lowering the knob (or
+    losing the vision key) can never invalidate a shot that a previous run
+    accepted on a bumped seed and send it regenerating forever.
+    """
+    return [_shot_seed(run_id, scene_num, shot_id, a) for a in range(BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS + 1)]
 
 
 def _inject_prompts(template: dict, image_prompt: str, negative_prompt: str, seed: int) -> dict:
@@ -174,7 +200,9 @@ def _sidecar_path(out_dir: Path, scene_num: int, shot: ShotData) -> Path:
     return out_dir / f"{_shot_base(scene_num, shot)}_done.json"
 
 
-def _write_sidecar(out_dir: Path, scene_num: int, shot: ShotData, seed: int) -> None:
+def _write_sidecar(
+    out_dir: Path, scene_num: int, shot: ShotData, seed: int, guard_exhausted: bool = False,
+) -> None:
     """Completion sentinel, written last after the shot's image file.
 
     Records the prompts + deterministic seed so a later retry can tell a stale
@@ -183,18 +211,36 @@ def _write_sidecar(out_dir: Path, scene_num: int, shot: ShotData, seed: int) -> 
     writer paths (stock plate / mock / generation) record the identical value —
     the resume check runs before path selection and must compare uniformly.
     [AC1, AC2] [Story 11.1 AC2]
+
+    ``guard_exhausted`` (Story 10.2) marks a frame the guard KNOWS is populated
+    and kept anyway. It is deliberately NOT part of the resume equality check:
+    sidecars written before this key existed must keep matching.
     """
     _sidecar_path(out_dir, scene_num, shot).write_text(
         json.dumps({
             "image_prompt": shot["image_prompt"],
             "negative_prompt": _effective_negative_prompt(shot["negative_prompt"]),
             "seed": seed,
+            "guard_exhausted": guard_exhausted,
         }),
         encoding="utf-8",
     )
 
 
-def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seed: int) -> str | None:
+def _sidecar_guard_exhausted(out_dir: Path, scene_num: int, shot: ShotData) -> bool:
+    """Did a previous run keep this shot with a background it knew was populated?
+
+    Read on the resume path so the run-level warning still fires for a resumed
+    run — otherwise a second pass over the same workspace reports a clean guard.
+    """
+    try:
+        sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
+        return bool(sidecar.get("guard_exhausted")) if isinstance(sidecar, dict) else False
+    except (OSError, ValueError):
+        return False
+
+
+def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seeds: list[int]) -> str | None:
     """Return the existing image path iff a prior attempt fully completed this shot.
 
     Pure file/sidecar check only (retry re-enters with state paths nulled, so
@@ -202,6 +248,9 @@ def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seed:
     malformed sidecar) is treated as incomplete rather than raised — this check
     runs inside image_node's AD-10 boundary and must never fail a whole run
     over one shot's resume check. [AC1-3]
+
+    ``seeds`` is the whole fixed-length ladder (Story 10.2), not one seed: a shot
+    the guard accepted on a bumped rung must still resume after the knob changes.
 
     A legacy sidecar without a ``seed`` key mismatches and regenerates —
     intended one-time cache invalidation (Story 11.1 AC2).
@@ -211,7 +260,7 @@ def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seed:
         if not isinstance(sidecar, dict) \
                 or sidecar.get("image_prompt") != shot["image_prompt"] \
                 or sidecar.get("negative_prompt") != _effective_negative_prompt(shot["negative_prompt"]) \
-                or sidecar.get("seed") != seed:
+                or sidecar.get("seed") not in seeds:
             return None
 
         img_dest = out_dir / f"{_shot_base(scene_num, shot)}.png"
@@ -232,6 +281,7 @@ def _record_trace(
     skipped_count=0,
     stock_plate_count=0,
     depth_counts=None,
+    guard_counts=None,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -249,6 +299,10 @@ def _record_trace(
                 # that distinguishes "parallax rendered from a real depth map" from
                 # "parallax silently fell back", so it rides the image span.
                 **({f"depth_{k}": v for k, v in depth_counts.items()} if depth_counts else {}),
+                # Story 10.2 AC: an exhausted ladder or an undecidable detector means
+                # the frame was NOT verified unpopulated — it must be visible in the
+                # trace, otherwise a dead guard reads exactly like a clean pass.
+                **({f"guard_{k}": v for k, v in guard_counts.items()} if guard_counts else {}),
                 **({"error": repr(error)} if error is not None else {}),
             },
         )
@@ -308,6 +362,11 @@ async def image_node(state: PipelineState) -> dict:
     stock_plate_count = 0
     generated_count = 0  # Story 5.23: drives the periodic mid-batch health re-check
     health_checked = False  # Story 5.14: lazy — never touched at all if every shot resumes
+    requests_since_health_check = 0  # Story 10.2: cadence counts submissions, see below
+    # Declared before the try so the error path can report them too: a stage that
+    # fails mid-run must not lose its guard/depth accounting.
+    guard_counts = {"regenerated": 0, "exhausted": 0, "unavailable": 0, "unscreened": 0}
+    depth_counts = {"hit": 0, "miss": 0, "unavailable": 0}
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
@@ -326,8 +385,53 @@ async def image_node(state: PipelineState) -> dict:
                 total_shots=total_shots,
             )
 
+        # ── Story 10.2: background-person guard ────────────────────────────
+        guard_off = s.background_person_guard_attempts < 1 or not s.character_vision_api_key
+        undecidable_streak = 0
+        undecidable_total = 0
+        if s.background_person_guard_attempts >= 1 and not s.character_vision_api_key:
+            # One warning per run, not per shot — the key is a run-level fact.
+            logger.warning(
+                "background person guard disabled: YTFLOW_CHARACTER_VISION_API_KEY is unset; "
+                "generated backgrounds are NOT screened for people this run",
+            )
+
+        async def _populated(image_bytes: bytes) -> bool:
+            """True only when the detector positively says a person is in frame.
+
+            Wraps the detector so nothing it does — including an unexpected
+            raise — can reach image_node's AD-10 boundary and fail the stage.
+            An undecidable verdict is counted and treated as "accept", never as
+            "clean": the run-level warning below is what says it wasn't checked.
+            """
+            nonlocal guard_off, undecidable_streak, undecidable_total
+            if guard_off:
+                return False
+            try:
+                verdict = await vision_check.background_has_person(image_bytes, s)
+            except Exception as exc:  # noqa: BLE001 — the detector's contract is not to raise; belt to its braces
+                logger.warning("background person guard: detector raised, accepting frame: %s", exc)
+                verdict = None
+            if verdict is None:
+                guard_counts["unavailable"] += 1
+                undecidable_streak += 1
+                undecidable_total += 1
+                # Total as well as streak: an intermittent detector (fail, ok, fail…)
+                # resets the streak every other call and would never trip the breaker,
+                # which is exactly the 120s-per-call cost it exists to bound.
+                if undecidable_streak >= BACKGROUND_PERSON_GUARD_BREAKER_STREAK \
+                        or undecidable_total >= BACKGROUND_PERSON_GUARD_BREAKER_TOTAL:
+                    guard_off = True
+                    logger.warning(
+                        "background person guard disabled for the rest of the run after %d "
+                        "consecutive / %d total undecidable verdicts",
+                        undecidable_streak, undecidable_total,
+                    )
+                return False
+            undecidable_streak = 0
+            return verdict
+
         plate_cache: dict[str, list[dict]] = {}  # one lookup per location_key per run, not per shot
-        depth_counts = {"hit": 0, "miss": 0, "unavailable": 0}
         depth_memo: dict[str, str | None] = {}  # one resolve per distinct image path per run
 
         async def _with_depth(shot: ShotData, image_path: str) -> ShotData:
@@ -367,11 +471,18 @@ async def image_node(state: PipelineState) -> dict:
             for shot in scene["shots"]:
                 # Story 11.1: one deterministic seed per shot, shared by the
                 # resume check, all sidecar writers, and the KSampler injection.
-                seed = _shot_seed(run_id, scene["scene_num"], shot["shot_id"])
-                existing = _existing_complete_shot(out_dir, scene["scene_num"], shot, seed)
+                # Story 10.2: rungs 1..N are the guard's regeneration ladder; the
+                # resume check accepts any rung, generation starts at rung 0.
+                seeds = _seed_ladder(run_id, scene["scene_num"], shot["shot_id"])
+                seed = seeds[0]
+                existing = _existing_complete_shot(out_dir, scene["scene_num"], shot, seeds)
                 if existing is not None:
                     skipped_count += 1
                     image_count += 1
+                    if _sidecar_guard_exhausted(out_dir, scene["scene_num"], shot):
+                        # A frame a previous run kept while knowing it was populated
+                        # stays unverified on resume — the warning must still fire.
+                        guard_counts["exhausted"] += 1
                     new_shots.append(await _with_depth(shot, existing))
                     continue
 
@@ -406,29 +517,68 @@ async def image_node(state: PipelineState) -> dict:
                     if not health_checked:
                         await comfyui_client.check_health(s.comfyui_url)
                         health_checked = True
-                    elif generated_count and generated_count % s.comfyui_health_poll_every_n_shots == 0:
+                        requests_since_health_check = 0
+                    # Story 10.2: counts submissions, not shots — a guard retry is a
+                    # second submission, and the cadence exists to bound how many
+                    # requests can be fired at a crashed ComfyUI before we look. It is
+                    # a "requests since last check" threshold, not `count % N == 0`:
+                    # a shot may fire 1..N submissions, so a modulo test evaluated once
+                    # per shot steps straight over its multiples and loosens the bound.
+                    elif requests_since_health_check >= s.comfyui_health_poll_every_n_shots:
+                        requests_since_health_check = 0
                         try:
                             await comfyui_client.check_health(s.comfyui_url)
                         except ComfyUIError:  # a NEW mid-batch failure, not the fail-fast first check
                             await _recover()
 
                 dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
+                exhausted = False
                 if s.comfyui_mock:
                     shutil.copyfile(_mock_source(), dest)
                 else:
                     if template is None:
                         raise ValueError("workflow must be loaded in real mode")
-                    workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"], seed)
-                    try:
-                        image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
-                    except ComfyUIError:  # AC4: a submit-time crash reuses the same recovery loop
-                        await _recover()
-                        image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
+                    # Story 10.2: bounded regeneration ladder. The first render the
+                    # guard does not call populated wins and `seed` is left bound to
+                    # it, so the sidecar records the accepted rung (otherwise every
+                    # resume would regenerate). Reaching `else` means every rung was
+                    # populated: keep the last render rather than degrade the run.
+                    ladder = seeds[: s.background_person_guard_attempts + 1]
+                    for rung, seed in enumerate(ladder):
+                        workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"], seed)
+                        try:
+                            image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
+                        except ComfyUIError:  # AC4: a submit-time crash reuses the same recovery loop
+                            await _recover()
+                            image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
+                        request_count += 1
+                        requests_since_health_check += 1
+                        if not await _populated(image_bytes):
+                            break
+                        if rung + 1 < len(ladder):
+                            # Only a rung another render actually follows is a
+                            # regeneration; the last rung is the `else` below.
+                            guard_counts["regenerated"] += 1
+                            logger.info(
+                                "shot %s: generated background is populated (seed %s), regenerating",
+                                shot["shot_id"], seed,
+                            )
+                    else:
+                        exhausted = True
+                        guard_counts["exhausted"] += 1
+                        logger.warning(
+                            "shot %s: background still populated after %d attempt(s), keeping last render",
+                            shot["shot_id"], len(ladder),
+                        )
+                    if guard_off:
+                        # Knob 0, no key, or the breaker tripped: this frame was never
+                        # screened. Without its own count it is indistinguishable in the
+                        # trace from a background the guard verified as unpopulated.
+                        guard_counts["unscreened"] += 1
                     dest.write_bytes(image_bytes)
-                    request_count += 1
                 generated_count += 1
                 image_count += 1
-                _write_sidecar(out_dir, scene["scene_num"], shot, seed)
+                _write_sidecar(out_dir, scene["scene_num"], shot, seed, guard_exhausted=exhausted)
                 # Copy the shot; set only image_path/depth_map_path — never mutate the
                 # input state. [AD-4]
                 new_shots.append(await _with_depth(shot, str(dest)))
@@ -439,11 +589,18 @@ async def image_node(state: PipelineState) -> dict:
                 "image stage resume: skipped %d complete shot(s), generated %d",
                 skipped_count, image_count - skipped_count,
             )
+        if guard_counts["exhausted"] or guard_counts["unavailable"] or guard_counts["unscreened"]:
+            # A dead, off or exhausted guard must not read as a clean pass. [Story 10.2]
+            logger.warning(
+                "background person guard: %d shot(s) exhausted the ladder, %d undecidable verdict(s), "
+                "%d shot(s) never screened — those backgrounds were NOT verified unpopulated",
+                guard_counts["exhausted"], guard_counts["unavailable"], guard_counts["unscreened"],
+            )
         _record_trace(
             comfyui_url=s.comfyui_url, workflow_path=s.comfyui_workflow_path,
             request_count=request_count, image_count=image_count,
             skipped_count=skipped_count, stock_plate_count=stock_plate_count,
-            depth_counts=depth_counts, latency_ms=_ms(t0),
+            depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
@@ -451,6 +608,7 @@ async def image_node(state: PipelineState) -> dict:
             comfyui_url=s.comfyui_url if s else "?",
             workflow_path=s.comfyui_workflow_path if s else "?",
             request_count=request_count, image_count=image_count,
-            skipped_count=skipped_count, stock_plate_count=stock_plate_count, latency_ms=_ms(t0), error=exc,
+            skipped_count=skipped_count, stock_plate_count=stock_plate_count,
+            depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0), error=exc,
         )
         return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}"}

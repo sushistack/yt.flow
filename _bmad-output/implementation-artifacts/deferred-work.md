@@ -492,3 +492,11 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-7-scene-sound-replacement.md`
   summary: `clinical_stinger.mp3` is a weak control, yet it anchors the upper edge of the ≤20% tonal-fraction band used to accept the new escalation stinger.
   evidence: It is 0.50 s long — the library's own spec at the top of `data/audio/README.md` says stingers are 1–2 s one-shots — at mean −28.2 dB, and at the round-2 framing (1024/256 Hann, −40 dB relative floor) it yields only **19 analysed frames**. One frame moves its tonal fraction by 5.3 points, so its quoted 10.5% is really 10.5 ± 5.3, and the "8.8% sits inside the band of the three stingers nobody complains about (0.0 / 4.5 / 10.5)" argument rests on a number with that much slack at its top end. The new stinger clears the gate against dread (0.0%, 141 frames) and revelation (4.5%, 156 frames) regardless, so the acceptance holds — but the band's upper edge should be re-derived from a control with a real frame count, or `clinical_stinger.mp3` should be replaced with a file that meets the library's own duration spec.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-background-must-be-unpopulated.md`
+  summary: The background-person guard has no run-level render budget — only a per-shot ladder bound.
+  evidence: With `background_person_guard_attempts=2` a 155-shot run can fire up to 465 renders (~17s each) and nothing aggregates or caps that. Size the cap from a real run's `guard_regenerated` count before enabling the knob widely.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-background-must-be-unpopulated.md`
+  summary: Guard degradation counters reach the Langfuse span and the run log, but not the human gate payload.
+  evidence: `guard_unscreened`/`guard_exhausted` say "these backgrounds were never verified unpopulated", which is exactly the class of quality warning `scenario_quality` puts on the gate payload (Story 12.3 idiom). The image gate carries no such channel; the generic `run_warnings` surface is Story 13.1's scope and is still unimplemented.

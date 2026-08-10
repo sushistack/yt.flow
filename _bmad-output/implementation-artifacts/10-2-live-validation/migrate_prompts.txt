@@ -1,0 +1,28 @@
+skipped: character/angle_selection
+skipped: character/generation
+skipped: character/vision_enrichment
+skipped: evaluation/judge
+skipped: evaluation/pairwise
+skipped: scenario/archetypes/containment_breach_realtime
+skipped: scenario/archetypes/discovery_log
+skipped: scenario/archetypes/incident_first
+skipped: scenario/archetypes/interview_testimony
+skipped: scenario/cast_decision
+skipped: scenario/critic_agent
+skipped: scenario/format_guide
+skipped: scenario/research
+skipped: scenario/review
+skipped: scenario/structure
+skipped: scenario/tts_normalize
+created: scenario/visual_breakdown
+skipped: scenario/writing
+skipped: scenario/writing_scene_repair
+skipped: scenario/yaml_syntax_repair
+
+--- runtime verification (Langfuse fetch, label=production) ---
+name:    scenario/visual_breakdown
+version: 14   labels: ['production', 'latest']
+bullet:  - Large empty areas in the frame create unease. A single overturned chair small in an enormous space. An empty hallway stretching to a vanishing point. The space where something SHOULD be but isn't.
+'A figure small in an enormous space' present in the live production prompt: False
+
+Run: uv run python scripts/migrate_prompts.py --label production --source prompts  (2026-08-10)
