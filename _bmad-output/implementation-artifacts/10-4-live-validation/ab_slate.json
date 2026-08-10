@@ -1,0 +1,480 @@
+[
+  {
+    "scene_num": 1,
+    "shot_id": "S00100",
+    "sentence_start": 1,
+    "base": "scene_001_S00100",
+    "seed": 2114553856,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      0
+    ],
+    "cast": [],
+    "prompts": {
+      "old": "extreme close-up of a stainless steel medical tray lying upside down on a poured concrete floor, a syringe rolling slowly to a stop beside a small clear liquid pool, a single leather glove half-hidden under the tray edge, hairline crack running across the floor tile beneath, cold overhead fluorescent light reflecting off the metal, fine dust motes suspended in the air, abrupt silence, sudden finality",
+      "new": "high-angle wide of a bare containment cell, twin rows of cold fluorescent tubes overhead with the nearest tube strobing unevenly, a steel-frame exam table bolted near the right wall with restraint straps hanging open and one buckle still swinging slightly, on the poured concrete floor a sharp impact depression in the settled dust where a body has just gone down, a stainless instrument tray knocked from its stand and lying on its side with tools scattered in a radial pattern, a slow dust cloud still suspended in the strobing light beam, cinder block walls with peeling grey institutional paint, a single blackened floor drain near the baseboard, the entire room frozen in the aftermath of a silent collapse, clinical dread, sudden cessation"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00101",
+    "sentence_start": 2,
+    "base": "scene_001_S00101",
+    "seed": 757216092,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      1
+    ],
+    "cast": [
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "sway",
+        "motion_energy": "low",
+        "movement_mode": "enter",
+        "movement_direction": "right",
+        "movement_pace": "slow"
+      }
+    ],
+    "prompts": {
+      "old": "medium shot from inside a bare containment cell, heavy steel door open on the left third of the frame with cold white light spilling through the doorway, interior walls of bare cinder block with peeling institutional green paint, a single steel-frame chair bolted to the floor in the center, examination table with straps against the far right wall, twin fluorescent tubes strobing erratically overhead, condensation beading on the door frame, tense anticipation, institutional dread",
+      "new": "medium shot angled along the entrance threshold of a containment cell, the heavy blast door standing open on the left third with its hydraulic piston still extended and a faint wisp of condensation curling from the corridor side, bright white corridor light spilling in a hard trapezoid across the grey poured-concrete floor, the trapezoid cutting across the shadowed cell interior, a fresh disturbance in the settled dust tracing a path inward from the threshold, wall-mounted intercom panel beside the frame with a single red indicator light glowing, the cell interior receding into cold blue-white fluorescent haze to the right, the threshold itself holding the mark of the moment just passed, institutional tension, watched entry"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00102",
+    "sentence_start": 3,
+    "base": "scene_001_S00102",
+    "seed": 2579935594,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      2
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "right",
+        "depth": "far",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "low"
+      }
+    ],
+    "prompts": {
+      "old": "static wide shot of the far right corner of a long containment room, a narrow window set high in the wall letting in a thin shaft of pale light, the floor worn smooth in a path leading to the corner, a single floor-length shadow pooling at the base of the wall, air thick with suspended dust, the rest of the room falling into deep grey shadow, a black leather medical bag resting on the floor near the corner, quiet menace, stillness",
+      "new": "wide shot of the far right corner of a containment cell, dim and receding into flat shadow, a single caged bulb mounted high on the far wall casting a small cone of sickly yellow light onto the empty concrete floor, inside that cone a perfectly dust-free oval patch where something has stood motionless for a very long time, the surrounding dust undisturbed, a low steel shelf along the far wall holding a coil of rope and a rusted chain, bare cinder block walls fading into grey gloom, a faint haze hanging in the light beam, cold stagnant waiting, immobile patience"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00103",
+    "sentence_start": 4,
+    "base": "scene_001_S00103",
+    "seed": 307057063,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      3
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "sway",
+        "motion_energy": "low"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "right",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "tremble",
+        "motion_energy": "medium"
+      }
+    ],
+    "prompts": {
+      "old": "low-angle shot of the center of an examination room, a circular pool of harsh white light from a ceiling-mounted surgical lamp falling on the empty floor, an examination table with restraint straps partially visible in the left foreground, the right side of the room dark and featureless, a single floor drain with a wet sheen catching the light, dust particles drifting through the beam, confrontation, silent threat",
+      "new": "medium shot across the mid-floor of the containment cell, a wire-mesh observation window set into the left wall glowing faintly with corridor light and casting a rectangular patch of cool light onto the concrete floor, a hard-edged shaft of cold light falling from an overhead vent across the open space creating a clear sightline linking the left and right thirds of the frame, the right side holding a low steel workbench with a black rubber hose coiled beside a rusted vice, dust motes drifting slowly within each light shaft, the rest of the room sunk into flat grey shadow, the space between the two occupied sides perfectly empty and static, suspended judgment, clinical watchfulness"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00104",
+    "sentence_start": 5,
+    "base": "scene_001_S00104",
+    "seed": 1543216140,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      4
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "right",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "low"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "tremble",
+        "motion_energy": "high"
+      }
+    ],
+    "prompts": {
+      "old": "over-the-shoulder shot framing the space between two figures, the floor between them scuffed with parallel drag marks, a steel stool overturned in the right midground, a black leather medical bag with brass clasps sitting open on the floor, a single overhead light creating a narrow strip of illumination across the center line, the far wall a blur of grey cinder block, suspended dust frozen in the beam, hollow silence, impending decision",
+      "new": "close-up of the concrete floor at the center of the containment cell, a narrow shaft of cold light slicing across the frame dividing a shadowed left zone from a flat grey right zone, a patient spiral of dust motes still turning mid-air at arm's height as if something has just moved through the stillness, the floor scuffed with a single stalled forward step that stops short before a small round drainage grate faintly reflecting the overhead light, the right third of the frame falling into flat shadow where all motion has ceased, the gap between the two occupied zones impossibly still, offer and hesitation, suspended decision"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00105",
+    "sentence_start": 6,
+    "base": "scene_001_S00105",
+    "seed": 1746391978,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      5
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "low"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "right",
+        "depth": "mid",
+        "pose": "sitting",
+        "motion_style": "hold",
+        "motion_energy": "low"
+      }
+    ],
+    "prompts": {
+      "old": "high-angle shot looking down at a concrete floor scarred by a long skid mark ending in a crumpled white paper cup, a steel chair lying on its side with one leg bent, a scattered pile of classified documents with [REDACTED] stamps, a thin dark liquid spreading from beneath the chair, the open medical bag visible at the edge of frame, harsh fluorescent light from above casting no shadows, collapse aftermath, oppressive finality",
+      "new": "high-angle looking straight down at the poured concrete floor of the containment cell, a sharp impact depression in the settled dust at the center-right where a body has just gone down in a heap, dust still billowing outward in a slow radial cloud catching the cold overhead light, a small steel instrument tray near the left edge of the impact knocked onto its side with a stethoscope and scalpel scattered loose, hairline cracks radiating through the concrete finish, tremor scuffs in a tight circle around the impact, the strobing fluorescent tube overhead throwing alternating bands of shadow across the scene, frozen mid-fall, terminal silence, the instant of collapse"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 1,
+    "shot_id": "S00106",
+    "sentence_start": 7,
+    "base": "scene_001_S00106",
+    "seed": 2223076177,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      6
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "center",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "low"
+      }
+    ],
+    "prompts": {
+      "old": "POV shot from low near the center of the room, the far wall with a small reinforced observation window glowing faintly, the floor in the foreground left showing a single wet footprint, a black leather medical bag closed and placed neatly near the right wall, a single ceiling fan slowly rotating, dust motes swirling in a shaft of cold light, the room's corners dissolving into grey negative space, calm certainty, hollow resolution",
+      "new": "medium shot of the containment cell in the aftermath, low grey dust haze barely moving at knee level along the concrete floor, the sharp impact hollow from the collapse visible at the lower edge of frame, a steel instrument tray knocked on its side and tools scattered where they fell, the center of the room standing perfectly empty and still with a single hanging caged bulb above casting a small cone of weak yellow light straight down onto the bare concrete, the walls bare grey cinder block with faint damp stains, the air dead and cold, the entire volume of the room holding its breath, finality, irreversible outcome, hollow pronouncement"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, daylight, sunny, person, human figure, character, silhouette of a person"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00500",
+    "sentence_start": 1,
+    "base": "scene_005_S00500",
+    "seed": 3486524904,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      0
+    ],
+    "cast": [],
+    "prompts": {
+      "old": "extreme close-up, two bare hands meeting in the center of the frame, the backdrop is a void of pale grey concrete wall with a single hairline crack running vertically behind them, the air between the hands is still, a faint wisp of condensation curling around the fingertips, cold fluorescent light from above casting a hard-edged shadow beneath the joined hands, the texture of the wall slightly damp with mineral staining, intrusive intimacy, irreversible threshold, the specific weight of a decision already made",
+      "new": "wide shot, anonymous concrete containment room with a cleared central floor space where two worn standing positions face each other across a scuffed circle of cement dust, bare poured-concrete walls with hairline expansion cracks and mineral bloom near the base, a single overhead fluorescent tube casting a cold pool of white light onto the exact encounter spot, fine cement dust hanging perfectly motionless in the light beam, a floor drain grate at center with oxidized rust stains radiating outward, a steel examination table pushed against the far right wall with its surface bare and gleaming, the far left corner holding a bolted restraint chair with straps hanging slack, the air so absolutely still that dust appears frozen mid-suspension, the room braced for what the next second will bring, suspended anticipation, the held breath before an irreversible touch"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00501",
+    "sentence_start": 2,
+    "base": "scene_005_S00501",
+    "seed": 1620027239,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      1
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "right",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "medium"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "tremble",
+        "motion_energy": "medium"
+      }
+    ],
+    "prompts": {
+      "old": "POV shot from floor level, a rusted steel drainage grate occupying the lower third of the frame, the rest an expanse of scuffed concrete floor stretching toward a bare cinder block wall, a single overturned metal chair lying on its side near the center-left, its legs pointing toward the viewer, twin rows of ceiling-mounted fluorescent tubes reflected faintly in the damp floor, one tube strobing rapidly casting shifting angular shadows, fine dust motes suspended in the cold light beam, falling sensation, temperature loss, the vertigo of sudden emptiness",
+      "new": "close-up shot of the cold spreading through the room, thin rime frost creeping along the galvanized edge of the floor drain grate and up the bolted restraint chair's metal armrest, condensation blooming on the steel examination table's surface in a web of tiny droplets, the overhead fluorescent tube flickering once as if the sudden temperature drop strains its ballast, moisture beading on the concrete wall in a radial pattern expanding outward from the central encounter spot, the air itself becoming visible as breath vapor hangs dense and unmoving where it should dissipate, a thin layer of chill visibly crawling across every surface, the room's warmth being drawn away toward the center, warmth stolen mid-motion, the physical trace of life leaving a body"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, warm lighting, cozy, sunlight"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00502",
+    "sentence_start": 3,
+    "base": "scene_005_S00502",
+    "seed": 3562891200,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      2
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "center",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "sway",
+        "motion_energy": "medium"
+      }
+    ],
+    "prompts": {
+      "old": "extreme close-up, a white ceramic surface filling the entire frame, curved and smooth with a subtle seam running along its edge, the material catching cold overhead light with a dull porcelain sheen, behind the curved surface a dark blurred background of an unlit corridor, faint scratch marks on the ceramic suggesting long use, shallow depth of field making the background dissolve into soft bokeh, the curve of the surface curving inward toward the center, claustrophobic encroachment, invasive proximity, the silence of something that doesn't breathe",
+      "new": "POV shot from close range as the room recedes sharply away at all edges, ceiling tiles and concrete wall lines converging steeply toward a vanishing point behind a central obstruction that fills the frame's core, the overhead fluorescent light diffused into a cool halo around the blocked center, the steel examination table and restraint chair reduced to blurred grey shapes in the extreme peripheral vision, the floor falling away steeply toward the distant drain grate, depth of field collapsed so that everything beyond arm's reach turns to soft bokeh, the room's geometry warping inward around the central presence, the entire world shrinking until only the immediate moment remains, claustrophobic proximity, the universe reduced to a single point of focus"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, wide angle, fisheye, sharp background"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00503",
+    "sentence_start": 4,
+    "base": "scene_005_S00503",
+    "seed": 2706249739,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      3
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "right",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "low"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "tremble",
+        "motion_energy": "high"
+      }
+    ],
+    "prompts": {
+      "old": "high-angle shot looking down from a ceiling corner, an empty concrete floor with a single folding chair tipped over backward near the center, its shadow stretching long under harsh overhead light, the far wall lined with bare utility pipes running horizontally, a wall-mounted intercom speaker with its cover hanging loose by one screw, floor scuff marks in a short arc suggesting a sudden backward step, grey institutional paint peeling near the baseboards, cold air visible as a faint mist at floor level, loss of balance, imminent collapse, the weightlessness before impact",
+      "new": "high-angle shot looking down at the concrete floor beside a bolted restraint chair, a small cloud of cement dust kicked up and still hanging in the air at chair height where a collapse has just begun to happen, the chair's armrest bearing fresh parallel scrapes in the dust coating, the floor drain grate partially visible with a scuffed drag pattern passing across it, surrounding concrete marked with older impact scuffs and shallow impact craters from previous falls, the fluorescent tube above casting long elongated shadows that point away from the central area, the far wall receding into flat grey with a single wall-mounted camera blinking red, a loose metal bolt rolling in a slow arc across the floor, gravity seizing control, a body's surrender made visible in displaced dust and settling debris"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00504",
+    "sentence_start": 5,
+    "base": "scene_005_S00504",
+    "seed": 2842867826,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      4
+    ],
+    "cast": [],
+    "prompts": {
+      "old": "POV shot from a low angle, a seamless grey concrete floor filling the lower half of the frame, the upper half showing a ceiling of concrete panels with a single hanging light fixture swinging slightly, its light creating a moving pool of illumination that slides across the floor, a single leather-gloved hand resting on the floor near the edge of the light pool, motionless, a dark leather bag lying closed beside it, the far wall receding into shadow, dust particles drifting through the light beam, rapid descent, the floor rushing upward, the end of control",
+      "new": "POV shot rushing downward toward a concrete floor, the drain grate swelling rapidly as the surface races closer, individual concrete pores and embedded aggregate pebbles growing into sharp crisp detail, a hairline crack splitting diagonally across the frame's center, fine dust motes streaming upward past the viewpoint as the floor closes in, a scuffed drag mark crossing the lower right corner, moisture beads on the concrete surface catching cold overhead light and flashing, the surfaces gaining texture and clarity with every fraction of a second as they rush closer, the floor filling the entire frame, only a thin sliver of ceiling light remaining at the top edge, the vertigo of the final moment, gravity's absolute certainty, the threshold of impact rushing up"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, ceiling visible, clear upward view"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00505",
+    "sentence_start": 6,
+    "base": "scene_005_S00505",
+    "seed": 3116900184,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      5
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "right",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "breath",
+        "motion_energy": "medium"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "near",
+        "pose": "sitting",
+        "motion_style": "tremble",
+        "motion_energy": "medium"
+      }
+    ],
+    "prompts": {
+      "old": "static wide shot, a small metal table centered in an otherwise empty room, on it a single object: a round analog clock with a cracked face, its second hand frozen mid-motion, the concrete walls bare with moisture stains bleeding down from the ceiling corners, a single drainage grate in the floor near the table catching a drip of water that falls with a visible ripple, harsh overhead fluorescent light washing out all color except the dull rust on the grate, the door slightly ajar in the background showing only darkness beyond, time running out, clinical finality, the pause before an irreversible act",
+      "new": "medium shot of the anonymous containment room wrapped in a profound acoustic stillness, cold fluorescent light throwing long flat shadows across the empty central space where dust now settles back to the floor, the steel examination table standing at the right with its bare surface gleaming under a surgical lamp, the bolted restraint chair at the left with its straps hanging loose and swaying almost imperceptibly, the floor between them bearing the evidence of the recent collapse - disturbed dust, a fresh scrape mark, a small object that has rolled to a stop near the drain grate, the walls closing in with their bare concrete texture and mineral stains, an air vent's faint hum seeming to have stopped, clinical finality, time compressed into a handful of visible seconds, the silence after a diagnosis"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, warm tones, comfortable"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00506",
+    "sentence_start": 7,
+    "base": "scene_005_S00506",
+    "seed": 3913563195,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      6
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "left",
+        "depth": "near",
+        "pose": "standing",
+        "motion_style": "sway",
+        "motion_energy": "medium"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "right",
+        "depth": "near",
+        "pose": "sitting",
+        "motion_style": "tremble",
+        "motion_energy": "low"
+      }
+    ],
+    "prompts": {
+      "old": "close-up, a black leather bag lying open on a concrete floor, its interior lined with dark fabric, a row of steel instruments visible inside catching cold light—scalpel, forceps, needle—each resting in a worn indentation, the bag's brass buckle scratched but polished, the floor around it clean except for a thin layer of dust disturbed in a semicircle, a single drop of condensation on the bag's surface about to fall, the wall behind it bare grey concrete with a faint shadow of something that once hung there, false reassurance, staged calm, the stillness before a procedure begins",
+      "new": "over-the-shoulder shot of the room from behind a seated position, the concrete floor ahead showing a pair of fresh knee impressions in the cement dust where a recent collapse has occurred, the steel examination table visible at the left with a row of surgical instruments laid out in gleaming order under the overhead light, a dark leather medical bag standing open at the table's base with its flap folded back, the bare concrete wall beyond bearing a single thin vertical scratch at head height, the fluorescent light humming with a faint visible flicker, dust motes slowly turning in the cold light beam, the room arranged with a surgeon's precision around a patient's surrender, the clinical space holding its breath for the words to pass, false comfort in a room that knows the truth, the cruelty of gentleness"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright, cheerful"
+    }
+  },
+  {
+    "scene_num": 5,
+    "shot_id": "S00507",
+    "sentence_start": 8,
+    "base": "scene_005_S00507",
+    "seed": 693855914,
+    "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+    "sentence_indices": [
+      7
+    ],
+    "cast": [
+      {
+        "card_key": "SCP-049",
+        "position": "center",
+        "depth": "mid",
+        "pose": "standing",
+        "motion_style": "pulse",
+        "motion_energy": "high",
+        "movement_mode": "approach",
+        "movement_direction": "in",
+        "movement_pace": "slow"
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "position": "left",
+        "depth": "mid",
+        "pose": "sitting",
+        "motion_style": "tremble",
+        "motion_energy": "medium"
+      }
+    ],
+    "prompts": {
+      "old": "wide shot, an empty concrete room with a single metal examination table at center, its surface bare and polished, a thin strap hanging loose from one side, the table's shadow stretching long toward a drain grate in the floor, the back wall lined with cabinets, one door hanging open revealing empty shelves, a wall-mounted audio speaker with a dark mesh grille, cold fluorescent light from above creating a pool of bright white on the table's surface, the room otherwise falling into grey shadow at the edges, the air visibly cold with a faint mist curling along the floor, beginning of something, clinical anticipation, the weight of an unknown process about to unfold",
+      "new": "low-angle shot from floor level with the containment room's central space dominating the frame, the steel examination table looming large at the right with a clean sheet spread across its surface and instruments arranged in a gleaming row, the bolted restraint chair at the left with its straps now unfastened and hanging loose, the space between them swept clean except for a thin trail of dust leading from the chair toward the table, an overhead surgical light blazing down to create a stark clinical pool of white on the floor, deep shadow pooling in the corners where the walls meet, a distant half-open door visible at the far end of the room, the entire space transformed into a theater for what comes next, the stage arranged and waiting, clinical resolve, the threshold of an irreversible transformation"
+    },
+    "leg_negatives": {
+      "old": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+      "new": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, clean sterile white laboratory"
+    }
+  }
+]

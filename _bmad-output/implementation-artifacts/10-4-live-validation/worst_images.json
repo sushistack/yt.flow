@@ -1,0 +1,578 @@
+{
+  "generated_at": "2026-08-10T20:09:00",
+  "run": "8a9a288b-800f-4c73-88a2-25ae6b5a4d7d",
+  "frame_source": "images",
+  "reps": 3,
+  "vision_model": "qwen-vl-plus",
+  "endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "thresholds": {
+    "MIN_LEGIBLE": 3,
+    "MIN_MATCH": 3,
+    "MIN_LEGIBLE_HOOK": 4,
+    "MIN_MATCH_HOOK": 4
+  },
+  "blind_prompt": "You are looking at one rendered frame from an animated SCP Foundation video.\nIt illustrates one sentence of Korean narration. You are NOT being shown that sentence.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nReply with a single JSON object and nothing else:\n{\"place\": \"one short English phrase\", \"event\": \"one short English phrase\", \"legible\": 1-5}\n\nField rules:\n- place: where this is, as concretely as the frame supports — \"a tiled examination\n  room\", \"a concrete corridor\", \"an extreme close-up of a floor\". Write \"unclear\" if\n  you cannot tell where this is.\n- event: what has just happened in this place, read ONLY from what the frame shows —\n  damage, disturbance, objects out of place, marks, aftermath. Write \"unclear\" if the\n  frame shows a place but no evidence that anything happened.\n- legible: 5 = someone seeing this for two seconds could say both where they are and\n  what happened here; 4 = the place is unmistakable and the event is readable but\n  needs a beat; 3 = the place reads, the event does not; 2 = the place is a guess;\n  1 = neither reads — a texture study, a glow, an abstraction.",
+  "match_prompt": "You are grading one rendered frame from an animated SCP Foundation video\nagainst the sentence of Korean narration it is supposed to illustrate.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nThe narration sentence(s) for this frame:\n\"\"\"\n{sentences}\n\"\"\"\n\nReply with a single JSON object and nothing else:\n{{\"match\": 1-5, \"evidence\": \"one short sentence\", \"missing\": \"one short sentence\"}}\n\nField rules:\n- match: does a viewer hearing this sentence over this frame see the sentence's EVENT\n  (who did what, and what it left behind) in the frame? 5 = the frame shows the\n  event's place and its visible consequence; 4 = the place is right and the\n  consequence is implied; 3 = the place is right but nothing of the event is visible;\n  2 = only the mood matches; 1 = a texture or mood piece unrelated to this sentence.\n- Do NOT lower `match` because the people the sentence mentions are not drawn — they\n  are composited later. Grade the place and the event's physical consequence only.\n- evidence: what in the frame carries this sentence's event.\n- missing: what this sentence describes that the frame does not show. Empty string if\n  nothing is missing.",
+  "summary": {
+    "rows": 8,
+    "scored": 8,
+    "skipped": 0,
+    "errored": 0,
+    "failed": 5,
+    "failure_rate": 0.625,
+    "mean_match": 2.125,
+    "mean_legible": 4.25,
+    "below_min_match": 4,
+    "below_min_legible": 0,
+    "illegible_only": 0,
+    "mismatch_only": 4,
+    "both": 0,
+    "hook": {
+      "shot_id": "S00100",
+      "status": "scored",
+      "legible": 4,
+      "match": 3,
+      "fail_reason": "match=3<4",
+      "reason": null
+    },
+    "worst": [
+      {
+        "shot_id": "S00105",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 1,
+        "place": "a dilapidated wooden structure",
+        "missing": "The frame shows two people standing, but there is no indication of them touching hands or anyone collapsing."
+      },
+      {
+        "shot_id": "S00303",
+        "scene_num": 3,
+        "legible": 4,
+        "match": 1,
+        "place": "a dim corridor with a large window",
+        "missing": "The sentence '보입니까, 그 병이?' implies a question about seeing or observing something related to illness or disease, but the frame does not show any specific object or evidence of illness beyond the character's attire."
+      },
+      {
+        "shot_id": "S00708",
+        "scene_num": 7,
+        "legible": 5,
+        "match": 1,
+        "place": "a tiled corridor",
+        "missing": "The sentence mentions '이게 에스씨피 공사구-이입니다.' (This is the SCP Foundation), but the frame does not provide any explicit visual evidence or text to confirm this identification."
+      },
+      {
+        "shot_id": "S00503",
+        "scene_num": 5,
+        "legible": 5,
+        "match": 2,
+        "place": "a futuristic circular corridor",
+        "missing": "There is no visible evidence of actual falling or collapse, and no physical consequences like debris or disturbance are shown."
+      },
+      {
+        "shot_id": "S00100",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a cracked stone corridor",
+        "missing": "there is no visible sign of a person or their death in the frame."
+      },
+      {
+        "shot_id": "S00201",
+        "scene_num": 2,
+        "legible": 4,
+        "match": 3,
+        "place": "a metal-barred cell in a corridor",
+        "missing": "The height of approximately 1.5 meters is not visually verifiable in this frame."
+      },
+      {
+        "shot_id": "S00204",
+        "scene_num": 2,
+        "legible": 4,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible action or physical consequence that directly illustrates the event described by '아주 협조적으로요.' (Very cooperatively)."
+      },
+      {
+        "shot_id": "S00301",
+        "scene_num": 3,
+        "legible": 4,
+        "match": 3,
+        "place": "a cracked concrete wall",
+        "missing": "There is no visible evidence of illness or anything that would directly correspond to the phrase '이 방에 병이 가득하오.' (This room is full of illness)."
+      }
+    ]
+  },
+  "rows": [
+    {
+      "scene_num": 1,
+      "shot_id": "S00100",
+      "hook": true,
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "손이 닿는 순간, 그는 죽었습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "extreme close-up of a concrete floor in an underground containment cell, a single drop of clear fluid striking dust and spreading into a dark stain, fine cracks radiating from the impact point, mycelial-like mineral deposits threading through the pores of the poured concrete, harsh overhead fluorescent light raking across the texture at a severe angle, a faint haze of disturbed dust particles frozen mid-dispersion around the impact site, FOREGROUND out-of-focus suggests a sudden collapse, abrupt finality, clinical stillness",
+      "cast": [],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_001_S00100.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a cracked stone corridor",
+      "event": "debris and dust have fallen from the ceiling",
+      "evidence": "the glowing line and scattered particles suggest a recent impact or energy discharge.",
+      "missing": "there is no visible sign of a person or their death in the frame.",
+      "blind_samples": [
+        {
+          "place": "a cracked stone corridor",
+          "event": "debris and dust have fallen from the ceiling",
+          "legible": 4
+        },
+        {
+          "place": "a cracked stone corridor",
+          "event": "debris and dust have fallen from the ceiling",
+          "legible": 4
+        },
+        {
+          "place": "a cracked stone corridor",
+          "event": "debris and dust have fallen from the ceiling",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "the glowing line and scattered particles suggest a recent impact or energy discharge.",
+          "missing": "there is no visible sign of a person or their death in the frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The glowing, shattered lines on the floor suggest a recent impact or event.",
+          "missing": "There is no visible evidence of a hand touching or any person being present in the frame."
+        },
+        {
+          "match": 3,
+          "evidence": "the glowing line on the floor suggests a recent event or impact.",
+          "missing": "there is no visible sign of a person or their death in the frame."
+        }
+      ],
+      "fail_reason": "match=3<4"
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00105",
+      "hook": false,
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [
+        "두 손이 맞닿자, 그는 그 자리에서 쓰러졌습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle shot looking down at a containment cell floor from the ceiling, a sudden spray of fine dust particles suspended in a cone shape radiating outward from a central empty point, a steel stool tipped onto its side at the edge of the dust cloud, a thin bright line across the floor like a fresh scratch scored into the concrete, the cell otherwise starkly empty with all furniture pushed against the far walls, harsh overhead fluorescent glare washing out the center, atmospheric particles backlit in a crisp starburst, violent stillness, the aftermath of a fall",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00105_baeff4953fdaea5e.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 1,
+      "place": "a dilapidated wooden structure",
+      "event": "two figures stand facing each other",
+      "evidence": "",
+      "missing": "The frame shows two people standing, but there is no indication of them touching hands or anyone collapsing.",
+      "blind_samples": [
+        {
+          "place": "a dilapidated wooden structure",
+          "event": "two figures stand facing each other",
+          "legible": 4
+        },
+        {
+          "place": "a dilapidated wooden structure",
+          "event": "two figures stand facing each other",
+          "legible": 4
+        },
+        {
+          "place": "a dilapidated wooden structure",
+          "event": "two figures stand facing each other",
+          "legible": 5
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "The frame shows two people standing, but there is no indication of them touching hands or anyone collapsing."
+        },
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "The frame shows two people standing, but there is no indication of them touching hands or anyone collapsing."
+        },
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "The frame shows two people standing, but there is no indication of them touching hands or anyone collapsing."
+        }
+      ],
+      "fail_reason": "match=1<3"
+    },
+    {
+      "scene_num": 2,
+      "shot_id": "S00201",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "'에스씨피-공사구, 키 약 일점 구 미터, 인간형."
+      ],
+      "frame_source": "images",
+      "image_prompt": "wide establishing shot of a standard humanoid containment cell, a bolted-down steel cot frame along the left wall with a thin mattress and loose restraint straps, poured concrete walls with fine hairline cracks and chalk scuff marks at ankle height, a wire-mesh observation window set high on the right wall, a floor drain grate near the center, a wall-mounted camera with a red indicator LED, twin fluorescent tubes in a metal housing casting a flat pale wash, cold gray concrete tinted faintly green with mineral streaks by the drain, quiet containment isolation, institutional neutrality",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00201_41ed09a00a8ba06b.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a metal-barred cell in a corridor",
+      "event": "a figure in a plague mask stands before the cell",
+      "evidence": "The figure in the frame matches the description of a humanoid SCP entity.",
+      "missing": "The height of approximately 1.5 meters is not visually verifiable in this frame.",
+      "blind_samples": [
+        {
+          "place": "a metal-barred cell in a corridor",
+          "event": "a figure in a plague mask stands before the cell",
+          "legible": 4
+        },
+        {
+          "place": "a metal-barred cell in a corridor",
+          "event": "a figure stands in front of the cell",
+          "legible": 4
+        },
+        {
+          "place": "a metal-barred cell in a corridor",
+          "event": "a figure in a plague mask stands before the cell",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The figure in the frame matches the description of a humanoid SCP entity.",
+          "missing": "The height of approximately 1.5 meters is not visually verifiable in this frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The figure in the plague mask is present in the frame, suggesting a humanoid form.",
+          "missing": "The height of approximately 1.5 meters is not visually verifiable in this frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The figure in the frame matches the description of a humanoid SCP entity.",
+          "missing": "The height of approximately 1.5 meters is not visually verifiable from the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 2,
+      "shot_id": "S00204",
+      "hook": false,
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "아주 협조적으로요."
+      ],
+      "frame_source": "images",
+      "image_prompt": "wide shot of a full containment cell, vast empty concrete floor stretching across the frame toward a sealed hydraulic cell door on the right, a bolted cot with thin mattress at the far-left edge, a single fluorescent tube buzzing faintly overhead casting long pooling shadows, the room almost too orderly with nothing out of place, fine dust hanging motionless in the air, empty negative space dominating the frame, quiet capitulation, placid dread",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00204_3e94fa12a378e7a0.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "unclear",
+      "evidence": "The figure in the plague mask is standing still, suggesting a cooperative stance.",
+      "missing": "There is no visible action or physical consequence that directly illustrates the event described by '아주 협조적으로요.' (Very cooperatively).",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "unclear",
+          "legible": 4
+        },
+        {
+          "place": "a dimly lit corridor with metal doors",
+          "event": "a figure in a hooded cloak stands still",
+          "legible": 4
+        },
+        {
+          "place": "a dimly lit corridor with metal doors",
+          "event": "a figure in a hooded cloak stands still",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The figure in the plague mask is standing still, suggesting a cooperative stance.",
+          "missing": "There is no visible action or physical consequence that directly illustrates the event described by '아주 협조적으로요.' (Very cooperatively)."
+        },
+        {
+          "match": 3,
+          "evidence": "The figure in the plague mask is standing in a sterile, institutional environment, suggesting a controlled or cooperative setting.",
+          "missing": "There is no visible action or event that directly illustrates the concept of 'very cooperatively' happening at this moment."
+        },
+        {
+          "match": 3,
+          "evidence": "The figure in the plague mask is standing still, suggesting a lack of action or movement.",
+          "missing": "There is no visible evidence of cooperation or interaction with others."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "S00301",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "close-up on empty air filling the frame, a blank poured-concrete wall surface drifting past the right edge, a single thread of dust suspended in a cold beam of light tracing a precise diagonal line across the emptiness, hairline cracks radiating from a central point on the wall like the start of a fracture, condensation beading on the metal door frame at the far left, harsh overhead fluorescent lamp with visible dust haze in its light cone, flat gray desaturation with one faint bloom where light hits the concrete, obsessive certainty, the unbearable insistence that something invisible occupies this space",
+      "cast": [],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/images/scene_003_S00301.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a cracked concrete wall",
+      "event": "cracks in the wall",
+      "evidence": "The cracked and damaged wall suggests a place where something significant or disturbing has occurred.",
+      "missing": "There is no visible evidence of illness or anything that would directly correspond to the phrase '이 방에 병이 가득하오.' (This room is full of illness).",
+      "blind_samples": [
+        {
+          "place": "a cracked concrete wall",
+          "event": "cracks in the wall",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete wall",
+          "event": "cracks in the wall",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete wall",
+          "event": "cracks in the wall",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The cracked and damaged wall suggests a place where something significant or disturbing has occurred.",
+          "missing": "There is no visible evidence of illness or anything that would directly correspond to the phrase '이 방에 병이 가득하오.' (This room is full of illness)."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and damaged wall suggests a place where something significant or disturbing has occurred.",
+          "missing": "There is no visible evidence of the 'sick people' mentioned in the sentence."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and damaged wall suggests a place where something significant has occurred, possibly related to the idea of 'illness' or 'disease'.",
+          "missing": "There is no visible indication of a hand pointing or any specific reference to 'this room being full of illness'."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "S00303",
+      "hook": false,
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "보입니까, 그 병이?"
+      ],
+      "frame_source": "images",
+      "image_prompt": "medium shot centered on a wall-mounted wire-mesh observation window at the rear of a containment cell, camera at head height facing the wall as if answering a question, the glass slightly clouded with condensation, a single handprint smeared across the lower third of the glass like someone pressed against it recently, cold fluorescent light flaring off the wire mesh casting a crosshatch of small shadows across the floor, fine dust disturbed in a circular pattern beneath the window, the rest of the cell perfectly still, searching uncertainty, the silent weight of being asked to confirm what cannot be seen",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00303_5edbe837bc135791.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 1,
+      "place": "a dim corridor with a large window",
+      "event": "a figure in a plague mask stands still",
+      "evidence": "The person in the plague doctor mask is standing in a room with rain visible on the window, suggesting an event involving this character.",
+      "missing": "The sentence '보입니까, 그 병이?' implies a question about seeing or observing something related to illness or disease, but the frame does not show any specific object or evidence of illness beyond the character's attire.",
+      "blind_samples": [
+        {
+          "place": "a dim corridor with a large window",
+          "event": "a figure in a plague mask stands still",
+          "legible": 4
+        },
+        {
+          "place": "a dim corridor with a large window",
+          "event": "a figure in a plague mask stands still",
+          "legible": 4
+        },
+        {
+          "place": "a dim corridor with a large window",
+          "event": "a figure in a plague mask stands still",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The person in the plague doctor mask is standing in a room with rain visible on the window, suggesting an event involving this character.",
+          "missing": "The sentence '보입니까, 그 병이?' implies a question about seeing or observing something related to illness or disease, but the frame does not show any specific object or evidence of illness beyond the character's attire."
+        },
+        {
+          "match": 1,
+          "evidence": "The frame shows a person in a plague doctor costume, which could be associated with the mention of '병이' (disease/illness).",
+          "missing": "There is no visible evidence of a specific disease or illness being present in the scene."
+        },
+        {
+          "match": 1,
+          "evidence": "The frame shows a person in a plague doctor costume, which could be associated with the mention of '병이' (disease/illness).",
+          "missing": "There is no visible evidence of a specific disease or illness being present in the scene."
+        }
+      ],
+      "fail_reason": "match=1<3"
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00503",
+      "hook": false,
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "다리가 풀리고..."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle surveillance shot, the concrete floor of a containment cell filling most of the frame, a steel-frame chair toppled on its side near the left edge, dust disturbed in a wide arc, a single restraint strap dragging on the ground, overhead fluorescent light buzzing with a visible flicker, the cell walls closing in from all sides, a drain grate in the center catching a thin trickle of condensation, knees giving way, gravity taking over",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00503_d4e936c268677a64.png",
+      "status": "scored",
+      "legible": 5,
+      "match_score": 2,
+      "place": "a futuristic circular corridor",
+      "event": "two figures stand facing each other",
+      "evidence": "The person in the orange jumpsuit appears to be standing unsteadily, suggesting they might be losing their balance.",
+      "missing": "There is no visible evidence of actual falling or collapse, and no physical consequences like debris or disturbance are shown.",
+      "blind_samples": [
+        {
+          "place": "a futuristic circular corridor",
+          "event": "two figures stand facing each other",
+          "legible": 5
+        },
+        {
+          "place": "a futuristic circular corridor",
+          "event": "two figures stand facing each other",
+          "legible": 5
+        },
+        {
+          "place": "a futuristic circular corridor",
+          "event": "two figures stand facing each other",
+          "legible": 5
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 2,
+          "evidence": "The person in the orange jumpsuit appears to be standing unsteadily, suggesting they might be losing their balance.",
+          "missing": "There is no visible evidence of actual falling or collapse, and no physical consequences like debris or disturbance are shown."
+        },
+        {
+          "match": 2,
+          "evidence": "The person in the orange jumpsuit appears to be standing unsteadily, suggesting they might be losing their balance.",
+          "missing": "There is no visible evidence of actual falling or collapse, and no physical consequences like debris or disturbance are shown."
+        },
+        {
+          "match": 2,
+          "evidence": "The person in the orange jumpsuit appears to be standing unsteadily, suggesting they might be losing their balance.",
+          "missing": "There is no visible evidence of actual falling or collapse, and no physical consequences like dust or debris are shown."
+        }
+      ],
+      "fail_reason": "match=2<3"
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "S00708",
+      "hook": false,
+      "sentence_indices": [
+        8
+      ],
+      "sentences": [
+        "이게 에스씨피 공사구-이입니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle shot from above the containment cell, a single overhead light beam pooling onto the center of the concrete floor, operating table pushed to the left margin with a trailing black thread, a dark observation window along the right wall reflecting the light beam, scuffed floor radiating from the central pool, empty space between the center and the right where two presences stand frozen, dust motes suspended in the beam, a verdict rendered in cold geometry, total acknowledgment, grim finality",
+      "cast": [
+        "SCP-049-2",
+        "SCP-049"
+      ],
+      "frame": "workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/recomposed/S00708_60129f3688182b39.png",
+      "status": "scored",
+      "legible": 5,
+      "match_score": 1,
+      "place": "a tiled corridor",
+      "event": "two figures stand in a pool of light",
+      "evidence": "The frame shows two figures in a dimly lit, institutional-looking corridor, which could be interpreted as an SCP Foundation facility.",
+      "missing": "The sentence mentions '이게 에스씨피 공사구-이입니다.' (This is the SCP Foundation), but the frame does not provide any explicit visual evidence or text to confirm this identification.",
+      "blind_samples": [
+        {
+          "place": "a tiled corridor",
+          "event": "two figures stand in a pool of light",
+          "legible": 5
+        },
+        {
+          "place": "a tiled corridor",
+          "event": "two figures stand in a pool of light",
+          "legible": 4
+        },
+        {
+          "place": "a tiled corridor",
+          "event": "two figures stand in a pool of light",
+          "legible": 5
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 1,
+          "evidence": "The frame shows two figures in a dimly lit, institutional-looking corridor, which could be interpreted as an SCP Foundation facility.",
+          "missing": "The sentence mentions '이게 에스씨피 공사구-이입니다.' (This is the SCP Foundation), but the frame does not provide any explicit visual evidence or text to confirm this identification."
+        },
+        {
+          "match": 1,
+          "evidence": "The frame shows two figures in a dimly lit, institutional-looking corridor, which could be interpreted as an SCP Foundation facility.",
+          "missing": "The sentence mentions '이게 에스씨피 공사구-이입니다.' (This is the SCP Foundation), but the frame does not provide any explicit visual evidence or text to confirm this identification."
+        },
+        {
+          "match": 3,
+          "evidence": "The setting appears to be a sterile, institutional environment with tiled floors and walls, consistent with the SCP Foundation's aesthetic.",
+          "missing": "There is no direct visual evidence of an 'SCP Foundation' or any specific event related to it in this frame."
+        }
+      ],
+      "fail_reason": "match=1<3"
+    }
+  ]
+}

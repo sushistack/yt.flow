@@ -1,0 +1,207 @@
+{
+  "rule": "mean `match` over the slate does not decrease, the count of shots below MIN_MATCH does not increase, and the hook shot reaches match >= 4 and legible >= 4",
+  "clauses": {
+    "mean_match_does_not_decrease": {
+      "old": 3.267,
+      "new": 2.933,
+      "held": false
+    },
+    "below_min_match_does_not_increase": {
+      "old": 2,
+      "new": 1,
+      "held": true
+    },
+    "hook_reaches_4_and_4": {
+      "old": 5,
+      "new": 3,
+      "new_legible": 4,
+      "held": false
+    }
+  },
+  "won": false,
+  "generated_at": "2026-08-10T20:43:04",
+  "slate": [
+    "S00100",
+    "S00101",
+    "S00102",
+    "S00103",
+    "S00104",
+    "S00105",
+    "S00106",
+    "S00500",
+    "S00501",
+    "S00502",
+    "S00503",
+    "S00504",
+    "S00505",
+    "S00506",
+    "S00507"
+  ],
+  "per_shot": [
+    {
+      "shot_id": "S00100",
+      "old_legible": 4,
+      "old_match_score": 5,
+      "old_place": "a metallic basin on a cracked floor",
+      "old_missing": "",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a concrete corridor",
+      "new_missing": "There is no visible evidence of a person or the immediate aftermath of an event involving a hand touching and resulting in death."
+    },
+    {
+      "shot_id": "S00101",
+      "old_legible": 4,
+      "old_match_score": 3,
+      "old_place": "a dimly lit, tiled room",
+      "old_missing": "There is no visible person or indication of movement suggesting someone entering the room.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a concrete corridor",
+      "new_missing": "There is no visible person or movement indicating someone entering the room."
+    },
+    {
+      "shot_id": "S00102",
+      "old_legible": 4,
+      "old_match_score": 3,
+      "old_place": "a tiled examination room",
+      "old_missing": "There is no visible evidence of a figure or the physical consequences of their presence, such as footprints, disturbed objects, or shadows.",
+      "new_legible": 3,
+      "new_match_score": 3,
+      "new_place": "a dimly lit, empty room",
+      "new_missing": "The frame does not show a visible 'gaellumpeun siluete' (slender silhouette) or a 'black robe reaching the floor'."
+    },
+    {
+      "shot_id": "S00103",
+      "old_legible": 4,
+      "old_match_score": 1,
+      "old_place": "a brightly lit examination room",
+      "old_missing": "길게 휜 부리의 도자기 가면이 그를 향하죠.",
+      "new_legible": 3,
+      "new_match_score": 3,
+      "new_place": "a dim, empty corridor with large windows",
+      "new_missing": "There is no visible ceramic mask with a long, curved beak in the frame."
+    },
+    {
+      "shot_id": "S00104",
+      "old_legible": 4,
+      "old_match_score": 1,
+      "old_place": "a dark room with a tiled floor",
+      "old_missing": "A hand extending from the light source or any indication of a handshake.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a distorted corridor",
+      "new_missing": "There is no visible sign of a hand or any indication of a handshake taking place."
+    },
+    {
+      "shot_id": "S00105",
+      "old_legible": 5,
+      "old_match_score": 4,
+      "old_place": "a tiled examination room",
+      "old_missing": "The frame does not show the two hands touching or the person collapsing.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a cracked concrete room",
+      "new_missing": "There is no visible person or body on the ground to confirm that 'he' fell."
+    },
+    {
+      "shot_id": "S00106",
+      "old_legible": 4,
+      "old_match_score": 3,
+      "old_place": "a tiled examination room",
+      "old_missing": "There is no visible evidence of any treatment or therapeutic action taking place in the frame. The sentence implies an event related to healing or therapy, but the frame only shows an empty room with a puddle.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a damaged concrete corridor",
+      "new_missing": "The sentence implies a beginning of treatment or healing, but the frame does not show any direct evidence of this process starting, such as medical equipment or signs of activity."
+    },
+    {
+      "shot_id": "S00500",
+      "old_legible": 4,
+      "old_match_score": 5,
+      "old_place": "a cracked wall corner",
+      "old_missing": "",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a concrete corridor",
+      "new_missing": "There is no visible evidence of hands or a handshake taking place in the frame."
+    },
+    {
+      "shot_id": "S00501",
+      "old_legible": 3,
+      "old_match_score": 3,
+      "old_place": "a cracked corridor with glowing edges",
+      "old_missing": "There is no visible evidence of a person or any interaction that would indicate a loss of body heat.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a metallic containment pool",
+      "new_missing": "There is no visible evidence of a person or their physical presence in the frame, which is necessary to confirm the event of skin contact and subsequent loss of body heat."
+    },
+    {
+      "shot_id": "S00502",
+      "old_legible": 4,
+      "old_match_score": 4,
+      "old_place": "an extreme close-up of a surface",
+      "old_missing": "The frame does not show any indication of movement or action that would imply the mask's beak approaching or interacting with the viewer.",
+      "new_legible": 3,
+      "new_match_score": 1,
+      "new_place": "a futuristic corridor",
+      "new_missing": "가면의 부리가 시야를 가득 채웁니다."
+    },
+    {
+      "shot_id": "S00503",
+      "old_legible": 4,
+      "old_match_score": 3,
+      "old_place": "a wall with a mounted device",
+      "old_missing": "There is no visible evidence of a leg or any body part that has fallen, which would directly illustrate the sentence '다리가 풀리고...' (The leg gave way...).",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a cracked concrete floor",
+      "new_missing": "There is no visible sign of someone falling or losing their balance."
+    },
+    {
+      "shot_id": "S00504",
+      "old_legible": 3,
+      "old_match_score": 4,
+      "old_place": "a corridor with vertical light panels",
+      "old_missing": "There is no visible consequence or physical evidence of an event occurring, such as a person or object causing the movement.",
+      "new_legible": 4,
+      "new_match_score": 4,
+      "new_place": "a cracked tiled floor near a wall",
+      "new_missing": "There is no visible indication of a specific event causing the floor to approach, such as a character or object moving towards the viewer."
+    },
+    {
+      "shot_id": "S00505",
+      "old_legible": 4,
+      "old_match_score": 4,
+      "old_place": "a dilapidated room with corrugated metal walls",
+      "old_missing": "The sentence '수 초면, 죽음입니다.' (If it's a few seconds, it's death.) implies an imminent threat or event that has just passed, which is not directly depicted in the frame.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a sterile containment chamber",
+      "new_missing": "There is no explicit evidence of death or the immediate aftermath described by '수 초면, 죽음입니다.' (In a few seconds, it's death.)."
+    },
+    {
+      "shot_id": "S00506",
+      "old_legible": 4,
+      "old_match_score": 3,
+      "old_place": "a cracked concrete floor in a dimly lit room",
+      "old_missing": "The sentence '걱정 마세요.' (Don't worry.) implies a reassurance or calming statement, which is not visually represented in the frame.",
+      "new_legible": 4,
+      "new_match_score": 3,
+      "new_place": "a dimly lit industrial room",
+      "new_missing": "There is no explicit physical evidence of an event or consequence that directly illustrates the action described by the sentence. The frame shows a static scene without any visible activity or change."
+    },
+    {
+      "shot_id": "S00507",
+      "old_legible": 3,
+      "old_match_score": 3,
+      "old_place": "a sterile corridor with cabinets",
+      "old_missing": "There is no visible event or consequence in the frame that directly illustrates the start of an action.",
+      "new_legible": 5,
+      "new_match_score": 3,
+      "new_place": "a tiled examination room",
+      "new_missing": "There is no visible physical consequence or evidence of an event having already occurred."
+    }
+  ]
+}

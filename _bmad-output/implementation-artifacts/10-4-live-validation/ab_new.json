@@ -1,0 +1,1010 @@
+{
+  "generated_at": "2026-08-10T20:43:04",
+  "run": "8a9a288b-800f-4c73-88a2-25ae6b5a4d7d",
+  "frame_source": "images",
+  "reps": 3,
+  "vision_model": "qwen-vl-plus",
+  "endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "thresholds": {
+    "MIN_LEGIBLE": 3,
+    "MIN_MATCH": 3,
+    "MIN_LEGIBLE_HOOK": 4,
+    "MIN_MATCH_HOOK": 4
+  },
+  "blind_prompt": "You are looking at one rendered frame from an animated SCP Foundation video.\nIt illustrates one sentence of Korean narration. You are NOT being shown that sentence.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nReply with a single JSON object and nothing else:\n{\"place\": \"one short English phrase\", \"event\": \"one short English phrase\", \"legible\": 1-5}\n\nField rules:\n- place: where this is, as concretely as the frame supports — \"a tiled examination\n  room\", \"a concrete corridor\", \"an extreme close-up of a floor\". Write \"unclear\" if\n  you cannot tell where this is.\n- event: what has just happened in this place, read ONLY from what the frame shows —\n  damage, disturbance, objects out of place, marks, aftermath. Write \"unclear\" if the\n  frame shows a place but no evidence that anything happened.\n- legible: 5 = someone seeing this for two seconds could say both where they are and\n  what happened here; 4 = the place is unmistakable and the event is readable but\n  needs a beat; 3 = the place reads, the event does not; 2 = the place is a guess;\n  1 = neither reads — a texture study, a glow, an abstraction.",
+  "match_prompt": "You are grading one rendered frame from an animated SCP Foundation video\nagainst the sentence of Korean narration it is supposed to illustrate.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nThe narration sentence(s) for this frame:\n\"\"\"\n{sentences}\n\"\"\"\n\nReply with a single JSON object and nothing else:\n{{\"match\": 1-5, \"evidence\": \"one short sentence\", \"missing\": \"one short sentence\"}}\n\nField rules:\n- match: does a viewer hearing this sentence over this frame see the sentence's EVENT\n  (who did what, and what it left behind) in the frame? 5 = the frame shows the\n  event's place and its visible consequence; 4 = the place is right and the\n  consequence is implied; 3 = the place is right but nothing of the event is visible;\n  2 = only the mood matches; 1 = a texture or mood piece unrelated to this sentence.\n- Do NOT lower `match` because the people the sentence mentions are not drawn — they\n  are composited later. Grade the place and the event's physical consequence only.\n- evidence: what in the frame carries this sentence's event.\n- missing: what this sentence describes that the frame does not show. Empty string if\n  nothing is missing.",
+  "summary": {
+    "rows": 15,
+    "scored": 15,
+    "skipped": 0,
+    "errored": 0,
+    "failed": 2,
+    "failure_rate": 0.133,
+    "mean_match": 2.933,
+    "mean_legible": 3.867,
+    "below_min_match": 1,
+    "below_min_legible": 0,
+    "illegible_only": 0,
+    "mismatch_only": 1,
+    "both": 0,
+    "hook": {
+      "shot_id": "S00100",
+      "status": "scored",
+      "legible": 4,
+      "match": 3,
+      "fail_reason": "match=3<4",
+      "reason": null
+    },
+    "worst": [
+      {
+        "shot_id": "S00502",
+        "scene_num": 5,
+        "legible": 3,
+        "match": 1,
+        "place": "a futuristic corridor",
+        "missing": "가면의 부리가 시야를 가득 채웁니다."
+      },
+      {
+        "shot_id": "S00102",
+        "scene_num": 1,
+        "legible": 3,
+        "match": 3,
+        "place": "a dimly lit, empty room",
+        "missing": "The frame does not show a visible 'gaellumpeun siluete' (slender silhouette) or a 'black robe reaching the floor'."
+      },
+      {
+        "shot_id": "S00103",
+        "scene_num": 1,
+        "legible": 3,
+        "match": 3,
+        "place": "a dim, empty corridor with large windows",
+        "missing": "There is no visible ceramic mask with a long, curved beak in the frame."
+      },
+      {
+        "shot_id": "S00100",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible evidence of a person or the immediate aftermath of an event involving a hand touching and resulting in death."
+      },
+      {
+        "shot_id": "S00101",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible person or movement indicating someone entering the room."
+      },
+      {
+        "shot_id": "S00104",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a distorted corridor",
+        "missing": "There is no visible sign of a hand or any indication of a handshake taking place."
+      },
+      {
+        "shot_id": "S00105",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a cracked concrete room",
+        "missing": "There is no visible person or body on the ground to confirm that 'he' fell."
+      },
+      {
+        "shot_id": "S00106",
+        "scene_num": 1,
+        "legible": 4,
+        "match": 3,
+        "place": "a damaged concrete corridor",
+        "missing": "The sentence implies a beginning of treatment or healing, but the frame does not show any direct evidence of this process starting, such as medical equipment or signs of activity."
+      },
+      {
+        "shot_id": "S00500",
+        "scene_num": 5,
+        "legible": 4,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible evidence of hands or a handshake taking place in the frame."
+      },
+      {
+        "shot_id": "S00501",
+        "scene_num": 5,
+        "legible": 4,
+        "match": 3,
+        "place": "a metallic containment pool",
+        "missing": "There is no visible evidence of a person or their physical presence in the frame, which is necessary to confirm the event of skin contact and subsequent loss of body heat."
+      }
+    ]
+  },
+  "rows": [
+    {
+      "scene_num": 1,
+      "shot_id": "S00100",
+      "hook": true,
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "손이 닿는 순간, 그는 죽었습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle wide of a bare containment cell, twin rows of cold fluorescent tubes overhead with the nearest tube strobing unevenly, a steel-frame exam table bolted near the right wall with restraint straps hanging open and one buckle still swinging slightly, on the poured concrete floor a sharp impact depression in the settled dust where a body has just gone down, a stainless instrument tray knocked from its stand and lying on its side with tools scattered in a radial pattern, a slow dust cloud still suspended in the strobing light beam, cinder block walls with peeling grey institutional paint, a single blackened floor drain near the baseboard, the entire room frozen in the aftermath of a silent collapse, clinical dread, sudden cessation",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00100.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "a metal grate lies askew on the floor",
+      "evidence": "The empty, dimly lit room with a barred area suggests a place where something significant could have happened.",
+      "missing": "There is no visible evidence of a person or the immediate aftermath of an event involving a hand touching and resulting in death.",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "a metal grate lies askew on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a concrete corridor",
+          "event": "a metal grate lies askew on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a concrete corridor",
+          "event": "a metal grate lies askew on the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty, dimly lit room with a barred area suggests a place where something significant could have happened.",
+          "missing": "There is no visible evidence of a person or the immediate aftermath of an event involving a hand touching and resulting in death."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty, dimly lit room with a barred window suggests a place where something significant and possibly ominous could have occurred.",
+          "missing": "There is no visible evidence of a person or any immediate consequence of an event involving a hand touching and resulting in death."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty, dimly lit room with a barred area suggests a place where something significant could have happened.",
+          "missing": "There is no visible evidence of a person or the immediate aftermath of an event involving a hand touching and resulting in death."
+        }
+      ],
+      "fail_reason": "match=3<4"
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00101",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "디 계급 인원이 격리실로 들어옵니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "medium shot angled along the entrance threshold of a containment cell, the heavy blast door standing open on the left third with its hydraulic piston still extended and a faint wisp of condensation curling from the corridor side, bright white corridor light spilling in a hard trapezoid across the grey poured-concrete floor, the trapezoid cutting across the shadowed cell interior, a fresh disturbance in the settled dust tracing a path inward from the threshold, wall-mounted intercom panel beside the frame with a single red indicator light glowing, the cell interior receding into cold blue-white fluorescent haze to the right, the threshold itself holding the mark of the moment just passed, institutional tension, watched entry",
+      "cast": [
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00101.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "a red laser beam has scorched the wall",
+      "evidence": "The corridor is shown as a sterile, institutional space with red lights and a clean, reflective floor, suggesting a secure facility like an isolation room.",
+      "missing": "There is no visible person or movement indicating someone entering the room.",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "a red laser beam has scorched the wall",
+          "legible": 4
+        },
+        {
+          "place": "a metallic corridor",
+          "event": "a red laser beam has passed through",
+          "legible": 4
+        },
+        {
+          "place": "a metallic corridor",
+          "event": "a red laser beam has passed through",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The corridor is shown as a sterile, institutional space with red lights and a clean, reflective floor, suggesting a secure facility like an isolation room.",
+          "missing": "There is no visible person or movement indicating someone entering the room."
+        },
+        {
+          "match": 3,
+          "evidence": "The corridor is shown as a sterile, institutional space with red lights and a clean, reflective floor, suggesting a secure facility like an isolation room.",
+          "missing": "There is no visible person or movement indicating someone entering the room."
+        },
+        {
+          "match": 3,
+          "evidence": "The corridor is shown as a sterile, institutional space with red lights, suggesting a secure or restricted area like an isolation room.",
+          "missing": "There is no visible person or movement indicating someone entering the room."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00102",
+      "hook": false,
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "가냘픈 실루엣, 바닥까지 닿는 검은 로브."
+      ],
+      "frame_source": "images",
+      "image_prompt": "wide shot of the far right corner of a containment cell, dim and receding into flat shadow, a single caged bulb mounted high on the far wall casting a small cone of sickly yellow light onto the empty concrete floor, inside that cone a perfectly dust-free oval patch where something has stood motionless for a very long time, the surrounding dust undisturbed, a low steel shelf along the far wall holding a coil of rope and a rusted chain, bare cinder block walls fading into grey gloom, a faint haze hanging in the light beam, cold stagnant waiting, immobile patience",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00102.png",
+      "status": "scored",
+      "legible": 3,
+      "match_score": 3,
+      "place": "a dimly lit, empty room",
+      "event": "unclear",
+      "evidence": "The empty room with a light source casting a shadow on the floor suggests the presence of an unseen figure, possibly wearing a long robe.",
+      "missing": "The frame does not show a visible 'gaellumpeun siluete' (slender silhouette) or a 'black robe reaching the floor'.",
+      "blind_samples": [
+        {
+          "place": "a dimly lit, empty room",
+          "event": "unclear",
+          "legible": 3
+        },
+        {
+          "place": "a dimly lit corridor",
+          "event": "a patch of light on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a dimly lit, empty room",
+          "event": "unclear",
+          "legible": 3
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room with a light source casting a shadow on the floor suggests the presence of an unseen figure, possibly wearing a long robe.",
+          "missing": "The frame does not show a visible 'gaellumpeun siluete' (slender silhouette) or a 'black robe reaching the floor'."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty room with a light source casting a shadow on the floor suggests the presence of an unseen figure.",
+          "missing": "The frame does not show a person wearing a black robe, only the implication of their presence through shadows."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty room with a light source casting a shadow on the floor suggests the presence of an unseen figure, possibly wearing a long robe.",
+          "missing": "The frame does not show a visible 'gaeyallgeun siluete' (slender silhouette) or a 'black robe reaching the floor'."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00103",
+      "hook": false,
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "길게 휜 부리의 도자기 가면이 그를 향하죠."
+      ],
+      "frame_source": "images",
+      "image_prompt": "medium shot across the mid-floor of the containment cell, a wire-mesh observation window set into the left wall glowing faintly with corridor light and casting a rectangular patch of cool light onto the concrete floor, a hard-edged shaft of cold light falling from an overhead vent across the open space creating a clear sightline linking the left and right thirds of the frame, the right side holding a low steel workbench with a black rubber hose coiled beside a rusted vice, dust motes drifting slowly within each light shaft, the rest of the room sunk into flat grey shadow, the space between the two occupied sides perfectly empty and static, suspended judgment, clinical watchfulness",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00103.png",
+      "status": "scored",
+      "legible": 3,
+      "match_score": 3,
+      "place": "a dim, empty corridor with large windows",
+      "event": "unclear",
+      "evidence": "The empty room and the direction of the light suggest a place where something could be happening, but no specific event or object is visible.",
+      "missing": "There is no visible ceramic mask with a long, curved beak in the frame.",
+      "blind_samples": [
+        {
+          "place": "a dim, empty corridor with large windows",
+          "event": "unclear",
+          "legible": 3
+        },
+        {
+          "place": "a dim, empty corridor with large windows",
+          "event": "unclear",
+          "legible": 3
+        },
+        {
+          "place": "a dim, empty corridor with large windows",
+          "event": "unclear",
+          "legible": 3
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room and the direction of the light suggest a place where something could be happening, but no specific event or object is visible.",
+          "missing": "There is no visible ceramic mask with a long, curved beak in the frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty room and the direction of the light suggest a place where something could be happening, but no specific event or object is visible.",
+          "missing": "There is no visible object resembling a ceramic mask with a long, curved beak in the frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty room suggests a place where an event could occur, but no physical evidence of the described action (a ceramic mask with a long curved beak approaching) is visible.",
+          "missing": "There is no ceramic mask or any indication of movement towards the viewer in the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "hook": false,
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "맨손이 나와 악수를 청합니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "close-up of the concrete floor at the center of the containment cell, a narrow shaft of cold light slicing across the frame dividing a shadowed left zone from a flat grey right zone, a patient spiral of dust motes still turning mid-air at arm's height as if something has just moved through the stillness, the floor scuffed with a single stalled forward step that stops short before a small round drainage grate faintly reflecting the overhead light, the right third of the frame falling into flat shadow where all motion has ceased, the gap between the two occupied zones impossibly still, offer and hesitation, suspended decision",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00104.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a distorted corridor",
+      "event": "the walls and floor are warped",
+      "evidence": "The empty, open space in the room suggests a place where an interaction could occur.",
+      "missing": "There is no visible sign of a hand or any indication of a handshake taking place.",
+      "blind_samples": [
+        {
+          "place": "a distorted corridor",
+          "event": "the walls and floor are warped",
+          "legible": 4
+        },
+        {
+          "place": "a distorted corridor",
+          "event": "the walls and floor are warped",
+          "legible": 4
+        },
+        {
+          "place": "a distorted corridor",
+          "event": "the walls and floor are warped and misshapen",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty, open space in the room suggests a place where an interaction could occur.",
+          "missing": "There is no visible sign of a hand or any indication of a handshake taking place."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty, open space in the room suggests a place where an interaction could occur.",
+          "missing": "There is no visible sign of a hand or any indication of a handshake taking place."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty, open space in the background plate suggests a place where an interaction could occur.",
+          "missing": "There is no visible hand or gesture of someone offering to shake hands."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00105",
+      "hook": false,
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [
+        "두 손이 맞닿자, 그는 그 자리에서 쓰러졌습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle looking straight down at the poured concrete floor of the containment cell, a sharp impact depression in the settled dust at the center-right where a body has just gone down in a heap, dust still billowing outward in a slow radial cloud catching the cold overhead light, a small steel instrument tray near the left edge of the impact knocked onto its side with a stethoscope and scalpel scattered loose, hairline cracks radiating through the concrete finish, tremor scuffs in a tight circle around the impact, the strobing fluorescent tube overhead throwing alternating bands of shadow across the scene, frozen mid-fall, terminal silence, the instant of collapse",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00105.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a cracked concrete room",
+      "event": "a swirling vortex in the floor",
+      "evidence": "The cracked and disturbed ground suggests a recent event where something or someone collapsed.",
+      "missing": "There is no visible person or body on the ground to confirm that 'he' fell.",
+      "blind_samples": [
+        {
+          "place": "a cracked concrete room",
+          "event": "a swirling vortex in the floor",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete room",
+          "event": "a swirling vortex in the floor",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete room",
+          "event": "a swirling vortex in the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The cracked and disturbed ground suggests a recent event where something or someone collapsed.",
+          "missing": "There is no visible person or body on the ground to confirm that 'he' fell."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and disturbed ground suggests a recent event where something or someone collapsed.",
+          "missing": "There is no visible person or body on the ground to confirm that 'he' fell."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and disturbed ground suggests a recent event where something significant occurred, possibly involving force or impact.",
+          "missing": "There is no visible evidence of two hands touching or a person collapsing in the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 1,
+      "shot_id": "S00106",
+      "hook": false,
+      "sentence_indices": [
+        6
+      ],
+      "sentences": [
+        "'이것이 치료의 시작입니다.'"
+      ],
+      "frame_source": "images",
+      "image_prompt": "medium shot of the containment cell in the aftermath, low grey dust haze barely moving at knee level along the concrete floor, the sharp impact hollow from the collapse visible at the lower edge of frame, a steel instrument tray knocked on its side and tools scattered where they fell, the center of the room standing perfectly empty and still with a single hanging caged bulb above casting a small cone of weak yellow light straight down onto the bare concrete, the walls bare grey cinder block with faint damp stains, the air dead and cold, the entire volume of the room holding its breath, finality, irreversible outcome, hollow pronouncement",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_001_S00106.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a damaged concrete corridor",
+      "event": "debris scattered, a box disturbed",
+      "evidence": "The yellow box in the center of the frame suggests a significant object or event, possibly indicating the start of an important process or action.",
+      "missing": "The sentence implies a beginning of treatment or healing, but the frame does not show any direct evidence of this process starting, such as medical equipment or signs of activity.",
+      "blind_samples": [
+        {
+          "place": "a damaged concrete corridor",
+          "event": "debris scattered, a box disturbed",
+          "legible": 4
+        },
+        {
+          "place": "a damaged concrete corridor",
+          "event": "debris scattered around a yellow box",
+          "legible": 4
+        },
+        {
+          "place": "a damaged concrete corridor",
+          "event": "debris scattered around a yellow box",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The yellow box in the center of the frame suggests a significant object or event, possibly indicating the start of an important process or action.",
+          "missing": "The sentence implies a beginning of treatment or healing, but the frame does not show any direct evidence of this process starting, such as medical equipment or signs of activity."
+        },
+        {
+          "match": 3,
+          "evidence": "The yellow box in the center of the frame suggests a significant object or event, possibly indicating the start of an important process or action.",
+          "missing": "The sentence implies a beginning of treatment or healing, but the frame does not show any direct evidence of this process starting, such as medical equipment or signs of activity."
+        },
+        {
+          "match": 3,
+          "evidence": "The yellow box in the center of the frame suggests a significant object or event, possibly related to the start of treatment as mentioned in the sentence.",
+          "missing": "There is no visible action or consequence that directly illustrates the beginning of treatment. The frame lacks any indication of an event or process that would align with the sentence."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00500",
+      "hook": false,
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "악수를 청하던 손이, 이제 당신의 손을 감쌌습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "wide shot, anonymous concrete containment room with a cleared central floor space where two worn standing positions face each other across a scuffed circle of cement dust, bare poured-concrete walls with hairline expansion cracks and mineral bloom near the base, a single overhead fluorescent tube casting a cold pool of white light onto the exact encounter spot, fine cement dust hanging perfectly motionless in the light beam, a floor drain grate at center with oxidized rust stains radiating outward, a steel examination table pushed against the far right wall with its surface bare and gleaming, the far left corner holding a bolted restraint chair with straps hanging slack, the air so absolutely still that dust appears frozen mid-suspension, the room braced for what the next second will bring, suspended anticipation, the held breath before an irreversible touch",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00500.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "a beam of light has struck the floor",
+      "evidence": "The empty table in the center of the room suggests a place where an interaction could occur, such as a handshake.",
+      "missing": "There is no visible evidence of hands or a handshake taking place in the frame.",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "a beam of light has struck the floor",
+          "legible": 4
+        },
+        {
+          "place": "a concrete corridor",
+          "event": "a beam of light has struck the floor",
+          "legible": 4
+        },
+        {
+          "place": "a concrete corridor",
+          "event": "a beam of light has struck the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty table in the center of the room suggests a place where an interaction could occur, such as a handshake.",
+          "missing": "There is no visible evidence of hands or a handshake taking place in the frame."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty table in the center of the room suggests a place where an interaction, such as a handshake, could have occurred.",
+          "missing": "There is no visible evidence of a hand or hands being present in the frame to illustrate the event described by the sentence."
+        },
+        {
+          "match": 3,
+          "evidence": "The empty table in the center of the room suggests a place where an interaction, such as a handshake, could have occurred.",
+          "missing": "There is no visible evidence of a hand or hands being present in the frame to illustrate the event described by the sentence."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00501",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "피부가 닿는 순간, 체온이 사라졌습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "close-up shot of the cold spreading through the room, thin rime frost creeping along the galvanized edge of the floor drain grate and up the bolted restraint chair's metal armrest, condensation blooming on the steel examination table's surface in a web of tiny droplets, the overhead fluorescent tube flickering once as if the sudden temperature drop strains its ballast, moisture beading on the concrete wall in a radial pattern expanding outward from the central encounter spot, the air itself becoming visible as breath vapor hangs dense and unmoving where it should dissipate, a thin layer of chill visibly crawling across every surface, the room's warmth being drawn away toward the center, warmth stolen mid-motion, the physical trace of life leaving a body",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00501.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a metallic containment pool",
+      "event": "glowing energy passed through the water",
+      "evidence": "The glowing, turbulent water in the pool suggests a sudden and intense event, possibly related to the loss of body heat as described in the sentence.",
+      "missing": "There is no visible evidence of a person or their physical presence in the frame, which is necessary to confirm the event of skin contact and subsequent loss of body heat.",
+      "blind_samples": [
+        {
+          "place": "a metallic containment pool",
+          "event": "glowing energy passed through the water",
+          "legible": 4
+        },
+        {
+          "place": "a metallic containment pool",
+          "event": "glowing energy passed through the water",
+          "legible": 4
+        },
+        {
+          "place": "a metallic containment pool",
+          "event": "glowing energy passed through the water",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The glowing, turbulent water in the pool suggests a sudden and intense event, possibly related to the loss of body heat as described in the sentence.",
+          "missing": "There is no visible evidence of a person or their physical presence in the frame, which is necessary to confirm the event of skin contact and subsequent loss of body heat."
+        },
+        {
+          "match": 3,
+          "evidence": "The glowing, turbulent water in the pool suggests a sudden and intense event, possibly related to the loss of body heat as described in the sentence.",
+          "missing": "There is no visible evidence of a person or their physical presence in the frame, which is necessary to confirm the event of skin contact and subsequent loss of body heat."
+        },
+        {
+          "match": 4,
+          "evidence": "The glowing, turbulent water suggests a sudden loss of warmth.",
+          "missing": "There is no visible evidence of skin contact or the immediate aftermath of temperature loss."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00502",
+      "hook": false,
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "가면의 부리가 시야를 가득 채웁니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "POV shot from close range as the room recedes sharply away at all edges, ceiling tiles and concrete wall lines converging steeply toward a vanishing point behind a central obstruction that fills the frame's core, the overhead fluorescent light diffused into a cool halo around the blocked center, the steel examination table and restraint chair reduced to blurred grey shapes in the extreme peripheral vision, the floor falling away steeply toward the distant drain grate, depth of field collapsed so that everything beyond arm's reach turns to soft bokeh, the room's geometry warping inward around the central presence, the entire world shrinking until only the immediate moment remains, claustrophobic proximity, the universe reduced to a single point of focus",
+      "cast": [
+        "SCP-049"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00502.png",
+      "status": "scored",
+      "legible": 3,
+      "match_score": 1,
+      "place": "a futuristic corridor",
+      "event": "unclear",
+      "evidence": "",
+      "missing": "가면의 부리가 시야를 가득 채웁니다.",
+      "blind_samples": [
+        {
+          "place": "a futuristic corridor",
+          "event": "unclear",
+          "legible": 3
+        },
+        {
+          "place": "a futuristic corridor",
+          "event": "unclear",
+          "legible": 4
+        },
+        {
+          "place": "a futuristic corridor",
+          "event": "unclear",
+          "legible": 3
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "가면의 부리가 시야를 가득 채웁니다."
+        },
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "가면의 부리가 시야를 가득 채웁니다."
+        },
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "가면의 부리 (the beak of the mask)"
+        }
+      ],
+      "fail_reason": "match=1<3"
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00503",
+      "hook": false,
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "다리가 풀리고..."
+      ],
+      "frame_source": "images",
+      "image_prompt": "high-angle shot looking down at the concrete floor beside a bolted restraint chair, a small cloud of cement dust kicked up and still hanging in the air at chair height where a collapse has just begun to happen, the chair's armrest bearing fresh parallel scrapes in the dust coating, the floor drain grate partially visible with a scuffed drag pattern passing across it, surrounding concrete marked with older impact scuffs and shallow impact craters from previous falls, the fluorescent tube above casting long elongated shadows that point away from the central area, the far wall receding into flat grey with a single wall-mounted camera blinking red, a loose metal bolt rolling in a slow arc across the floor, gravity seizing control, a body's surrender made visible in displaced dust and settling debris",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00503.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a cracked concrete floor",
+      "event": "a device has been forcefully placed or dropped here",
+      "evidence": "The cracked and damaged floor suggests a recent event that caused instability.",
+      "missing": "There is no visible sign of someone falling or losing their balance.",
+      "blind_samples": [
+        {
+          "place": "a cracked concrete floor",
+          "event": "a device has been forcefully placed or dropped here",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete floor",
+          "event": "a device has been forcefully placed or dropped here",
+          "legible": 4
+        },
+        {
+          "place": "a cracked concrete floor",
+          "event": "a device has been forcefully placed or dropped here",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The cracked and damaged floor suggests a recent event that caused instability.",
+          "missing": "There is no visible sign of someone falling or losing their balance."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and broken ground suggests a recent event of force or collapse.",
+          "missing": "There is no visible evidence of someone falling or losing their balance."
+        },
+        {
+          "match": 3,
+          "evidence": "The cracked and damaged floor suggests a recent event that caused instability.",
+          "missing": "There is no visible sign of someone falling or losing their balance."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00504",
+      "hook": false,
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "바닥이 다가옵니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "POV shot rushing downward toward a concrete floor, the drain grate swelling rapidly as the surface races closer, individual concrete pores and embedded aggregate pebbles growing into sharp crisp detail, a hairline crack splitting diagonally across the frame's center, fine dust motes streaming upward past the viewpoint as the floor closes in, a scuffed drag mark crossing the lower right corner, moisture beads on the concrete surface catching cold overhead light and flashing, the surfaces gaining texture and clarity with every fraction of a second as they rush closer, the floor filling the entire frame, only a thin sliver of ceiling light remaining at the top edge, the vertigo of the final moment, gravity's absolute certainty, the threshold of impact rushing up",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00504.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 4,
+      "place": "a cracked tiled floor near a wall",
+      "event": "cracks and debris on the floor",
+      "evidence": "The cracked and uneven floor tiles suggest movement or an approaching force.",
+      "missing": "There is no visible indication of a specific event causing the floor to approach, such as a character or object moving towards the viewer.",
+      "blind_samples": [
+        {
+          "place": "a cracked tiled floor near a wall",
+          "event": "cracks and debris on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a cracked tiled floor near a wall",
+          "event": "cracks and debris on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a cracked tiled floor near a wall",
+          "event": "cracks and debris on the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 4,
+          "evidence": "The cracked and uneven floor tiles suggest movement or an approaching force.",
+          "missing": "There is no visible indication of a specific event causing the floor to approach, such as a character or object moving towards the viewer."
+        },
+        {
+          "match": 4,
+          "evidence": "The cracked and uneven floor tiles suggest movement or an approaching force.",
+          "missing": "There is no visible indication of a specific event causing the floor to approach, such as a moving object or person."
+        },
+        {
+          "match": 4,
+          "evidence": "The cracked and uneven floor tiles suggest movement or an approaching force.",
+          "missing": "There is no visible indication of a specific event causing the floor to approach, such as a character or object moving towards the viewer."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00505",
+      "hook": false,
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [
+        "수 초면, 죽음입니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "medium shot of the anonymous containment room wrapped in a profound acoustic stillness, cold fluorescent light throwing long flat shadows across the empty central space where dust now settles back to the floor, the steel examination table standing at the right with its bare surface gleaming under a surgical lamp, the bolted restraint chair at the left with its straps hanging loose and swaying almost imperceptibly, the floor between them bearing the evidence of the recent collapse - disturbed dust, a fresh scrape mark, a small object that has rolled to a stop near the drain grate, the walls closing in with their bare concrete texture and mineral stains, an air vent's faint hum seeming to have stopped, clinical finality, time compressed into a handful of visible seconds, the silence after a diagnosis",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00505.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a sterile containment chamber",
+      "event": "spilled liquid and debris on the floor",
+      "evidence": "The empty room with scattered debris and faint red light suggests a recent event, possibly violent, that has left the space abandoned.",
+      "missing": "There is no explicit evidence of death or the immediate aftermath described by '수 초면, 죽음입니다.' (In a few seconds, it's death.).",
+      "blind_samples": [
+        {
+          "place": "a sterile containment chamber",
+          "event": "spilled liquid and debris on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a sterile containment chamber",
+          "event": "spilled liquid and debris on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a sterile containment chamber",
+          "event": "spilled liquid and debris on the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room with scattered debris and faint red light suggests a recent event, possibly violent, that has left the space abandoned.",
+          "missing": "There is no explicit evidence of death or the immediate aftermath described by '수 초면, 죽음입니다.' (In a few seconds, it's death.)."
+        },
+        {
+          "match": 3,
+          "evidence": "The floor has dark stains and shadows that suggest a recent event, possibly involving blood or another substance.",
+          "missing": "There is no visible evidence of a person or creature in the frame, which would be necessary to confirm the event described by the sentence."
+        },
+        {
+          "match": 3,
+          "evidence": "The floor has dark stains and shadows that suggest a recent event, possibly involving blood or another substance.",
+          "missing": "There is no visible evidence of a person or creature in the frame, which would be necessary to confirm the event described by the sentence."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00506",
+      "hook": false,
+      "sentence_indices": [
+        6
+      ],
+      "sentences": [
+        "'걱정 마세요."
+      ],
+      "frame_source": "images",
+      "image_prompt": "over-the-shoulder shot of the room from behind a seated position, the concrete floor ahead showing a pair of fresh knee impressions in the cement dust where a recent collapse has occurred, the steel examination table visible at the left with a row of surgical instruments laid out in gleaming order under the overhead light, a dark leather medical bag standing open at the table's base with its flap folded back, the bare concrete wall beyond bearing a single thin vertical scratch at head height, the fluorescent light humming with a faint visible flicker, dust motes slowly turning in the cold light beam, the room arranged with a surgeon's precision around a patient's surrender, the clinical space holding its breath for the words to pass, false comfort in a room that knows the truth, the cruelty of gentleness",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00506.png",
+      "status": "scored",
+      "legible": 4,
+      "match_score": 3,
+      "place": "a dimly lit industrial room",
+      "event": "a person is sitting cross-legged on the floor",
+      "evidence": "The person sitting on the floor in a contemplative or meditative pose suggests a moment of reflection or reassurance, aligning with the sentiment of 'Don't worry.'",
+      "missing": "There is no explicit physical evidence of an event or consequence that directly illustrates the action described by the sentence. The frame shows a static scene without any visible activity or change.",
+      "blind_samples": [
+        {
+          "place": "a dimly lit industrial room",
+          "event": "a person is sitting cross-legged on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a dimly lit industrial room",
+          "event": "someone has been sitting on the floor",
+          "legible": 4
+        },
+        {
+          "place": "a dimly lit industrial room",
+          "event": "someone has been sitting on the floor",
+          "legible": 4
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The person sitting on the floor in a contemplative or meditative pose suggests a moment of reflection or reassurance, aligning with the sentiment of 'Don't worry.'",
+          "missing": "There is no explicit physical evidence of an event or consequence that directly illustrates the action described by the sentence. The frame shows a static scene without any visible activity or change."
+        },
+        {
+          "match": 3,
+          "evidence": "The person sitting on the floor in a contemplative or meditative pose suggests a moment of reflection or reassurance, aligning with the sentiment of 'Don't worry.'",
+          "missing": "There is no explicit physical evidence of an event or consequence that directly illustrates the action described by the sentence. The frame shows a static scene without any visible activity or change."
+        },
+        {
+          "match": 3,
+          "evidence": "The person sitting on the floor in a contemplative pose suggests a moment of reflection or reassurance.",
+          "missing": "There is no direct visual evidence of an event or consequence that corresponds to the specific action or statement implied by '걱정 마세요.' (Don't worry.)."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 5,
+      "shot_id": "S00507",
+      "hook": false,
+      "sentence_indices": [
+        7
+      ],
+      "sentences": [
+        "이제 시작입니다.'"
+      ],
+      "frame_source": "images",
+      "image_prompt": "low-angle shot from floor level with the containment room's central space dominating the frame, the steel examination table looming large at the right with a clean sheet spread across its surface and instruments arranged in a gleaming row, the bolted restraint chair at the left with its straps now unfastened and hanging loose, the space between them swept clean except for a thin trail of dust leading from the chair toward the table, an overhead surgical light blazing down to create a stark clinical pool of white on the floor, deep shadow pooling in the corners where the walls meet, a distant half-open door visible at the far end of the room, the entire space transformed into a theater for what comes next, the stage arranged and waiting, clinical resolve, the threshold of an irreversible transformation",
+      "cast": [
+        "SCP-049",
+        "STOCK-d-class"
+      ],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/new/scene_005_S00507.png",
+      "status": "scored",
+      "legible": 5,
+      "match_score": 3,
+      "place": "a tiled examination room",
+      "event": "an open door lets in light",
+      "evidence": "The open door and the light coming through it suggest something is about to begin.",
+      "missing": "There is no visible physical consequence or evidence of an event having already occurred.",
+      "blind_samples": [
+        {
+          "place": "a tiled examination room",
+          "event": "an open door lets in light",
+          "legible": 5
+        },
+        {
+          "place": "a tiled examination room",
+          "event": "an open door lets in light",
+          "legible": 5
+        },
+        {
+          "place": "a tiled examination room",
+          "event": "an open door lets in light",
+          "legible": 5
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The open door and the light coming through it suggest something is about to begin.",
+          "missing": "There is no visible physical consequence or evidence of an event having already occurred."
+        },
+        {
+          "match": 3,
+          "evidence": "The open door and the light coming through it suggest a new beginning or an event starting.",
+          "missing": "There is no visible consequence of an event having occurred, such as movement or change in the environment."
+        },
+        {
+          "match": 3,
+          "evidence": "The open door and the light coming through it suggest a new beginning or an event starting.",
+          "missing": "There is no visible physical consequence of an event having occurred yet."
+        }
+      ],
+      "fail_reason": null
+    }
+  ]
+}

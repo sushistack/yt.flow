@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-08-10T21:17:31",
+  "frames_joined": 66,
+  "likert_legible_distribution": {
+    "4": 46,
+    "5": 20
+  },
+  "likert_below_3": 0,
+  "likert_event_unclear": 9,
+  "boolean_unreadable": 12,
+  "boolean_unreadable_shots": [
+    "S00201",
+    "S00202",
+    "S00204",
+    "S00300",
+    "S00303",
+    "S00304",
+    "S00305",
+    "S00400",
+    "S00707",
+    "S00804",
+    "S00805",
+    "S00900"
+  ],
+  "boolean_unreadable_that_the_likert_scored_4_or_5": 12,
+  "new_event_unclear": 12,
+  "unreadable_and_event_unclear": 12,
+  "note": "same 66 preserved frames, same judge, same blind prompt body except the readability question; baseline.json untouched"
+}

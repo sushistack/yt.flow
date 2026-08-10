@@ -1,0 +1,158 @@
+{
+  "generated_at": "2026-08-10T20:10:04",
+  "note": "[legible, match] per arm; A2 is the repeat control for A3",
+  "rows": [
+    {
+      "shot_id": "S00100",
+      "a1_images_reps1": [
+        4,
+        3
+      ],
+      "a2_images_reps3": [
+        4,
+        3
+      ],
+      "a3_shots_reps3": [
+        4,
+        3
+      ],
+      "a3_status": "scored",
+      "a3_reason": null,
+      "a1_place": "a cracked stone corridor",
+      "a3_place": "a cracked stone corridor"
+    },
+    {
+      "shot_id": "S00105",
+      "a1_images_reps1": [
+        4,
+        1
+      ],
+      "a2_images_reps3": [
+        4,
+        1
+      ],
+      "a3_shots_reps3": [
+        5,
+        1
+      ],
+      "a3_status": "scored",
+      "a3_reason": null,
+      "a1_place": "a dilapidated wooden structure",
+      "a3_place": "a dilapidated wooden structure"
+    },
+    {
+      "shot_id": "S00201",
+      "a1_images_reps1": [
+        4,
+        3
+      ],
+      "a2_images_reps3": [
+        4,
+        3
+      ],
+      "a3_shots_reps3": [
+        4,
+        3
+      ],
+      "a3_status": "scored",
+      "a3_reason": null,
+      "a1_place": "a metal-barred cell in a corridor",
+      "a3_place": "a metal cell with barred door"
+    },
+    {
+      "shot_id": "S00204",
+      "a1_images_reps1": [
+        4,
+        3
+      ],
+      "a2_images_reps3": [
+        4,
+        3
+      ],
+      "a3_shots_reps3": [
+        null,
+        null
+      ],
+      "a3_status": "skipped",
+      "a3_reason": "no composited clip at workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/shots/scene_002_S00204.mp4",
+      "a1_place": "a concrete corridor",
+      "a3_place": null
+    },
+    {
+      "shot_id": "S00301",
+      "a1_images_reps1": [
+        4,
+        3
+      ],
+      "a2_images_reps3": [
+        4,
+        3
+      ],
+      "a3_shots_reps3": [
+        4,
+        3
+      ],
+      "a3_status": "scored",
+      "a3_reason": null,
+      "a1_place": "a cracked concrete wall",
+      "a3_place": "a cracked concrete wall"
+    },
+    {
+      "shot_id": "S00303",
+      "a1_images_reps1": [
+        4,
+        1
+      ],
+      "a2_images_reps3": [
+        4,
+        1
+      ],
+      "a3_shots_reps3": [
+        null,
+        null
+      ],
+      "a3_status": "skipped",
+      "a3_reason": "no composited clip at workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/shots/scene_003_S00303.mp4",
+      "a1_place": "a dim corridor with a large window",
+      "a3_place": null
+    },
+    {
+      "shot_id": "S00503",
+      "a1_images_reps1": [
+        5,
+        2
+      ],
+      "a2_images_reps3": [
+        5,
+        2
+      ],
+      "a3_shots_reps3": [
+        null,
+        null
+      ],
+      "a3_status": "skipped",
+      "a3_reason": "no composited clip at workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/shots/scene_005_S00503.mp4",
+      "a1_place": "a futuristic circular corridor",
+      "a3_place": null
+    },
+    {
+      "shot_id": "S00708",
+      "a1_images_reps1": [
+        5,
+        1
+      ],
+      "a2_images_reps3": [
+        5,
+        1
+      ],
+      "a3_shots_reps3": [
+        null,
+        null
+      ],
+      "a3_status": "skipped",
+      "a3_reason": "no composited clip at workspace/8a9a288b-800f-4c73-88a2-25ae6b5a4d7d/shots/scene_007_S00708.mp4",
+      "a1_place": "a tiled corridor",
+      "a3_place": null
+    }
+  ]
+}

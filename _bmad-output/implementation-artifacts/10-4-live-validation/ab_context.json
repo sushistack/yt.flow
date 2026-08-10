@@ -1,0 +1,217 @@
+{
+  "frozen_descriptor": "A tall, gaunt humanoid figure standing approximately 1.9 meters, with a long, elongated silhouette. Head: a stark white ceramic plague-doctor mask with a curved, beak-like nose and dark, hollow eye sockets, fused seamlessly to the underlying flesh — no seam or gap visible along its edges. Body: a heavy, dark, hooded medieval plague-doctor robe in black, covering the entire frame from head to floor, with thick, pleated fabric obscuring any anatomical detail. Hands: bare, pale, gaunt, with long, slender fingers — the only exposed skin, visibly unnerving in its stillness. Limbs long and thin, moving with deliberate. slow, measured gestures. Carried item: a worn, dark leather medical bag, held at its side. The mask is not a removable accessory; it is visually integrated into the entity's head, as if grown into the bone and tissue.",
+  "entity_sheet": "SCP-049 is the medieval plague doctor whose ceramic beak mask is fused permanently to its face — the single most recognizable visual trait. Its behavioral signature is the silent space it occupies and the hushed aftermath it leaves: after a fatal touch, the air stills, the body falls without a sound, and the entity calmly produces its leather bag and begins its surgical work, as if performing a routine procedure.",
+  "story_logline": "A self-proclaimed doctor believes he is curing a plague only he can see — but every patient he touches dies instantly, and every corpse he operates on rises again, altered. The video asks whether SCP-049 is a healer, a killer, or something that no longer remembers the difference.",
+  "scene_roles": {
+    "1": {
+      "act": "dread",
+      "emotional_beat": "격리실에 D계급이 호송된다",
+      "synopsis": "치료의 시작"
+    },
+    "5": {
+      "act": "escalation",
+      "emotional_beat": "맨손이 닿는 순간, 모든 것이 끝난다",
+      "synopsis": "악수"
+    }
+  },
+  "cast_by_sentence": {
+    "1": {
+      "1": [],
+      "2": [
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "sway",
+          "motion_energy": "low",
+          "movement_mode": "enter",
+          "movement_direction": "right",
+          "movement_pace": "slow"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "far",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "low"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "sway",
+          "motion_energy": "low"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "tremble",
+          "motion_energy": "medium"
+        }
+      ],
+      "5": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "low"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "tremble",
+          "motion_energy": "high"
+        }
+      ],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "low"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "sitting",
+          "motion_style": "hold",
+          "motion_energy": "low"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "low"
+        }
+      ]
+    },
+    "5": {
+      "1": [],
+      "2": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "medium"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "tremble",
+          "motion_energy": "medium"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "sway",
+          "motion_energy": "medium"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "low"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "tremble",
+          "motion_energy": "high"
+        }
+      ],
+      "5": [],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "breath",
+          "motion_energy": "medium"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "sitting",
+          "motion_style": "tremble",
+          "motion_energy": "medium"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing",
+          "motion_style": "sway",
+          "motion_energy": "medium"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "near",
+          "pose": "sitting",
+          "motion_style": "tremble",
+          "motion_energy": "low"
+        }
+      ],
+      "8": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "mid",
+          "pose": "standing",
+          "motion_style": "pulse",
+          "motion_energy": "high",
+          "movement_mode": "approach",
+          "movement_direction": "in",
+          "movement_pace": "slow"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "sitting",
+          "motion_style": "tremble",
+          "motion_energy": "medium"
+        }
+      ]
+    }
+  },
+  "note": "built ONCE, before either leg ran, and passed unchanged to both"
+}

@@ -1,0 +1,753 @@
+{
+  "generated_at": "2026-08-10T22:46:58",
+  "run": "8a9a288b-800f-4c73-88a2-25ae6b5a4d7d",
+  "frame_source": "images",
+  "reps": 1,
+  "vision_model": "qwen-vl-plus",
+  "endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "thresholds": {
+    "readable": "boolean — no threshold, the field IS the verdict",
+    "MIN_MATCH": 3,
+    "MIN_MATCH_HOOK": 4
+  },
+  "blind_prompt": "You are looking at one rendered frame from an animated SCP Foundation video.\nIt illustrates one sentence of Korean narration. You are NOT being shown that sentence.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nReply with a single JSON object and nothing else:\n{\"place\": \"one short English phrase\", \"event\": \"one short English phrase\", \"readable\": true or false}\n\nField rules:\n- place: where this is, as concretely as the frame supports — \"a tiled examination\n  room\", \"a concrete corridor\", \"an extreme close-up of a floor\". Write \"unclear\" if\n  you cannot tell where this is.\n- event: what has just happened in this place, read ONLY from what the frame shows —\n  damage, disturbance, objects out of place, marks, aftermath. Write \"unclear\" if the\n  frame shows a place but no evidence that anything happened.\n- readable: true ONLY if someone seeing this frame for two seconds could say BOTH\n  where they are AND what happened here. If either `place` or `event` is \"unclear\",\n  readable is false. A texture study, a surface, a glow or an abstraction is false.",
+  "match_prompt": "You are grading one rendered frame from an animated SCP Foundation video\nagainst the sentence of Korean narration it is supposed to illustrate.\n\nThis is a BACKGROUND PLATE. Every person, body or creature in this story is drawn\nseparately as a character card and composited on top of this plate afterwards. A plate\nwith nobody in it is CORRECT and complete — the absence of a person is NEVER a defect,\nnever \"nothing is happening\", and never a mismatch. Judge the place and the physical\nevidence of what happened there.\n\nThe narration sentence(s) for this frame:\n\"\"\"\n{sentences}\n\"\"\"\n\nReply with a single JSON object and nothing else:\n{{\"match\": 1-5, \"evidence\": \"one short sentence\", \"missing\": \"one short sentence\"}}\n\nField rules:\n- match: does a viewer hearing this sentence over this frame see the sentence's EVENT\n  (who did what, and what it left behind) in the frame? 5 = the frame shows the\n  event's place and its visible consequence; 4 = the place is right and the\n  consequence is implied; 3 = the place is right but nothing of the event is visible;\n  2 = only the mood matches; 1 = a texture or mood piece unrelated to this sentence.\n- Do NOT lower `match` because the people the sentence mentions are not drawn — they\n  are composited later. Grade the place and the event's physical consequence only.\n- evidence: what in the frame carries this sentence's event.\n- missing: what this sentence describes that the frame does not show. Empty string if\n  nothing is missing.",
+  "summary": {
+    "rows": 11,
+    "scored": 11,
+    "skipped": 0,
+    "errored": 0,
+    "failed": 4,
+    "failure_rate": 0.364,
+    "mean_match": 3.091,
+    "below_min_match": 1,
+    "unreadable": 4,
+    "n_shots": 11,
+    "sentences_per_shot": 1.455,
+    "unreadable_only": 3,
+    "mismatch_only": 0,
+    "both": 1,
+    "hook": null,
+    "worst": [
+      {
+        "shot_id": "M1_007_1_1",
+        "scene_num": 7,
+        "readable": false,
+        "match": 1,
+        "place": "an abstract tunnel",
+        "missing": "A hand or finger moving in the frame."
+      },
+      {
+        "shot_id": "M1_003_2_3",
+        "scene_num": 3,
+        "readable": false,
+        "match": 3,
+        "place": "a cracked concrete corridor",
+        "missing": "There is no visible evidence of a bottle or any specific event that would match the narration's question about seeing a bottle."
+      },
+      {
+        "shot_id": "M1_007_3_3",
+        "scene_num": 7,
+        "readable": false,
+        "match": 3,
+        "place": "a tiled examination room",
+        "missing": "There is no visible indication of a body or creature moving into an unnatural position in this frame."
+      },
+      {
+        "shot_id": "M1_007_6_8",
+        "scene_num": 7,
+        "readable": false,
+        "match": 3,
+        "place": "a tiled examination room",
+        "missing": "There is no visible evidence of SCP Foundation personnel or their actions in the frame."
+      },
+      {
+        "shot_id": "M1_003_0_0",
+        "scene_num": 3,
+        "readable": true,
+        "match": 3,
+        "place": "a tiled examination room",
+        "missing": "There is no visible evidence of a person wearing a mask or speaking in the frame."
+      },
+      {
+        "shot_id": "M1_003_1_1",
+        "scene_num": 3,
+        "readable": true,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible sign of illness or anything that would indicate the room is 'full of sickness' as described in the sentence."
+      },
+      {
+        "shot_id": "M1_003_4_6",
+        "scene_num": 3,
+        "readable": true,
+        "match": 3,
+        "place": "a concrete corridor",
+        "missing": "There is no visible evidence of the 'black eye sockets' or the act of scanning described in the sentence."
+      },
+      {
+        "shot_id": "M1_007_4_4",
+        "scene_num": 7,
+        "readable": true,
+        "match": 3,
+        "place": "a floor with a draped fabric",
+        "missing": "There are no visible limbs or sutures in the frame."
+      },
+      {
+        "shot_id": "M1_007_0_0",
+        "scene_num": 7,
+        "readable": true,
+        "match": 4,
+        "place": "a tiled examination room",
+        "missing": "The frame does not show the actual suturing process or the person who was sutured."
+      },
+      {
+        "shot_id": "M1_007_2_2",
+        "scene_num": 7,
+        "readable": true,
+        "match": 4,
+        "place": "an extreme close-up of a face",
+        "missing": "The actual sound of the thread being tightened is not visually depicted."
+      }
+    ]
+  },
+  "rows": [
+    {
+      "scene_num": 3,
+      "shot_id": "M1_003_0_0",
+      "hook": false,
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "의사가 가면을 숙이며 말합니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_003_S00300.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 3,
+      "place": "a tiled examination room",
+      "event": "a shadow is cast on the floor",
+      "evidence": "The empty room with a medical cabinet and a sink suggests a setting where a doctor might speak, but no person is present to deliver the dialogue.",
+      "missing": "There is no visible evidence of a person wearing a mask or speaking in the frame.",
+      "blind_samples": [
+        {
+          "place": "a tiled examination room",
+          "event": "a shadow is cast on the floor",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room with a medical cabinet and a sink suggests a setting where a doctor might speak, but no person is present to deliver the dialogue.",
+          "missing": "There is no visible evidence of a person wearing a mask or speaking in the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "M1_003_1_1",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_003_S00301.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "a stack of objects lies on the floor with marks around it",
+      "evidence": "The empty room with a stack of objects on the floor suggests a place where something could be stored or placed.",
+      "missing": "There is no visible sign of illness or anything that would indicate the room is 'full of sickness' as described in the sentence.",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "a stack of objects lies on the floor with marks around it",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room with a stack of objects on the floor suggests a place where something could be stored or placed.",
+          "missing": "There is no visible sign of illness or anything that would indicate the room is 'full of sickness' as described in the sentence."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "M1_003_2_3",
+      "hook": false,
+      "sentence_indices": [
+        2,
+        3
+      ],
+      "sentences": [
+        "당신 눈에는 그저 빈 콘크리트 벽.",
+        "보입니까, 그 병이?"
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_003_S00302.png",
+      "status": "scored",
+      "readable": false,
+      "match_score": 3,
+      "place": "a cracked concrete corridor",
+      "event": "unclear",
+      "evidence": "The empty concrete wall and floor suggest a place where something might have happened.",
+      "missing": "There is no visible evidence of a bottle or any specific event that would match the narration's question about seeing a bottle.",
+      "blind_samples": [
+        {
+          "place": "a cracked concrete corridor",
+          "event": "unclear",
+          "readable": false
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty concrete wall and floor suggest a place where something might have happened.",
+          "missing": "There is no visible evidence of a bottle or any specific event that would match the narration's question about seeing a bottle."
+        }
+      ],
+      "fail_reason": "readable=False"
+    },
+    {
+      "scene_num": 3,
+      "shot_id": "M1_003_4_6",
+      "hook": false,
+      "sentence_indices": [
+        4,
+        5,
+        6
+      ],
+      "sentences": [
+        "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+        "그는 진심으로 보고 있습니다.",
+        "당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_003_S00304.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 3,
+      "place": "a concrete corridor",
+      "event": "cracks and debris on the floor",
+      "evidence": "The empty, dark corridor suggests a place where something unseen could be scanning or observing.",
+      "missing": "There is no visible evidence of the 'black eye sockets' or the act of scanning described in the sentence.",
+      "blind_samples": [
+        {
+          "place": "a concrete corridor",
+          "event": "cracks and debris on the floor",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty, dark corridor suggests a place where something unseen could be scanning or observing.",
+          "missing": "There is no visible evidence of the 'black eye sockets' or the act of scanning described in the sentence."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_0_0",
+      "hook": false,
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "봉합이 끝났습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00700.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 4,
+      "place": "a tiled examination room",
+      "event": "blood on the floor",
+      "evidence": "The surgical tools on the table and the bloodstains on the floor suggest that a medical procedure, likely involving suturing, has just been completed.",
+      "missing": "The frame does not show the actual suturing process or the person who was sutured.",
+      "blind_samples": [
+        {
+          "place": "a tiled examination room",
+          "event": "blood on the floor",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 4,
+          "evidence": "The surgical tools on the table and the bloodstains on the floor suggest that a medical procedure, likely involving suturing, has just been completed.",
+          "missing": "The frame does not show the actual suturing process or the person who was sutured."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_1_1",
+      "hook": false,
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "손가락이 움직입니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00701.png",
+      "status": "scored",
+      "readable": false,
+      "match_score": 1,
+      "place": "an abstract tunnel",
+      "event": "unclear",
+      "evidence": "",
+      "missing": "A hand or finger moving in the frame.",
+      "blind_samples": [
+        {
+          "place": "an abstract tunnel",
+          "event": "unclear",
+          "readable": false
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 1,
+          "evidence": "",
+          "missing": "A hand or finger moving in the frame."
+        }
+      ],
+      "fail_reason": "readable=False, match=1<3"
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_2_2",
+      "hook": false,
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "실이 조여드는 소리."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00702.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 4,
+      "place": "an extreme close-up of a face",
+      "event": "a face with red threads and signs of distress",
+      "evidence": "The red threads cutting into the character's skin and hair suggest a tightening or constricting action.",
+      "missing": "The actual sound of the thread being tightened is not visually depicted.",
+      "blind_samples": [
+        {
+          "place": "an extreme close-up of a face",
+          "event": "a face with red threads and signs of distress",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 4,
+          "evidence": "The red threads cutting into the character's skin and hair suggest a tightening or constricting action.",
+          "missing": "The actual sound of the thread being tightened is not visually depicted."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_3_3",
+      "hook": false,
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "몸이 부자연스러운 각도로 일어섭니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00703.png",
+      "status": "scored",
+      "readable": false,
+      "match_score": 3,
+      "place": "a tiled examination room",
+      "event": "unclear",
+      "evidence": "The empty, static background plate suggests a place where something unusual might have occurred, but no specific physical evidence of an event is visible.",
+      "missing": "There is no visible indication of a body or creature moving into an unnatural position in this frame.",
+      "blind_samples": [
+        {
+          "place": "a tiled examination room",
+          "event": "unclear",
+          "readable": false
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty, static background plate suggests a place where something unusual might have occurred, but no specific physical evidence of an event is visible.",
+          "missing": "There is no visible indication of a body or creature moving into an unnatural position in this frame."
+        }
+      ],
+      "fail_reason": "readable=False"
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_4_4",
+      "hook": false,
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "비뚤어진 팔다리, 도드라진 봉합선."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00704.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 3,
+      "place": "a floor with a draped fabric",
+      "event": "a liquid has dripped and pooled on the floor",
+      "evidence": "The distorted and uneven lines on the fabric suggest abnormal growth or unnatural structure.",
+      "missing": "There are no visible limbs or sutures in the frame.",
+      "blind_samples": [
+        {
+          "place": "a floor with a draped fabric",
+          "event": "a liquid has dripped and pooled on the floor",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The distorted and uneven lines on the fabric suggest abnormal growth or unnatural structure.",
+          "missing": "There are no visible limbs or sutures in the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_5_5",
+      "hook": false,
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [
+        "눈이 떠졌지만, 그 안엔 아무것도 없습니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00705.png",
+      "status": "scored",
+      "readable": true,
+      "match_score": 4,
+      "place": "a bed with a draped cloth",
+      "event": "a figure is hidden under the cloth",
+      "evidence": "The empty, dark space within the hooded figure suggests nothing is present inside.",
+      "missing": "The action of eyes opening is not depicted in the frame.",
+      "blind_samples": [
+        {
+          "place": "a bed with a draped cloth",
+          "event": "a figure is hidden under the cloth",
+          "readable": true
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 4,
+          "evidence": "The empty, dark space within the hooded figure suggests nothing is present inside.",
+          "missing": "The action of eyes opening is not depicted in the frame."
+        }
+      ],
+      "fail_reason": null
+    },
+    {
+      "scene_num": 7,
+      "shot_id": "M1_007_6_8",
+      "hook": false,
+      "sentence_indices": [
+        6,
+        7,
+        8
+      ],
+      "sentences": [
+        "에스씨피 공사구가 가면을 기울여 바라봅니다.",
+        "만족스러운 듯이요.",
+        "이게 에스씨피 공사구-이입니다."
+      ],
+      "frame_source": "images",
+      "image_prompt": "(control frame, re-scored against the joined span)",
+      "cast": [],
+      "frame": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/10-4-live-validation/ab2_old/scene_007_S00706.png",
+      "status": "scored",
+      "readable": false,
+      "match_score": 3,
+      "place": "a tiled examination room",
+      "event": "unclear",
+      "evidence": "The empty room suggests a place where an event involving SCP Foundation personnel could have occurred.",
+      "missing": "There is no visible evidence of SCP Foundation personnel or their actions in the frame.",
+      "blind_samples": [
+        {
+          "place": "a tiled examination room",
+          "event": "unclear",
+          "readable": false
+        }
+      ],
+      "match_samples": [
+        {
+          "match": 3,
+          "evidence": "The empty room suggests a place where an event involving SCP Foundation personnel could have occurred.",
+          "missing": "There is no visible evidence of SCP Foundation personnel or their actions in the frame."
+        }
+      ],
+      "fail_reason": "readable=False"
+    }
+  ],
+  "sentence_summary": {
+    "sentences": 16,
+    "scored": 16,
+    "uncovered": 0,
+    "unscored": 0,
+    "mean_match": 3.062,
+    "unreadable": 7,
+    "below_min_match": 1,
+    "split_sentences": 0
+  },
+  "sentence_rows": [
+    {
+      "scene_num": 3,
+      "sentence_index": 0,
+      "sentence": "의사가 가면을 숙이며 말합니다.",
+      "shot_ids": [
+        "M1_003_0_0"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 1,
+      "sentence": "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다.",
+      "shot_ids": [
+        "M1_003_1_1"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 2,
+      "sentence": "당신 눈에는 그저 빈 콘크리트 벽.",
+      "shot_ids": [
+        "M1_003_2_3"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 3,
+      "sentence": "보입니까, 그 병이?",
+      "shot_ids": [
+        "M1_003_2_3"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 4,
+      "sentence": "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+      "shot_ids": [
+        "M1_003_4_6"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 5,
+      "sentence": "그는 진심으로 보고 있습니다.",
+      "shot_ids": [
+        "M1_003_4_6"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 3,
+      "sentence_index": 6,
+      "sentence": "당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다.",
+      "shot_ids": [
+        "M1_003_4_6"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 0,
+      "sentence": "봉합이 끝났습니다.",
+      "shot_ids": [
+        "M1_007_0_0"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 4.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 1,
+      "sentence": "손가락이 움직입니다.",
+      "shot_ids": [
+        "M1_007_1_1"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 1.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 2,
+      "sentence": "실이 조여드는 소리.",
+      "shot_ids": [
+        "M1_007_2_2"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 4.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 3,
+      "sentence": "몸이 부자연스러운 각도로 일어섭니다.",
+      "shot_ids": [
+        "M1_007_3_3"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 4,
+      "sentence": "비뚤어진 팔다리, 도드라진 봉합선.",
+      "shot_ids": [
+        "M1_007_4_4"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 5,
+      "sentence": "눈이 떠졌지만, 그 안엔 아무것도 없습니다.",
+      "shot_ids": [
+        "M1_007_5_5"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 4.0,
+      "readable": true,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 6,
+      "sentence": "에스씨피 공사구가 가면을 기울여 바라봅니다.",
+      "shot_ids": [
+        "M1_007_6_8"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 7,
+      "sentence": "만족스러운 듯이요.",
+      "shot_ids": [
+        "M1_007_6_8"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    },
+    {
+      "scene_num": 7,
+      "sentence_index": 8,
+      "sentence": "이게 에스씨피 공사구-이입니다.",
+      "shot_ids": [
+        "M1_007_6_8"
+      ],
+      "hook": false,
+      "status": "scored",
+      "match": 3.0,
+      "readable": false,
+      "n_covering": 1
+    }
+  ]
+}

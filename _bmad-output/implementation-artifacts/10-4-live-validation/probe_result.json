@@ -1,0 +1,573 @@
+{
+  "generated_at": "2026-08-10T22:45:14",
+  "run": "8a9a288b-800f-4c73-88a2-25ae6b5a4d7d",
+  "scenes": [
+    3,
+    7
+  ],
+  "hand_cover": {
+    "3": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        6
+      ]
+    ],
+    "7": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        8
+      ]
+    ]
+  },
+  "merged_sentences": [
+    "3:3",
+    "3:5",
+    "3:6",
+    "7:7",
+    "7:8"
+  ],
+  "m1": {
+    "arm": "M1",
+    "rows": [
+      {
+        "scene_num": 3,
+        "sentence_index": 0,
+        "sentence": "의사가 가면을 숙이며 말합니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_003_0_0"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 1,
+        "sentence": "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_003_1_1"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 2,
+        "sentence": "당신 눈에는 그저 빈 콘크리트 벽.",
+        "merged_by_rule": false,
+        "control_match": 5.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_003_2_3"
+        ],
+        "status": "scored",
+        "delta": -2.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 3,
+        "sentence": "보입니까, 그 병이?",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_003_2_3"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 4,
+        "sentence": "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_003_4_6"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 5,
+        "sentence": "그는 진심으로 보고 있습니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_003_4_6"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 6,
+        "sentence": "당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_003_4_6"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 0,
+        "sentence": "봉합이 끝났습니다.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_007_0_0"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 1,
+        "sentence": "손가락이 움직입니다.",
+        "merged_by_rule": false,
+        "control_match": 1.0,
+        "arm_match": 1.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_007_1_1"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 2,
+        "sentence": "실이 조여드는 소리.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_007_2_2"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 3,
+        "sentence": "몸이 부자연스러운 각도로 일어섭니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_007_3_3"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 4,
+        "sentence": "비뚤어진 팔다리, 도드라진 봉합선.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_007_4_4"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 5,
+        "sentence": "눈이 떠졌지만, 그 안엔 아무것도 없습니다.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "M1_007_5_5"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 6,
+        "sentence": "에스씨피 공사구가 가면을 기울여 바라봅니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_007_6_8"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 7,
+        "sentence": "만족스러운 듯이요.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_007_6_8"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 8,
+        "sentence": "이게 에스씨피 공사구-이입니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "M1_007_6_8"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      }
+    ],
+    "n": 16,
+    "merged_n": 5,
+    "merged_mean_delta": 0.0,
+    "kept_n": 11,
+    "kept_mean_delta": -0.182,
+    "all_mean_delta": -0.125,
+    "merged_improved": 0,
+    "merged_worse": 0,
+    "merged_same": 5
+  },
+  "m2": {
+    "arm": "M2",
+    "rows": [
+      {
+        "scene_num": 3,
+        "sentence_index": 0,
+        "sentence": "의사가 가면을 숙이며 말합니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00100"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 1,
+        "sentence": "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00101"
+        ],
+        "status": "scored",
+        "delta": 1.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 2,
+        "sentence": "당신 눈에는 그저 빈 콘크리트 벽.",
+        "merged_by_rule": false,
+        "control_match": 5.0,
+        "arm_match": 4.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "S00102"
+        ],
+        "status": "scored",
+        "delta": -1.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 3,
+        "sentence": "보입니까, 그 병이?",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": false,
+        "shot_ids": [
+          "S00102"
+        ],
+        "status": "scored",
+        "delta": 1.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 4,
+        "sentence": "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": false,
+        "shot_ids": [
+          "S00103"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 5,
+        "sentence": "그는 진심으로 보고 있습니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "S00103"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 3,
+        "sentence_index": 6,
+        "sentence": "당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": false,
+        "shot_ids": [
+          "S00103"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 0,
+        "sentence": "봉합이 끝났습니다.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00200"
+        ],
+        "status": "scored",
+        "delta": -1.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 1,
+        "sentence": "손가락이 움직입니다.",
+        "merged_by_rule": false,
+        "control_match": 1.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00201"
+        ],
+        "status": "scored",
+        "delta": 2.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 2,
+        "sentence": "실이 조여드는 소리.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 4.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00202"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 3,
+        "sentence": "몸이 부자연스러운 각도로 일어섭니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00203"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 4,
+        "sentence": "비뚤어진 팔다리, 도드라진 봉합선.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00204"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 5,
+        "sentence": "눈이 떠졌지만, 그 안엔 아무것도 없습니다.",
+        "merged_by_rule": false,
+        "control_match": 4.0,
+        "arm_match": 5.0,
+        "control_readable": true,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00205"
+        ],
+        "status": "scored",
+        "delta": 1.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 6,
+        "sentence": "에스씨피 공사구가 가면을 기울여 바라봅니다.",
+        "merged_by_rule": false,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00206"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 7,
+        "sentence": "만족스러운 듯이요.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00206"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      },
+      {
+        "scene_num": 7,
+        "sentence_index": 8,
+        "sentence": "이게 에스씨피 공사구-이입니다.",
+        "merged_by_rule": true,
+        "control_match": 3.0,
+        "arm_match": 3.0,
+        "control_readable": false,
+        "arm_readable": true,
+        "shot_ids": [
+          "S00206"
+        ],
+        "status": "scored",
+        "delta": 0.0
+      }
+    ],
+    "n": 16,
+    "merged_n": 5,
+    "merged_mean_delta": 0.2,
+    "kept_n": 11,
+    "kept_mean_delta": 0.182,
+    "all_mean_delta": 0.188,
+    "merged_improved": 1,
+    "merged_worse": 0,
+    "merged_same": 4
+  }
+}
