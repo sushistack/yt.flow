@@ -1851,6 +1851,25 @@ async def cast_decision_step(
     )
 
 
+def _cast_union(cast_by_sentence: dict, start: int, end: int) -> list:
+    """Every cast member appearing in sentences ``start..end``, deduped by ``card_key``.
+
+    First occurrence wins, so the earliest sentence's ``position``/``depth``/``pose``
+    are the ones the merged shot renders — the frame is staged for the beat it opens
+    on. Order is narration order (Story 10.4).
+    """
+    merged: list = []
+    seen: set = set()
+    for number in range(start, end + 1):
+        for member in cast_by_sentence.get(number) or []:
+            key = member.get("card_key") if isinstance(member, dict) else repr(member)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(member)
+    return merged
+
+
 async def visual_breakdown_step(
     scp_id: str,
     scene: dict,
@@ -1871,27 +1890,62 @@ async def visual_breakdown_step(
     def parse(raw: str) -> list[dict]:
         data = _parse_yaml(raw)
         shots = data.get("visual_descriptions") if isinstance(data, dict) else None
-        if not isinstance(shots, list) or len(shots) != len(sentences):
+        count = len(sentences)
+        if not isinstance(shots, list) or not shots:
             raise ValueError(
-                f"visual_breakdown: expected 1:1 sentence-to-shot mapping "
-                f"({len(sentences)} sentences), got {len(shots) if isinstance(shots, list) else 'non-list'}"
+                f"visual_breakdown: expected a non-empty visual_descriptions list "
+                f"({count} sentences), got {type(shots).__name__ if shots is not None else 'nothing'}"
             )
-        # Cast is decided authoritatively by cast_decision_step (Story 8.10) — attach
-        # it here regardless of anything the model echoed, keyed by sentence_start.
-        for shot in shots:
+        if len(shots) > count:
+            # The stated bound (Story 10.4). The ordered cover may redistribute frames
+            # across sentences, never mint more of them than the 1:1 mapping already
+            # cost — a cover with no ceiling lets one scene order 40 renders.
+            raise ValueError(
+                f"visual_breakdown: {len(shots)} shots for {count} sentences — the cover may "
+                f"never emit more shots than sentences; merge a sentence to pay for a split"
+            )
+        covered: set[int] = set()
+        prev_start = prev_end = 0
+        for position, shot in enumerate(shots, start=1):
             if not isinstance(shot, dict):
                 raise ValueError(f"visual_breakdown: malformed shot {shot!r}")
             for key in ("image_prompt", "negative_prompt"):
                 if isinstance(shot.get(key), str):
                     shot[key] = _normalize_freetext(shot[key])
-            sentence_start = shot.get("sentence_start")
-            if type(sentence_start) is not int:
-                raise ValueError(f"visual_breakdown: invalid sentence_start {sentence_start!r}")
-            shot["cast"] = cast_by_sentence.get(sentence_start, [])
-        starts = [shot["sentence_start"] for shot in shots]
-        expected = list(range(1, len(sentences) + 1))
-        if sorted(starts) != expected:
-            raise ValueError(f"visual_breakdown: sentence coverage mismatch; expected {expected}, got {sorted(starts)}")
+            start = shot.get("sentence_start")
+            # A shot that omits sentence_end — or writes it as YAML null, which is the
+            # same statement — covers exactly its start sentence, so the pre-cover
+            # shape stays valid rather than becoming a parse failure.
+            end = shot.get("sentence_end")
+            if end is None:
+                end = start
+            if type(start) is not int:
+                raise ValueError(f"visual_breakdown: invalid sentence_start {start!r} on shot {position}")
+            if type(end) is not int:
+                raise ValueError(f"visual_breakdown: invalid sentence_end {end!r} on shot {position}")
+            if not 1 <= start <= end <= count:
+                raise ValueError(
+                    f"visual_breakdown: shot {position} range {start}..{end} is inverted or "
+                    f"outside 1..{count}"
+                )
+            if start < prev_start or end < prev_end:
+                raise ValueError(
+                    f"visual_breakdown: shot {position} range {start}..{end} moves backwards "
+                    f"from the previous shot's {prev_start}..{prev_end}; the cover is ordered"
+                )
+            shot["sentence_end"] = end
+            # Cast is decided authoritatively by cast_decision_step (Story 8.10) — attach
+            # it here regardless of anything the model echoed. A shot spanning several
+            # sentences takes their union, so a merge never drops whoever was in frame.
+            shot["cast"] = _cast_union(cast_by_sentence, start, end)
+            covered.update(range(start, end + 1))
+            prev_start, prev_end = start, end
+        missing = sorted(set(range(1, count + 1)) - covered)
+        if missing:
+            raise ValueError(
+                f"visual_breakdown: sentences {missing} are covered by no shot; every sentence "
+                f"must belong to at least one shot (extend a neighbouring shot's range)"
+            )
         return shots
 
     return await _call_stage_with_retry(
@@ -2449,12 +2503,19 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
 
         shots: list = []
         for i, raw_shot in enumerate(raw_shots):
-            sentence_idx = raw_shot["sentence_start"] - 1  # 1-based -> 0-based
+            # The ordered cover (Story 10.4): a shot owns sentence_start..sentence_end.
+            # A shot with no sentence_end owns just its start — every pre-cover
+            # checkpoint and every pre-cover test keeps producing a one-element list.
+            start = raw_shot["sentence_start"]
+            end = raw_shot.get("sentence_end")
+            if type(end) is not int or end < start:
+                end = start
+            sentence_idxs = list(range(start - 1, end))  # 1-based -> 0-based
             image_prompt = str(raw_shot.get("image_prompt") or "").strip()
 
             if not image_prompt:
                 if shots:
-                    shots[-1]["sentence_indices"].append(sentence_idx)
+                    shots[-1]["sentence_indices"].extend(sentence_idxs)
                     continue
                 # No previous shot to merge into (leading transition sentence) — backfill.
                 image_prompt = _fallback_prompt(writing_scene)
@@ -2465,7 +2526,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
             shots.append(
                 ShotData(
                     shot_id=f"S{scene_num:03d}{i:02d}",
-                    sentence_indices=[sentence_idx],
+                    sentence_indices=sentence_idxs,
                     image_prompt=image_prompt,
                     negative_prompt=str(raw_shot.get("negative_prompt") or ""),
                     camera_angle=raw_shot.get("camera_type") if isinstance(raw_shot.get("camera_type"), str) else None,

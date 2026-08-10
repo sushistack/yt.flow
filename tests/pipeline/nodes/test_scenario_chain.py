@@ -1474,18 +1474,171 @@ async def test_visual_breakdown_step_attaches_precomputed_cast(monkeypatch):
     assert result[1]["cast"] == []
 
 
-async def test_visual_breakdown_step_rejects_count_mismatch(monkeypatch):
-    monkeypatch.setattr(
-        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+# ── Story 10.4: the ordered cover replaces the 1:1 bijection ────────────────
+#
+# A sentence with nothing to draw ("이게 SCP 재단입니다") used to be FORCED to own a
+# frame, and the model invented an unrelated one — 2 of the 4 worst-scoring shots of
+# the measured baseline. A shot may now span consecutive sentences and consecutive
+# shots may split one; what is still absolute is that every sentence is covered and
+# the ranges never move backwards, because subtitles and cuts are derived from them.
+
+
+_SCENE = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z",
+          "characters_present": []}
+
+
+def _breakdown_call(*ranges, prompt="x"):
+    """A visual_breakdown reply whose shots cover ``(start, end)`` pairs."""
+    async def call(rendered, s):
+        return json.dumps({"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": prompt, "negative_prompt": "n", "camera_type": "wide",
+             "sentence_start": start, "sentence_end": end} for start, end in ranges
+        ]}), {}, "stop"
+    return call
+
+
+async def _breakdown(monkeypatch, call, sentences, cast_by_sentence=None):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    return await chain.visual_breakdown_step(
+        "SCP-173", _SCENE, sentences, cast_by_sentence or {}, "desc", "entity sheet",
+        "logline", {}, None, call,
     )
 
-    async def call(rendered, s):
-        payload = {"scene_num": 1, "visual_descriptions": [{"image_prompt": "x", "negative_prompt": "x", "sentence_start": 1, "sentence_end": 1, "entity_visible": False, "camera_type": "wide"}]}
-        return json.dumps(payload), {}, "stop"
 
-    scene = {"scene_num": 1, "location": "x", "atmosphere": "y", "color_palette": "z", "characters_present": []}
-    with pytest.raises(ValueError, match="1:1"):
-        await chain.visual_breakdown_step("SCP-173", scene, ["문장1.", "문장2."], {}, "desc", "entity sheet", "logline", {}, None, call)
+async def test_visual_breakdown_accepts_a_shot_spanning_several_sentences(monkeypatch):
+    """The merge that is the whole point of 10.4: three sentences, two frames."""
+    result = await _breakdown(monkeypatch, _breakdown_call((1, 2), (3, 3)), ["일.", "이.", "삼."])
+
+    assert [(s["sentence_start"], s["sentence_end"]) for s in result] == [(1, 2), (3, 3)]
+
+
+async def test_visual_breakdown_accepts_two_shots_splitting_one_sentence(monkeypatch):
+    """One sentence carrying two beats may own two frames — paid for by a merge, since
+    the shot count may never exceed the sentence count."""
+    result = await _breakdown(monkeypatch, _breakdown_call((1, 2), (3, 3), (3, 3)),
+                              ["일.", "이.", "삼."])
+
+    assert [(s["sentence_start"], s["sentence_end"]) for s in result] == [(1, 2), (3, 3), (3, 3)]
+
+
+async def test_visual_breakdown_rejects_an_uncovered_sentence_and_names_it(monkeypatch):
+    """A gap is a parse failure, not a warning — subtitles and cuts are derived from
+    this cover, so a dropped sentence would silently lose its screen time."""
+    with pytest.raises(ValueError, match=r"sentences \[2\] are covered by no shot"):
+        await _breakdown(monkeypatch, _breakdown_call((1, 1), (3, 3)), ["일.", "이.", "삼."])
+
+
+async def test_visual_breakdown_rejects_an_inverted_range(monkeypatch):
+    with pytest.raises(ValueError, match="inverted or outside"):
+        await _breakdown(monkeypatch, _breakdown_call((3, 1)), ["일.", "이.", "삼."])
+
+
+async def test_visual_breakdown_rejects_a_range_outside_the_sentence_count(monkeypatch):
+    with pytest.raises(ValueError, match="inverted or outside"):
+        await _breakdown(monkeypatch, _breakdown_call((1, 1), (2, 9)), ["일.", "이."])
+
+
+async def test_visual_breakdown_rejects_ranges_that_move_backwards(monkeypatch):
+    """Every sentence is still covered here — the cover is nonetheless invalid, because
+    an out-of-order shot list would cut the video backwards through the narration."""
+    with pytest.raises(ValueError, match="moves backwards"):
+        await _breakdown(monkeypatch, _breakdown_call((2, 3), (1, 1), (2, 3)),
+                         ["일.", "이.", "삼."])
+
+
+async def test_visual_breakdown_rejects_more_shots_than_sentences(monkeypatch):
+    """The stated bound: an ordered cover with no ceiling lets one scene order 40
+    renders. Splits are paid for out of merges, never minted."""
+    with pytest.raises(ValueError, match="may never emit more shots than sentences"):
+        await _breakdown(monkeypatch, _breakdown_call((1, 1), (1, 1), (2, 2)), ["일.", "이."])
+
+
+async def test_visual_breakdown_rejects_an_empty_shot_list(monkeypatch):
+    async def call(rendered, s):
+        return json.dumps({"scene_num": 1, "visual_descriptions": []}), {}, "stop"
+
+    with pytest.raises(ValueError, match="non-empty visual_descriptions"):
+        await _breakdown(monkeypatch, call, ["일."])
+
+
+@pytest.mark.parametrize("omit", [True, False],
+                         ids=["sentence_end absent", "sentence_end null"])
+async def test_visual_breakdown_treats_a_missing_sentence_end_as_a_single_sentence(
+        monkeypatch, omit):
+    """The pre-cover shape stays valid: ``sentence_end`` may simply be absent, and an
+    explicit YAML ``null`` is the same statement — neither may cost the stage its one
+    corrective retry."""
+    async def call(rendered, s):
+        extra = {} if omit else {"sentence_end": None}
+        return json.dumps({"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "n", "sentence_start": 1,
+             "camera_type": "wide", **extra},
+            {"image_prompt": "y", "negative_prompt": "n", "sentence_start": 2,
+             "camera_type": "medium", **extra},
+        ]}), {}, "stop"
+
+    result = await _breakdown(monkeypatch, call, ["일.", "이."])
+
+    assert [s["sentence_end"] for s in result] == [1, 2]
+
+
+async def test_visual_breakdown_rejects_a_non_int_sentence_end(monkeypatch):
+    async def call(rendered, s):
+        return json.dumps({"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "n", "sentence_start": 1,
+             "sentence_end": "2", "camera_type": "wide"},
+        ]}), {}, "stop"
+
+    with pytest.raises(ValueError, match="invalid sentence_end"):
+        await _breakdown(monkeypatch, call, ["일.", "이."])
+
+
+async def test_an_uncovered_sentence_is_fed_back_to_the_model_via_parse_error(monkeypatch):
+    """The cover errors are worded for a reader, because a reader gets them: the stage's
+    one corrective retry re-renders the SAME prompt with the failure in ``parse_error``.
+    A message that only said "invalid" would waste that retry."""
+    seen: list[dict] = []
+
+    class CapturingPrompt:
+        def compile(self, **variables):
+            seen.append(variables)
+            return "rendered"
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt",
+                        lambda *a, **k: CapturingPrompt())
+
+    async def call(rendered, s):
+        ranges = [(1, 1), (3, 3)] if len(seen) == 1 else [(1, 2), (3, 3)]
+        return json.dumps({"scene_num": 1, "visual_descriptions": [
+            {"image_prompt": "x", "negative_prompt": "n", "camera_type": "wide",
+             "sentence_start": a, "sentence_end": b} for a, b in ranges]}), {}, "stop"
+
+    result = await chain.visual_breakdown_step(
+        "SCP-173", _SCENE, ["일.", "이.", "삼."], {}, "desc", "entity sheet", "logline",
+        {}, None, call)
+
+    assert len(seen) == 2, "the cover failure must spend the stage's corrective retry"
+    assert seen[0]["parse_error"] == ""
+    assert "sentences [2] are covered by no shot" in seen[1]["parse_error"]
+    assert [(s["sentence_start"], s["sentence_end"]) for s in result] == [(1, 2), (3, 3)]
+
+
+async def test_a_spanning_shot_takes_the_union_of_its_sentences_cast(monkeypatch):
+    """A merge must never drop whoever was in frame in the sentences it swallowed —
+    dedup by card_key, and the FIRST occurrence's position/depth is the one staged."""
+    cast = {
+        1: [{"card_key": "SCP-049", "position": "left", "depth": "far", "pose": "standing"}],
+        2: [{"card_key": "SCP-049", "position": "right", "depth": "near", "pose": "standing"},
+            {"card_key": "STOCK-d-class", "position": "center", "depth": "mid", "pose": "sitting"}],
+        3: [],
+    }
+
+    result = await _breakdown(monkeypatch, _breakdown_call((1, 2), (3, 3)),
+                              ["일.", "이.", "삼."], cast)
+
+    assert [c["card_key"] for c in result[0]["cast"]] == ["SCP-049", "STOCK-d-class"]
+    assert result[0]["cast"][0]["position"] == "left"  # sentence 1's staging, not sentence 2's
+    assert result[1]["cast"] == []
 
 
 async def test_visual_breakdown_step_rejects_non_int_sentence_start(monkeypatch):
@@ -2681,6 +2834,72 @@ def test_build_scenes_merges_empty_prompt_into_previous_shot():
     assert shots[0]["sentence_indices"] == [0, 1]  # 0-based: sentences 1 and 2
     assert shots[1]["sentence_indices"] == [2]
     assert all(s["image_prompt"] for s in shots)  # never empty
+
+
+def test_build_scenes_expands_a_shots_sentence_range_into_indices():
+    """Story 10.4: the cover's ``sentence_start..sentence_end`` becomes the shot's whole
+    ``sentence_indices`` list — no new field, the existing ``list[int]`` carries it."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. 둘째 문장. 셋째 문장."}]}
+    visual_by_scene = {0: [
+        {"image_prompt": "merged", "negative_prompt": "n", "sentence_start": 1, "sentence_end": 2,
+         "camera_type": "wide"},
+        {"image_prompt": "last", "negative_prompt": "n", "sentence_start": 3, "sentence_end": 3,
+         "camera_type": "close-up"},
+    ]}
+
+    shots = chain.build_scenes(writing, visual_by_scene, [{}])[0]["shots"]
+
+    assert [s["sentence_indices"] for s in shots] == [[0, 1], [2]]
+
+
+def test_build_scenes_keeps_both_shots_when_two_split_one_sentence():
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. 둘째 문장."}]}
+    visual_by_scene = {0: [
+        {"image_prompt": "a", "negative_prompt": "n", "sentence_start": 1, "sentence_end": 1,
+         "camera_type": "wide"},
+        {"image_prompt": "b", "negative_prompt": "n", "sentence_start": 2, "sentence_end": 2,
+         "camera_type": "medium"},
+        {"image_prompt": "c", "negative_prompt": "n", "sentence_start": 2, "sentence_end": 2,
+         "camera_type": "close-up"},
+    ]}
+
+    shots = chain.build_scenes(writing, visual_by_scene, [{}])[0]["shots"]
+
+    assert [s["shot_id"] for s in shots] == ["S00100", "S00101", "S00102"]
+    assert [s["sentence_indices"] for s in shots] == [[0], [1], [1]]
+
+
+def test_build_scenes_merges_an_empty_prompt_range_into_the_previous_shot():
+    """The empty-``image_prompt`` merge still works when the empty shot spans a range —
+    the previous shot inherits every sentence it was carrying, not just its first."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. (정적) (효과음) 넷째 문장."}]}
+    visual_by_scene = {0: [
+        {"image_prompt": "one", "negative_prompt": "n", "sentence_start": 1, "sentence_end": 1,
+         "camera_type": "wide"},
+        {"image_prompt": "", "negative_prompt": "", "sentence_start": 2, "sentence_end": 3,
+         "camera_type": "wide"},
+        {"image_prompt": "four", "negative_prompt": "n", "sentence_start": 4, "sentence_end": 4,
+         "camera_type": "close-up"},
+    ]}
+
+    shots = chain.build_scenes(writing, visual_by_scene, [{}])[0]["shots"]
+
+    assert [s["sentence_indices"] for s in shots] == [[0, 1, 2], [3]]
+
+
+def test_build_scenes_treats_a_missing_or_inverted_sentence_end_as_one_sentence():
+    """A pre-cover checkpoint (no ``sentence_end`` at all) must keep building the same
+    one-element ``sentence_indices`` it always did."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "첫 문장. 둘째 문장."}]}
+    visual_by_scene = {0: [
+        {"image_prompt": "a", "negative_prompt": "n", "sentence_start": 1, "camera_type": "wide"},
+        {"image_prompt": "b", "negative_prompt": "n", "sentence_start": 2, "sentence_end": 1,
+         "camera_type": "medium"},
+    ]}
+
+    shots = chain.build_scenes(writing, visual_by_scene, [{}])[0]["shots"]
+
+    assert [s["sentence_indices"] for s in shots] == [[0], [1]]
 
 
 def test_build_scenes_first_sentence_empty_falls_back_to_scene_context():

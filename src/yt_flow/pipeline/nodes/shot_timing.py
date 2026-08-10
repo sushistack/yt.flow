@@ -11,6 +11,7 @@ the previous clip, the first clip merging forward (AC:3).
 """
 
 import logging
+from collections import Counter
 from dataclasses import dataclass
 
 from yt_flow.domain.state import ShotData, WordTiming
@@ -58,7 +59,7 @@ def plan_shot_clips(
         return [ShotClip(rendered[0], 0.0, audio_duration)]
 
     n_sentences = len(windows)
-    clips: list[ShotClip] = []
+    spans: list[tuple[ShotData, int, int]] = []
     for shot in rendered:
         idxs = [i for i in shot.get("sentence_indices", []) if 0 <= i < n_sentences]
         if not idxs:
@@ -67,7 +68,22 @@ def plan_shot_clips(
                 shot.get("shot_id"), n_sentences,
             )
             continue
-        clips.append(ShotClip(shot, windows[min(idxs)][0], windows[max(idxs)][1]))
+        spans.append((shot, min(idxs), max(idxs)))
+
+    # Story 10.4's ordered cover lets SEVERAL shots start on the same sentence (a
+    # split). They would otherwise get identical windows, and the "gaps attach to the
+    # preceding shot" loop below would give every one but the last a duration of 0.
+    # So the start — and only the start — divides its first sentence's window by the
+    # shot's share position. ``share_n == 1`` is every pre-cover run and reproduces
+    # ``windows[min(idxs)][0]`` exactly.
+    share_n = Counter(first for _, first, _ in spans)
+    share_idx: Counter = Counter()
+    clips: list[ShotClip] = []
+    for shot, first, last in spans:
+        w0, w1 = windows[first]
+        start = w0 + (w1 - w0) * share_idx[first] / share_n[first]
+        share_idx[first] += 1
+        clips.append(ShotClip(shot, start, windows[last][1]))
 
     if not clips:  # defensive — AD-5 promises sentence coverage; guard anyway (AC:2)
         return [ShotClip(rendered[0], 0.0, audio_duration)]
