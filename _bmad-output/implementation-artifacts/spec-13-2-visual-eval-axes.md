@@ -2,9 +2,10 @@
 title: 'Story 13.2 — instrument replacement (DSG) + visual/motion evaluation axes'
 type: 'feature'
 created: '2026-08-11'
-status: 'in-review'
+status: 'done'
 baseline_revision: 'ffc585c188fce1846122da5f3c10d63f7e505847'  # was fae0b98 at plan time; the concurrent 10-1c session committed 044692d+ffc585c mid-implementation, so this is the revision that isolates 13.2's diff
 review_loop_iteration: 0
+final_revision: 'e416c17f77be670e30c1671bdac5ba73ae068d42'
 followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/planning-artifacts/research/technical-narration-image-semantic-alignment-2026-08-10.md'
