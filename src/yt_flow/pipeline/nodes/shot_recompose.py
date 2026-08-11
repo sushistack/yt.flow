@@ -131,9 +131,13 @@ def build_single_pass(template: dict, plate_name: str, card_name: str, prompt: s
     return workflow
 
 
+RECOMPOSED_DIR = "recomposed"
+"""Named, not inlined: the caller reads it back off a path to detect re-entry."""
+
+
 def recompose_cache_path(workspace: Path, shot_id: str, digest: str) -> Path:
     """Content-addressed: the frame is a pure function of plate, cards and instructions."""
-    return workspace / "recomposed" / f"{shot_id}_{digest}.png"
+    return workspace / RECOMPOSED_DIR / f"{shot_id}_{digest}.png"
 
 
 def recompose_digest(plate_bytes: bytes, card_paths: list[str], prompts: list[str]) -> str:

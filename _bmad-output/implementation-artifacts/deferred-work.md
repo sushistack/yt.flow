@@ -500,3 +500,7 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-background-must-be-unpopulated.md`
   summary: Guard degradation counters reach the Langfuse span and the run log, but not the human gate payload.
   evidence: `guard_unscreened`/`guard_exhausted` say "these backgrounds were never verified unpopulated", which is exactly the class of quality warning `scenario_quality` puts on the gate payload (Story 12.3 idiom). The image gate carries no such channel; the generic `run_warnings` surface is Story 13.1's scope and is still unimplemented.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-1c-shot-recompose-qwen.md`
+  summary: `recompose_run_shots` mutates the graph's shot dicts in place, against AD-4's "never mutate the input state" rule that `image_node` follows.
+  evidence: `image.py:582` copies the shot precisely to avoid this ("set only image_path/depth_map_path — never mutate the input state [AD-4]"); `recompose_service.py` writes `shot["image_path"]` and pops `depth_map_path` on the live object, and `video_node` returns only `{current_stage, video_path, error}`, so what the checkpoint keeps depends on serialization timing rather than an explicit contract. The close-out patched the worst consequence (a re-entry guard makes a second pass a no-op) but not the design. Reachable only with `shot_recompose_enabled=True`, which stays off — revisit in the commit that flips the default.

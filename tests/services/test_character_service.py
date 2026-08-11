@@ -539,26 +539,49 @@ class TestSelectEntityAnglesTracing:
 def test_services_does_not_import_api_or_pipeline():
     """AD-1: services/ must not import api/ or pipeline/.
     Excludes run_service.py (the sole graph.astream() caller, per AD-3, AD-4).
-    eval_service.py may import PURE pipeline node functions only (shot_timing's
-    plan_shot_clips for the Story 11.4 cut_alignment_error metric — same
-    services→pipeline direction as run_service; never api/)."""
+    A service may import PURE pipeline node functions only — the same
+    services→pipeline direction as run_service, never api/:
+      * eval_service.py -> shot_timing's plan_shot_clips (Story 11.4
+        cut_alignment_error metric);
+      * recompose_service.py -> shot_recompose (Story 10.1c split the recompose
+        in two and left the prompt/workflow half pure; this half owns the
+        ComfyUI client, the workspace and Settings, which pipeline/ may not).
+    The allowlist only holds while the allowlisted module is itself layer-pure —
+    otherwise it launders a services→pipeline→services cycle — so each one is
+    re-checked below. An allowlist without that check is a hole in AD-1, not an
+    exemption from it. That re-check reads the allowlisted module's own import
+    list; it does not follow the graph transitively, so it catches a direct
+    back-edge, not one laundered through a third pipeline module."""
     import ast
     from pathlib import Path
 
-    _pure_node_imports = {"eval_service.py": {"yt_flow.pipeline.nodes.shot_timing"}}
-    svc_dir = Path(__file__).resolve().parents[2] / "src" / "yt_flow" / "services"
-    for py in svc_dir.glob("*.py"):
+    def imported_modules(py: Path):
+        # Relative imports are resolved against the file's own package, otherwise
+        # `from ..api import main` yields "api", matches no prefix below, and walks
+        # straight through the guard.
+        pkg = py.resolve().relative_to(src).with_suffix("").parts
+        for node in ast.walk(ast.parse(py.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                base = pkg[:-node.level] if node.level else ()
+                yield ".".join((*base, *([node.module] if node.module else ())))
+            elif isinstance(node, ast.Import):
+                yield from (alias.name for alias in node.names)
+
+    _pure_node_imports = {
+        "eval_service.py": {"yt_flow.pipeline.nodes.shot_timing"},
+        "recompose_service.py": {"yt_flow.pipeline.nodes.shot_recompose"},
+    }
+    src = Path(__file__).resolve().parents[2] / "src"
+    for py in (src / "yt_flow" / "services").glob("*.py"):
         if py.name in ("__init__.py", "run_service.py"):
             continue  # run_service is the sole astream() caller (AD-3, AD-4)
-        tree = ast.parse(py.read_text())
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                assert not module.startswith("yt_flow.api"), f"{py.name}: imports {module}"
-                if module in _pure_node_imports.get(py.name, set()):
-                    continue
-                assert not module.startswith("yt_flow.pipeline"), f"{py.name}: imports {module}"
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert not alias.name.startswith("yt_flow.api"), f"{py.name}: imports {alias.name}"
-                    assert not alias.name.startswith("yt_flow.pipeline"), f"{py.name}: imports {alias.name}"
+        for module in imported_modules(py):
+            if module in _pure_node_imports.get(py.name, set()):
+                continue
+            assert not module.startswith(("yt_flow.api", "yt_flow.pipeline")), \
+                f"{py.name}: imports {module}"
+
+    for allowed in sorted(m for mods in _pure_node_imports.values() for m in mods):
+        for module in imported_modules(src / Path(*allowed.split(".")).with_suffix(".py")):
+            assert not module.startswith(("yt_flow.api", "yt_flow.services", "yt_flow.db")), \
+                f"{allowed} is allowlisted as a pure node but imports {module}"

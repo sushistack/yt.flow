@@ -275,8 +275,21 @@ class Settings(BaseSettings):
     # — its one hit needed attempt 2, so a budget of 1 would have kept a populated frame.
     background_person_guard_attempts: int = Field(0, ge=0, le=BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS)
     # Story 10.1c — regenerate each shot from plate + cards + a placement instruction
-    # instead of compositing cards onto the plate. Off by default until the full-run
-    # viewing verdict lands; the overlay path stays intact behind it.
+    # instead of compositing cards onto the plate. The overlay path stays intact behind it.
+    # VERDICT (10.1c close-out): stays OFF, despite the live run passing. For: 51 passes /
+    # 0 errors, Jay's motion verdict on the 3:06 render PASS (findings 3·11 gone), 0
+    # composition collapses across the 42-plate sweep. Against, and decisive for the
+    # *default*: (a) 10.4's post-hoc audit scored recomposed frames WORSE on blind
+    # legibility than the plates they replaced — unreadable 20% vs 13%, misread-as-corridor
+    # 57% vs 27% — on this epic's largest defect cluster; (b) the path needs ComfyUI started
+    # with --lowvram --disable-smart-memory and an fp8 text encoder, and nothing here detects
+    # or enforces that: on a stock install it swap-deadlocks for ~12 minutes and the
+    # try/except fallback never fires; (c) 90–120s x 51 passes adds 1.3–1.7h to a 2h E2E
+    # budget. UNBLOCK: when 13-2's rebuilt evaluation axes score a paired recompose-on/off
+    # set, flip if legibility is neutral-or-better AND a runtime-prerequisite guard exists.
+    # That commit is also what retires the overlay-only machinery (ground placement,
+    # _GROUND_Y_MAX, occlusion, contact shadow, 11.5 parallax, 1.9c idle motion) — while
+    # this stays False they are the production path, not dead code.
     shot_recompose_enabled: bool = False
     shot_recompose_workflow_path: str = "data/workflows/comfyui_shot_recompose_qwen_api.json"
 

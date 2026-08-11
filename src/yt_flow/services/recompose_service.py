@@ -15,6 +15,7 @@ from pathlib import Path
 
 from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.shot_recompose import (
+    RECOMPOSED_DIR,
     recompose_cache_path,
     recompose_digest,
     recompose_shot,
@@ -64,6 +65,15 @@ async def recompose_run_shots(
                 continue
 
             plate_path = Path(plate)
+            if plate_path.parent.name == RECOMPOSED_DIR:
+                # Re-entry: this shot's "plate" is a frame we already recomposed, so it
+                # ALREADY contains the characters. Feeding it back in draws every figure a
+                # second time (the duplicate-figure failure this story spent a round on),
+                # and the run_dir derivation below would miss too. video is retryable and
+                # the rewrite is in place, so this state is reachable — treat it as done.
+                remaining.pop(shot_key, None)
+                stats["skipped"] += 1
+                continue
             try:
                 plate_bytes = plate_path.read_bytes()
             except OSError as exc:
@@ -90,12 +100,27 @@ async def recompose_run_shots(
                 if not image:
                     stats["failed"] += 1
                     continue
-                out.parent.mkdir(parents=True, exist_ok=True)
-                tmp = out.with_name(f"{out.name}.tmp")
-                tmp.write_bytes(image)
-                tmp.replace(out)
+                try:
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = out.with_name(f"{out.name}.tmp")
+                    tmp.write_bytes(image)
+                    tmp.replace(out)
+                except OSError as exc:
+                    # Contained here on purpose. Shots are rewritten in place as the loop
+                    # goes, so letting ENOSPC out would leave the run half-recomposed: the
+                    # caller's blanket except keeps the ORIGINAL cast_cards, and the shots
+                    # already swapped would get their characters composited on top of a
+                    # frame that has them. One failed shot, not a torn run.
+                    logger.warning("Recompose write failed for %s: %s", shot_key, exc)
+                    stats["failed"] += 1
+                    continue
 
             shot["image_path"] = str(out)
+            # The depth map describes the *empty plate*, not the characters the model just
+            # drew into the frame, so warping the new image with it would slide the figures
+            # against their own background. Dropping the key makes 11.5 report NO_DEPTH
+            # ("no_depth_map") — a recorded degradation rather than a silent wrong warp.
+            shot.pop("depth_map_path", None)
             remaining.pop(shot_key, None)   # nothing to overlay: the frame already has them
             stats["recomposed"] += 1
 

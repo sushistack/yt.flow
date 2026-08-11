@@ -1385,6 +1385,11 @@ def _apply_placement(card: dict, placement: object) -> dict:
     return {**card, **clean}
 
 
+# `render_composite_still` and `render_card_coverage_mask` below have no production
+# caller and are KEPT deliberately (Story 10.1c close-out): 10.1b's fusion stage that
+# used to call them was rejected, but they are the only way to *measure* the placement
+# chain without re-deriving its arithmetic, so they stay as adjudication tools. Not dead
+# code — do not sweep them.
 _FUSION_STILL_SPEC = EffectSpec(direction="in-center", start_zoom=1.0, end_zoom=1.0)
 """Motionless Ken Burns: zoom 1.0→1.0 on a non-``out-center`` direction.
 
@@ -2399,6 +2404,28 @@ async def video_node(state: PipelineState) -> dict:
                     "(not an RGBA sprite) — regenerate via Story 8.2's sprite pipeline"
                 )
 
+        # ── Story 10.1c: shot recompose ───────────────────────────────────
+        # Regenerate each shot from its plate + cards + a placement instruction, then
+        # composite NOTHING: the returned frame already contains the characters, so the
+        # shot renders through the background-only path and the motion stage animates one
+        # image. This replaces the overlay, so everything below that exists to make a
+        # pasted card look attached — ground placement, occlusion, contact shadow,
+        # harmonization tiers, 11.5 layer parallax — is bypassed for recomposed shots by
+        # construction, not by flag checks.
+        # It runs BEFORE 8.16's ground resolver for exactly that reason: a recomposed shot
+        # drops its cards, so resolving a ground plane for them first spends a depth read
+        # per card on placements nothing will ever consume. Ordering is what makes the
+        # bypass structural — 8.16 only ever sees the cards that survived.
+        # getattr, not attribute access: Settings stubs in tests are SimpleNamespaces built
+        # per test, so a hard reference makes every unrelated video test fail on a field they
+        # never opted into. Absent == off, which is also the production default.
+        if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is not None and cast_cards:
+            try:
+                cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
+                logger.info("Shot recompose: %s", recompose_stats)
+            except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
+                logger.warning("Shot recompose failed, keeping the overlay path: %s", exc)
+
         # ── Story 8.16: depth-aware ground plane per (shot, card) ──────────
         # After alpha validation (the cards are known-good sprites by here) and
         # before Tier 3, whose relit sprites inherit the same placement keys.
@@ -2409,24 +2436,6 @@ async def video_node(state: PipelineState) -> dict:
                 )
             except Exception as exc:  # noqa: BLE001 — AD-10: degrades to the frame-centre anchor
                 logger.warning("Depth-aware placement failed, keeping centre anchor: %s", exc)
-
-        # ── Story 10.1c: shot recompose ───────────────────────────────────
-        # Regenerate each shot from its plate + cards + a placement instruction, then
-        # composite NOTHING: the returned frame already contains the characters, so the
-        # shot renders through the background-only path and the motion stage animates one
-        # image. This replaces the overlay, so everything below that exists to make a
-        # pasted card look attached — ground placement, occlusion, contact shadow,
-        # harmonization tiers, 11.5 layer parallax — is bypassed for recomposed shots by
-        # construction, not by flag checks.
-        # getattr, not attribute access: Settings stubs in tests are SimpleNamespaces built
-        # per test, so a hard reference makes every unrelated video test fail on a field they
-        # never opted into. Absent == off, which is also the production default.
-        if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is not None and cast_cards:
-            try:
-                cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
-                logger.info("Shot recompose: %s", recompose_stats)
-            except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
-                logger.warning("Shot recompose failed, keeping the overlay path: %s", exc)
 
         # ── Story 8.7 Tier 3: IC-Light relight precomputation ─────────────
         relit_map: dict[tuple[str, str], Path] = {}
