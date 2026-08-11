@@ -1,0 +1,628 @@
+{
+  "frozen_descriptor": "A tall, thin humanoid figure, roughly 1.9 meters in height, clad in a floor-length hooded black robe typical of a medieval plague doctor. Its head is covered by a pale ceramic beak mask that appears permanently fused to the flesh beneath it, the eye openings dark and smooth. The mask shows no seams or joins, and the robe conceals most of the body, leaving only the hands exposed. Those hands are bare, with ordinary skin tones, and the fingers are long and dexterous. The entity carries no visible equipment or tools. The organic integration of mask to head is seamless, with no gaps or visible attachment points.",
+  "entity_sheet": "SCP-049 is the plague-doctor entity — the single most recognizable trait is its fused ceramic avian mask. It leaves behind reanimated corpses (SCP-049-2 instances) as its signature aftermath, a grotesque parody of its claimed cure. Its presence is often preceded by a faint smell of old leather and chemical preservatives.",
+  "story_logline": "A gentle, deluded doctor who sincerely believes he cures a hidden plague — yet his touch brings instant death and his \"cure\" turns the dead into shambling things. The video uncovers the hollow tragedy behind the mask.",
+  "scene_roles": {
+    "1": {
+      "act": "dread",
+      "emotional_beat": "격리실에 D계급이 호송된다",
+      "synopsis": "치료의 시작"
+    },
+    "2": {
+      "act": "clinical",
+      "emotional_beat": "개체 식별 및 초기 관찰 기록",
+      "synopsis": "플라그 닥터"
+    },
+    "3": {
+      "act": "dread",
+      "emotional_beat": "그만이 보는 병이 이 방에 있다",
+      "synopsis": "대역병"
+    },
+    "4": {
+      "act": "clinical",
+      "emotional_beat": "실험 대상이 격리실로 들어선다",
+      "synopsis": "접촉"
+    },
+    "5": {
+      "act": "escalation",
+      "emotional_beat": "맨손이 닿는 순간, 모든 것이 끝난다",
+      "synopsis": "악수"
+    },
+    "6": {
+      "act": "clinical",
+      "emotional_beat": "죽은 자에게 집도하는 의사",
+      "synopsis": "수술"
+    },
+    "7": {
+      "act": "escalation",
+      "emotional_beat": "시체가 다시 일어났다",
+      "synopsis": "부활"
+    },
+    "8": {
+      "act": "revelation",
+      "emotional_beat": "의사가 자신의 작품을 바라본다",
+      "synopsis": "완치"
+    },
+    "9": {
+      "act": "dread",
+      "emotional_beat": "문이 닫히고, 그는 여전히 기다린다",
+      "synopsis": "격리"
+    }
+  },
+  "cast_by_sentence": {
+    "1": {
+      "1": [],
+      "2": [
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "far",
+          "pose": "standing"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "5": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ]
+    },
+    "2": {
+      "1": [],
+      "2": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "5": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "far",
+          "pose": "standing"
+        }
+      ]
+    },
+    "3": {
+      "1": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "2": [],
+      "3": [],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "5": [],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ]
+    },
+    "4": {
+      "1": [
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "2": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ]
+    },
+    "5": {
+      "1": [],
+      "2": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "5": [],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "8": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ]
+    },
+    "6": {
+      "1": [],
+      "2": [],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ],
+      "5": [],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "7": [],
+      "8": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "9": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "far",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "far",
+          "pose": "sitting"
+        }
+      ],
+      "10": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ],
+      "11": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "right",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ]
+    },
+    "7": {
+      "1": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "mid",
+          "pose": "sitting"
+        }
+      ],
+      "2": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "left",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "near",
+          "pose": "sitting"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "5": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "6": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "8": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "9": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "center",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "far",
+          "pose": "standing"
+        }
+      ]
+    },
+    "8": {
+      "1": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "far",
+          "pose": "standing"
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "far",
+          "pose": "standing"
+        }
+      ],
+      "2": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "4": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "5": [
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "7": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing"
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "8": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ]
+    },
+    "9": {
+      "1": [],
+      "2": [],
+      "3": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing"
+        }
+      ],
+      "4": [],
+      "5": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing"
+        }
+      ],
+      "6": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "far",
+          "pose": "standing"
+        }
+      ],
+      "7": []
+    }
+  },
+  "note": "built ONCE, before either leg ran, and passed unchanged to both"
+}

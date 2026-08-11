@@ -2458,10 +2458,27 @@ async def tts_normalize_step(
 
 
 def _fallback_prompt(scene: dict) -> str:
-    """Minimal prompt for a leading transition-only sentence with nothing to merge into."""
+    """Minimal prompt for a leading transition-only sentence with nothing to merge into.
+
+    Story 10.4b: the old text ended in ``"no visible subject"``, which made this
+    backfill a code-side instance of the exact defect that story removes — a prompt
+    whose subject is an absence renders as unreadable geometry, because diffusion
+    cannot draw a nothing. It also matched ``_NO_FIGURE_FRAMINGS``, so the shot lost
+    its cast as a side effect of a phrase chosen to mean "placeholder".
+
+    The floor is a subject: it exists in every location, it takes the scene's own
+    atmosphere, and it gives the renderer a surface to describe.
+
+    ponytail: this backfill only fires when a scene's FIRST sentence has an empty
+    ``image_prompt`` and there is no earlier shot to merge into — the merge at the
+    call site is backward-only. The prompt now tells the model to widen the first
+    shot's range forward instead (``sentence_start: 1, sentence_end: 2``), which the
+    ordered cover already accepts, so this path should get rarer. Add a forward merge
+    only if it is ever measured to still fire.
+    """
     location = scene.get("location") or _DEFAULT_LOCATION
     atmosphere = scene.get("atmosphere") or _DEFAULT_ATMOSPHERE
-    return f"static wide shot, {location}, {atmosphere}, no visible subject"
+    return f"static wide shot, {location}, {atmosphere}, worn floor surface in the foreground"
 
 
 def _first_line(value: object) -> str:

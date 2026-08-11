@@ -1,67 +1,77 @@
-# Epic 10 Context: 시청 판정 결함 정정 — 2026-08-08 Jay E2E 리뷰
+# Epic 10 Context: 시청 판정 결함 정정 — 2026-08-08 Jay E2E 리뷰 (Viewing-Verdict Defect Correction)
 
 <!-- Generated from planning artifacts. Regenerate with compile-epic-context if planning docs change. -->
 
 ## Goal
 
-2026-08-08 Jay가 E2E 산출물(SCP-049, 3분 6초)을 실제로 시청하고 지적한 16건의 결함을 계층별로 갈라 정정한다. 다만 이 에픽의 진짜 존재 이유는 개별 결함 수정이 아니라 **"어느 스토리가 어떤 시각 결함을 실제로 없앴는지"를 사후에 증명 가능하게 만드는 것**이다 — 직전 세션에서 여러 스토리를 done으로 닫고도 시청 결과에는 변화가 없었고, 무엇이 효과가 있었는지 아무도 말할 수 없었다. 따라서 각 스토리는 코드 배선이나 테스트 통과가 아니라 **해당 지적이 산출물에서 사라졌다는 프레임/영상 증거**로만 닫힌다. 결함군은 접지·합성(카드가 배경에 붙어 보이는가), 배경 무인화, 화풍 일관성, 이미지-나레이션 의미 정합, 동작 상태 반영, 캐스트 표시 정합, 사운드 큐다.
+Jay watched E2E run `8a9a288b` (SCP-049, 3:06) on 2026-08-08 and listed 16 numbered visual/audio defects (지적 1–16). This epic exists to make **which story actually removed which visual defect** traceable — the prior session closed several Epic 8 stories and the watched result did not change, with no way to prove afterwards what had helped. Each story therefore owns a specific 지적 number and closes only on artifact evidence (rendered frames/clips a human judged), never on passing tests or wired code. A standing caveat: the reviewed run was rendered with `depth_placement_enabled=false`, so 8.16 grounding and 11.5 parallax were both **off**; 지적 3·11 were evidence that features were disabled, not that they were ineffective. Story 10.1 established that off/on baseline first, and the epic's confirmed direction (below) grew out of it.
 
 ## Stories
 
-- Story 10.1: 접지·합성 실사 검증 — 카드가 배경에 붙어 있는가
-- Story 10.1b: 카드-배경 융합 — harmonization tier 3(IC-Light) 실가동 **(라이브 기각)**
-- Story 10.1c: 샷 재창조 — 배경+카드+자연어 배치 지시로 한 장 생성 **(재창조·모션 판정 통과)**
-- Story 10.2: 배경 무인화 강제
-- Story 10.3: 화풍 일관성 + LoRA 정합
-- Story 10.4: 이미지-나레이션 의미 정합
-- Story 10.5: 동작 상태가 카드에 반영되지 않음
-- Story 10.6: 캐스트 표시 정합 — D계급 이상·시각적 중복
-- Story 10.7: 씬 사운드 교체 — 사이렌
+- Story 10.1: Grounding/composite live verification (지적 3·11) — **done**
+- Story 10.1b: Card-plate fusion via harmonization tier 3 / IC-Light (지적 3) — **rejected** (live viewing verdict "나빠졌다")
+- Story 10.1c: Shot recomposition — background + cards + placement instruction → one generated image (지적 3·11) — **done** (feature ships default OFF)
+- Story 10.2: Force unpopulated backgrounds (지적 5·12) — **done**
+- Story 10.3: Style consistency + LoRA compatibility (지적 10·12) — **done**
+- Story 10.4: Image↔narration semantic match (지적 2·4·7·9·16) — **done** (measurement axis built; mapping hypothesis killed; prompt not promoted)
+- Story 10.4b: Never ask the renderer to draw an absence — remove unreadable frames (지적 2) — **open (backlog)**
+- Story 10.5: Action state not reflected on cards (지적 6) — **open (backlog)**
+- Story 10.6: Cast display coherence — D-class quality, visual duplicates (지적 14·15) — **open (backlog)**
+- Story 10.7: Scene sound replacement — siren (지적 13) — **done**
+
+Out of epic scope: 지적 1 (narration wording → Epic 12), 지적 8 (set/plate reuse → Epic 8).
 
 ## Requirements & Constraints
 
-- **닫힘 조건은 산출물 증거다.** 테스트 통과·코드 배선·"기능이 켜졌음"만으로 닫지 않는다. 지목된 결함이 프레임/영상에서 실제로 사라졌음을 보여야 하며, 비교는 동일 샷 슬레이트의 before/after 쌍으로 한다. 픽셀 측정치를 남길 때는 값·샘플 밴드 좌표·대조군·1커맨드 재산출 스크립트를 함께 남겨 재현 가능하게 한다.
-- **지표가 아니라 시청 판정이 이긴다.** 측정치가 개선을 가리켜도 사람이 보고 "나빠졌다"면 기각이다(재조명 경로에서 실제로 발생: 색거리 −20%인데 기각). 정지 프레임에서 보이던 아티팩트도 모션에서 거슬리지 않으면 종결한다. 게이트 지표가 체감을 대리하지 못하면 그 부적합 자체를 기록해 시각 평가 축 확장 작업으로 넘긴다.
-- **기준선 오염을 먼저 배제한다.** 문제의 런은 지면 배치·패럴랙스가 둘 다 꺼진 채 렌더됐다. "기능이 무효"라는 결론을 그 런에서 도출하면 안 된다.
-- **원인 단정 전에 대조군을 세운다.** 이 에픽의 한 라운드에서 세운 가설 10건 중 9건이 반증됐고, 공통 원인은 대조군 없이 원인을 단정한 것이었다. 기록된 "원인 규명 완료" 서술도 실제로는 반대였던 전례가 있으므로 귀속은 하나씩 격리해 재확인한다.
-- **품질 우선, 속도는 후순위.** 자동 처리 구간 E2E 2시간 목표이며 사람의 승인 대기 시간은 예산 밖이다.
-- **신규 의존성 금지.** 검출·판정이 필요하면 이미 파이프라인에 있는 VLM 경로와 매니페스트/라벨링 스크립트를 재사용한다.
-- **라이선스**: 수익화 파이프라인에는 상업 이용 가능한 가중치만 투입한다(재창조 모델은 Apache-2.0). 비상업 라이선스 재조명 계열은 영구 제외, 재논의 금지.
-- **네거티브 프롬프트 증량 금지.** 결함마다 네거티브 절을 추가하는 방식은 세 차례 역효과가 실증됐다("원을 그리지 마라"가 오히려 바닥 반점을 강화). 통제는 문구 누적이 아니라 구도 지시와 결정론 코드 가드로 한다.
-- **조용한 강등 금지.** 융합·세그멘테이션 실패는 샷 단위 비치명 계약을 유지하되, 강등된 결과가 "정상 완료"로 보이면 안 된다. 경고는 기존 게이트/SSE/아티팩트 경로로 실어 나른다.
-- 런타임 프롬프트를 건드리는 변경은 저장소 파일이 진실원본이라는 정책을 따른다. 현재 개발 모드에서는 품질 게이팅이 꺼져 있어 A/B·승격 게이트를 새로 돌리지 않는다.
+- **Closing condition for every story:** produce an artifact showing the assigned 지적 number is gone. Metrics support the argument; the human viewing verdict decides. A gate metric that improves while viewing does not is itself a finding to record, not a pass.
+- **Measurement discipline** (earned the hard way in this epic): state the sample band/coordinates with any pixel number, keep a control leg, and leave a one-command recompute script beside the evidence. Pre-register the pass/fail rule *before* seeing scores; do not invent a threshold at the moment you first see a distribution.
+- **Isolate before attributing.** Recorded root causes in this epic have been found inverted (the style-drift culprit was the opposite LoRA of the one documented). Re-confirm attribution by loading one variable at a time.
+- **New paths enter default off** and must degrade to the existing path in a recorded way (a silent fallback is a defect).
+- Remaining open stories need new pipeline runs, so they are gated on a working `YTFLOW_GEMINI_API_KEY`; work that only re-runs the `video`/`image` stage of an existing run is not.
+- Automated E2E budget is ~2 hours and is dominated by image generation; any per-shot generative pass must be costed against that ceiling.
+- Only commercially licensed models/weights may enter the monetized pipeline (this is why IC-Light v2/Flux are permanently excluded).
 
 ## Technical Decisions
 
-- **⛳ 방향은 얹어놓기가 아니라 재창조다(앵커).** 최종 스틸은 배경과 캐릭터 카드를 **입력 참조**로 써서 *생성*되어야 하며 ffmpeg으로 겹쳐 놓은 것이 아니다. 판별 기준 한 줄: 결과의 카드 영역 픽셀이 원본 카드와 거의 같으면 그건 재창조가 아니다. 이 결정에 어긋나는 제안을 하기 전에 이 항목부터 읽는다.
-- **composite-then-refine 계열은 전부 폐기 — 되살리지 마라**: 카드 재조명(IC-Light tier 3), 마스크 low-denoise img2img 융합, 합성 스틸에 ControlNet+IPAdapter 적용. 셋 다 *이미 얹어놓은 결과*를 입력으로 받으므로 인물의 위치·크기·포즈를 여전히 코드 상수가 결정하고 모델은 그 위를 덧칠할 뿐이다. 바닥 없는 플레이트에서는 어떤 상수도 인물을 세우지 못한다. 재조명 산출물(그래프·캐시·마커)은 동작이 검증됐으므로 폐기하지 않고 남기되 기본 tier는 올리지 않는다.
-- **채택 경로는 generative insertion**이다: 배경 플레이트 + 캐릭터 카드 + **자연어 배치 지시** → 모델이 배치하고 한 장으로 생성. 좌표를 코드가 만들지 않는다. 배치·깊이는 원래 시나리오 LLM이 정하던 값이고 코드가 이산값으로 깎아 쓰고 있었으므로, 자연어로 넘기면 그 정보 손실이 사라진다. 라이브 확정: 바닥 없는 플레이트에도 **없던 바닥과 광원 방향에 맞는 그림자를 그려** 인물을 세운다.
-- **받아들인 대가(명시 — 회귀가 아니므로 고치지 마라)**: 지면 배치·ground-Y 클램프·오클루전 마스크·컨택트 섀도·레이어드 2.5D 패럴랙스·캐릭터 idle motion이 전부 무용지물이 된다(코드 정리 대상). 위치 재현성이 떨어지고, 카드 정체성은 실루엣 고정이 아니라 참조 조건화에만 의존한다.
-- **다인 샷은 순차 삽입**(far→mid→near, 인물당 1패스)이 정본이며, "방과 이미 있는 인물을 그대로 유지하라"는 취지의 지시로 앞 패스를 보존한다. 구도 재프레이밍을 막으려고 카메라 앵글·프레이밍을 유지하라는 절을 끼워 넣으면 **같은 인물이 두 번 그려진다** — 그 절은 넣지 않는다(재프레이밍은 라이브러리 플레이트가 아니라 자유 생성 배경에서만 발생했다).
-- **배경 소스 재사용은 의도된 정책이다(앵커).** 같은 방은 같은 그림이어야 한다 — 배경 종수 감소는 버그가 아니라 목표에 가까운 상태이며, "다양성 붕괴 회귀"로 기록된 과거 권고와 그에 딸린 차단 조건은 이 결정으로 무효다. 다양성이 부족하면 **플레이트 소스를 늘려라**, 한 소스에서 여러 파생을 만들지 마라. 따라서 재창조는 플레이트를 보존해야 하고 배경을 다시 지어내면 안 되며, 스톡 플레이트 치환은 **켜는 방향**이다(샷별 세트 드레싱보다 방의 동일성이 우선).
-- **플레이트 배치 적합성 판정기는 만들지 않는다.** 승인된 라이브러리 플레이트 전수 스윕에서 구도 붕괴 0건이었고, 유일한 실패 사례는 런타임 자유 생성 배경이었다. 해법은 플레이트 치환을 켜는 것이지 판정기 신설이 아니다. 후보 판정 신호 3종(바닥 유무 기하 지표·엣지 드리프트·VLM "바닥이 보이는가")은 모두 반증됐다 — 모델이 없던 바닥을 그릴 수 있으므로 질문 자체가 틀렸다.
-- **로컬 런타임 제약이 결과를 좌우한다**: 편집 모델은 ComfyUI를 저VRAM/스마트 메모리 비활성 플래그로 기동해야 하고(기본 모드는 VRAM 초과로 스왑 교착), 플래그가 실제로 서버에 도달하는 방식으로 실행해야 한다. 텍스트 인코더는 **fp8 유지 필수** — 양자화본은 비전 타워가 분리돼 이미지 조건화 패스가 전량 실패한다. 재창조는 패스당 90~120초.
-- **카드 컴포지팅의 전제는 배경이 무인이라는 것**이다. 플레이트 자체가 사람을 그리는 순간 배치·스케일·접지를 아무리 손봐도 해결되지 않는 다른 계층의 결함이다.
-- **LoRA는 체크포인트 레이아웃과 일치해야 한다.** 불일치 LoRA는 로드 시 대량 미로드 키와 shape 에러를 내며 패치 대부분이 조용히 실패해 의도한 화풍 통제가 아예 걸리지 않는다. 파일명은 근거가 아니므로 실제 텐서 shape로 검증하고, 재발 방지는 워크플로 정의 테스트의 허용목록으로 고정한다.
-- **강제는 프롬프트 문구가 아니라 결정론 코드로** 한다 — 생성물에서 위반을 검출해 재생성하며, 캐스트 검증기의 repair 패턴을 재사용한다.
-- **파이프라인 노드는 그래프 상태의 순수 함수**다(DB·SSE 부수효과 금지). 스테이지 재시도는 체크포인트를 되감아 해당 노드만 재호출하므로 **video 스테이지만 재실행하는 검증은 신규 런이 필요 없다**.
-- **ComfyUI 프롬프트 주입은 워크플로 JSON의 하드코딩된 노드 ID에 묶여** 있고, 설정은 환경변수 핀으로 덮이며 스테일한 `.env` 값이 코드 기본값을 이긴다. 워크플로 재번호를 동반하는 편집은 주입 경로까지 확인하고, 기능이 켜졌는지는 소스가 아니라 그 런의 실효 설정으로 확인한다. 안전장치 마커가 없는 워크플로는 런타임이 제출을 거부하므로 마커는 라이브 검증 통과 후에만 부여하고, 마커 부재 시 기존 경로로 안전 강등되는지까지 확인한다. 신규 경로는 기본 off로 들어간다.
-- **기각 기록은 버전·용도까지 확인하고 인용하라.** 과거 VRAM 기각 수치는 **다른 버전·다른 용도**의 것이라 현행 재창조 경로에 적용되지 않는다(이 혼동은 이미 세 번 발생했다). 반대로 과거 기각 사유가 신버전에서 해소됐는지는 버전으로 보장되지 않으므로 라이브로 확인한다.
-- 합성 스틸 렌더와 카드 커버리지 마스크는 **최종 픽셀의 출발점으로는 폐기**되었으나, 배치 수식을 재유도하지 않고 *측정*하는 도구이므로 판정·검증 용도로는 계속 쓴다.
-- 배경 해상도가 두 종류(스톡 플레이트 / 자유 생성)라 플레이트와 파생 맵은 동일한 프레이밍 계산을 공유해야 하며, 검증은 해상도를 파라미터화한다.
+### ⛳ Confirmed direction (Jay, 2026-08-08) — card and background are finally **fused into one image**
 
-## UX & Interaction Patterns
+**Read this before proposing anything that contradicts it.** Overlaying a card onto a plate with ffmpeg is not the deliverable. Background and character cards are **inputs used to re-create the image**. Jay's words: *"물리적으로 이어 붙이는 게 아니라"*, *"아예 1개의 이미지로 합성"*, *"기존 배경 + 캐릭터 카드들을 이용한 이미지의 재창조"*.
 
-- 스테이지마다 사람의 승인 게이트가 있고 승인 전에는 진행하지 않는다. 이 에픽의 프레임/영상 증거는 별도 채널이 아니라 기존 게이트·아티팩트·SSE 경로 위에서 검토된다.
-- 경고·강등 정보는 기존 게이트 페이로드에 가산적으로 실어야 하며, 이미 존재하는 품질 경고 계약을 대체하거나 의미를 뭉뚱그리지 않는다.
+The discriminator, one line: if the card region of the output is nearly identical to the source card pixels, that is overlaying, not re-creation. Card pixels are a **reference for identity**, not protected content; composition and identity are held by conditioning, not by masks or by placement arithmetic in code.
+
+**Rejected and not to be revived** (all are "overlay then fix"): harmonization tier 3 / IC-Light relight; masked low-denoise img2img fusion; ControlNet+IPAdapter applied on top of a composited still. All three take an already-overlaid frame as input, so `ffmpeg`-side code constants keep deciding position/scale/pose and the model only paints over them — and no constant can stand a figure on a floorless plate. Keep `composite_harmonization_tier` at **1**.
+
+**Adopted path (10.1c, live-validated):** Qwen-Image-Edit-2511 (Apache-2.0, Q4_K_M) with plate as `image1`, cards as `image2/3`, and a natural-language placement instruction; **sequential insertion, one figure per pass, far→mid→near**, with a preservation clause so earlier passes survive. It draws a floor where none existed and casts a matching shadow. Operational preconditions the code does **not** yet detect or enforce: ComfyUI must run with `--lowvram --disable-smart-memory`, and the text encoder must stay **fp8** (GGUF Q4 lacks the vision tower and fails outright). ~90–120s per pass. The feature stays **off by default**; flipping it requires readability parity on 13.2's rebuilt axes for paired on/off sets plus a runtime precondition guard, and the flip commit is what removes the then-dead placement code (8.16 grounding, `_GROUND_Y_MAX` clamp, occlusion mask, contact shadow, 11.5 parallax, idle motion). Accepted cost of fusion: the card can no longer move independently of the background, so layered parallax and character idle motion go away — that removal is intended.
+
+### ⛳ Background policy — source reuse is intent, not a diversity regression
+
+Reusing one background source across many shots is **desired**: spatial continuity and cross-episode consistency are the channel identity, so the same room should be the same picture. Do not "fix" shrinking background variety, and do not derive per-shot variants from one plate — Jay: *"소스가 되는 배경 수를 늘려야지, 하나의 소스로 여러 개를 만들려고 하지 마. 그게 더 이상해져, 일관성 없어지고."* The remedy is a larger plate library, and `stock_plate_substitution_enabled` is on the **enable** trajectory. Implication for re-creation: hold the plate's composition hard; what gets redrawn is the figure and its junction with the floor, not the room.
+
+### Standing prohibitions (each has live counter-evidence)
+
+- Do not add negative-prompt clauses per defect — it has backfired twice.
+- Do not regex-scrub person tokens out of `image_prompt` — it also deletes camera, scale, depicted figures, and absences.
+- Diffusion cannot render an absence. A prompt whose subject is "nothing" produces geometry noise; the frame's subject must always be an existing object/surface/trace.
+- Backgrounds are supposed to be unpopulated (the card-compositing architecture assumes it), yet blind captions read people in a large share of plates — treat that as an active confound in any semantic-match measurement, and enable 10.2's guard before gating on such a score.
+
+### Evaluation instrumentation (from 10.4 → rebuilt in 13.2, now available)
+
+- VLM 1–5 Likert axes died twice on their own data. `legible` is **abolished**, replaced by boolean `readable` (which surfaced ~18% unreadable frames the Likert scale scored 0%). `match` collapsed onto 3.
+- The current instrument is **DSG** (atomic propositions + dependency graph) via the shot-narration scoring script: person propositions are generated then treated as satisfied-and-unasked (the card layer supplies them) so they neither pollute the denominator nor invalidate background propositions. VQAScore was live-rejected — the vision judge returns null logprobs.
+- `readable` and `dsg_score` are **separate axes** and rank-uncorrelated; `dsg_score` is deliberately **not** a gate and has no threshold yet.
+- Blind-first ordering is the only basis of these measurements: ask about the frame with the sentence hidden, then ask about the match. Showing the sentence first makes the VLM find a way to agree.
+- Visual axes are record-only in A/B (they require a paid VLM pass); motion axes are tiebreak inputs and are **regression detectors, not discriminators** (they saturate on healthy runs).
+- Mapping/coverage is dead as a semantic-match lever: hand-authored merges moved `match` by exactly 0.000. The N:M sentence↔shot coverage code stays, justified by render cost and cut rhythm (66→55 shots), not by meaning.
+
+### Architectural boundary
+
+Pipeline nodes must not be imported by `services/` except through explicitly allowlisted, contract-matching seams; an allowlisted node module is itself re-checked for not importing `api`/`services`/`db`, so the allowlist cannot launder a services→pipeline→services cycle. When a new image path replaces `shot["image_path"]`, every derived artifact key (depth maps, masks) must be dropped or regenerated — a stale derived map warps the new frame and reproduces the exact symptom the new path removed.
 
 ## Cross-Story Dependencies
 
-- **10.1 → 10.1b → 10.1c 사슬**이 접지·합성 라인이다. 10.1이 에픽 전체 기준선(기능 off/on 프레임 쌍 + 고정 6샷 슬레이트 + 재산출 스크립트)을 만들었고, 후속 스토리는 그 슬레이트와 저장된 off 프레임을 제3의 기준점으로 재사용하므로 새 판정 비용이 거의 들지 않는다.
-- **10.1b는 기각으로 닫혔고 10.1c가 그 자리에 들어선다.** 10.1c는 전체 렌더와 모션 판정까지 통과했으므로, 남은 소관은 무용지물이 된 접지/클램프/오클루전/컨택트섀도/패럴랙스 코드 정리와 재창조 경로의 기본 활성화 판단이다. 조명 경로는 다시 열지 않는다.
-- **10.4는 10.2에 의존한다** — 배경에 사람이 없어야 "이 이미지가 이 문장을 표현하는가"라는 의미 판정이 성립한다.
-- **10.5는 앞선 포즈 조건화 스토리(8.20)의 결정에 의존한다.** 해당 기법은 라이브 게이트에서 기각됐고, 그 스토리가 남긴 포즈 조건화 컬럼·닫힌 키 집합·가이드 자산은 재사용한다. 다만 그 기각 사유가 현행 편집 모델 버전에서 해소됐는지는 라이브로 확인해야 한다.
-- **10.1 계열은 기존 런의 video 스테이지 재실행만으로 진행 가능**해 외부 LLM 키 없이 착수할 수 있다. 반면 10.2/10.3/10.4는 신규 런이 필요하므로 키가 채워질 때까지 차단된다.
-- 10.1·10.3·10.4의 판정 결과는 **시각 평가 축 확장 작업(Epic 13)**에 입력으로 넘어간다.
-- 에픽 범위 밖: 나레이션 문장 품질은 대본 계층(Epic 12) 소관이며, 문제의 런이 낮은 추론 설정으로 분량 1/3에 그친 사실을 함께 넘긴다. 스톡 플레이트 재사용 복원은 Epic 8의 별도 스토리로 남아 있다(배경 정책 결정에 따라 치환은 켜는 방향으로 뒤집혔다).
-- `video.py`/`image.py`는 여러 스토리가 동시에 건드리므로 병렬 착수 시 편집 충돌에 주의한다(과거 전례 있음).
+- 10.1 → 10.1b → 10.1c is a single chain of verdicts; 10.1c supersedes both predecessors and owns the confirmed direction. Its 6-shot slate, frame-pair maker, and measurement script are reusable comparison infrastructure for any later card/background work.
+- **10.4b must not start before 13.2's instrument is in place** — judging with the collapsed 3-heavy `match` score would repeat 10.4's inconclusive round verbatim. 13.2's instrument replacement is complete (status: review), so this blocker is cleared in substance.
+- 10.4b's alternative to "draw a background for a sentence with no renderable referent" is either 10.4's coverage code (fold into a neighbouring frame) or 10.1c's recomposition path — so its scope depends on 10.1c's default-off flip decision.
+- 10.2's unpopulated-background guard must be enabled before any semantic-match number is used as a gate (person-in-plate readings confound it).
+- 10.5 inherits 8.20's residue (pose-conditioning column, closed pose-guide key, guide assets) and is blocked on choosing a replacement technique after 8.20's live rejection.
+- Backgrounds/plates interact with Epic 8 (plate library growth, `stock_plate_substitution_enabled`); evaluation axes and promotion gating live in Epic 13 (13.2 axes, 13.4 winner-determination); narration/script quality defects were handed to Epic 12.
