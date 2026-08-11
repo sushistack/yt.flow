@@ -58,31 +58,12 @@ This analysis is for your internal reasoning. Do NOT output it — use it to gui
 
 ## STEP 2: Compose Image Prompts
 
-### Sentence-to-Image Mapping
+### 1:1 Sentence-to-Image Mapping
 
-Default to **one `VisualShot` per sentence** (`sentence_start == sentence_end`). Never emit
-more shots than sentences — the ceiling is {{sentence_count}}.
+Produce exactly one `VisualShot` per sentence. Total shots = {{sentence_count}}.
 
-**The one exception: a sentence with no renderable referent joins its neighbour instead of
-getting its own background.** Some sentences name nothing that can be photographed — they
-are entirely about what someone feels, means, or is ("아주 협조적으로요.", "그는 진심으로
-보고 있습니다.", "만족스러운 듯이요."), or they are effect/transition beats like `(정적)`.
-A background invented for such a sentence has no subject, and that is precisely how an
-unreadable frame gets made.
-
-For those sentences, **extend a neighbouring shot's span** so one frame covers both:
-
-- the neighbour keeps its own subject and event, and its `sentence_end` (or
-  `sentence_start`) simply widens to include the referent-less sentence
-- a referent-less sentence that OPENS a scene is covered by widening the first shot
-  forward — e.g. `sentence_start: 1, sentence_end: 2` — since there is no earlier shot
-- ranges must stay ordered and must together cover every sentence 1..{{sentence_count}}
-- prefer the neighbour the sentence actually belongs to in the narration's flow
-
-Do **not** merge a sentence that names something renderable just to save a frame, and do not
-reach for `image_prompt: ""` — a widened span says the same thing and keeps the frame count
-honest. (`""` is still accepted and folds into the previous shot, but a widened range is the
-explicit form and is what you should write.)
+- Each shot: `sentence_start == sentence_end`
+- For effect/transition-only sentences like `(정적)`, `(pause)`, sound effects with no visual content → empty `image_prompt` (`""`)
 
 ### `image_prompt` Structure (8 Slots)
 
@@ -96,13 +77,12 @@ Every non-empty `image_prompt` MUST follow this structure in order:
    - empathy → over-the-shoulder, eye-level medium
    - aftermath → high-angle looking down, slow pull-back wide
 
-2. **Subject with specific physical details** — Materials, textures, colors, size. Be obsessively specific about the *environment* — a room, an object, an aftermath detail — never a body or face. **The subject must be a thing that exists in the frame; an absence is never a subject:**
-   - BAD: "an empty chair" / "vast empty concrete floor stretching across the frame" / "close-up of open air" / "a blank wall section with nothing on it"
+2. **Subject with specific physical details** — Materials, textures, colors, size. Be obsessively specific about the *environment* — a room, an object, an aftermath detail — never a body or face:
+   - BAD: "an empty chair"
    - GOOD: "a steel-frame chair bolted to the floor, restraint straps hanging open, one buckle still swinging"
-   - GOOD (the same beat, re-anchored): "a poured concrete floor scored by a single long drag mark ending at a floor drain"
 
-3. **Action, pose, or state** — Freeze the most dramatic microsecond of the environment or aftermath, not a character's pose (that lives in the `cast` card). **This slot is where THIS sentence's event becomes visible** — one mark, displacement or residue a viewer can point at:
-   - BAD: "the room is empty" / "the wall catches the light" (a surface with no event on it)
+3. **Action, pose, or state** — Freeze the most dramatic microsecond of the environment or aftermath, not a character's pose (that lives in the `cast` card):
+   - BAD: "the room is empty"
    - GOOD: "chalk dust still drifting where something struck the wall a second ago, a monitor feed frozen mid-flicker"
 
 4. **Spatial relationship** — Where is everything relative to everything else? This creates depth and tension. Reference cast placement in general terms only (left/right, near/far), never by describing the person/entity's body:
@@ -125,16 +105,14 @@ Every non-empty `image_prompt` MUST follow this structure in order:
 
 ### Prompt Composition Principles
 
-**The subject is always something that EXISTS — and it carries the event:**
-- Two things every `image_prompt` must do. (1) Its subject is a nameable object, surface or trace that is physically present: a door, a floor stain, a scuff, a tipped tray, a crack, a wet footprint. (2) It shows at least one **legible trace of THIS sentence's event** — the thing a viewer could point at to say "something happened here".
-- An absence cannot be the subject. "Empty floor", "open air", "a blank wall", "the space where something should be" name *nothing*, so there is nothing to draw and the frame comes back as unreadable geometry. Name the thing that is left instead.
-- The narration says "아무것도 보이지 않습니다" (nothing is visible) → do not reach for an empty frame. Reach for what the emptiness *left*: a chair still warm with the strap swinging, a monitor showing static where a feed should be, a single wet footprint halfway to the door.
+**Show, don't tell the narration:**
+- The narration says "아무것도 보이지 않습니다" (nothing is visible) → Don't show "nothing." Show an EMPTY frame that feels WRONG — a corridor that should have someone in it, a chair that's still warm, monitors showing static where a feed should be.
 
 **Every frame needs a "visual hook":**
 - One element that the eye goes to first. A pop of color in a desaturated scene. A shape that doesn't belong. A reflection that shows something the main view doesn't.
 
-**Let scale and space do work, anchored on a real object:**
-- A large room reads as unease only when something present is dwarfed by it — a single overturned chair, a lone stool bolted to the middle of a wide floor, a doorway at the end of a long corridor. The space is the *setting*; the object is the subject.
+**Use negative space as a storytelling tool:**
+- Large empty areas in the frame create unease. A single overturned chair small in an enormous space. An empty hallway stretching to a vanishing point. The space where something SHOULD be but isn't.
 
 **Vary framing, not just distance:**
 - Not every shot needs a central vanishing point. When this sentence's
@@ -199,9 +177,8 @@ image_prompt: |
   low-angle corridor view, sealed blast door at the vanishing point with
   fresh parallel scrape marks crossing the concrete floor toward it, hazard
   stripes chipped along the base rail, wall-mounted camera tilted off axis,
-  twin fluorescent tubes strobing unevenly over dust and condensation, the
-  scrape marks running unbroken down the center line, aftermath dread,
-  watched silence
+  twin fluorescent tubes strobing unevenly over dust and condensation, empty
+  negative space down the center line, aftermath dread, watched silence
 negative_prompt: |
   extra limbs, extra arms, extra fingers, deformed hands, mutated, bad
   anatomy, blurry, watermark, text, low quality, person, human figure,
@@ -350,18 +327,17 @@ Before producing YAML, verify EVERY non-empty `image_prompt`:
 - [ ] No forbidden generic terms (dark, scary, horror, creepy, mysterious, eerie, ominous, sinister, menacing, foreboding, unsettling)
 - [ ] `image_prompt` describes background/environment/atmosphere only — no entity, no person, no cast member's body/face/pose/clothing, no bare SCP designator token, even for a sentence whose Pre-Decided Cast is non-empty
 - [ ] Each image has a clear "visual hook" — one element that draws the eye
-- [ ] The subject is a nameable object/surface/trace that EXISTS in the frame — never an emptiness, an "open air", a "blank" surface, or a space where something should be
-- [ ] At least one legible trace of THIS sentence's event is in the frame (a mark, a displacement, a residue) — answer "what happened here?" without the narration
-- [ ] Depth layering (foreground/midground/background) is used, and any large open area is anchored by a present object rather than being the subject itself
+- [ ] Negative space or depth layering (foreground/midground/background) is used
 - [ ] Emotional keywords are specific feelings, not genre labels
 - [ ] Camera type matches the narrative beat type
 - [ ] The shot still reads as consistent with the Story Logline and Scene Narrative Role below
 - [ ] `pose_hint` is used sparingly (≤ ~3 distinct hints per scenario) and never as a substitute for `pose`
 - [ ] `location_key` values are from the allowed vocabulary or absent; `image_prompt` is always populated
-- [ ] Total shot count <= {{sentence_count}}, and the shot ranges together cover every sentence 1..{{sentence_count}} in order
+- [ ] Total shot count == {{sentence_count}}
+- [ ] Each shot: `sentence_start == sentence_end`
 - [ ] `camera_type` varies between consecutive shots
 - [ ] `camera_type` agrees with this shot's Pre-Decided Cast dominant depth (no `wide` + `near`-filling-frame, no `close-up`/`over-the-shoulder` + lone `far`)
-- [ ] Sentences with no renderable referent (effect/transition beats, or purely about what someone feels or means) are covered by a neighbouring shot's widened range — not given a background of their own
+- [ ] Skipped sentences (effects/transitions) have empty `image_prompt`
 
 If ANY check fails, fix before outputting.
 
@@ -393,10 +369,7 @@ from this exact data:
 ```
 
 This is keyed by sentence number. A sentence with an empty `cast` list has no
-one in frame — write an environment shot for it, still built on a present
-object/surface/trace with a visible mark of the event. "No one in frame" never
-means "nothing in frame": an atmosphere-only shot with no subject and no event
-is the single most common way this stage produces an unreadable frame. A sentence
+one in frame — write a pure environment/atmosphere shot for it. A sentence
 with cast entries has that many people/entities present; use their
 `position`/`depth`/`pose` to inform spatial relationship and staging (slot 4
 above), but never their appearance — you don't know what they look like, and

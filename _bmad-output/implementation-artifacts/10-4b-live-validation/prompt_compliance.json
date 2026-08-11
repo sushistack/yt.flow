@@ -1,0 +1,1618 @@
+{
+  "generated_at": "2026-08-11T23:26:46",
+  "judge_model": "qwen-plus",
+  "endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "judge_prompt": "You are auditing ONE background-image prompt written for ONE sentence of Korean\nnarration in an animated SCP video. The image is a BACKGROUND PLATE: people are drawn separately\nas character cards and composited on top afterwards, so a prompt containing no person is correct\nand is never a defect.\n\nThe narration sentence:\n\"\"\"\n{sentence}\n\"\"\"\n\nThe background prompt written for it:\n\"\"\"\n{prompt}\n\"\"\"\n\nAnswer two independent yes/no questions about the PROMPT TEXT (not about any image):\n\n1. `present_subject` — is the main subject of this prompt a physically present thing: an object,\n   a surface, or a trace/mark that exists? Answer false if the subject is an absence or a void —\n   \"open air\", \"empty floor\", \"a blank wall\", \"featureless expanse\", \"the space where something\n   should be\", \"no visible subject\". A large empty AREA is fine as long as some present object or\n   mark is the subject within it.\n\n2. `visible_event` — does the prompt place at least one VISIBLE trace of this sentence's event in\n   the frame: a mark, a displacement, damage, residue, something out of place, an aftermath\n   detail? Answer false if the prompt only establishes a place, a mood, lighting and textures with\n   nothing indicating that anything happened. Do NOT require the people to be shown — a body,\n   face or gesture is composited later and its absence is never a reason to answer false; judge\n   only whether the environment carries a consequence.\n\nReply with a single JSON object and nothing else:\n{{\"present_subject\": true or false, \"visible_event\": true or false}}",
+  "note": "DIAGNOSTIC GATE, not the pre-registered verdict. PRE-REGISTRATION.md fixes the verdict on rendered frames (paired boolean `readable`); this measures only whether the written prompts moved in the direction the instruction demanded. Blind by construction: one prompt + one sentence per call, no leg label.",
+  "legs": {
+    "old": {
+      "shots": 66,
+      "scored": 66,
+      "errored": 0,
+      "present_subject": 66,
+      "present_subject_rate": 1.0,
+      "visible_event": 56,
+      "visible_event_rate": 0.8485,
+      "both": 56,
+      "both_rate": 0.8485,
+      "neither": 0,
+      "failing_present_subject": [],
+      "failing_visible_event": [
+        "S00200",
+        "S00201",
+        "S00203",
+        "S00204",
+        "S00300",
+        "S00304",
+        "S00600",
+        "S00602",
+        "S00800",
+        "S00905"
+      ]
+    },
+    "new": {
+      "shots": 63,
+      "scored": 63,
+      "errored": 0,
+      "present_subject": 63,
+      "present_subject_rate": 1.0,
+      "visible_event": 52,
+      "visible_event_rate": 0.8254,
+      "both": 52,
+      "both_rate": 0.8254,
+      "neither": 0,
+      "failing_present_subject": [],
+      "failing_visible_event": [
+        "S00201",
+        "S00203",
+        "S00204",
+        "S00401",
+        "S00403",
+        "S00502",
+        "S00506",
+        "S00602",
+        "S00706",
+        "S00901",
+        "S00904"
+      ]
+    }
+  },
+  "deltas": {
+    "present_subject_rate": 0.0,
+    "visible_event_rate": -0.0231,
+    "both_rate": -0.0231
+  },
+  "rows": [
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00100",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "손이 닿는 순간, 그는 죽었습니다.",
+      "image_prompt": "static wide establishing shot of a small containment cell interior, poured concrete floor with a single fresh drag mark cutting diagonally from the doorway to a spot near the center, a steel-frame chair tipped onto its side with one restraint strap still swinging at a slow pendulum, scattered classified documents fanning across the concrete with [REDACTED] stamps partially visible, bare cinder block walls painted institutional grey-green with flaking paint, single ceiling-mounted fluorescent tube buzzing and strobing at an irregular rhythm casting shifting shadows across the empty floor, fine dust motes suspended in the cold air, desaturated color palette with the only accent being the red glow of a wall-mounted security camera LED, aftermath silence, the specific emptiness of a room where something happened alone",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00101",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "디 계급 인원이 격리실로 들어옵니다.",
+      "image_prompt": "medium shot from a low vantage near the doorway, the interior of a containment cell with a heavy steel door swung wide to the left, rusted hinges and a hydraulic piston hissing faint, worn concrete floor with a scuffed trail of boot prints leading inward, bare cinder block walls with crisscrossing hairline cracks and a deep scratch mark gouged near the left wall panel, a single wire-mesh observation window embedded high in the right wall casting a trapezoid of pale light across the floor, fluorescent tube above the door flickering with a dying hum, the space between door and center filled with negative space that feels like it should contain motion, entered silence, institutional weight, the pause before a decision",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00102",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "가냘픈 실루엣, 바닥까지 닿는 검은 로브.",
+      "image_prompt": "low-angle shot down the length of a long narrow room, far wall receding into shadow where a single spotlight from an overhead surgical lamp pools on the concrete floor, the center line of the room marked by a thin trail of dried chemical residue leading to the illuminated circle, bare cinder block walls with expansion joints forming repeating vertical lines, a metal autopsy table pushed against the right wall with a black medical bag sat open on its surface, industrial ductwork running along the ceiling with condensation dripping in a slow rhythmic beat, the far distance presenting an empty space that should hold standing presence, the weight of anticipation, a room coiled around an unseen occupancy",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00103",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "길게 휜 부리의 도자기 가면이 그를 향하죠.",
+      "image_prompt": "over-the-shoulder framing of the space between two figures, the foreground left out-of-focus edge of a steel examination table, the middle ground showing a clear span of worn concrete floor with a single fresh chalk outline drawn in white powder, the background right featuring a cracked observation window with wire mesh catching the reflection of a strobing fluorescent tube, a wall-mounted oxygen gauge with a needle vibrating near zero, the floor bearing two distinct sets of tread marks angled toward each other, harsh overhead light creating a knife-edge shadow line across the floor, the space between the marks charged with the tension of imminent contact, held breath, the moment before a line is crossed",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "맨손이 나와 악수를 청합니다.",
+      "image_prompt": "close-up of the floor area between two facing figures, the space empty of objects but bearing a subtle temperature distortion in the air above it, a thin film of dust on the concrete showing a faint pattern of disturbance radiating outward from the center point, the left edge of the frame catching the shadow of a table leg from the right side, the right edge showing a scuffed region where something has been dragged slightly, overhead surgical lamp casting an oval of harsh white light that bisects the frame, the concrete underneath the light having a slightly different sheen, nearly polished by repeated motion, the space between two approaching presences rendering itself as a charged void, gravity of the moment, the instant before contact, breath held in the silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00105",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "두 손이 맞닿자, 그는 그 자리에서 쓰러졌습니다.",
+      "image_prompt": "high-angle shot looking straight down at the floor of the containment cell, a wide area of bare concrete centered in frame with a fresh knockdown pattern of dust radiating from the midpoint, a steel chair lying on its side with the backrest pointing toward the left wall, an overturned clipboard with papers fanned out near the right edge, the floor bearing twin sets of heel drag marks converging then diverging, a single dark stain spreading slowly across the concrete with a faint oily sheen, a rivulet of moisture beading along a hairline crack toward a drainage grate, the surrounding walls receding in perspective at the frame edges, the circular pool of light from the overhead fixture centered exactly on the disturbed area, sudden collapse echo, the still moment after a fall, the floor as witness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 1,
+      "shot_id": "S00106",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "'이것이 치료의 시작입니다.'",
+      "image_prompt": "close-up of a wall-mounted medical instrument tray at eye level, a clean stainless steel surface holding a single rubber-gloved hand tool and a folded cloth, the wall behind it showing a fresh scratch mark gouged deep into the concrete as if dragged, the left edge of the frame catching the edge of a sealed steel door with a heavy bolted latch, the right edge showing a rolled paper chart holder with a single document tucked inside, the tray's surface reflecting a distorted patch of the overhead fluorescent light, condensation beading on the metal drip rail below it, the air carrying a faint haze of chemical preservative, the single document's edge curling slightly as if recently handled, the beginning of procedure, clinical finality, the before-state of a room about to be repurposed",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 2,
+      "shot_id": "S00200",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "재단 격리 기록에는 이렇게 적혀 있습니다.",
+      "image_prompt": "static wide establishing shot from inside a sparse observation room, a heavy reinforced observation window with wire-mesh safety glass set into a poured-concrete wall, a wall-mounted security camera with a steadily blinking red LED above the window, a steel control panel with a blank dark monitor mounted at the far left, hazard-stripe trim running along the base of the wall, damp poured concrete floor with hairline cracks and mineral deposits around a rusted drainage grate, bare cinder block walls with peeling institutional green paint, a single cold overhead fluorescent tube casting a hard pool of light on the floor, fine dust motes suspended in the light beam and condensation beading on the metal window frame, clinical emptiness, anticipatory dread, institutional silence",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 2,
+      "shot_id": "S00201",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "'에스씨피-공사구, 키 약 일점 구 미터, 인간형.",
+      "image_prompt": "high-angle surveillance shot looking down into a standard humanoid containment cell, a single steel-frame cot bolted to the far wall with an institutional blanket folded into perfect right angles, a floor drain grate catching cold light at the right edge, cinder block walls painted institutional grey-green and chipped along the base, a central drainage grate in the poured concrete floor, harsh cold overhead fluorescent strip from a ceiling fixture casting hard-edged bands of shadow, a thin layer of condensation mist clinging at floor level and a faint blue-tinted chemical haze suspended in the air, clinical detachment, measured restraint, watched silence",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 2,
+      "shot_id": "S00202",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "중세 흑사병 의사의 복장에, 얼굴에 융합된 창백한 도자기 가면.' 뗄 수가 없습니다.",
+      "image_prompt": "close-up with shallow depth of field on the junction of cinder block wall and poured concrete floor near the right side of the cell, a perfectly worn oval patch of concrete polished smooth and darker than the surrounding floor where something has stood in one place for years, a hairline crack running up the grey institutional wall, wire-mesh observation window glass glinting in the upper left corner with a single bead of condensation clinging to it, raking sidelight from the window casting long thin shadows across the micro texture of the concrete, a faint mineral haze hanging in the still air, invasive proximity, obsessive stillness, quiet dread",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 2,
+      "shot_id": "S00203",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "그는 표준 인간형 격리 셀에서 지내며, 말을 합니다.",
+      "image_prompt": "static wide shot of the full standard humanoid containment cell interior, a steel-frame cot with a neatly folded blanket against the left wall, an integrated stainless sink-toilet unit set into the right wall, a small bolted-down table with a single vinyl chair turned to face the observation window as if arranged for a prolonged conversation, a drainage grate centered in the poured concrete floor, cinder block walls with a thin seam line where panels meet, even cold fluorescent light from a ceiling fixture casting nearly shadowless illumination, faint dust suspension and a sterile chemical haze in the air, deceptive calm, routine institutionalization, hollow normality",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 2,
+      "shot_id": "S00204",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "아주 협조적으로요.",
+      "image_prompt": "high-angle shot looking down through a wire-mesh observation window into the containment cell from above, the grid pattern of the glass casting a cross-hatched shadow lattice across the empty center of the poured concrete floor, the far-left wall near the door bathed in a slightly warmer pool of light, the bolted-down table and single vinyl chair still centered facing the observation window, a floor drain grate catching cold light at the right, textured concrete with hairline cracks, cold overhead fluorescent tube light with long soft shadows, a thin condensation haze against the window glass, chilling compliance, profound solitude, the weight of being watched",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00300",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "의사가 가면을 숙이며 말합니다.",
+      "image_prompt": "medium shot, an unmarked concrete containment room with pale grey cast-concrete walls, a heavy steel door standing ajar on the right third with a hydraulic piston holding it slightly open, disturbed dust motes drifting in a cold light shaft from a high-set wire-mesh window on the left, single poured-concrete floor with shallow expansion joints and a central drainage grate, water-stained walls with thin mineral streaks, twin fluorescent tube banks overhead with the nearest tube strobing at a weak hum, fine dry particles hanging at shoulder height catching the light, tense silence, clinical dread, an empty room that feels inhabited by a lingering chemical presence",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00301",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다.",
+      "image_prompt": "wide shot, the full concrete room stretching to a far wall with a single ventilation grille high on the left, the middle distance dominated by a wall surface marked only by a faint irregular discoloration spreading like a slow mineral stain, the poured floor reflecting the cold fluorescent wash with a slick sheen, a lone steel table pushed against the far right wall with a scraped chair overturned nearby, condensation mist hanging at knee level across the lower half of the frame, twin fluorescent tubes overhead casting a flat green-white wash, faint dust particles suspended throughout the air, a subtle gray-green bloom on the wall that could be mold or could be nothing, hollow expectancy, paranoid stillness, the sense of an invisible occupancy in the negative space",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00302",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "당신 눈에는 그저 빈 콘크리트 벽.",
+      "image_prompt": "close-up shot, a single expanse of blank grey cast-concrete wall filling the frame, its surface scarred by faint pour seams and tiny air voids, a hairline crack creeping diagonally across the upper third, dust lodged in the rough texture, cold fluorescent light raking from above revealing the subtle relief of trowel marks, one faint darker patch at the lower edge that might be moisture or might be nothing, the emptiness of the frame feels deliberate and staged, monolithic blankness, quiet accusation, the weight of seeing nothing where something should be",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00303",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "보입니까, 그 병이?",
+      "image_prompt": "medium shot, the concrete wall now viewed straight-on with a subtle irregular stain at eye level in the center third, its edges blurring into the grey concrete like the spread of fine dark veins, the room falling away into shadow at the frame edges, an overturned steel chair lying in the lower left corner with a broken leg casting a long distorted shadow, a single ceiling fluorescent tube pooling cold light directly on the stained patch, moisture beading on the wall surface just below it, the stain seems to demand attention while refusing to resolve into anything definite, needling unease, held breath, the muteness of an unanswered question",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00304",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+      "image_prompt": "POV shot, a slow sweep across the room's features as if hunting for something invisible, passing over a wall with faint mineral streaks, a dark corner where the floor meets the wall casting a soft depthless shadow, a ventilation grille with faint rust blooming around its louvers, dust motes drifting diagonally across the field of view catching the cold light, a drainage grate in the foreground sliding out of focus, shallow depth of field pulling attention from one empty surface to the next, the deliberate sweep feels searching yet unfocused, drifting vigilance, the tension of looking for what cannot be seen, ambient blankness tightening with each pass",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00305",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "그는 진심으로 보고 있습니다.",
+      "image_prompt": "medium shot, the wall now within the left third of the frame catching a faint warm tone against the overall cold wash, a faint dun-colored patch spreading across the concrete like a slow organic bloom, its edges dendritic like a fine fungus, the grey institutional paint around it flaking slightly to reveal the aggregate beneath, cold fluorescents overhead but a soft secondary light source from off-frame left warming the stained area, fine dust hanging in the warm beam, the patch appears almost alive in its slight uneven gradient, a subtle shift that nearly convinces, fragile sincerity, the ache of a gentle fixated belief, a moment of heartbreaking earnestness in an otherwise sterile room",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 3,
+      "shot_id": "S00306",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다.",
+      "image_prompt": "high-angle shot looking down across the full width of the concrete floor, a drainage grate at the center bottom with a faint dark residue rimming its edges, dried water streaks radiating outward like the fingers of an unseen spread, scattered debris lying in the path of the streaks — a torn glove, a crushed paper cup, a wrench — the far wall receding with its faint gray-green stains barely visible, cold fluorescent wash making the damp floor gleam, dust suspended in the shaft of light, the whole room feels subtly contaminated yet reads as merely dirty, a pervasive wrongness that tolerates no single source, profound isolation, the heaviness of an unseen verdict, an accusation with no visible accuser",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 4,
+      "shot_id": "S00400",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "지휘부의 재량 아래, 격리실 문이 열리고, 디계급이 들어섭니다.",
+      "image_prompt": "static wide shot, a heavy blast door with hydraulic pistons caught mid-slide into a recessed wall pocket on the left third of the frame, the containment room interior receding diagonally to the right, poured concrete floor with hairline cracks radiating from a central drainage grate, bare cinder block walls painted institutional grey, a steel examination table with folded restraint straps standing in the midground at the right, twin rows of ceiling-mounted fluorescent tubes, the nearest one strobing at irregular intervals casting shifting bars of light across the floor, fine dust motes disturbed by the door's motion hanging suspended in the cold air spilling through the widening gap, forced compliance, institutional dread, the held breath before entry",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 4,
+      "shot_id": "S00401",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "에스씨피-049가 정중히 고개를 숙입니다.",
+      "image_prompt": "low-angle view of a containment room interior, the ceiling receding into shadow with a single functioning fluorescent tube casting a tight cone of hard white light downward, a steel examination table with draped restraint straps dominating the midground left of center, a wall-mounted instrument cabinet with a cracked glass door anchoring the right third, floor tiles scuffed into a worn path from doorway to table, faint chemical residue streaking the lower cinder block walls, dust suspended in the light cone, the silence that follows a completed formal gesture, courtesy given its full weight, the pause before something offered",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 4,
+      "shot_id": "S00402",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "'환자군요.' 검은 소매에서 창백한 맨손이 나옵니다.",
+      "image_prompt": "medium shot of a narrow metal examination table with a worn surgical tray cutting across the midground, the tray surface scoured clean with faint circular abrasion marks, a single overhead surgical lamp casting a tight ellipse of cold light on the tabletop between the left and right thirds of the frame, concrete floor in shadow beyond the lit pool, a wall-mounted clock with frozen hands at the far background edge, air visibly cold with condensation beading on the metal table legs, the empty space on both sides of the table carrying the weight of an approach about to cross it, fatal gentleness, the stillness before contact",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 4,
+      "shot_id": "S00403",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "가면의 어두운 눈구멍이 그를 끝까지 응시합니다.",
+      "image_prompt": "close-up view of the far wall of a containment room resolving into a blur of industrial equipment racks and coiled cables, a single wall-mounted emergency light casting a flat red-tinged wash across the upper right corner, a sliver of brighter corridor light visible through an open doorway at the extreme left edge, the concrete floor bearing faint parallel drag marks that stop abruptly mid-frame, dust suspended motionless in the air, the room's dimensions feeling smaller than they should, inescapable attention, terminal certainty, the calm before a final diagnosis",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00500",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "악수를 청하던 손이, 이제 당신의 손을 감쌌습니다.",
+      "image_prompt": "POV shot from eye level inside a cold containment room, white tiled floor extending toward an unmarked steel door at the far wall, a single wall-mounted instrument cabinet with wire-mesh glass reflecting a horizontal fluorescent strip, a worn chair with padded armrests placed against the left wall, its cushion slightly compressed as if recently occupied, a thin curl of dust drifting across the floor from a disturbance near the center, recessed fluorescent panels casting flat even light with a greenish tint, the air thick with a bitter antiseptic haze, all sound seeming to recede into the walls, suspended confrontation, the weight of a decision already made",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00501",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "피부가 닿는 순간, 체온이 사라졌습니다.",
+      "image_prompt": "close-up shot of a containment room surface responding to a sudden temperature plunge, a steel examination table at the left with frost blooming in a spiral pattern across its surface, a glass instrument tray fogging over with condensation, the air shimmering with cold, a wall thermometer at the right with its needle fallen to its lowest mark, the floor tiles showing a frost film spreading from the center outward, twin fluorescent tubes overhead flickering once as if the circuitry reacted, the gap between the left and right sides of the room charged and still, paralytic cold shock, the body's own heat abandoning it",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00502",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "가면의 부리가 시야를 가득 채웁니다.",
+      "image_prompt": "POV shot with the room visible only as a blurred compressed perimeter at the edges of the frame, twin fluorescent panels flaring harshly at the upper margins, cold fog curling inward from the frame edges, the containment room walls converging inward from all sides, floor tiles tilting at an odd angle as the viewpoint loses stability, harsh backlight creating a bright halo just behind the center of frame, dust particles scattering away from the frame center, claustrophobic intimacy, loss of spatial certainty",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00503",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "다리가 풀리고...",
+      "image_prompt": "high-angle shot looking down from a corner of a containment room, the poured concrete floor painted with white boundary lines, a steel-frame cot pushed against the left wall with a thin mattress and folded gray blanket, an overturned plastic cup near its leg with a dark liquid pooling slowly, the right side of the room occupied by a tall equipment rack with coiled cables hanging loose, the center of the floor bearing fresh scuff marks as if something heavy dropped and slid a few inches, fluorescent panels overhead reflecting in the wet patch, a single overhead light strobing at half-power, involuntary collapse, the floor's gravity winning",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00504",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "바닥이 다가옵니다.",
+      "image_prompt": "POV shot of a containment room floor rushing upward into frame, white tiles with hairline grout cracks spreading from a central point, a round metal drain grate directly in the falling path with a single drop of water falling from above, dust motes scattering violently at the edges of vision, a loose screw skittering across the tiles, the overhead fluorescent lights flaring brighter as the floor fills the entire frame, the far wall tilting away at an extreme angle, the grout lines growing sharper and more defined as the surface rushes closer, vertigo, body betrayal, the irreversible approach of impact",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00505",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "수 초면, 죽음입니다.",
+      "image_prompt": "medium shot from a low vantage point near floor level, a containment room stretching horizontally with a steel examination table leg and a chair base in the left foreground, the far wall with hazard stripes running along its base at mid-height, an unmarked door at the right with a thin strip of bluish light leaking beneath it, a clipboard lying paper-side down with its pen detached and rolling a few inches away, dust suspended motionless in the air, overhead fluorescent tubes casting long skewed shadows that converge toward the room's center, the silence having a physical weight, clinical finality, the impossible pause before collapse",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00506",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "'걱정 마세요.",
+      "image_prompt": "close-up shot of a containment room corner with a wall-mounted speaker grille at the upper left, its small red indicator light glowing steadily, a low steel-frame cot at the right with a rumpled thin blanket and a damp pillow, the floor between them bearing a long smear of dust and a single scuff trail, condensation beading heavily on the wall surface where the temperature difference is greatest, a single fluorescent tube strobing at irregular intervals causing the shadows to pulse, a thin wire cable dangling from the ceiling near the left, patient cruelty dressed as kindness, hollow reassurance",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 5,
+      "shot_id": "S00507",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "이제 시작입니다.'",
+      "image_prompt": "wide low-angle shot of an unmarked containment room, the far wall bearing two doors - one sealed with a fresh weld line across its frame, the other ajar with no light beyond it, a single examination table overturned near the center-left with its legs pointing toward the camera, a trail of scattered paper sheets curving across the floor like a path, a wall clock with a cracked face and frozen hands hanging crooked near the right edge, fluorescent lights casting long shadows that all converge at the room's center point, a sheen of moisture on every surface reflecting the pale light, dust motes suspended in the still air, unfathomable continuation, the horror of a door opening",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00600",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "수술 기록입니다.",
+      "image_prompt": "static high-angle establishing shot, an unmarked containment chamber seen from a high corner mount, a steel examination table centered under a cone of cold overhead light, a black leather medical bag open on the floor beside the table with rolled fabric tool pockets, a wall-mounted recording camera with a blinking red indicator near the ceiling, poured concrete floor with a central drainage grate, off-white tiled walls stained with faint yellow chemical residues, twin rows of ceiling fluorescent tubes casting an even flat white light, thin condensation haze hanging at knee level, the dead quiet of an unused operating theater, clinical isolation, procedural ritual",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00601",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "낡은 메스와 실이, 로브에서 나왔습니다.",
+      "image_prompt": "extreme close-up, a worn stainless-steel instrument tray on a rolling cart beside a steel table, an aged scalpel with a chipped dark wooden handle and a pitted blade lying beside a spool of coarse black surgical thread with a rusted needle, the tray's surface scuffed and etched with years of use, a faint film of dried chemical residue in the tray's corners, a single cold overhead surgical lamp throwing a hard pool of light onto the instruments, the surrounding room falling into deep flat shadow, a fine dust suspended in the light beam, the unsettling intimacy of reused surgical tools, ritual repetition, clinical decay",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00602",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "시체를 반듯하게 눕혔습니다.",
+      "image_prompt": "medium shot, a steel examination table centered in the frame with a crisp central wear line running down its surface, the table's restraint straps hung loose and folded back neatly, a surgical drape laid perfectly flat and aligned to the table edges, a ruler-straight arrangement of instruments on a side cart, the cold overhead light pooled tight around the table like a spotlight on a stage, walls receding into flat grey shadow on both sides, faint condensation haze catching the light above the table, the ceremonial order of a ritual about to begin, obsessive precision, tense anticipation",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00603",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "소중한 환자를 대하듯이.",
+      "image_prompt": "over-the-shoulder view, right third anchored by a steel instrument pedestal with a neatly folded stack of white cotton cloths and a shallow basin of clear liquid, the examination table occupying the left-center with its drape smoothed by repeated careful passes, a tall IV stand with a hanging bag of clear saline positioned close beside the table as if for a treasured patient, the cold overhead light softened at its edges into a gentler pool around the table, walls in flat grey beyond, a faint warm tinge at the very edge of the light that contradicts the room's cold white, misplaced tenderness, fragile vulnerability, the wrongness of care in a place of death",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00604",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "절개가 시작됐습니다.",
+      "image_prompt": "high-angle close-up, a single dark droplet frozen mid-fall above a polished stainless-steel table surface, its reflection a blurred dark smudge beneath it, the table's central wear line passing directly under the falling point, nearby instruments casting long hard shadows from a single overhead lamp, the surrounding room out of focus and flat grey, a faint mist of fine particles drifting through the light beam, the first wound rendered as a suspended instant, irreversible beginning, held breath",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00605",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "천천히, 아주 천천히.",
+      "image_prompt": "medium shot, a transparent IV line descending from a hanging bag with a single droplet slowly forming and elongating at its tip, the drop's descent caught as a faint vertical light streak from a long exposure, the steel table edge and its instruments rendered with a slight motion-blur along one axis as if the world itself moved at a crawl, cold still air with fine dust hanging motionless, the room's flat grey walls pressing in close, the excruciating patience of a procedure stretched to eternity, suspended time, suffocating deliberation",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00606",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "무언가를 더듬다가, 꿰맵니다.",
+      "image_prompt": "low-angle shot from near floor level, a curved needle threaded with coarse black surgical thread hanging from the edge of the steel table, the thread running taut downward toward a partially unwound spool in the foreground, the aged scalpel resting parallel on the table above, fine parallel scratches on the steel catching the overhead light, a single bead of fluid glistening at the needle's eye, the rest of the room looming in flat grey shadow above, the aftermath of a gesture that searched and found, intimate violation, mechanical devotion",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00607",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "피부를 뚫는 소리.",
+      "image_prompt": "close-up, a shallow stainless basin of clear liquid with concentric ripples spreading outward from a single point at its center, the reflection of the overhead lamp warping and breaking across the moving surface, the steel rim of the basin catching the light, a faint vibration shuddering through the water's meniscus, the surrounding instrument tray out of focus at the frame's edge, the room holding perfectly still around this one disturbance, sound made visible, transmitted violence, silent rupture",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00608",
+      "sentence_indices": [
+        8
+      ],
+      "sentence": "그게 격리실을 채웠습니다.",
+      "image_prompt": "static high-angle wide shot, the entire containment room seen from above, the steel examination table small below with its instruments scattered in a widening arc, a dark pool spreading across the drainage grate, the twin fluorescent rows filling the space with a flat white light now strobing almost imperceptibly as if vibrating, condensation mist uniform at knee level across the whole floor, the black leather bag and a stool pushed against the far wall, the room's volume itself feeling charged and full, a space saturated beyond its capacity, suffocating fullness, reverberating aftermath",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00609",
+      "sentence_indices": [
+        9
+      ],
+      "sentence": "관찰창 너머, 당신도 숨을 죽이고 있습니까?",
+      "image_prompt": "POV shot through a wire-reinforced observation window, the containment room visible beyond the glass with the steel table and its pooling shadow frozen in cold white light, a single small oval of condensation fogged on the glass at eye level where a breath hit against it, the wire mesh casting a faint grid across the room beyond, a dim reflection of an unlit corridor ghosting in the glass's upper edge, the room beyond perfectly still, the held breath made tangible, voyeuristic complicity, frozen spectatorship",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 6,
+      "shot_id": "S00610",
+      "sentence_indices": [
+        10
+      ],
+      "sentence": "자르는 게 무엇인지, 묻는 이가 없습니다.",
+      "image_prompt": "locked medium shot, the steel table filling the left-center with its drape now darkly stained in a spreading pattern, the aged scalpel set down neatly at the right side beside the spool of black thread, a single loose end of thread trailing off the table edge and hanging in the still air, the IV stand rising in the left foreground, the overhead lamp holding a steady cold circle of light over the scene, the walls in flat grey around, the room's silence pressing in with nothing to break it, a space where a question should have been asked, unanswered ritual, hollow finality",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00700",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "봉합이 끝났습니다.",
+      "image_prompt": "medium shot, an examination table occupies the right third of the frame with a steel surface bearing the fresh aftermath of suturing, a curved needle still threaded with coarse black silk and the thread trailing over the table edge, a neat row of surgical instruments on a green cloth beside a stainless supply cart, rust-brown stains soaking into a gauze pad near the floor drain grate, cold fluorescent panels overhead casting flat shadowless light, fine condensation beading on the table lip, the stillness before motion, procedural wrongness, held breath",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00701",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "손가락이 움직입니다.",
+      "image_prompt": "POV shot looking down across the steel examination table toward the right edge of the frame, a black silk thread lying on the metal surface trembling with a faint vibration as if disturbed by a motion just out of frame, a tiny ripple of dust motes lifting from the steel, a thin smear of clear fluid trailing where something recently shifted, cold fluorescent light catching individual thread fibers, a deep shadow falling across the near corner of the table, fine condensation beading on the metal, uneasy animation, the dread of wrong liveliness, involuntary life",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00702",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "실이 조여드는 소리.",
+      "image_prompt": "close-up, a length of coarse black surgical thread stretched taut across a pitted steel surface, every fiber straining under tension, the needle still attached at one end, beads of moisture clinging to the thread along its length, a curved blade and forceps resting nearby in the foreground, harsh overhead surgical light raking across the scratched metal, cold air hung as faint condensation above the table, taut suspense, the quiet violence held in a single line, tightening silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00703",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "몸이 부자연스러운 각도로 일어섭니다.",
+      "image_prompt": "low-angle shot of the examination room from just above floor level at a tilted dutch angle, the steel table viewed from below with a rumpled sheet hanging off one edge and the black thread trailing to the floor, a tall stainless supply cabinet leaning against the back wall creating a false horizon, fluorescent panels glowing in hard clean rows overhead, a rust-brown smudge of moisture on the painted wall where something struck it, the cold floor scuffed in a trailing arc leading toward the center of the room, off-balance geometry, wrongness in the vertical, the silent gravity of something having stood",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00704",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "비뚤어진 팔다리, 도드라진 봉합선.",
+      "image_prompt": "medium shot, a steel instrument tray covered with a sterile green cloth holding coils of black surgical thread, used needles scattered beside a fresh scalpel, rust-brown dried fluid streaked across the tray surface and beading at the drain grate on the floor below, the examination table with loose restraint straps at the far edge of frame, once-white walls bearing faint scuff marks at an uneven height, harsh top-down fluorescent light washing out all color except the black thread, grotesque surgical aftermath, the geometry of something assembled wrong, wrongness in the arrangement",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00705",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "눈이 떠졌지만, 그 안엔 아무것도 없습니다.",
+      "image_prompt": "POV shot across the examination room at a low standing height, the far wall a flat expanse of institutional grey painted concrete stretching empty, the steel table and surgical tray discarded at the periphery of vision, overhead fluorescent light revealing every surface as featureless and blank, a single black thread lying across the concrete floor in the middle distance as the only mark in an otherwise void space, condensation making the air hazy and depthless, hollow absence, the particular emptiness of a gaze with no one behind it, dead calm",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00706",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "에스씨피 공사구가 가면을 기울여 바라봅니다.",
+      "image_prompt": "over-the-shoulder composition anchored at the right edge of the frame, the examination room stretching across the view with the steel table and its rumpled sheet in the midground, black thread trailing across the floor in a relaxed curve, a high-set observation window catching flat cold light on the far wall, surgical instruments still arranged in precise rows on the green cloth tray, a single drop of clear fluid suspended from the table lip catching the light, the room arranged like a finished workshop viewed by its maker, clinical inspection, the quiet vanity of a completed procedure",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00707",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "만족스러운 듯이요.",
+      "image_prompt": "medium shot, the examination room in even cold fluorescent light, the table centered with its sheet neatly folded at the foot, surgical instruments returned to the tray in precise rows, a black thread coiled into a tidy spool beside a closed leather medical case, the floor freshly wiped with only faint dark streaks leading toward the exit door, walls of pale institutional concrete with a single wall clock barely visible near the ceiling, the whole room holding the stillness of a job finished, uneasy serenity, the false peace of a completed wrong",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 7,
+      "shot_id": "S00708",
+      "sentence_indices": [
+        8
+      ],
+      "sentence": "이게 에스씨피 공사구-이입니다.",
+      "image_prompt": "wide shot, the examination room in cold grey light with the steel table pushed to the left, a black thread trailing in a relaxed curve from the table across the concrete floor to a point at the center of the frame, surgical tools gleaming on the green cloth tray in the right foreground, the back wall painted institutional grey holding a single high observation window, the empty floor space at center framed as the focal subject with everything arranged in a halo around that central void, harsh white shadows cast by the overhead panels, the weight of a name given to something wrong, solemn reveal, hollow definition",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00800",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "\"보십시오.",
+      "image_prompt": "static wide establishing shot from just inside the doorway, an unmarked containment room stretching toward a far wall, a heavy steel examination table centered under a cone of surgical light with restraint straps hanging loose from its sides, a wall-mounted equipment console on the left third with small blinking indicator lights, a wire-mesh observation window on the right third reflecting the overhead tubes, poured concrete floor with expansion joints and a central drain grate, bare cinder block walls painted institutional grey with scuff marks along the base, twin rows of ceiling fluorescent tubes receding unevenly with the two nearest strobing at irregular intervals, fine dust suspended in the light beams, clinical dread, hollow ceremony, institutional isolation",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00801",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "완치입니다.",
+      "image_prompt": "medium shot of the examination table area, its steel surface catching cold light with restraint straps hanging open on all four corners and worn buckle ends, a tarnished instrument tray pushed to the table's edge holding a spool of thick black thread, dried residue forming a faint ring on the stainless surface, the floor drain grate directly beneath the table, scuffed concrete showing drag marks trailing toward the far left corner where a wall-mounted glass cabinet holds neatly stacked bandages, flat fluorescent lighting from above creating a tight pool around the table, faint condensation beading on the cabinet glass, false hope, procedural cruelty, clinical emptiness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00802",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "이 환자는 이제 안전합니다.\" 창백한 손이, 되살아난 그것의 어깨를 두드립니다.",
+      "image_prompt": "over-the-shoulder composition looking between two standing figures toward the examination table, a surgical suture kit spread open on a steel tray with curved needles and a spool of thick black thread, scattered gauze rolls and torn packaging on the table surface, a wall-mounted glass cabinet on the right third reflecting overhead light in a skewed pattern, the observation window visible in the far background with wire mesh casting a faint grid shadow on the floor, a rolling instrument cart on the left third holding a folded surgical drape, harsh surgical lamp throwing long diagonal shadows across the floor, faint chemical haze hanging in the air, grotesque tenderness, hollow comfort, surgical violation",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00803",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "하지만 당신의 눈에는, 비뚤어진 팔다리와 잔뜩 꿰맨 봉합선뿐입니다.",
+      "image_prompt": "extreme close-up across a steel instrument tray surface, a curved suturing needle stuck into a cork block beside a spool of thick black thread, several smaller needles scattered beside a smear of dried brownish residue, a crumpled torn surgical glove wrapper in the corner of the tray, a damp roll of bandage beginning to unravel at the tray's edge, fine grooves and scratches worn into the steel beneath the instruments, single overhead surgical lamp producing a tight glare on the polished metal, a droplet of condensation sliding down the chrome instrument stand in the foreground, crude repair, botched procedure, visceral wrongness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00804",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "빈 눈.",
+      "image_prompt": "POV looking down across a scuffed concrete floor toward the base of the examination table, a crumpled gauze roll lying near the table leg, dried droplets on the floor around the drain grate, the table's shadow stretching long and sharp across the floor, a wall of bare cinder block visible in the background with a single wall-mounted security camera showing a dead red indicator LED, overhead fluorescent tube buzzing with a faint visible flicker reflected on the damp floor surface, flat white light with no warmth, void, hollow stillness, dead emptiness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00805",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "그가 보는 병.",
+      "image_prompt": "medium shot of a quarantine equipment wall, yellow biohazard waste containers stacked beside the door frame on the left third, a shelf holding specimen jars with clouded liquid and indistinct contents on the right third, a ceiling-mounted decontamination spray nozzle with rust stains running down its pipe, a faded anatomical chart with red markings on the back wall, a stainless sink basin with a foot-pedal tap against the wall, green-tinged fluorescent light washing over the room, a thin chemical mist hanging at waist level and catching the light, deluded purpose, obsessive certainty, misplaced conviction",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00806",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "바로 그게 대역병의 정체입니다.",
+      "image_prompt": "wide pull-back revealing the full length of the containment room, multiple examination tables in a staggered row receding toward the far wall, each with loose restraint straps and tarnished instrument trays, the floor between them a lattice of drag marks and dried residue trails, a shelf of specimen containers on the left third and a distant observation window on the right third, wall-mounted glass cabinets reflecting the lights further down the room, harsh fluorescent rows creating a long corridor of light and shadow, fine dust and chemical haze suspended in the air, systematic atrocity, hollow ritual, compounding tragedy",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 8,
+      "shot_id": "S00807",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "치료법은, 오직 그만이 이해합니다.",
+      "image_prompt": "close-up of a worn circular scuff mark polished into the concrete floor by constant pacing, surrounded by rougher older concrete with chemical stains, the edge of a steel examination table visible at the top of the frame with its restraint strap hanging nearly to the floor, the far wall dissolving into shadow, a single surgical lamp casting one tight pool of pale light onto the floor scuff, walls and ceiling equipment fading into darkness at the frame edges, faint condensation mist catching the light above the floor, solitary conviction, hollow certainty, tragic isolation",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00900",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "철제 문이 닫히는 금속음.",
+      "image_prompt": "close-up on a heavy reinforced steel door edge driving into its frame, hydraulic piston contracting with a cold glint along the latch strike plate, fine dust knocked loose drifting through the narrowing gap, the corridor beyond collapsed to a sliver of pale fluorescent spill, cold grey painted steel with chipped edges and riveted seams, a single overhead tube strobing weakly above, condensation beading on the door frame, claustrophobic finality, the weight of enclosure",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00901",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "관찰창 하나만이 비춥니다.",
+      "image_prompt": "wide shot of a bare containment cell, a single small square observation window high on the far wall casting the room's only light in a narrow cold beam across the damp concrete floor, walls of seamless poured concrete with hairline cracks, a steel-frame chair bolted to the floor at center with restraint straps hanging open, one strap still swaying slightly, desaturated grey throughout, fine mineral deposits along the base seam, volumetric dust motes suspended in the window beam, isolation, solemn silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00902",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "셀 중앙에 선 채, 그가 가면을 당신에게 돌립니다.",
+      "image_prompt": "over-the-shoulder view into a containment cell interior, a circular pool of cold light centered on the floor in the middle of the room, the rest of the space receding into undifferentiated grey, a single scuff arc scraped into the concrete around the light pool suggesting a slow rotation, the small observation window on the far wall reflecting the room's own geometry back at a slight angle, bolted chair and hanging restraint straps at the left frame edge, dead air, the dread of being recognized, masked judgment",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00903",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "발견 기록도, 회수 기록도, 연대기도, 없던 개체.",
+      "image_prompt": "high-angle shot looking down at a bare institutional table in the cell's corner, an empty manila file folder splayed open with a faded stamped impression on its inside cover, a thin layer of settled dust undisturbed for years, a single ballpoint pen lying where it was dropped, no other paperwork anywhere, surrounding floor scuffed clean by unseen movement, cold fluorescent light from the observation window grazing the surface at a low angle, institutional erasure, hollow absence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00904",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "그가 보는 대역병의 정체는, 끝내 알 수 없습니다.",
+      "image_prompt": "medium shot of a small stainless-steel examination tray against the left third of the cell wall, an unlabeled microscope slide with a dried smear catching the cold light, a handwritten medical chart on the tray with illegible scrawled symbols and one blank line where a diagnosis should be, the rest of the cell stretching empty to the right where the observation window casts its beam, scratched steel surface with old fingerprints, a shallow dish of long-dried fluid at the tray's edge, epistemic dread, unanswerable mystery",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00905",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "그는 기다립니다.",
+      "image_prompt": "static wide shot of the containment cell, the observation window's single light beam falling across the floor on the right third, the bolted chair and dangling restraint straps small in the distance at center, a narrow band of darker grey along the base wall where moisture has seeped, the sealed door seam visible far left with its hydraulic piston glinting, everything absolutely still, dust suspended motionless in the beam, patient stillness, patient threat",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "old",
+      "scene_num": 9,
+      "shot_id": "S00906",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "환자를 살리고 있다고, 믿으며.",
+      "image_prompt": "high-angle view from above the containment cell, the room reduced to a grey rectangle seen from the ceiling, the single light beam from the observation window cutting a cold diagonal across the floor, the bolted chair and restraint straps tiny below, the door sealed flush with its frame, a faint reflection of the window in the polished floor making the room appear to hold a second hidden space, a trance of dust hanging in the shaft of light, tragic irony, deluded devotion",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00100",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "손이 닿는 순간, 그는 죽었습니다.",
+      "image_prompt": "high-angle shot looking down at a poured concrete containment cell floor with a single central drainage grate, a broad disturbed dust pattern spread across the coarse grey concrete in a rough body-shaped impression with handprint smudges where weight came down hard, the dust fanning outward toward a boot scuff at the steel door threshold, cold overhead fluorescent light casting a single pooled shadow in the corner where the disturbance ends, faint chemical haze hanging in the cold air, sudden irrevocable outcome, silent finality",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00101",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "디 계급 인원이 격리실로 들어옵니다.",
+      "image_prompt": "medium shot from inside the containment cell facing a heavy steel blast door mid-swing, hydraulic piston gleaming under cold light, the door's bottom edge sweeping a neat crescent through a layer of fine floor dust, bare cinder block wall to the left with peeling institutional green paint and a wall-mounted intercom, concrete floor with the dust swept into parallel lines except where the door has just disturbed them, single overhead fluorescent tube casting steady white light with a faint flicker, dust motes kicked up by the opened door drifting in the beam, tense anticipation, institutional formality",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00102",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "가냘픈 실루엣, 바닥까지 닿는 검은 로브.",
+      "image_prompt": "wide establishing shot of a long sterile containment cell receding toward a far right wall where a recessed alcove cuts into the end, a single low-wattage lamp mounted at the alcove's ceiling edge casting warm pooled spill against the cold grey wall, painted concrete floor with expansion joints running the room's length, patch-y burn marks discoloring the cinder block walls from past incidents, a floor drain grate at the midpoint catching the cold light, the far alcove's warm glow bleeding around its edge into the surrounding dimness, cold air visibly diffusing the lamp's glow, layered stillness, contained presence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00103",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "길게 휜 부리의 도자기 가면이 그를 향하죠.",
+      "image_prompt": "low-angle shot across a concrete floor split by a hard diagonal shadow boundary, a layer of fine grey dust suspended in the air disturbed into drifting eddies, harsh white overhead fluorescent splashing across the left half while the right half falls into shadow beneath an exposed conduit, scraped boot marks in the dust forming a slight arc on the near side, condensation beading on the metal floor drain grate, cold sterile air visible as slow-breathing mist trails, predatory stillness, wordless power shift",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "맨손이 나와 악수를 청합니다.",
+      "image_prompt": "over-the-shoulder view across a narrow gap of concrete floor, a thin clean line swept through the dust by a recent motion reaching from the left edge toward a warm pool of floor-level light at the right, scraping side light raking across the concrete revealing every ridge and hairline crack, a scuffed black mark on the lower wall at chest height from a previous incident, cold fluorescent backlight creating a haze of suspended lint and dust motes above the gap, the air utterly still in the space between the two light zones, measured calm, the moment before contact",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00105",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "두 손이 맞닿자, 그는 그 자리에서 쓰러졌습니다.",
+      "image_prompt": "high-angle shot looking down at the concrete floor between two light zones, a hairline web of new cracks radiating outward from a single impact point where weight came down suddenly, disturbed dust fanning outward from that point in a radial pattern, a steel folding chair pushed aside leaving fresh scrape marks cutting through the dust, the floor drain grate catching white light at the frame's edge, overhead fluorescent tube steady and unblinking, dust settling slowly through the beam into the radiating fan, violent abruptness, the weight of consequence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 1,
+      "shot_id": "S00106",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "'이것이 치료의 시작입니다.'",
+      "image_prompt": "close-up framed against a bare cinder block wall with a single smeared handprint in dark residue at the right edge, a rusted metal wall bracket holding a coiled hose barely in focus at the left, a tight pool of white surgical lamp light falling directly on the wall texture in the center, dust particles suspended motionless in the beam, a faint vertical crack running up the wall where the handprint smears into a streak, the surrounding room dissolving into soft grey shadow behind the light pool, chilling certainty, hollow acceptance",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 2,
+      "shot_id": "S00200",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "재단 격리 기록에는 이렇게 적혀 있습니다.",
+      "image_prompt": "static wide establishing shot, a heavy sealed blast door centered at the vanishing point of a short entry antechamber, institutional signage plate bolted to the wall beside it, hazard warning stripes chipped along the door frame base, a wall-mounted security camera in the upper right corner angled down with a steady red indicator LED, faint parallel drag marks scored into the concrete floor running up to and beneath the door, bare cinder block walls with peeling institutional grey paint, cold fluorescent light from a single overhead tube casting a flat even wash across the floor, thin dust haze settled in the stagnant air, institutional weight, clinical anticipation",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 2,
+      "shot_id": "S00201",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "'에스씨피-공사구, 키 약 일점 구 미터, 인간형.",
+      "image_prompt": "low-angle establishing shot of a standard humanoid containment cell, poured concrete floor with expansion joints and a rusted drainage grate near center, a steel-frame cot with a neatly folded blanket against the far right wall, a clear wire-mesh observation panel filling the right third, a recessed wall-mounted sink and intercom grille on the left third of the cinder block wall, unpainted cinder block rising to a bare concrete ceiling, a single bare fluorescent tube centered overhead casting a cold even wash with the sink throwing a thin diagonal shadow, faint dust haze suspended in the air, calm clinical detachment, guarded expectancy",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 2,
+      "shot_id": "S00202",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "중세 흑사병 의사의 복장에, 얼굴에 융합된 창백한 도자기 가면.' 뗄 수가 없습니다.",
+      "image_prompt": "close-up of the thick polycarbonate observation panel set into the cell wall, a single handprint smear streaking down its inner surface, a wheeled stainless surgical cart in the left foreground holding a tray of forceps and scalpels lined up in a clean row, condensation beads tracing the lower edge of the glass, a narrow band of repeated scuff marks running along the back cell wall at a consistent height, cold raking side-light turning the glass edge into a thin bright line, faint breathing fog clinging to the glass surface, invasive clinical scrutiny, the mute wrongness of a fix that failed",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 2,
+      "shot_id": "S00203",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "그는 표준 인간형 격리 셀에서 지내며, 말을 합니다.",
+      "image_prompt": "medium shot of a standard humanoid containment cell interior, a simple steel cot with a thin mattress and folded brown blanket along the back wall, a small wall-mounted fold-down table with a plastic cup and an untouched tray of food on the left wall, an intercom speaker grille mounted high on the right wall, poured concrete floor with a single drainage grate, unpainted cinder block walls carrying faint vertical scratch marks accumulated over time, a single overhead fluorescent tube casting a cold even light with a barely perceptible flicker, fine dust motes drifting in the beam, watchful stillness, masked intention",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 2,
+      "shot_id": "S00204",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "아주 협조적으로요.",
+      "image_prompt": "wide shot of the full containment cell interior seen through a half-open observation door, the room kept meticulously orderly with the cot neatly made and the floor swept clean of debris, a single unbroken line of fluorescent light reflected across the swept concrete floor running toward the far left corner where a rusted drainage grate sits, cinder block walls scrubbed to an even pale grey, a thin wire-mesh observation panel catching a faint cool reflection on the right wall, near-total stillness with a few dust motes suspended mid-air, quiet compliance, empty order",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00300",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "의사가 가면을 숙이며 말합니다.",
+      "image_prompt": "static wide shot, unmarked concrete containment room with bare cinder block walls and peeling institutional green paint, a single steel-frame chair bolted to the floor on the right third with a loose restraint strap swaying almost imperceptibly, a rusted floor drain at the center with a dark oily residue ring staining the poured concrete around it, twin rows of ceiling-mounted fluorescent tubes casting flat cold grey light, fine dust hanging motionless in the chilled air, oppressive stillness, clinical isolation, watched silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00301",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "'이 방에 병이 가득하오.' 창백한 손이 허공을 가리키고 있습니다.",
+      "image_prompt": "medium shot, a poured concrete wall surface filling the frame, a faint yellowish-brown blotch pattern spreading across the upper left quadrant like a slow seepage, thin hairline cracks running down from a ceiling expansion joint, a steel inspection plate bolted low on the wall with condensation beading around its screws, cold raking fluorescent light across the rough texture, fine dust motes drifting through a thin shaft of light, the blotch hovering between grime and contagion, disquieting ambiguity, silent contamination",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00302",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "당신 눈에는 그저 빈 콘크리트 벽.",
+      "image_prompt": "close-up of a bare poured concrete wall, a blank grey expanse interrupted by a single rusted conduit bracket and a faded stencil number partially peeled away, a faint hand-sized grey smudge near the center that could be grime or could be a mark no one else notices, tiny paint flakes clinging at the edge of a hairline crack, flat white light from an unseen overhead fixture, a thin settled layer of dust on the conduit bracket, the wall is utterly featureless yet somehow refuses to stay empty, hollow stillness, uneasy blankness, obsessive attention",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00303",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "보입니까, 그 병이?",
+      "image_prompt": "over-the-shoulder view of the concrete wall directly ahead, a blotchy stain now filling the center of frame, darker and more defined as if pressing through the surface, moisture beading and running in thin streaks down the wall, a single industrial light fixture overhead casting a harsh downward cone that isolates the stain, coarse rough concrete with mineral deposits and a rusted anchor bolt, cold air pooling at floor level with a faint chemical tang in the condensation, the stain appears almost alive under the light, trembling uncertainty, focus-pulling dread",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00304",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "검은 눈구멍이 초점 없이 공중을 스캔합니다.",
+      "image_prompt": "POV scan across the containment room, sliding laterally past a bare concrete wall, a transfer cart pushed against the far wall with a torn paper cover, a floor drain grate with faint dark residue in the foreground, fluorescent tubes flickering low and uneven, dust motes swirling in disturbed air as if pushed by an unseen attention, light pooling weakly on the floor in elongated ovals, the space holds its breath, searching unease, absent stare",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 3,
+      "shot_id": "S00305",
+      "sentence_indices": [
+        5,
+        6
+      ],
+      "sentence": "그는 진심으로 보고 있습니다.\n당신만 못 볼 뿐, 그 병이 여기 있다는 겁니다.",
+      "image_prompt": "slow pull-back wide shot of the entire unmarked containment room, a steel chair and floor drain at the left third, the blotched far wall receding into flat grey, a low bank of condensation mist at knee level, overhead fluorescent rows casting a cold even glow, a single twisted cable hanging from a ceiling junction box swaying almost imperceptibly, a faint amber sheen across the concrete as if something oily has seeped into the pores, the room is ordinary yet saturated with a presence only one person sees, hollow conviction, fragile delusion, suffocating silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 4,
+      "shot_id": "S00400",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "지휘부의 재량 아래, 격리실 문이 열리고, 디계급이 들어섭니다.",
+      "image_prompt": "wide shot, a heavy reinforced blast door half slid open into a containment room, its hydraulic piston arm extended and gleaming dully, a sharp wedge of corridor light spilling across a poured concrete floor with one fresh scuff mark at the threshold, cinder block walls painted institutional grey with peeling corners, a rusted rectangular drainage grate set into the floor near the center, twin ceiling-mounted fluorescent tubes with the nearest flickering at irregular intervals, fine dust motes and a faint chemical haze drifting through the cold wedge of light, empty steel shelving racks lining the far wall, suspended anticipation, clinical dread",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 4,
+      "shot_id": "S00401",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "에스씨피-049가 정중히 고개를 숙입니다.",
+      "image_prompt": "medium shot, a containment room with a wire-mesh observation window high on the rear wall, its reinforced glass smudged and letting in a faint pale glow, a wall-mounted security camera beneath it with a small red indicator LED, pale grey floor tiles with a clean sightline running from the entrance doorway to the far wall, a steel examination table pushed against the left wall, its surface bearing circular oxidation rings, twin fluorescent tubes casting flat cool white light, condensation beading on the metal door frame, a faint chemical haze hanging in the air, controlled formality, watched stillness",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 4,
+      "shot_id": "S00402",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "'환자군요.' 검은 소매에서 창백한 맨손이 나옵니다.",
+      "image_prompt": "over-the-shoulder view, a single hard shaft of overhead light pooling on the pale grey tile floor in the middle of the frame, the pool catching faint dust motes suspended in the cold air, a steel instrument tray on a wheeled stand tipped at an angle near the left wall with a roll of gauze unspooling onto the floor, the rear wall bearing a cracked safety-glass panel with a spider-web impact pattern, the fluorescent tubes overhead dimming toward the left edge of frame, a faint chemical haze thickening within the light pool, rising tension, encroaching presence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 4,
+      "shot_id": "S00403",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "가면의 어두운 눈구멍이 그를 끝까지 응시합니다.",
+      "image_prompt": "close-up shot, a bare concrete wall filling the blurred background with a faint horizontal humidity stain at mid-wall height, a single cold fluorescent tube overhead throwing a narrow band of light down the center of the frame and flickering once before steadying, fine dust particles suspended frozen in the air within the light band, the floor below showing a thin layer of condensation where the light lands, the edges of the frame dimming into grey shadow, unwavering tension, breathless standoff",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00500",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "악수를 청하던 손이, 이제 당신의 손을 감쌌습니다.",
+      "image_prompt": "wide low-angle shot of a poured-concrete containment floor, a broad radial pattern of hoar frost expanding from the exact center of the room across the expansion joints, an overturned steel-frame chair lying against the far-left wall with one leg bent, a closed black leather doctor's bag on a low metal stool at the right, damp concrete with mineral staining and a single rusted drainage grate off-center, cold ceiling fluorescents in two rows with most tubes dead, one tube casting a green-white glare, fine condensation fog rolling low across the floor, breath-visible chill, trapped gentleness curdling, doomed patience, the quiet immediately before lethality",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00501",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "피부가 닿는 순간, 체온이 사라졌습니다.",
+      "image_prompt": "close-up of a wire-mesh observation window set in a cinder-block wall, a brittle lattice of frost spidering across the glass in visible time with thin cracks running along the metal frame, a wall-mounted thermometer panel to the right of the pane with its needle far below zero, flaking institutional paint on the blocks, water condensation beading and dripping down, a single cold overhead light reflecting off the frosted surface and casting faint blue highlights across the room, a fine mist curling off the glass, abrupt cold, the instant betrayal of warmth, frozen trust",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00502",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "가면의 부리가 시야를 가득 채웁니다.",
+      "image_prompt": "POV shot where the view is almost entirely swallowed by the immediate foreground, a worn ceiling-mounted surgical lamp visible in the upper-left sliver of the frame with a chipped housing and a cone of cold light narrowing toward the viewer, the rest of the frame filled by dark painted steel wall and seams of ceiling tiles converging, the lamp's beam fractured by a thin shimmer of chilled air, one low fluorescent tube vibrating faintly at the frame edge, everything beyond the light falling into dense shadow, a thin haze distorting the beam, overwhelming closeness, loss of vision, surrendering to proximity",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00503",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "다리가 풀리고...",
+      "image_prompt": "medium shot angled toward an institutional green wall with a fresh long vertical scuff mark in the paint where a body slid down, a dented steel guard rail mounted at waist height along the wall, dust film drifting off the scuff as the descent continues, a metal gurney standing midground to the right with a black leather bag on the far-right stool, peeling paint and cracked baseboard, floor tiles buckled near the wall, overhead fluorescents strobing once so the shadows swing as the view tilts, a draft lifting papers off a wall-mounted clipboard, collapse, losing control, gravity pulling",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00504",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "바닥이 다가옵니다.",
+      "image_prompt": "POV of a concrete floor rushing up to fill the entire frame, a drainage grate with iron crossbars dead center, a thin film of frost on the concrete with a single deep scrape line dragging from the upper-left edge toward the grate, scuffed yellow hazard striping at the upper frame edge, a black leather bag blurred at the extreme right corner, damp pitted concrete with hairline cracks and mineral staining around the grate, cold bluish light from above barely grazing the surface so all but the center falls to shadow, air compressing with dust motes frozen mid-fall, terminal speed, helpless acceleration, the last instant",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00505",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "수 초면, 죽음입니다.",
+      "image_prompt": "high-angle shot looking down at a steel gurney with a restraint strap hanging loose and swaying slightly, rime frost creeping up the gurney's legs in thin layers, a wall clock mounted high on the left wall with its glass rimed over and the second hand halted frozen mid-motion, a sink and open supply cabinet along the far wall, a tray of stainless instruments on the counter, pooled shadows stretching under the gurney, a single low overhead light casting everything at the edges into gray, a thin cold haze hanging in still air, counted-down life, clinical finality, a timer that cannot be outrun",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00506",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "'걱정 마세요.",
+      "image_prompt": "over-the-shoulder view across a containment room toward a small steel preparation table holding a folded white cloth and a glass syringe on a ceramic tray, the cloth draped with perfect precision, the syringe's metal cap catching a thin glint of cool-white work-lamp light, a wall cabinet slightly ajar behind the table with a single folded towel inside, a shelf of neatly stacked gauze and a small clear bottle, clean unmarked paint in this corner, one soft cool-white work lamp giving the only gentle light in the room, air still and clean with no frost reaching this corner, rehearsed comfort, false reassurance, the courtesy of an executioner",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 5,
+      "shot_id": "S00507",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "이제 시작입니다.'",
+      "image_prompt": "wide shot of the full containment chamber centered on a cleared steel operating table, an open black leather medical bag on a rolling tray beside it with instruments laid out in precise rows — forceps, a small saw, a scalpel, a clamp — the bag's lid left open, a frosted observation window and a supply cabinet against the far wall, a faint frost edge receding across the floor before the table, exposed pipes along the ceiling, one floor drain, washed-out grey-green painted walls, a bright overhead surgical lamp trained on the empty table while the rest of the room falls into cold shadow, an operating-room hush with cold air rising off the stainless surfaces, the moment of decision, staged ritual, the beginning of the cure",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00600",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "수술 기록입니다.",
+      "image_prompt": "static wide shot, an observation gallery with a steel desk in the right foreground holding an open manila surgical-record folder and a small monitor casting pale blue light, beyond the observation window on the left the dim operating theater with a steel gurney beneath a single overhead surgical lamp, the folder pages slightly stirred as if just set down, scuffed linoleum flecked with dust, a red recording indicator glowing on the monitor bezel, twin rows of ceiling fluorescents with one tube strobing faintly, fine dust hanging in the cold air, clinical record-keeping, reverent stillness, held silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00601",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "낡은 메스와 실이, 로브에서 나왔습니다.",
+      "image_prompt": "extreme close-up at a shallow angle, a pitted vintage scalpel with a thin steel blade beside a spool of black suturing thread and a curved needle resting on a dented stainless instrument tray, the thread's end trailing over the tray edge as if just set down, the scalpel rotated a few degrees off the tray's neat alignment, brushed metal with fine scratches and a faint rust bloom at the pivot, cold overhead surgical light glinting along the blade, a single mote of dust drifting in the beam, aged ritual, precise intention, suspended calm",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00602",
+      "sentence_indices": [
+        2,
+        3
+      ],
+      "sentence": "시체를 반듯하게 눕혔습니다.\n소중한 환자를 대하듯이.",
+      "image_prompt": "static wide shot, a steel autopsy gurney centered in a bare containment room, a crisp white sheet pulled perfectly flat over the table surface, the leather restraint straps unlatched and folded neatly back in uniform loops, a low surgical lamp angled close overhead casting a warm white pool across the table, a stainless instrument tray drawn up near the right edge of the frame, bare cinder block walls with peeling institutional paint, a floor drain grate glinting near the gurney's foot, cold fluorescent wash from above cooled by the warm lamp pool, faint condensation mist hanging at knee level, reverent care, clinical tenderness, hollow ceremony",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00603",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "절개가 시작됐습니다.",
+      "image_prompt": "medium shot at table height, a stainless instrument tray in the foreground with a scalpel-shaped indent pressed into the folded cloth and the black suturing thread pulled taut across the tray edge angling toward the gurney beyond, the gurney centered in the midground beneath a warm surgical lamp, the lamp's cone falling across the flat sheet, a single dark drop beading at the tray's drain notch, brushed steel and folded cloth with faint water marks, cold ambient light from the ceiling meeting the warm lamp pool, a thin haze of dust in the beam, swallowed breath, clinical resolve, the instant before sound",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00604",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "천천히, 아주 천천히.",
+      "image_prompt": "locked close-up, a curved suturing needle lying at the edge of the instrument tray with black thread arcing across the brushed steel, a single dark drop of fluid swelling at the needle's curve catching the overhead lamp's cold glint, the thread drawn taut and motionless, the steel tray's drain notch reflecting a sliver of light, micro-fine dust floating stationary in the beam, the warm surgical lamp pool just out of focus at the frame edge, drawn-out time, suffocating patience, suspended dread",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00605",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "무언가를 더듬다가, 꿰맵니다.",
+      "image_prompt": "wide shot of the operating theater, the steel gurney centered beneath the low surgical lamp with the white sheet showing faint creases where pressure has been applied along one edge, on the nearby instrument tray the black thread spool partially unwound with a short coiled loop of thread resting beside a curved needle, the restraint straps still folded back in even loops, cold fluorescent ceiling wash over bare concrete walls and a floor drain grate catching the light, thin condensation haze at floor level, ritual persistence, hollow diligence, unbroken stillness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00606",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "피부를 뚫는 소리.",
+      "image_prompt": "extreme close-up on the steel instrument tray's drain notch where a single dark drop of fluid has just struck and begun to pool, a glistening ripple caught mid-spread across the brushed metal, the black suturing thread crossing the frame above the pool taut and motionless, the scalpel's worn blade resting a few centimeters away with a thin sheen along its edge, hard overhead light glinting off the drop's surface, micro-scratches in the steel catching light, the tray's folded cloth edge slightly damp, penetrating quiet, cold contact, an audible stillness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00607",
+      "sentence_indices": [
+        8
+      ],
+      "sentence": "그게 격리실을 채웠습니다.",
+      "image_prompt": "high-angle wide shot of the containment room from near the ceiling, the steel gurney centered under the surgical lamp's narrow cone, the instrument tray beside it with the thread spool and scalpel, a thin dark fluid trail running from the gurney's foot across the poured concrete floor to the drain grate, the lamp's reflection trembling in a shallow puddle near the drain, bare walls converging at the frame edges, cold fluorescent light from above flattening the scene, fine dust hanging in the lamp beam, engulfing silence, total enclosure, an echo with no exit",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00608",
+      "sentence_indices": [
+        9
+      ],
+      "sentence": "관찰창 너머, 당신도 숨을 죽이고 있습니까?",
+      "image_prompt": "POV through a heavy observation window with reinforced wire-mesh glass, the metal frame filling the frame edges, a faint condensation sheen blurring the inner pane, beyond the glass the operating theater seen at a distance with the steel gurney under the warm surgical lamp and the instrument tray glinting beside it, the far wall's door shut with its handle reflecting a sliver of light, cold blue-tinged gallery light on the near side of the glass contrasting the warm lamp pool beyond, a faint smudge on the pane at eye level, held breath, distant witness, the skin of the glass",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 6,
+      "shot_id": "S00609",
+      "sentence_indices": [
+        10
+      ],
+      "sentence": "자르는 게 무엇인지, 묻는 이가 없습니다.",
+      "image_prompt": "medium shot inside the operating theater, the instrument tray in the foreground holding the stained scalpel and a section of thread tied into small clipped knots, the gurney centered beyond beneath the warm surgical lamp, a wall-mounted recording camera with a glowing red recording indicator aimed at the table, the room's door shut flat against the far wall with its handle gleaming, cold fluorescent wash over the bare concrete floor and the drain grate, fine dust hanging in the lamp beam over the table, unspoken question, silent complicity, a record with no witness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00700",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "봉합이 끝났습니다.",
+      "image_prompt": "static wide shot of an unmarked containment room, FOREGROUND: a steel autopsy table at center with a stainless surgical tray holding used instruments — scissors, needle holders, a curved needle still threaded with black suture line, snipped thread ends scattered on the grey concrete floor beneath the table, MIDGROUND: a portable equipment cart with a spool of suture thread and folded gauze, a wire-mesh observation window on the far wall set into bare cinder block, BACKGROUND: peeled grey institutional paint over weathered concrete, a floor drain grate at the room's center, twin rows of cold fluorescent tubes casting flat even light, condensation beading on the metal table legs, thin cold mist hanging at ankle level, clinical finality, held breath, aftermath silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00701",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "손가락이 움직입니다.",
+      "image_prompt": "extreme close-up of a steel table surface, FOREGROUND: a taut black suture thread stretched across the frame with a glistening bead of moisture at the knot, a small surgical scissors pushed slightly aside leaving a clean gap in a fine layer of dust, MIDGROUND: scattered dust particles and a single trimmed thread end on the brushed metal, BACKGROUND: the cinder block wall dissolved into soft grey blur, cold white fluorescent light raking across the metal surface, shallow depth of field, sharp cold air, micro-motion, suspended dread, wrongness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00702",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "실이 조여드는 소리.",
+      "image_prompt": "medium shot of a steel workbench, FOREGROUND: a black suture thread pulled taut diagonally across the frame, a thin ridge of disturbed dust along the line where it was drawn, a spool of thread on its side near the bench edge, MIDGROUND: coiled trimmed suture ends scattered on the grey concrete floor, the base of an instrument stand, BACKGROUND: bare cinder block wall with a single coated hook and a faint shadow line, cold fluorescent strip light reflecting off the taut thread as a thin glint, fine condensation haze hanging in the still air, caught tension, tightening silence, imminent movement",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00703",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "몸이 부자연스러운 각도로 일어섭니다.",
+      "image_prompt": "low-angle shot from floor level, FOREGROUND: grey concrete floor with a steel examination table edge catching cold light, an overturned instrument tray with scissors and needle holders scattered, a spool of suture thread rolled to a stop near a floor drain, MIDGROUND: a long distorted shadow stretching across the cinder block wall, its outline jagged and asymmetrical, BACKGROUND: ceiling-mounted fluorescent tube array visible in the upper frame, one tube flickering unevenly, cold clinical light casting hard-edged shadows, fine dust hanging motionless in a thin beam, grotesque ascent, biomechanical wrongness, silent violation",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00704",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "비뚤어진 팔다리, 도드라진 봉합선.",
+      "image_prompt": "medium shot of a grey concrete floor in a containment room, FOREGROUND: a curled black suture thread coiled in a twisted knot on the floor beside a bent surgical needle, its curve unnaturally sharp, MIDGROUND: a stainless steel instrument tray overturned, a smear of fine dust dragged across the floor, a discarded gauze with a dark stain, BACKGROUND: the base of a steel table and a cinder block wall with a faint shadow line at the floor, cold white fluorescent light raking across the floor texture, dust motes hanging in the still air, contorted stillness, fractured quiet, residue of wrongness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00705",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "눈이 떠졌지만, 그 안엔 아무것도 없습니다.",
+      "image_prompt": "close-up of a stainless steel instrument tray edge, FOREGROUND: the tray's polished surface reflecting the room in a distorted smear, with a blank grey void at the center of the reflection, a single drop of condensation rolling down the tray's rim, MIDGROUND: blurred cinder block wall and a dim observation window out of focus, BACKGROUND: soft white fluorescent glare from an overhead tube, cold clinical light glancing off the steel, fine cold mist settling at the bottom of the frame, hollow absence, soulless vacancy, the chill of looking into nothing",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00706",
+      "sentence_indices": [
+        6,
+        7
+      ],
+      "sentence": "에스씨피 공사구가 가면을 기울여 바라봅니다.\n만족스러운 듯이요.",
+      "image_prompt": "over-the-shoulder view from the right side of frame, FOREGROUND: the right edge of a steel examination table with a neatly arranged surgical tray, a spool of suture thread set upright, trimmed thread ends swept into a small pile at the table's base, MIDGROUND: a long workbench against the far cinder block wall holding glass vials and a closed metal case, BACKGROUND: cold fluorescent light falling evenly across the room over a concrete floor lightly misted, condensation beading on the walls, quiet satisfaction, completion, still calm",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 7,
+      "shot_id": "S00707",
+      "sentence_indices": [
+        8
+      ],
+      "sentence": "이게 에스씨피 공사구-이입니다.",
+      "image_prompt": "wide establishing shot of an unmarked containment room, FOREGROUND: a steel examination table at center-left with the surgical tray cleared, a single black thread trailing from the table edge to the floor, trimmed thread ends and a folded gauze on the grey concrete floor, MIDGROUND: a shallow drag mark leading from the table toward the center of the room, sweeping across the floor dust, BACKGROUND: bare cinder block walls with faint scratches at shoulder height and a wire-mesh observation window glowing pale at the far wall, twin rows of cold fluorescent tubes illuminating the full breadth of the room, a thin cold mist at knee level, stillness after an event, hollow monument, newly-risen stillness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00800",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "\"보십시오.",
+      "image_prompt": "wide establishing shot of an unmarked containment room arranged as a surgical theater, FOREGROUND: a steel cabinet with a folded white sheet on its top shelf filling the left third, a wheeled instrument tray draped with cloth at the right third, MIDGROUND: a steel examination table with heavy restraint straps hanging loose, centered beneath a circular surgical lamp with a cold white cone of light falling on the floor around it, BACKGROUND: an unlit observation window with wire-mesh glass on the far wall, the room beyond it barely readable, grey poured concrete floor with hairline cracks and a single deep residue spot at the dead center, walls in desaturated institutional green with mineral streaks, condensation beading on the table legs and cabinet edges, the surgical lamp casting the only pool of brightness in a dim surrounding, staged surgical presentation, clinical ritual tension",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00801",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "완치입니다.",
+      "image_prompt": "low-angle view up from floor level toward a circular surgical lamp glowing white at ceiling height, a steel examination table and an IV pole occupying the left third, a drained saline bag hanging at a slight tilt, restraint straps hanging off the table's edge, the table's ledge carrying a brownish residue line, white tiled wall receding to the right with a measuring tape guideline and a scuffed handrail, a discarded gauze pad soaked deep on the floor near the table leg, harsh fluorescent reflections off the polished floor creating a diagonal streak, cold procedural finality, hollow triumph",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00802",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "이 환자는 이제 안전합니다.\" 창백한 손이, 되살아난 그것의 어깨를 두드립니다.",
+      "image_prompt": "medium shot of a wide section of grey concrete floor between two drain grates flanking the center, a soft overhead spotlight marking an oval pool of light at the center where the two figures would meet, FOREGROUND: a wall-mounted fire extinguisher at the left edge of the frame, MIDGROUND: the pool of light and the two drain grates with dry mineral film, BACKGROUND: a heavy steel door with hazard-striped frame and a small wire-glass window glowing faintly from the other side, a rubber hose coiled along the baseboard, faint scuff arcs on the floor suggesting repeated standing in that spot, the spotlight isolating the center zone as the only bright area in a wide shadowed room, staged reassurance, fragile calm",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00803",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "하지만 당신의 눈에는, 비뚤어진 팔다리와 잔뜩 꿰맨 봉합선뿐입니다.",
+      "image_prompt": "extreme close-up of a stainless steel instrument tray, a curved suture needle with a long taut black thread resting across it, the thread trailing off the tray edge onto the floor, a roll of thick suture coil beside it, faint fingerprint smudges on the steel surface in the harsh overhead reflection, dried flecks near the tray well, the thread catching the light in a single bright arc, the tray sitting at the edge of a steel examination table with a sagged restraint strap in the blurred foreground, grotesque intimacy, surgical obsession",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00804",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "빈 눈.",
+      "image_prompt": "high-angle close-up of a wall-mounted vital signs monitor, screen showing a flat green traceline and a row of zeroed numeric readouts, a thin layer of dust on the screen surround, the screen's cold green glow spilling onto the floor below where a cable trails loosely to a wall socket, dried sticker residue where a label once was, the wall panel scuffed with a single drag mark, the flat green line the only light on that wall section, the monitor mounted beside a steel cabinet with an open drawer holding empty packaging, hollow absence, clinical emptiness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00805",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "그가 보는 병.",
+      "image_prompt": "medium shot of a steel instrument cart occupying the left third, a row of identical glass vials with deep amber liquid aligned on the top shelf, a microscope with a blank glass slide under its clip, an open stitched leather case with chemical stains around its mouth below, on the right third a wall-mounted sink with a mirror reflecting the bare ceiling light, the cart's wheels leaving a faint path in the floor film, spare slides arranged in a perfect grid untouched by dust, a single overhead bulb making the glassware glint, misplaced certainty, obsessive ritual",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00806",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "바로 그게 대역병의 정체입니다.",
+      "image_prompt": "wide shot of a long mortuary-style room, a row of sealed steel drawer doors lining the left third, a steel gurney with a deep-stained sheet pushed against the far right wall, MIDGROUND: a tall standing surgical light casting a broad cone over the center of the grey concrete floor, a faint drag trail running from the drawers to the center, ceiling- mounted fluorescent tubes with one tube burnt out leaving a strip of unlit space above, condensation on the metal surfaces, the contrast between the clinical light cone and the morgue drawers, hollow revelation, institutional dread",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 8,
+      "shot_id": "S00807",
+      "sentence_indices": [
+        7
+      ],
+      "sentence": "치료법은, 오직 그만이 이해합니다.",
+      "image_prompt": "close-up of a worn leather surgical kit laid open on a steel table, a single scalpel with a polished blade resting on a folded white cloth, a small glass vial with a rubber stopper beside it, the leather interior embossed with deep tool marks, the brass latch catching a single overhead glint, faint chemical residue on the cloth edge, the arrangement impossibly tidy as if placed with reverence, the table surface scratched around the kit, private ritual, seductive delusion",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00900",
+      "sentence_indices": [
+        0
+      ],
+      "sentence": "철제 문이 닫히는 금속음.",
+      "image_prompt": "medium shot of a heavy steel cell door slid fully shut into its frame, the latch housing engaged with a fresh scuff of bright metal where the bolt struck home, hazard warning stripes chipped along the door edge, a thin band of cold light escaping beneath the threshold onto the worn concrete floor, brushed steel surface with vertical scoring and a blank unmarked designation plate, single ceiling fluorescent tube directly overhead casting a harsh downward pool of light, faint dust motes settling in the beam, finality, confinement, institutional coldness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00901",
+      "sentence_indices": [
+        1
+      ],
+      "sentence": "관찰창 하나만이 비춥니다.",
+      "image_prompt": "wide interior shot of a containment cell, a single observation window of wire-mesh safety glass set high in the far wall casting a hard rectangular beam of cold white light across the poured concrete floor, the beam cutting a visible diagonal through hanging dust, bare cinder block walls with peeling institutional grey paint, a steel-frame chair bolted to the floor near the right wall with loose restraint straps, the rest of the cell falling into pooled shadow beyond the beam, the window the only light source in the room, condensation sheen on the metal door frame, isolation, watched silence, cell-like emptiness",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00902",
+      "sentence_indices": [
+        2
+      ],
+      "sentence": "셀 중앙에 선 채, 그가 가면을 당신에게 돌립니다.",
+      "image_prompt": "POV shot standing at the cell threshold, the observation window flooding the far wall with cold backlight that wraps the room's edges, the center of the cell marked by a faint circular scuff ring worn into the concrete from hours of pacing, bare walls with steel anchor points at shoulder height, a wall-mounted camera with a dead red indicator LED, the window light halo-ing the middle of the frame, a floor drainage grate with mineral stains under the ring, fine dust suspended in the backlight column, direct confrontation, mounting dread, unnerving stillness",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00903",
+      "sentence_indices": [
+        3
+      ],
+      "sentence": "발견 기록도, 회수 기록도, 연대기도, 없던 개체.",
+      "image_prompt": "close-up of a cell door's designation plate, the brushed metal surface entirely blank where a catalogue number should be stamped, a faint ghost outline where a label had been peeled off long ago, the door frame scuffed at knee height, a wall-mounted clipboard hanging crooked with its top form completely blank, empty fields where dates and initials should have been written, cold fluorescent light raking across the metal at a low angle making the absence read as flat shadowless grey, dust settled in the corners of the plate, unexplained absence, administrative dread, silent erasure",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00904",
+      "sentence_indices": [
+        4
+      ],
+      "sentence": "그가 보는 대역병의 정체는, 끝내 알 수 없습니다.",
+      "image_prompt": "medium shot of the containment cell's examination corner, a rolling instrument cart with a steel tray laid out with surgical tools arranged precisely in a low arc, one empty specimen slide lying alone at the tray's center, the tools clean and unused, a ceiling exhaust vent humming above a stainless steel examination table pushed against the far wall, the observation window on the right casting a pale sidelight across the tray, the left third of the frame left in grey half-light around the cart, floor mottled with old chemical stains, surgical instruments catching the light, sterile unease, unknowable stillness, hollow ritual",
+      "present_subject": true,
+      "visible_event": false
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00905",
+      "sentence_indices": [
+        5
+      ],
+      "sentence": "그는 기다립니다.",
+      "image_prompt": "low-angle wide shot of the containment cell from a corner near the floor, a single droplet of condensation falling from a ceiling vent along the right side, frozen just before it strikes the concrete and spreading a dark stain ring amid older dried drip marks, the observation window at the far end glowing faintly, the long empty floor of the cell stretching toward it, anchored only by the drip pattern beneath the vent, bare walls rising into shadow above the scant light, the right third of the frame holding the vent and its descending droplet, condensation beading on the walls and the metal door frame, patient dread, oppressive patience, timeless silence",
+      "present_subject": true,
+      "visible_event": true
+    },
+    {
+      "leg": "new",
+      "scene_num": 9,
+      "shot_id": "S00906",
+      "sentence_indices": [
+        6
+      ],
+      "sentence": "환자를 살리고 있다고, 믿으며.",
+      "image_prompt": "high-angle shot looking down at the emptied examination area of the cell, a steel restraint bed frame against the far wall with loose leather straps hanging over the edge, one buckle still swinging faintly, a stethoscope hung on a wall hook beside a clipboard, a shallow drainage grate in the concrete floor stained with a faint dried residue trail leading from the bed toward the drain, the pool of cold light from the observation window falling empty across the floor, a kidney basin lying upside down beside the bed leg, dust settled over the surfaces of the tools, the room holding its breath after work has finished, hollow tragedy, deluded mercy, aftermath stillness",
+      "present_subject": true,
+      "visible_event": true
+    }
+  ]
+}

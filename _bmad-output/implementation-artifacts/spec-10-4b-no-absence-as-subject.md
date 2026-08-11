@@ -2,7 +2,7 @@
 title: 'Story 10.4b — never ask the renderer to draw an absence (지적 2)'
 type: 'feature'
 created: '2026-08-11'
-status: 'blocked'
+status: 'done'
 baseline_revision: '9b460d5'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -224,3 +224,74 @@ re-run the single command in the evidence README §0. Before spending those ~6 G
 decide whether the measurability finding above changes the plan — a lever that moves 3 prompts
 to 2 may need a different design (e.g. many short runs counting absence-prompt incidence
 directly) rather than one 66-sentence readable-rate A/B.
+
+---
+
+## Auto Run Result — AMENDED after the no-GPU gate
+
+Status: **done** (was `blocked`; the story reached a conclusion without the render A/B).
+
+**The premise was void.** A blind text judge over the prompts both legs had already written
+scored the **baseline** prompt at **66/66 = 100 %** on "is the subject physically present".
+There was no absence-as-subject behaviour left to remove. Timeline, checked rather than assumed:
+
+| | date |
+|---|---|
+| run `8a9a288b` scenario written (source of the 12 unreadable frames) | 2026-08-07 |
+| prompt state then | last edited 2026-08-01 (Story 11.2) |
+| **Story 10.2 edited this prompt** (`"A figure small in an enormous space"` → an overturned chair; seeded v14) | **2026-08-10** |
+
+So the 12 frames are artefacts of the **pre-10.2** prompt, and 10.2's one-line edit in a
+different story had already fixed what 10.4b was scoped to fix.
+
+**The live gap is the other clause, and this story did not move it.** `visible_event` — does the
+prompt put a visible mark/displacement/residue of *this sentence's* event in the frame — sits at
+**84.9 % (56/66)** on the baseline, i.e. ~10 of 66 prompts establish a place with nothing having
+happened in it. That is exactly the failure mode of the 6 of 12 unreadable frames whose subjects
+were already concrete. The candidate scored **82.5 %** (−2.3 pp): noise, and certainly not an
+improvement.
+
+### Decision
+
+- `prompts/scenario/visual_breakdown.md` **reverted**, byte-identical to the pre-10.4b text, and
+  never seeded (live Langfuse is still v14). Candidate text preserved as
+  `10-4b-live-validation/prompt_absence_free.md`.
+- The 3 tests that pinned the prompt rewrite were removed with it.
+- **Kept:** `_fallback_prompt` no longer ends in `"no visible subject"` — an independent code
+  defect (it named an absence *and* matched `_NO_FIGURE_FRAMINGS`, so a phrase meaning
+  "placeholder" silently stripped the shot's cast), pinned by its own test whose docstring
+  records why the rest of the story was reverted.
+- The render A/B was never completed and is no longer worth completing.
+
+### What this round actually delivered
+
+1. **A corrected premise.** `epics.md` said all 12 unreadable prompts made an absence the
+   subject; the row data says 5, with 6 already concrete — and the whole class is now
+   attributable to a superseded prompt version.
+2. **A reusable ~2-minute, zero-GPU gate** (`check_prompt_compliance.py`) that screens a
+   candidate prompt against both halves of the requirement before anything is rendered. It cost
+   109 s and saved ~6 GPU-hours here.
+3. **A live baseline for the real defect**: `visible_event` 84.9 %, measured on the current
+   prompt, which the follow-up story can try to beat.
+4. One kept bug fix.
+
+### Verification
+
+- `PYTHONPATH=$PWD/src uv run pytest tests/` — **2677 passed, 1 skipped, 0 failed** after the
+  revert. Do not read a delta off that number: a concurrent session is landing Story 10.6 tests
+  in the same tree, so the absolute count moved for reasons unrelated to this story. What is
+  attributable here is the 3 prompt-content tests removed with the reverted prompt and the 1
+  bug-fix test kept — verified directly on `tests/pipeline/nodes/test_scenario_chain.py`
+  (629 passed).
+- `uv run ruff check src/ scripts/ tests/` — clean.
+- `prompts/scenario/visual_breakdown.md` verified **byte-identical** to `9b460d5` by `diff`.
+
+### Residual risks
+
+- The gate judges **prompt text**, not frames. It shows the prompts name a present subject; it
+  cannot show the renders are readable. The `visible_event` gap is therefore *handed on*, not
+  declared fixed.
+- One judge, one call per prompt, `temperature 0`, no repeats — read 84.9 % vs 82.5 % as "no
+  movement", not as a small regression.
+- The unreadable 18.2 % baseline still stands unexplained for the 6 concrete-subject frames.
+  Nothing here reduced it; the follow-up owns it.

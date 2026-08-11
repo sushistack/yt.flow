@@ -224,65 +224,20 @@ def test_visual_breakdown_prompt_file_has_required_placeholders():
         assert placeholder in content, f"missing {placeholder} in visual_breakdown.md"
 
 
-def _visual_breakdown_prompt_text() -> str:
-    path = Path(__file__).parent.parent.parent.parent / "prompts" / "scenario" / "visual_breakdown.md"
-    return path.read_text(encoding="utf-8")
-
-
-def test_visual_breakdown_prompt_requires_an_existing_subject_and_a_visible_event():
-    """Story 10.4b. 12 of 66 frames in run 8a9a288b were unreadable; 5 of those prompts
-    made an absence the subject (`vast empty concrete floor`, `close-up of open air`,
-    `a blank wall section with nothing on it`) and all 12 had no legible event. Diffusion
-    cannot render a nothing, so the prompt must demand a present subject AND a visible
-    trace of the sentence's event. Pinned as content because nothing else constrains this
-    file — the placeholder test above would pass with the requirement deleted."""
-    content = _visual_breakdown_prompt_text()
-    assert "The subject is always something that EXISTS" in content
-    assert "An absence cannot be the subject" in content
-    # The self-check is what the model actually runs down before emitting YAML.
-    assert "never an emptiness" in content
-    assert "legible trace of THIS sentence's event" in content
-
-
-def test_visual_breakdown_prompt_no_longer_teaches_emptiness_as_craft():
-    """The three absence-teachers 10.4b removed. Story 10.2 had already deleted ONE bullet
-    of this instruction ("A figure small in an enormous space") and the rest survived to
-    produce the 12 unreadable frames — so the removal is pinned, not just performed.
-
-    These are exact-phrase assertions on purpose: the words are what taught the behaviour.
-    Re-adding any of them means re-opening the defect, and this test is the tripwire."""
-    content = _visual_breakdown_prompt_text()
-    for taught_absence in (
-        "Use negative space as a storytelling tool",       # the section header
-        "Large empty areas in the frame create unease",
-        "An empty hallway stretching to a vanishing point",
-        "The space where something SHOULD be but isn't",
-        "Show an EMPTY frame that feels WRONG",
-        "Negative space or depth layering",                # the checklist item that MANDATED it
-        "write a pure environment/atmosphere shot",        # the cast-empty leg of the collision
-    ):
-        assert taught_absence not in content, f"visual_breakdown.md re-teaches absence: {taught_absence!r}"
-
-
-def test_visual_breakdown_prompt_folds_referentless_sentences_instead_of_minting_a_background():
-    """Story 10.4b scope ②. The parser has accepted an ordered N:M cover since 10.4; only
-    the prompt forbade it (`sentence_start == sentence_end`, `Total shot count ==`). A
-    sentence naming nothing photographable must widen a neighbour's span rather than get a
-    background of its own. The shot-count CEILING must survive — a cover without one lets
-    one scene order 40 renders."""
-    content = _visual_breakdown_prompt_text()
-    assert "a sentence with no renderable referent joins its neighbour" in content
-    assert "extend a neighbouring shot's span" in content
-    assert "Total shot count <= {{sentence_count}}" in content
-    # The old strict-bijection commands must be gone from the checklist.
-    assert "- [ ] Each shot: `sentence_start == sentence_end`" not in content
-    assert "- [ ] Total shot count == {{sentence_count}}" not in content
-
-
 def test_fallback_prompt_names_a_surface_not_an_absence():
     """Story 10.4b: the backfill used to end in "no visible subject" — a code-side absence
     subject that also matched `_NO_FIGURE_FRAMINGS`, so a placeholder phrase silently
-    stripped the shot's cast. It now names the floor, which exists in every location."""
+    stripped the shot's cast. It now names the floor, which exists in every location.
+
+    This is the ONLY part of Story 10.4b that survived. The story also rewrote
+    `prompts/scenario/visual_breakdown.md` to forbid absence-as-subject, and that change
+    was REVERTED after measurement: a blind text judge scored the BASELINE prompt at
+    66/66 = 100% on "is the subject physically present", so there was nothing left to fix.
+    Story 10.2's 2026-08-10 prompt edit had already removed the behaviour — three days
+    AFTER the run whose 12 unreadable frames motivated 10.4b. Evidence and the reverted
+    prompt text: `_bmad-output/implementation-artifacts/10-4b-live-validation/`.
+
+    This bug is independent of that revert: it is a defect in code, not an instruction."""
     prompt = chain._fallback_prompt({"location": "containment cell", "atmosphere": "cold"})
     assert "no visible subject" not in prompt
     assert "floor" in prompt
