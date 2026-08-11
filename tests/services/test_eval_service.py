@@ -38,6 +38,10 @@ class FakeSettings:
     gemini_judge_max_tokens = 8192
     db_path = "unused-mocked.db"
     min_shot_clip_sec = 2.0
+    # Story 13.2: evaluate_ab looks for <workspace_path>/<run_id>/visual_score.json.
+    # A path that does not exist is the NORMAL case — nobody has to pay for a VLM
+    # pass to evaluate a pair — so the visual axes come back absent here.
+    workspace_path = "unused-workspace-does-not-exist"
 
 
 class _Tmpl:
@@ -84,8 +88,12 @@ def test_compute_rule_metrics_exact():
     assert mb.avg_subtitle_sync_error == pytest.approx(0.1)
     assert ma.audio_duration_variance_pct == pytest.approx(25.0)  # pstdev(3,5)/4*100
     assert mb.audio_duration_variance_pct == pytest.approx(0.0)   # all equal
-    # fixture scenes carry no shots -> no clips -> metric falls back to 0.0
-    assert ma.cut_alignment_error == 0.0 and mb.cut_alignment_error == 0.0
+    # fixture scenes carry no shots -> no clips -> NOTHING WAS MEASURED.
+    # Story 13.2 changed this from 0.0 to None: once the metric became a tiebreak input
+    # at chain position 2, "perfectly aligned" and "no timings to check" could no longer
+    # share a value, because lower-is-better would have handed the top-priority tiebreak
+    # to whichever run had LESS data.
+    assert ma.cut_alignment_error is None and mb.cut_alignment_error is None
 
 
 def test_scene_count_match_rate_edges():
@@ -140,22 +148,342 @@ def test_cut_alignment_error_positive_on_apportion_degrade():
     assert es._cut_alignment_error([scene], 2.0) == pytest.approx(1.0)
 
 
-def test_cut_alignment_error_zero_when_fewer_than_two_clips():
+def test_cut_alignment_error_none_when_fewer_than_two_clips():
+    """Renamed and re-asserted by Story 13.2: None (not measured), not 0.0 (perfect)."""
     narration = "하나 둘."
     timings = [fx._word("하나", 0.0, 1.0), fx._word("둘.", 1.0, 2.0)]
     scene = _cut_scene(narration, timings, [_cut_shot("S1", [0])], 2.0)
-    assert es._cut_alignment_error([scene], 2.0) == 0.0
+    assert es._cut_alignment_error([scene], 2.0) is None
 
 
-def test_cut_alignment_error_zero_without_data():
+def test_cut_alignment_error_none_without_data():
     no_timings = _cut_scene("하나 둘.", [], [_cut_shot("S1", [0]), _cut_shot("S2", [0])], 2.0)
     no_shots = _cut_scene("하나 둘.", [fx._word("하나", 0.0, 1.0), fx._word("둘.", 1.0, 2.0)], [], 2.0)
-    assert es._cut_alignment_error([no_timings, no_shots], 2.0) == 0.0
+    assert es._cut_alignment_error([no_timings, no_shots], 2.0) is None
+
+
+def test_unmeasured_cut_alignment_cannot_win_the_tiebreak():
+    """The reason the return type changed. A run whose WhisperX alignment fell back has
+    no word timings, so it has no cut_alignment_error; under the old 0.0 convention that
+    was its BEST possible value at chain position 2 and it beat a properly aligned run
+    outright. Now the key is omitted and the step is skipped, so the decision falls to a
+    metric both runs actually have."""
+    unmeasured = {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.9,
+                  "audio_duration_variance": 0.05}
+    measured = {"scene_count_match_rate": 1.0, "cut_alignment_error": 0.09,
+                "subtitle_sync_error": 0.1, "audio_duration_variance": 0.05}
+    # B is worse on the only comparable timing metric left, so A must not win by absence.
+    assert es._rule_tiebreak_from_dicts(unmeasured, measured) == "B"
+    assert es._rule_tiebreak_from_dicts(measured, unmeasured) == "A"
 
 
 def test_cut_alignment_error_in_rule_metrics_dict():
+    """Extended by Story 13.2: the dict is the ab_result schema AND the tiebreak
+    chain's input shape, so the motion keys must always be present. The visual keys
+    must be ABSENT here — these fixtures carry no visual_score.json."""
     ma, _ = es._compute_rule_metrics(fx.state_a(), fx.state_b())
-    assert "cut_alignment_error" in es._rule_metrics_to_dict(ma)
+    out = es._rule_metrics_to_dict(ma)
+    assert "motion_archetype_coverage" in out and "motion_repeat_ratio" in out
+    # All three omitted-when-unmeasured keys behave alike: these fixtures have no shots
+    # (so no cut alignment) and no visual_score.json.
+    assert "cut_alignment_error" not in out
+    assert "unreadable_rate" not in out and "mean_dsg_score" not in out
+    # …and present once measured.
+    measured = es._rule_metrics_to_dict(es.RuleBasedMetrics(
+        scene_count=1, scene_count_match_rate=1.0, avg_subtitle_sync_error=0.1,
+        audio_duration_variance_pct=5.0, cut_alignment_error=0.2))
+    assert measured["cut_alignment_error"] == 0.2
+
+
+# ── Motion metrics (Story 13.2) ──────────────────────────────────────────────
+
+
+def _motion_scene(scene_num: int, movements: list[str | None]) -> dict:
+    """A scene carrying only what the motion metrics read. Separate from `_cut_shot`
+    because that helper pins `camera_movement: None`, which is the legacy case."""
+    return {"scene_num": scene_num, "narration": "n", "audio_path": None,
+            "audio_duration": None, "word_timings": [], "subtitle_path": None,
+            "shots": [{"shot_id": f"S{scene_num}{i}", "sentence_indices": [i],
+                       "image_prompt": "p", "negative_prompt": "n", "camera_angle": None,
+                       "camera_movement": mv, "image_path": None}
+                      for i, mv in enumerate(movements)]}
+
+
+def test_motion_coverage_all_five_archetypes():
+    scenes = [_motion_scene(1, list(es.CAMERA_ARCHETYPES))]
+    assert es._motion_archetype_coverage(scenes) == 1.0
+
+
+def test_motion_coverage_single_archetype():
+    scenes = [_motion_scene(1, ["push_in", "push_in", "push_in"])]
+    assert es._motion_archetype_coverage(scenes) == 0.2
+
+
+def test_motion_legacy_and_none_are_one_unmapped_bucket():
+    """A legacy free-text hint or None is not an archetype: it contributes nothing to
+    coverage, and every such shot shares ONE bucket so consecutive ones all repeat."""
+    scenes = [_motion_scene(1, [None, "slow zoom in", None, "handheld"])]
+    assert es._motion_archetype_coverage(scenes) == 0.0
+    assert es._motion_repeat_ratio(scenes) == 1.0
+
+
+def test_motion_repeat_ratio_counts_scene_boundaries():
+    """The contract that differs from 11.2's validator ON PURPOSE. Within-scene repeats
+    are already impossible (`_enforce_camera_variety`), so counting only those would
+    make this a constant 0.0. Scene 1 ends on `locked` and scene 2 opens on `locked`:
+    that pair MUST be counted, and it is not an 11.2 violation."""
+    scenes = [_motion_scene(1, ["drift", "locked"]), _motion_scene(2, ["locked", "drift"])]
+    assert es._motion_repeat_ratio(scenes) == pytest.approx(1 / 3)
+    # Counting within-scene pairs only would have given 0.0 — the dead-axis outcome.
+    assert es._motion_repeat_ratio([_motion_scene(1, ["drift", "locked"])]) == 0.0
+
+
+def test_motion_repeat_ratio_flattens_in_scene_number_order():
+    """Run order is scene_num ascending, not list order — and this input distinguishes
+    the two. As listed (locked, drift, locked) there is no adjacent repeat; sorted by
+    scene_num (drift, locked, locked) there is exactly one of two pairs. Getting 0.5
+    is the proof it sorted."""
+    out_of_order = [_motion_scene(2, ["locked"]), _motion_scene(1, ["drift"]),
+                    _motion_scene(3, ["locked"])]
+    assert es._motion_repeat_ratio(out_of_order) == 0.5
+
+
+def test_motion_metrics_shot_count_edges():
+    assert es._motion_repeat_ratio([]) == 0.0
+    assert es._motion_archetype_coverage([]) == 0.0
+    one = [_motion_scene(1, ["drift"])]
+    assert es._motion_repeat_ratio(one) == 0.0          # no adjacent pair exists
+    assert es._motion_archetype_coverage(one) == 0.2
+
+
+def test_motion_metrics_at_the_shape_of_the_reference_run():
+    """Pins the values LIVE-measured on run 8a9a288b — coverage **1.0**, repeat_ratio
+    **0.0154** — at that run's shape: 9 scenes, 66 shots, all five archetypes present,
+    and exactly ONE repeating adjacent pair, which is a scene boundary.
+
+    The real sequence is not reconstructible from archetype counts alone (counts and
+    adjacency are independent), so this builds the shape rather than claiming to replay
+    the run: cycle the archetypes so no pair repeats, then break exactly one boundary.
+    That is the claim worth pinning — 1 repeat in 65 pairs is 0.0154.
+
+    Recorded because coverage saturating at 1.0 is the metric's real behaviour on a
+    healthy run, not a bug: both metrics are regression detectors, not A/B
+    discriminators. See each function's docstring.
+    """
+    sizes = [7, 8, 7, 8, 7, 8, 7, 7, 7]
+    assert sum(sizes) == 66
+    flat = [es.CAMERA_ARCHETYPES[i % len(es.CAMERA_ARCHETYPES)] for i in range(66)]
+    scenes, at = [], 0
+    for num, size in enumerate(sizes, start=1):
+        scenes.append(_motion_scene(num, flat[at:at + size]))
+        at += size
+    assert es._motion_archetype_coverage(scenes) == 1.0
+    assert es._motion_repeat_ratio(scenes) == 0.0   # a clean cycle repeats nowhere
+
+    # Break exactly one boundary: scene 2 opens on whatever scene 1 ended with.
+    scenes[1]["shots"][0]["camera_movement"] = scenes[0]["shots"][-1]["camera_movement"]
+    assert round(es._motion_repeat_ratio(scenes), 4) == 0.0154   # == 1/65
+    assert es._motion_archetype_coverage(scenes) == 1.0
+
+
+# ── Visual axes (Story 13.2) — absent is not zero ────────────────────────────
+
+
+def test_load_visual_scores_absent_and_corrupt_both_read_as_none(tmp_path):
+    """A missing artifact is the normal case. A corrupt one is also None: a
+    half-parsed readability number is worse than no number."""
+    assert es._load_visual_scores("run-x", str(tmp_path)) is None
+    run_dir = tmp_path / "run-y"
+    run_dir.mkdir()
+    (run_dir / es.VISUAL_SCORE_FILENAME).write_text("{not json", encoding="utf-8")
+    assert es._load_visual_scores("run-y", str(tmp_path)) is None
+
+
+def test_load_visual_scores_reads_the_report(tmp_path):
+    run_dir = tmp_path / "run-z"
+    run_dir.mkdir()
+    (run_dir / es.VISUAL_SCORE_FILENAME).write_text(
+        json.dumps({"summary": {"scored": 66, "unreadable": 12, "mean_dsg": 0.61}}),
+        encoding="utf-8")
+    report = es._load_visual_scores("run-z", str(tmp_path))
+    assert report is not None
+    # 10.4's live figure: 12/66 unreadable.
+    assert es._unreadable_rate(report) == pytest.approx(12 / 66)
+    assert es._mean_dsg_score(report) == 0.61
+
+
+def test_visual_metrics_are_none_not_zero_without_measurements():
+    """0.0 would publish "no unreadable frames" for a run nobody looked at."""
+    assert es._unreadable_rate({"summary": {"scored": 0, "unreadable": None}}) is None
+    assert es._unreadable_rate({}) is None
+    assert es._mean_dsg_score({"summary": {}}) is None
+    assert es._mean_dsg_score({}) is None
+
+
+def test_visual_axes_reach_the_ab_result_dict_when_measured():
+    ma, _ = es._compute_rule_metrics(
+        fx.state_a(), fx.state_b(),
+        visual_a={"summary": {"scored": 66, "unreadable": 12, "mean_dsg": 0.61}})
+    out = es._rule_metrics_to_dict(ma)
+    assert out["unreadable_rate"] == pytest.approx(12 / 66)
+    assert out["mean_dsg_score"] == 0.61
+
+
+# ── Tiebreak unification (Story 13.2) ────────────────────────────────────────
+
+_TB_BASE = {"scene_count_match_rate": 1.0, "cut_alignment_error": 0.1,
+            "motion_repeat_ratio": 0.02, "motion_archetype_coverage": 1.0,
+            "subtitle_sync_error": 0.1, "audio_duration_variance": 0.05}
+
+
+def _tb(**overrides) -> dict:
+    return {**_TB_BASE, **overrides}
+
+
+def _winner_both_ways(a: dict, b: dict) -> tuple[str, str]:
+    """The same input through both entry points that used to be able to disagree."""
+    return (
+        es._rule_tiebreak_from_dicts(a, b),
+        es.determine_winner({"A": _SCORES_A_CLEAR, "B": _SCORES_A_CLEAR}, {"A": a, "B": b},
+                            {"majority_winner": "tie", "majority_count": 0, "total_runs": 2})[0],
+    )
+
+
+def test_tiebreak_one_one_split_agrees_across_both_entry_points():
+    """THE core regression guard of Story 13.2.
+
+    A 1-1 split — A better on subtitle_sync, B better on audio_variance — is exactly
+    where the two old implementations disagreed: the point-sum `_rule_tiebreak` scored
+    it 1-1 and returned "tie", so `EvaluationResult.winner` was "tie", while
+    `determine_winner`'s lexicographic 3a/3b/3c stopped at the first differing metric
+    and stored `ab_result.winner = "A"`. Same pair, two different persisted answers.
+    Now there is one function, so the two cannot drift apart again.
+    """
+    a = _tb(subtitle_sync_error=0.1, audio_duration_variance=0.30)
+    b = _tb(subtitle_sync_error=0.5, audio_duration_variance=0.05)
+    direct, via_determine = _winner_both_ways(a, b)
+    assert direct == via_determine == "A"   # lexicographic: subtitle_sync decides first
+
+
+def test_tiebreak_cut_alignment_outranks_subtitle_sync():
+    """AC4's ordering, and the reason for it: 11.4 inverted `subtitle_sync_error`'s
+    meaning, so lower-is-better there weakly prefers a run that FELL BACK to degraded
+    provisional timings. `cut_alignment_error` is the one timing metric that was not
+    inverted, so it decides first even when subtitle_sync points the other way."""
+    a = _tb(cut_alignment_error=0.05, subtitle_sync_error=0.9)
+    b = _tb(cut_alignment_error=0.50, subtitle_sync_error=0.1)
+    assert _winner_both_ways(a, b) == ("A", "A")
+
+
+def test_tiebreak_motion_axes_rank_between_cut_alignment_and_subtitle_sync():
+    # repeat_ratio (lower better) decides before subtitle_sync.
+    a = _tb(motion_repeat_ratio=0.4, subtitle_sync_error=0.1)
+    b = _tb(motion_repeat_ratio=0.0, subtitle_sync_error=0.9)
+    assert _winner_both_ways(a, b) == ("B", "B")
+    # coverage (higher better) decides before subtitle_sync but after repeat_ratio.
+    a = _tb(motion_archetype_coverage=1.0, subtitle_sync_error=0.9)
+    b = _tb(motion_archetype_coverage=0.2, subtitle_sync_error=0.1)
+    assert _winner_both_ways(a, b) == ("A", "A")
+
+
+def test_tiebreak_ignores_the_visual_axes_entirely():
+    """Record-only pending Story 13.4. They exist only when someone ran the offline VLM
+    pass, so a winner that turned on their presence would be a trap."""
+    a = _tb(unreadable_rate=0.9, mean_dsg_score=0.1)
+    b = _tb(unreadable_rate=0.0, mean_dsg_score=0.9)
+    assert _winner_both_ways(a, b) == ("tie", "tie")
+
+
+def test_tiebreak_scene_count_match_rate_never_fires():
+    """Kept in the chain for stored-row compatibility only: `_compute_rule_metrics`
+    gives both variants the SAME value, so it can never separate them."""
+    ma, mb = es._compute_rule_metrics(fx.state_a(), fx.state_b())
+    assert ma.scene_count_match_rate == mb.scene_count_match_rate
+
+
+def test_tiebreak_all_equal_is_a_tie():
+    assert _winner_both_ways(_tb(), _tb()) == ("tie", "tie")
+
+
+def test_tiebreak_legacy_dict_without_new_keys_does_not_raise():
+    """AC5: `determine_winner` is a public pure function and may be re-run over
+    `ab_result` rows stored before 11.4 or 13.2. Every key is read with `.get`, so a
+    key missing from BOTH sides ties that step and falls through instead of raising."""
+    legacy_a = {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1,
+                "audio_duration_variance": 0.05}
+    legacy_b = {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.4,
+                "audio_duration_variance": 0.05}
+    assert _winner_both_ways(legacy_a, legacy_b) == ("A", "A")
+    assert _winner_both_ways({}, {}) == ("tie", "tie")
+
+
+def test_tiebreak_skips_uncomparable_values_instead_of_raising_or_ranking():
+    """A stored `ab_result` is JSON another process wrote. `null` used to raise TypeError
+    out of `determine_winner`; NaN was worse — `abs(nan - x) > eps` is False, so the step
+    tied silently and a later metric picked the winner with nobody told."""
+    for bad in (None, "0.1", [], float("nan"), float("inf"), True):
+        a = _tb(cut_alignment_error=bad)
+        b = _tb(cut_alignment_error=0.9)
+        # Step 2 is skipped, so the decision falls through to a comparable metric.
+        assert _winner_both_ways(a, b) == ("tie", "tie"), f"failed for {bad!r}"
+        # …and with a real difference further down the chain, that one decides.
+        assert _winner_both_ways({**a, "subtitle_sync_error": 0.1},
+                                 {**b, "subtitle_sync_error": 0.9}) == ("A", "A")
+
+
+def test_tiebreak_one_sided_key_is_not_a_comparison():
+    """Absence must not be scored. Four of the six keys are lower-is-better, so a
+    defaulted 0.0 would be the unmeasured run's best possible value."""
+    only_a = _tb(motion_repeat_ratio=0.9)
+    missing = {k: v for k, v in _tb().items() if k != "motion_repeat_ratio"}
+    assert _winner_both_ways(only_a, missing) == ("tie", "tie")
+
+
+def test_tiebreak_epsilon_is_per_key_not_one_absolute_band():
+    """`audio_duration_variance` is a percentage divided by 100, so a shared 0.01 band
+    swallowed a 0.6-percentage-point gap that the old dataclass path (strict `<` on the
+    pct scale) decided. Per-key epsilon keeps the two paths agreeing."""
+    a = _tb(audio_duration_variance=0.080)   # 8.0 %
+    b = _tb(audio_duration_variance=0.086)   # 8.6 %
+    assert _winner_both_ways(a, b) == ("A", "A")
+    # coverage moves in steps of 0.2; its band must not fire on floating-point dust.
+    assert _winner_both_ways(_tb(motion_archetype_coverage=0.8000001),
+                             _tb(motion_archetype_coverage=0.8)) == ("tie", "tie")
+
+
+def test_langfuse_skips_an_uncomparable_metric_without_dropping_the_rest(_memdb, monkeypatch):
+    """One bad key must cost one score, not every score after it. `float(None)` raised
+    inside the AD-10 try, which swallowed the exception and silently lost variant B."""
+    _seed_run("run-a")
+    _seed_run("run-b")
+    created: list[str] = []
+
+    class _FakeLF:
+        def create_trace_id(self, **kw):
+            return "trace-bad-metric"
+        def create_score(self, **kw):
+            created.append(kw["score_id"])
+
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLF())
+    rule = {"A": {"scene_count_match_rate": 1.0, "subtitle_sync_error": None,
+                  "audio_duration_variance": 0.05},
+            "B": {"scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1,
+                  "audio_duration_variance": 0.05}}
+    asyncio.run(es.store_evaluation_results(
+        "run-a", "run-b", {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR}, rule, _PAIR_A))
+
+    assert "run-a-subtitle_sync_error_A" not in created       # the one bad key
+    assert "run-b-subtitle_sync_error_B" in created           # variant B survived
+    assert "run-b-audio_duration_variance_B" in created       # and so did everything after
+
+
+def test_rule_tiebreak_wrapper_matches_the_dict_form():
+    """The dataclass entry point converts through `_rule_metrics_to_dict` (pct → ratio
+    for audio variance). The scale changes but the order relation does not, so the
+    wrapper and the dict form must agree."""
+    ma, mb = es._compute_rule_metrics(fx.state_a(), fx.state_b())
+    assert es._rule_tiebreak(ma, mb) == es._rule_tiebreak_from_dicts(
+        es._rule_metrics_to_dict(ma), es._rule_metrics_to_dict(mb))
 
 
 # ── Score parsing (AC1) ─────────────────────────────────────────────────────
@@ -823,9 +1151,16 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
     asyncio.run(es.store_evaluation_results("run-a", "run-b", llm, rule, _PAIR_A))
     second_count = len(created)
 
-    # Same number of scores (6 axis + 1 pairwise + 8 rule-based = 15; Story 11.4
-    # added cut_alignment_error)
-    assert first_count == second_count == 15
+    # 6 axis + 1 pairwise + 6 rule-based = 13.
+    #
+    # UPDATED BY STORY 13.2, and the drop from 15 is the point: `_RULE_A`/`_RULE_B`
+    # are LEGACY 3-key dicts, and the old loop read every metric with `.get(metric, 0)`
+    # — so it silently published `cut_alignment_error = 0.0` for a pair that never
+    # measured it. Absent now means absent. That matters most for the visual axes this
+    # story adds: ingesting `unreadable_rate = 0.0` would publish "no unreadable
+    # frames" for a run nobody looked at. See the full-dict test below for the count
+    # when every metric IS present.
+    assert first_count == second_count == 13
 
     # Verify score_ids use the idempotency pattern
     expected_ids = {
@@ -836,9 +1171,43 @@ def test_store_results_idempotent_scores(_memdb, monkeypatch):
         "run-a-scene_count_match_rate_A", "run-b-scene_count_match_rate_B",
         "run-a-subtitle_sync_error_A", "run-b-subtitle_sync_error_B",
         "run-a-audio_duration_variance_A", "run-b-audio_duration_variance_B",
-        "run-a-cut_alignment_error_A", "run-b-cut_alignment_error_B",
     }
     assert set(created) == expected_ids
+
+
+def test_store_results_ingests_every_present_metric_including_visual(_memdb, monkeypatch):
+    """Story 13.2: a full 8-metric dict ingests all 8 per variant, visual axes included.
+
+    The companion to the legacy-dict test above — together they pin the contract as
+    "one score per metric that was actually measured", in both directions.
+    """
+    _seed_run("run-a")
+    _seed_run("run-b")
+    created: list[str] = []
+
+    class _FakeLF:
+        def create_trace_id(self, **kw):
+            return "trace-pair-full"
+        def create_score(self, **kw):
+            created.append(kw["score_id"])
+
+    monkeypatch.setattr(es, "get_client", lambda: _FakeLF())
+
+    full = {
+        "scene_count_match_rate": 1.0, "subtitle_sync_error": 0.1,
+        "audio_duration_variance": 0.05, "cut_alignment_error": 0.2,
+        "motion_archetype_coverage": 1.0, "motion_repeat_ratio": 0.0154,
+        "unreadable_rate": 0.182, "mean_dsg_score": 0.61,
+    }
+    asyncio.run(es.store_evaluation_results(
+        "run-a", "run-b", {"A": _SCORES_A_CLEAR, "B": _SCORES_B_CLEAR},
+        {"A": full, "B": dict(full)}, _PAIR_A))
+
+    # 6 axis + 1 pairwise + 16 rule-based
+    assert len(created) == 23
+    for metric in ("motion_archetype_coverage", "motion_repeat_ratio",
+                   "unreadable_rate", "mean_dsg_score"):
+        assert f"run-a-{metric}_A" in created and f"run-b-{metric}_B" in created
 
 
 def test_store_results_categorical_tie_and_trace_seed(_memdb, monkeypatch):

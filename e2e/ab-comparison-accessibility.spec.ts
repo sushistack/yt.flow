@@ -119,13 +119,28 @@ test.describe('@P1 SYS-E2E-002 A/B comparison + accessibility floor', () => {
       ab_result: {
         winner: 'A',
         reason: 'Variant A가 더 안정적입니다.',
-        llm_scores: {
+        // CORRECTED IN STORY 13.2 along with types.ts and the vitest fixture. This
+        // mock used `llm_scores` / `rule_scores` with `scene_count_match` /
+        // `subtitle_sync` — names the backend has never written (see
+        // eval_service._axis_scores_to_dict / _rule_metrics_to_dict). Every score cell
+        // rendered the not-measured placeholder while the assertion below still passed,
+        // because the assertion and the mock agreed with each other rather than with
+        // the backend. Keep these key names in step with the backend, not with the UI.
+        axis_scores: {
           A: { atmosphere: 5, narrative_coherence: 4, article_fidelity: 4 },
           B: { atmosphere: 3, narrative_coherence: 3, article_fidelity: 3 },
         },
-        rule_scores: {
-          A: { scene_count_match: 1, subtitle_sync: 1, audio_duration_variance: 0 },
-          B: { scene_count_match: 1, subtitle_sync: 1, audio_duration_variance: 0 },
+        // The visual pair is omitted on purpose: it exists only for runs the offline
+        // scorer was run on, so this mock exercises the "not measured" rendering too.
+        rule_based_scores: {
+          A: {
+            scene_count_match_rate: 1, subtitle_sync_error: 1, audio_duration_variance: 0,
+            cut_alignment_error: 0, motion_archetype_coverage: 1, motion_repeat_ratio: 0,
+          },
+          B: {
+            scene_count_match_rate: 1, subtitle_sync_error: 1, audio_duration_variance: 0,
+            cut_alignment_error: 0, motion_archetype_coverage: 1, motion_repeat_ratio: 0,
+          },
         },
       },
       error: null,
@@ -151,7 +166,19 @@ test.describe('@P1 SYS-E2E-002 A/B comparison + accessibility floor', () => {
 
     const variantA = page.getByRole('region', { name: 'Variant A' });
     const variantB = page.getByRole('region', { name: 'Variant B' });
-    await expect(variantA.locator('dl dd')).toHaveText(['5', '4', '4', '1', '1', '0']);
-    await expect(variantB.locator('dl dd')).toHaveText(['3', '3', '3', '1', '1', '0']);
+    // 3 judge axes + 8 rule metrics per variant. The last two rule rows are the visual
+    // pair, absent from the mock above, so they render the not-measured placeholder —
+    // asserting that explicitly is what keeps "absent" from silently becoming 0.
+    const notMeasured = '결과 없음';
+    await expect(variantA.locator('dl dd')).toHaveText([
+      '5', '4', '4',
+      '1', '1', '0', '0', '1', '0',
+      notMeasured, notMeasured,
+    ]);
+    await expect(variantB.locator('dl dd')).toHaveText([
+      '3', '3', '3',
+      '1', '1', '0', '0', '1', '0',
+      notMeasured, notMeasured,
+    ]);
   });
 });

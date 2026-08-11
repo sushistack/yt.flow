@@ -42,7 +42,12 @@ from yt_flow.pipeline.nodes.scenario_chain import (  # noqa: E402
     visual_breakdown_step,
     writing_step,
 )
-from yt_flow.services.eval_service import AXES, _score_run  # noqa: E402
+from yt_flow.services.eval_service import (  # noqa: E402
+    AXES,
+    _motion_archetype_coverage,
+    _motion_repeat_ratio,
+    _score_run,
+)
 from yt_flow.services.prompt_service import build_client, get_prompt, get_prompt_with_fallback  # noqa: E402
 
 DATASET_NAME = "golden-scps"
@@ -307,6 +312,17 @@ async def _run_scenario(
 
 
 def _rule_metrics(scenes: list[dict]) -> dict[str, float]:
+    """Report-only structural columns. Disjoint from ``eval_service.RuleBasedMetrics``.
+
+    Story 13.2 added the two motion columns by CALLING ``eval_service``'s pure
+    functions — both take a list of scene dicts (``SceneState`` is a TypedDict), so
+    there is nothing to reimplement, and one definition cannot drift from the other.
+
+    ``cut_alignment_error`` is deliberately NOT here: the golden set runs the
+    scenario stage only, so no scene has ``word_timings``/``audio_duration`` and
+    ``_cut_alignment_error`` would return a constant 0.0 — a column that looks like
+    a measurement and is not one.
+    """
     shot_counts = [len(sc["shots"]) for sc in scenes]
     return {
         "scene_count": len(scenes),
@@ -314,6 +330,8 @@ def _rule_metrics(scenes: list[dict]) -> dict[str, float]:
         "empty_narration_count": sum(1 for sc in scenes if not sc["narration"].strip()),
         "empty_image_prompt_count": sum(1 for sc in scenes for sh in sc["shots"] if not sh["image_prompt"].strip()),
         "avg_shots_per_scene": statistics.fmean(shot_counts) if shot_counts else 0.0,
+        "motion_archetype_coverage": _motion_archetype_coverage(scenes),
+        "motion_repeat_ratio": _motion_repeat_ratio(scenes),
     }
 
 

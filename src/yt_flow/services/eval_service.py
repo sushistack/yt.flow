@@ -23,21 +23,40 @@ writes and judges the narration, so self-preference bias is *moved*, not
 eliminated. The zero-new-provider fallback is to point the judge back at
 ``deepseek_judge_model`` (still configured for exactly this reason). Revisit at
 Story 13.4 before the promotion gate is unfrozen.
+
+Story 13.2 added four rule metrics in two deliberately asymmetric classes, and
+unified the two tiebreak implementations that could previously disagree:
+
+* **motion** (``motion_archetype_coverage``, ``motion_repeat_ratio``) — pure
+  functions of checkpoint state, always computable, so they *are* tiebreak inputs.
+* **visual** (``unreadable_rate``, ``mean_dsg_score``) — need a paid VLM pass over
+  rendered frames (``scripts/score_shot_narration.py --dsg``), so they exist only
+  when someone ran it. Recorded in ``ab_result``/Langfuse/UI and **record-only,
+  excluded from winner selection pending Story 13.4** — a winner that silently
+  depended on their presence would be a trap.
+
+No libcom composite-quality axis is present, and that absence is deliberate:
+Story 8-16 is ``backlog`` and ``libcom`` is nowhere in the repo, so there is
+nothing to calibrate a threshold against. When 8-16 lands, its axis drops into
+the five wiring points 13.2 built (dataclass → dict → Langfuse tuple → tiebreak
+table → frontend) — no stub, flag, config field or reserved key is kept for it.
 """
 
 import asyncio
 import json
 import logging
+import math
 import re
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
-from yt_flow.domain.state import PipelineState, SceneState
+from yt_flow.domain.state import CAMERA_ARCHETYPES, PipelineState, SceneState, ShotData
 from yt_flow.pipeline.nodes.shot_timing import plan_shot_clips  # services→nodes: run_service precedent
 from yt_flow.services.prompt_service import get_prompt
 
@@ -87,7 +106,17 @@ class RuleBasedMetrics:
     scene_count_match_rate: float       # 0.0–1.0 (symmetric across the pair)
     avg_subtitle_sync_error: float      # seconds between consecutive words
     audio_duration_variance_pct: float  # stddev/mean across scenes, %
-    cut_alignment_error: float          # seconds, cut boundary vs nearest word boundary (Story 11.4)
+    # None == no word timings to check, which is NOT the same as "perfectly aligned"
+    # (Story 13.2 — it became a tiebreak input, and 0.0-means-both would have let the
+    # less-measured run win position 2). See _cut_alignment_error.
+    cut_alignment_error: float | None   # seconds, cut boundary vs nearest word boundary (Story 11.4)
+    # Story 13.2. Motion pair: always computable from state, tiebreak inputs.
+    motion_archetype_coverage: float = 0.0   # 0.0–1.0, higher is better
+    motion_repeat_ratio: float = 0.0         # 0.0–1.0, lower is better
+    # Visual pair: None == the offline visual scorer never ran for this run. NOT
+    # 0.0 — a defaulted unreadable_rate of 0.0 would read as perfect readability.
+    unreadable_rate: float | None = None     # 0.0–1.0, lower is better
+    mean_dsg_score: float | None = None      # 0.0–1.0, higher is better
 
 
 @dataclass
@@ -291,11 +320,13 @@ def _avg_subtitle_sync_error(scenes: list[SceneState]) -> float:
 
     MEANING INVERTED by Story 11.4: tts's provisional timings are gap-free uniform
     splits, so this was always ~0. Real WhisperX timings have inter-word silence —
-    a NONZERO value is now normal, not a regression. Known distortion: tiebreak 3b
-    (determine_winner, lower=better) now weakly prefers a run that FELL BACK to
-    provisional (=degraded) timings over a properly aligned one. Accepted — that
-    path needs both LLM pairwise orders tied AND a scene-count tie, which is rare;
-    redesign lands with the eval-gate unfreeze (research §20).
+    a NONZERO value is now normal, not a regression. Known distortion: the tiebreak
+    (lower=better) weakly prefers a run that FELL BACK to provisional (=degraded)
+    timings over a properly aligned one. **MITIGATED BY DEMOTION IN STORY 13.2, NOT
+    REMOVED**: the unified ``_TIEBREAK_CHAIN`` now puts ``cut_alignment_error`` —
+    the only timing metric whose meaning is not inverted — ahead of this one, so
+    the distorted comparison is only reached when the un-inverted one ties. The
+    metric itself still means the wrong thing; treat a delta here as uninterpretable.
     """
     gaps: list[float] = []
     for sc in scenes:
@@ -312,7 +343,7 @@ def _audio_duration_variance_pct(scenes: list[SceneState]) -> float:
     return 0.0 if mean == 0 else statistics.pstdev(durations) / mean * 100.0
 
 
-def _cut_alignment_error(scenes: list[SceneState], min_shot_clip_sec: float) -> float:
+def _cut_alignment_error(scenes: list[SceneState], min_shot_clip_sec: float) -> float | None:
     """Mean |deviation| (seconds) between each internal shot-cut boundary and the
     nearest word boundary (any word's start/end), across all scenes. [Story 11.4 AC:6]
 
@@ -321,9 +352,25 @@ def _cut_alignment_error(scenes: list[SceneState], min_shot_clip_sec: float) -> 
     start and last clip's end are pinned to 0/audio_duration, not cut decisions.
     ~0 when cuts derive from a clean 1:1 word-timing mapping; > 0 exactly when
     sentence_windows' count-mismatch apportion degrade fired — i.e. the
-    uniform-split regression this story eliminates. Scenes with < 2 clips
-    contribute nothing; 0.0 with no data (existing metric fallback convention).
-    Regression-detection record ONLY — never a determine_winner tiebreak input.
+    uniform-split regression Story 11.4 eliminates. Scenes with < 2 clips contribute
+    nothing.
+
+    PROMOTED TO A TIEBREAK INPUT BY STORY 13.2 (11.4's "regression-detection record
+    ONLY" line is gone, deliberately). It sits at position 2 of ``_TIEBREAK_CHAIN``,
+    ahead of ``subtitle_sync_error``, because it is the only timing metric 11.4 did
+    not invert the meaning of — putting it first *is* the redesign 11.4 deferred.
+
+    **RETURNS ``None``, NOT 0.0, WITH NO DATA — changed by 13.2, and the promotion is
+    exactly why.** Under 11.4's "0.0 with no data" convention the value 0.0 meant both
+    "every cut lands on a word boundary" and "there were no word timings to check",
+    which is harmless for a record but not for a *winner input*: lower-is-better at
+    position 2 would have handed the top-priority tiebreak to whichever run had LESS
+    timing data (WhisperX fell back → no timings → 0.0 → beats a properly aligned run
+    scoring 0.09). ``None`` is omitted from ``_rule_metrics_to_dict``, and
+    ``_rule_tiebreak_from_dicts`` skips a step it cannot compare — so an unmeasured
+    run neither wins nor loses on this axis. Relocating that ambiguity instead of
+    fixing it would have reproduced, at higher priority, the distortion demoting
+    ``subtitle_sync_error`` was meant to mitigate.
     """
     deviations: list[float] = []
     for sc in scenes:
@@ -338,22 +385,218 @@ def _cut_alignment_error(scenes: list[SceneState], min_shot_clip_sec: float) -> 
             continue
         bounds = sorted({t["start_sec"] for t in timings} | {t["end_sec"] for t in timings})
         deviations.extend(min(abs(clip.start - b) for b in bounds) for clip in clips[1:])
-    return statistics.fmean(deviations) if deviations else 0.0
+    return statistics.fmean(deviations) if deviations else None
+
+
+# ── Motion metrics (Story 13.2, pure — no I/O, no Settings) ─────────────────
+
+
+def _motion_key(shot: ShotData) -> str:
+    """This shot's camera archetype, or the single ``"unmapped"`` bucket.
+
+    Read straight off ``ShotData.camera_movement`` (Story 11.2's closed enum).
+    Deliberately NOT through ``pipeline/nodes/video.select_effect``: that collapses
+    ``push_in`` and ``shake`` both to ``"in-center"``, so measuring there would
+    count *direction* diversity instead of *archetype* diversity — and Story 11.3
+    lays separate fBm noise on ``shake``, so the two really do render differently.
+    A legacy free-text hint or ``None`` is not an archetype and shares one bucket:
+    those shots are actually driven by ``select_effect``'s ``_DIRECTION_POOL``
+    round-robin, which carries no archetype at all.
+    """
+    movement = shot.get("camera_movement")
+    return movement if movement in CAMERA_ARCHETYPES else "unmapped"
+
+
+def _motion_archetype_coverage(scenes: list[SceneState]) -> float:
+    """Distinct ``CAMERA_ARCHETYPES`` actually used ÷ 5 (higher is better).
+
+    ``"unmapped"`` shots never contribute to the numerator, so a run whose
+    ``camera_movement`` values are all ``None``/legacy scores 0.0. No shots → 0.0
+    (the existing rule-metric no-data convention).
+
+    OBSERVED VALUE, measured on reference run ``8a9a288b`` (9 scenes / 66 shots —
+    push_in 20, drift 16, locked 15, pull_back 9, shake 6): **1.0**. Do not read 1.0
+    as a broken metric; it is what a multi-mood episode is supposed to score.
+
+    **The reachable range is set by mood, not by quality, and 0.2 is effectively
+    unreachable.** ``scenario_chain.CAMERA_PREFERENCES`` exposes exactly **3** of the 5
+    archetypes per mood, and ``_enforce_camera_variety`` guarantees ≥2 distinct
+    archetypes in any scene with ≥2 shots. So a single-mood episode floors around
+    **0.4–0.6** while a healthy multi-mood one reaches 1.0, and only a genuinely dead
+    ``camera_movement`` path (all ``None``/legacy → ``"unmapped"``) reaches 0.0.
+
+    Two consequences, both load-bearing:
+
+    * **0.4 does not distinguish a healthy single-mood episode from a half-broken
+      wiring path.** Read it together with the archetype set actually present, not
+      alone.
+    * It is nonetheless a **tiebreak input at position 4**, and the step between
+      reachable values is 0.2 — far above its epsilon — so it *can* decide a stored
+      winner. What it then rewards is **mood variety**, which is exactly the kind of
+      thing an A/B prompt variant changes. Treat a win on this axis as "more mood
+      variety", never as "better motion".
+
+    Same failure shape as Story 10.4's dead ``legible`` Likert — an axis whose value
+    barely moves on healthy input — caught here before implementation instead of after.
+    """
+    used = {
+        key for sc in scenes for sh in (sc.get("shots") or [])
+        if (key := _motion_key(sh)) != "unmapped"
+    }
+    return len(used) / len(CAMERA_ARCHETYPES)
+
+
+def _motion_repeat_ratio(scenes: list[SceneState]) -> float:
+    """Fraction of adjacent shot pairs sharing a motion key (lower is better).
+
+    Shots are flattened in run order: scenes by ascending ``scene_num``, shots in
+    their in-scene order.
+
+    **Scene boundaries are counted, deliberately, and a nonzero value here is NOT
+    an 11.2 violation.** ``scenario_chain._enforce_camera_variety`` forbids repeats
+    only *within* a scene (Story 5.16's dip-to-black already breaks visual
+    continuity across the boundary, so boundaries are intentionally exempt there).
+    Counting within-scene pairs only would make this metric a constant 0.0 and
+    worthless as an axis; boundary pairs are the only pairs that can ever repeat,
+    which caps the reachable range at ``[0, (scenes-1)/(shots-1)]``. Do not "fix"
+    ``_enforce_camera_variety`` because this number is above zero.
+
+    OBSERVED VALUE AND RANGE, measured on reference run ``8a9a288b``: **0.0154**
+    (1 of 65 pairs; reachable range there is ``[0, 0.123]``), and that single
+    repeat is a ``locked``→``locked`` scene boundary. It goes to 1.0 when every shot
+    lands in ``"unmapped"``, i.e. when 11.2's wiring is dead.
+
+    **It is a tiebreak input at position 3, and one boundary pair (1/65 ≈ 0.0154) is
+    already above its epsilon** — so this axis can decide a stored winner on a single
+    scene boundary. Since only boundaries can repeat, what it actually measures across
+    two variants is *how their scenes are cut up*: a variant with more scenes has a
+    larger reachable range and is structurally more exposed. Read a win here as "fewer
+    repeated archetypes across scene boundaries", not as "better motion".
+
+    Fewer than 2 shots → 0.0. That is the best possible value for a run with no
+    adjacent pair at all; a 1-shot run would therefore win this step. Left as 0.0
+    because the I/O contract specifies it and a run that degenerate cannot reach A/B
+    evaluation (``_validate_pair`` requires two complete runs, and a complete run has
+    every scene's shots) — but it is the one input here that is best-by-vacuity.
+    """
+    keys = [
+        _motion_key(sh)
+        for sc in sorted(scenes, key=lambda sc: sc["scene_num"])
+        for sh in (sc.get("shots") or [])
+    ]
+    if len(keys) < 2:
+        return 0.0
+    return sum(a == b for a, b in zip(keys, keys[1:])) / (len(keys) - 1)
+
+
+# ── Visual metrics (Story 13.2) — one edge read, then pure ──────────────────
+
+VISUAL_SCORE_FILENAME = "visual_score.json"
+"""Filename ``scripts/score_shot_narration.py --dsg`` writes its report to, under
+``<workspace_path>/<run_id>/``. It lives HERE, in the consumer, and the script
+imports it: ``scripts/`` already puts ``src`` on ``sys.path`` and imports
+``yt_flow.*``, but ``src/`` cannot import ``scripts/``. One spelling of the
+contract, in the direction the dependency already runs."""
+
+
+def _load_visual_scores(run_id: str, workspace_path: str) -> dict | None:
+    """The run's offline visual-score report, or ``None`` when there isn't one.
+
+    The ONLY I/O in the rule-metric layer, and it is called from ``evaluate_ab``,
+    not from ``_compute_rule_metrics`` — every metric function stays pure and takes
+    the already-parsed dict (``_avg_subtitle_sync_error``'s convention). Absent is
+    the normal case: nobody has to pay for a VLM pass to evaluate a pair. A
+    corrupt/unparseable artifact also reads as absent, because a half-parsed
+    readability number is worse than no number.
+
+    The ``isinstance`` check is not decoration: ``[]``, ``"x"`` and ``3`` are all valid
+    JSON that ``json.loads`` returns happily, and a non-dict reaching ``_unreadable_rate``
+    would raise ``AttributeError`` **inside** ``evaluate_ab``'s span, marking the trace
+    failed and aborting an A/B evaluation that does not depend on this file at all. A
+    wrong-shaped optional artifact must not be able to kill the evaluation.
+    """
+    path = Path(workspace_path) / run_id / VISUAL_SCORE_FILENAME
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _unreadable_rate(report: dict) -> float | None:
+    """Fraction of scored frames the blind judge could not read (lower is better).
+
+    Pure over an already-parsed ``visual_score.json``. Story 10.4 measured this at
+    12/66 = **0.182** on run ``8a9a288b`` — and it only exists because 10.4's
+    iteration 2 replaced a dead 1–5 ``legible`` Likert (66 frames produced
+    ``{4: 46, 5: 20}``) with the boolean the judge was already volunteering.
+
+    ``None`` — never 0.0 — when nothing was scored: 0.0 would read as "no
+    unreadable frames", the exact opposite of "no measurement".
+
+    Every field is type- and range-checked because this file is written by a separate
+    process and may be stale, truncated or hand-edited. An out-of-range pair would
+    otherwise publish a "fraction" above 1.0, and a string would raise inside
+    ``evaluate_ab``. Unparseable reads as unmeasured.
+    """
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        return None
+    scored, unreadable = summary.get("scored"), summary.get("unreadable")
+    if not isinstance(scored, int) or isinstance(scored, bool) or scored <= 0:
+        return None
+    if not isinstance(unreadable, int) or isinstance(unreadable, bool):
+        return None
+    return unreadable / scored if 0 <= unreadable <= scored else None
+
+
+def _mean_dsg_score(report: dict) -> float | None:
+    """Mean per-shot DSG satisfied-fraction (0.0–1.0, higher is better), or ``None``.
+
+    ``summary.mean_dsg`` is already the mean over rows that were *scorable*; a row
+    whose propositions were all person-kind is unscorable and excluded there rather
+    than counted as 0.0 (see the scorer's ``dsg_score``). ``None`` when the report
+    predates ``--dsg`` — the 1–5 ``match`` Likert this replaces is not comparable
+    to a fraction and is deliberately not coerced into one.
+
+    A non-numeric or out-of-range value also reads as unmeasured. Unchecked it would
+    travel into ``ab_result`` and then to the UI, where ``formatScore`` calls
+    ``value.toFixed`` and a string blanks the comparison page.
+    """
+    summary = report.get("summary")
+    value = summary.get("mean_dsg") if isinstance(summary, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) and 0.0 <= value <= 1.0 else None
 
 
 def _compute_rule_metrics(
-    state_a: PipelineState, state_b: PipelineState, min_shot_clip_sec: float = 2.0
+    state_a: PipelineState, state_b: PipelineState, min_shot_clip_sec: float = 2.0,
+    visual_a: dict | None = None, visual_b: dict | None = None,
 ) -> tuple[RuleBasedMetrics, RuleBasedMetrics]:
+    """Both runs' rule metrics. ``visual_*`` are already-parsed ``visual_score.json``
+    reports (``None`` when the offline scorer never ran) — this function does no I/O.
+
+    Story 13.2 switched to keyword construction: nine fields built positionally is
+    how two metrics get silently swapped.
+    """
     scenes_a, scenes_b = state_a["scenes"], state_b["scenes"]
     match_rate = _scene_count_match_rate(len(scenes_a), len(scenes_b))  # symmetric across the pair
-    return (
-        RuleBasedMetrics(len(scenes_a), match_rate,
-                         _avg_subtitle_sync_error(scenes_a), _audio_duration_variance_pct(scenes_a),
-                         _cut_alignment_error(scenes_a, min_shot_clip_sec)),
-        RuleBasedMetrics(len(scenes_b), match_rate,
-                         _avg_subtitle_sync_error(scenes_b), _audio_duration_variance_pct(scenes_b),
-                         _cut_alignment_error(scenes_b, min_shot_clip_sec)),
-    )
+
+    def build(scenes: list[SceneState], visual: dict | None) -> RuleBasedMetrics:
+        return RuleBasedMetrics(
+            scene_count=len(scenes),
+            scene_count_match_rate=match_rate,
+            avg_subtitle_sync_error=_avg_subtitle_sync_error(scenes),
+            audio_duration_variance_pct=_audio_duration_variance_pct(scenes),
+            cut_alignment_error=_cut_alignment_error(scenes, min_shot_clip_sec),
+            motion_archetype_coverage=_motion_archetype_coverage(scenes),
+            motion_repeat_ratio=_motion_repeat_ratio(scenes),
+            unreadable_rate=None if visual is None else _unreadable_rate(visual),
+            mean_dsg_score=None if visual is None else _mean_dsg_score(visual),
+        )
+
+    return build(scenes_a, visual_a), build(scenes_b, visual_b)
 
 
 # ── Pairwise comparison + winner determination (AC3, AC4) ──────────────────
@@ -376,23 +619,99 @@ async def _pairwise_once(scp_text: str, first: str, second: str, s: Settings) ->
     return {"first": "A", "second": "B", "tie": "tie"}[winner]
 
 
-def _rule_tiebreak(metrics_a: RuleBasedMetrics, metrics_b: RuleBasedMetrics) -> str:
-    """OQ-6 rule-based tiebreaker: lower subtitle sync error and lower audio
-    variance each score a point; best total wins, else "tie".
+# Story 13.2: THE rule tiebreak, in one place. Keys are ``_rule_metrics_to_dict``'s
+# spelling — i.e. ``ab_result.rule_based_scores`` — because a stored row has to be
+# re-scorable by the same code that produced it.
+#
+#   #  key                        direction  eps      note
+#   1  scene_count_match_rate     higher     0.01     symmetric across the pair → NEVER
+#                                                     fires; kept so stored rows keep
+#                                                     their meaning
+#   2  cut_alignment_error        lower      0.01 s   promoted in 13.2; the one timing
+#                                                     metric 11.4 did not invert
+#   3  motion_repeat_ratio        lower      0.01     new in 13.2
+#   4  motion_archetype_coverage  higher     0.1      new in 13.2; its own step is 0.2,
+#                                                     so a smaller eps would be noise
+#   5  subtitle_sync_error        lower      0.01 s   DEMOTED in 13.2 (see the metric)
+#   6  audio_duration_variance    lower      0.0001   ratio (= 0.01 percentage point)
+#
+# EPSILON IS PER KEY, not one shared 0.01, because these six are not in one unit: two
+# are seconds, three are unitless 0–1 ratios with different granularities, and
+# ``audio_duration_variance`` is a percentage divided by 100. A single absolute 0.01
+# meant a 0.6-percentage-point audio-variance gap tied while a 10 ms cut gap decided —
+# and it made the old dataclass path (strict ``<`` on the pct scale) and the old dict
+# path (``> 0.01`` on the ratio scale) disagree on real inputs (8.0 % vs 8.6 % → the
+# point-sum said "A", the lexicographic dict said "tie").
+#
+# ``unreadable_rate``/``mean_dsg_score`` are deliberately ABSENT: they exist only if
+# someone ran the offline VLM pass, and a winner that silently depended on that would
+# be a trap. Their inclusion is Story 13.4's decision, not this table's.
+_TIEBREAK_CHAIN: tuple[tuple[str, bool, float], ...] = (  # (key, higher_is_better, eps)
+    ("scene_count_match_rate", True, 0.01),
+    ("cut_alignment_error", False, 0.01),
+    ("motion_repeat_ratio", False, 0.01),
+    ("motion_archetype_coverage", True, 0.1),
+    ("subtitle_sync_error", False, 0.01),
+    ("audio_duration_variance", False, 0.0001),
+)
 
-    ponytail: scene_count_match_rate is symmetric across the pair, so it can't
-    separate A from B — the tiebreaker turns on the two per-run metrics only.
+
+def _comparable(value: object) -> float | None:
+    """``value`` as a finite float, or ``None`` if it cannot be compared.
+
+    Rejects ``None``, strings, ``bool`` (an ``int`` subtype that would read as 0/1),
+    NaN and infinities. A stored ``ab_result`` row is JSON that other code wrote, and
+    ``json.loads`` happily accepts ``NaN``; ``abs(nan - x) > eps`` is always ``False``,
+    so an unguarded NaN does not raise — it silently makes a step tie and lets a later
+    metric pick the winner. Silent is the failure mode worth spending a guard on.
     """
-    pa = pb = 0
-    if metrics_a.avg_subtitle_sync_error < metrics_b.avg_subtitle_sync_error:
-        pa += 1
-    elif metrics_b.avg_subtitle_sync_error < metrics_a.avg_subtitle_sync_error:
-        pb += 1
-    if metrics_a.audio_duration_variance_pct < metrics_b.audio_duration_variance_pct:
-        pa += 1
-    elif metrics_b.audio_duration_variance_pct < metrics_a.audio_duration_variance_pct:
-        pb += 1
-    return "A" if pa > pb else "B" if pb > pa else "tie"
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _rule_tiebreak_from_dicts(a: dict, b: dict) -> str:
+    """OQ-6 rule tiebreak over ``rule_based_scores`` dicts → ``"A"``|``"B"``|``"tie"``.
+
+    Lexicographic: the first key whose two values differ by more than that key's own
+    epsilon decides, and nothing after it is consulted.
+
+    **A step is SKIPPED unless both sides carry a comparable number.** No defaulting:
+    substituting 0.0 for a missing key would hand the step to whichever run was not
+    measured, because four of the six keys are lower-is-better and 0.0 is their best
+    possible value. That is the ``cut_alignment_error`` trap in particular — see its
+    docstring — and it is why absence is skipped rather than filled in. Consequences
+    that fall out of the same rule: a key missing from BOTH sides (an ``ab_result`` row
+    stored before 11.4 or 13.2, fed back through ``determine_winner``) ties that step
+    and falls through instead of raising ``KeyError``, and a ``null``/NaN/string value
+    in a hand-edited or merged row cannot decide a winner either.
+
+    Story 13.2 unified this with ``determine_winner``'s old hardcoded 3a/3b/3c block,
+    which could return a DIFFERENT winner from the old ``_rule_tiebreak``: on a 1–1
+    split (A better on one metric, B on another) the point-sum said ``"tie"`` while
+    lexicographic said ``"A"``, so ``EvaluationResult.winner`` and the stored
+    ``ab_result.winner`` disagreed. Intended behaviour changes that came with the
+    merge, recorded rather than discovered later: aggregation is now lexicographic
+    (not point-sum), and the epsilon is an explicit per-key band (see the table)
+    instead of the dataclass path's strict ``<`` and the dict path's shared ``0.01``.
+    """
+    for key, higher_is_better, eps in _TIEBREAK_CHAIN:
+        va, vb = _comparable(a.get(key)), _comparable(b.get(key))
+        if va is None or vb is None:
+            continue
+        if abs(va - vb) > eps:
+            return "A" if (va > vb) == higher_is_better else "B"
+    return "tie"
+
+
+def _rule_tiebreak(metrics_a: RuleBasedMetrics, metrics_b: RuleBasedMetrics) -> str:
+    """Dataclass-shaped entry point to ``_rule_tiebreak_from_dicts``. One definition.
+
+    The dict form uses the ratio scale for ``audio_duration_variance`` (pct ÷ 100)
+    where the dataclass field is a percentage, but the *order relation* is identical,
+    so converting first cannot change the winner.
+    """
+    return _rule_tiebreak_from_dicts(_rule_metrics_to_dict(metrics_a), _rule_metrics_to_dict(metrics_b))
 
 
 async def _pairwise_compare(
@@ -532,9 +851,16 @@ async def evaluate_ab(run_a_id: str, run_b_id: str) -> EvaluationResult:
     state_b = await _load_state(run_b_id, s.db_path)
     text_a, text_b = _artifact_text(state_a), _artifact_text(state_b)
 
+    # Story 13.2: the one filesystem read the metric layer needs, done here at the
+    # edge so _compute_rule_metrics stays pure. Absent for every run nobody ran the
+    # offline visual scorer on, which is the normal case.
+    visual_a = _load_visual_scores(run_a_id, s.workspace_path)
+    visual_b = _load_visual_scores(run_b_id, s.workspace_path)
+
     span = _enter_trace(ab_pair_id)
     try:
-        metrics_a, metrics_b = _compute_rule_metrics(state_a, state_b, s.min_shot_clip_sec)
+        metrics_a, metrics_b = _compute_rule_metrics(state_a, state_b, s.min_shot_clip_sec,
+                                                     visual_a, visual_b)
         scores_a, scores_b = await asyncio.gather(
             _score_run(state_a["scp_text"], text_a, s),
             _score_run(state_b["scp_text"], text_b, s),
@@ -627,27 +953,11 @@ def determine_winner(
     if winner in ("A", "B"):
         return (winner, None)
 
-    # Step 3: Rule-based tiebreaker
-    # 3a. Scene count match rate (higher = better)
-    a_scene = rule_based_scores["A"]["scene_count_match_rate"]
-    b_scene = rule_based_scores["B"]["scene_count_match_rate"]
-    if abs(a_scene - b_scene) > 0.01:
-        return ("A" if a_scene > b_scene else "B", None)
-
-    # 3b. Subtitle sync error (lower = better)
-    a_sync = rule_based_scores["A"]["subtitle_sync_error"]
-    b_sync = rule_based_scores["B"]["subtitle_sync_error"]
-    if abs(a_sync - b_sync) > 0.01:
-        return ("A" if a_sync < b_sync else "B", None)
-
-    # 3c. Audio duration variance (lower = better)
-    a_var = rule_based_scores["A"]["audio_duration_variance"]
-    b_var = rule_based_scores["B"]["audio_duration_variance"]
-    if abs(a_var - b_var) > 0.01:
-        return ("A" if a_var < b_var else "B", None)
-
-    # Step 4: All tiebreakers exhausted → tie
-    return ("tie", None)
+    # Step 3: Rule-based tiebreaker — the SAME function ``_rule_tiebreak`` uses, so
+    # ``EvaluationResult.winner`` and the stored ``ab_result.winner`` can no longer
+    # disagree (Story 13.2). Returns "tie" when the whole chain is exhausted, which
+    # is also step 4. All keys are read with .get, so legacy stored rows re-score.
+    return (_rule_tiebreak_from_dicts(rule_based_scores["A"], rule_based_scores["B"]), None)
 
 
 # ── Story 4.3: Result storage (DB + Langfuse, AD-10 non-fatal) ──────────────
@@ -727,12 +1037,22 @@ async def store_evaluation_results(
             score_id=f"{run_a_id}-pairwise_winner",
         )
 
-        # Rule-based metrics as NUMERIC scores
+        # Rule-based metrics as NUMERIC scores. Story 13.2 added the motion pair and
+        # the visual pair, and stopped defaulting an absent key to 0.0: the visual
+        # keys are only present when the offline scorer ran, and ingesting 0.0 for
+        # `unreadable_rate` would publish "perfect readability" for a run nobody
+        # measured. A legacy dict missing a key simply contributes no score.
         for variant in ("A", "B"):
             variant_run_id = run_a_id if variant == "A" else run_b_id
             for metric in ("scene_count_match_rate", "subtitle_sync_error", "audio_duration_variance",
-                           "cut_alignment_error"):
-                value = float(rule_based_scores[variant].get(metric, 0))
+                           "cut_alignment_error", "motion_archetype_coverage", "motion_repeat_ratio",
+                           "unreadable_rate", "mean_dsg_score"):
+                # _comparable, not float(): a null/string in a stored row would raise
+                # INSIDE the AD-10 try and silently drop every remaining score,
+                # including all of variant B's. One bad key must cost one score.
+                value = _comparable(rule_based_scores[variant].get(metric))
+                if value is None:
+                    continue
                 langfuse.create_score(
                     name=f"{metric}_{variant}",
                     value=value,
@@ -758,13 +1078,31 @@ def _axis_scores_to_dict(scores: AxisScores) -> dict:
 
 
 def _rule_metrics_to_dict(metrics: RuleBasedMetrics) -> dict:
-    return {
+    """The ``ab_result.rule_based_scores`` schema, and the tiebreak chain's input shape.
+
+    Story 13.2: the two motion keys are always emitted (pure functions of state), the
+    two visual keys only when they were actually measured. Absence is expressed by
+    OMITTING the key — a defaulted ``unreadable_rate: 0.0`` would be published as
+    "no unreadable frames", which is a reading nobody took.
+    """
+    out = {
         "scene_count_match_rate": metrics.scene_count_match_rate,
         "subtitle_sync_error": metrics.avg_subtitle_sync_error,
         # pct → proportion (0–1) to match the ab_result schema (spec 4.3)
         "audio_duration_variance": metrics.audio_duration_variance_pct / 100.0,
-        "cut_alignment_error": metrics.cut_alignment_error,
+        "motion_archetype_coverage": metrics.motion_archetype_coverage,
+        "motion_repeat_ratio": metrics.motion_repeat_ratio,
     }
+    # Omitted-when-unmeasured, all three for the same reason: the tiebreak skips a key
+    # it cannot compare, so absence costs the run nothing, whereas a defaulted 0.0
+    # would be its BEST possible value on every one of these (lower-is-better for two,
+    # and "no unreadable frames" for the third).
+    for key, value in (("cut_alignment_error", metrics.cut_alignment_error),
+                       ("unreadable_rate", metrics.unreadable_rate),
+                       ("mean_dsg_score", metrics.mean_dsg_score)):
+        if value is not None:
+            out[key] = value
+    return out
 
 
 def _pairwise_to_dict(pairwise: PairwiseResult) -> dict:

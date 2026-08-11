@@ -40,6 +40,35 @@ data said so (see ``10-4-live-validation/README.md``):
   shot's verdict) beside the per-shot rows. Once a shot may cover several sentences
   or several shots may split one, two legs share no shot slots and a per-shot pairing
   is undefined; the sentence is the invariant both legs are built over.
+
+Iteration 3 (Story 13.2) replaces the 1--5 ``match`` Likert with ``--dsg``, a
+Davidsonian-Scene-Graph decomposition (`arxiv 2310.18235`, ICLR 2024). Both of the
+Likert's measured defects are structural and neither is fixable by rewording it:
+
+* **No resolution.** 29 of ``baseline_v2.json``'s 66 rows sit at exactly 3, and the
+  §12 merge probe left 15 of 16 rows unmoved. A satisfied-fraction over ~5 atomic
+  propositions is continuous and cannot pile on one integer.
+* **The card-absence confound.** ``match`` docks a frame for people the card layer
+  composites separately. v2 tried to fix this with a *prompt sentence*
+  (``_CARD_NOTE``) and it did not work: ``S00202`` is a wall-texture study,
+  ``readable: false``, ``event: "unclear"`` — and ``match: 5``, earned off the
+  composited card's mask. v3 removes it **structurally**: person-kind propositions
+  are generated, then excluded from both numerator and denominator, and the excluded
+  count is recorded per row. That turns the confound removal into a number.
+
+**Why DSG and not VQAScore, measured rather than assumed.** VQAScore
+(`arxiv 2404.01291`) is one call scored by the probability of the "yes" token, so it
+needs token logprobs from the judge. Probed this session against
+``https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions``:
+``qwen-vl-plus`` returns ``"logprobs": null`` even when sent ``logprobs: true,
+top_logprobs: 5`` (HTTP 200, content ``'Yes.'``), while ``qwen-plus`` on the **same
+endpoint and the same key** returns a full ``logprobs.content[0].top_logprobs``. So
+the endpoint supports logprobs and our vision judge does not — VQAScore is not
+implementable here. DSG needs no logprobs at all, only yes/no answers.
+
+``--dsg`` also writes its report to ``<workspace_path>/<run>/visual_score.json``
+(``eval_service.VISUAL_SCORE_FILENAME``), which is where ``evaluate_ab`` looks for
+``unreadable_rate``/``mean_dsg_score``.
 """
 
 import argparse
@@ -60,7 +89,7 @@ import httpx  # noqa: E402
 
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.pipeline.nodes.scenario_chain import split_sentences  # noqa: E402
-from yt_flow.services.eval_service import _load_state  # noqa: E402
+from yt_flow.services.eval_service import VISUAL_SCORE_FILENAME, _load_state  # noqa: E402
 from yt_flow.services.vision_check import _DASHSCOPE_VISION_ENDPOINT  # noqa: E402
 
 # Story 5.14's integrity floor, reused: a sub-1KB file is a placeholder, not a frame.
@@ -124,6 +153,107 @@ Field rules:
 - evidence: what in the frame carries this sentence's event.
 - missing: what this sentence describes that the frame does not show. Empty string if
   nothing is missing."""
+
+# ── DSG instrument (Story 13.2) ──────────────────────────────────────────────
+
+# Question generation is TEXT-ONLY, so it does not need the vision judge — and must
+# not use it: qwen-vl-plus is the weaker model at structured decomposition. Same
+# DashScope key, same endpoint, no new provider and no new credential (verified this
+# session: qwen-plus serves this endpoint under character_vision_api_key).
+QG_MODEL = "qwen-plus"
+
+# Every kind the decomposer may emit. `person` is generated deliberately and then
+# excluded from scoring — see `dsg_score`.
+_PROP_KINDS = ("place", "object", "state", "action", "attribute", "person")
+_PERSON_KIND = "person"
+# The prompt asks for 3-7. This is the runaway guard, not the target: each proposition
+# past the first costs one paid image call per frame, so an unbounded reply is a bill.
+_MAX_PROPOSITIONS = 12
+
+QG_PROMPT = """You are decomposing one or more sentences of Korean narration from an animated
+SCP Foundation video into atomic visual propositions, so a separate judge can check each one
+against a single rendered still frame.
+
+The narration sentence(s):
+\"\"\"
+{sentences}
+\"\"\"
+
+The frame is a BACKGROUND PLATE: every person, body and creature in this story is drawn
+separately as a character card and composited on top afterwards, so the plate itself carries
+the place and the physical evidence of what happened there. Your decomposition must therefore
+cover BOTH layers, and label which is which.
+
+Decompose them into 3-7 ATOMIC propositions. Atomic means exactly one fact per proposition:
+one place, one object, one state of one object, one action, or one attribute. Never join two
+facts with "and".
+
+Always include the background layer. Even when the sentence is entirely about a person, ask
+what PLACE it happens in and what PHYSICAL TRACE the event would leave there — a disturbed
+floor, a moved object, an open door, a mark, debris, a light left on — and write those as
+propositions. Only omit them if the sentence genuinely implies no place and no physical trace
+whatsoever; in that case emit only body propositions, which is a true and useful answer.
+Never invent a detail the sentence does not imply just to fill the list.
+
+STEP 1 — for every proposition, first answer this to yourself: **is its subject a body?**
+`subject` is the bare noun the proposition is about ("corridor", "hand", "robe", "door").
+`about_body` is true when that subject is a person, a creature, a body, ANY body part
+(hand, face, eye, leg, silhouette), clothing or a mask worn by someone, or an action or
+posture performed by a body. Otherwise false. Judge the SUBJECT, not the sentence: "the
+robe reaches the floor" is about_body true (a robe is worn); "the floor is cracked" is
+about_body false. Getting this wrong is the single worst error you can make here.
+
+`kind` is exactly one of: place, object, state, action, attribute, person.
+Set `kind` to `person` whenever `about_body` is true. The two must agree.
+These propositions are WANTED — write them, label them honestly, and do not omit or
+disguise them. They are filtered out later by the scorer, not by you.
+
+STEP 2 — build a DEPENDENCY GRAPH. If a proposition only means anything when another is
+true — an object's state depends on the object existing, an object depends on the place —
+set its `parent` to that proposition's `id`. A proposition that stands on its own has
+`parent: null`. List every parent BEFORE its children.
+**A proposition with `about_body` false must NEVER have a body proposition as its parent.**
+A room, a door or a floor does not depend on anyone being present. Parent scenery to
+scenery only; a body proposition may be parented to the place it is in.
+
+Each `question` is one yes/no question in English, answerable by LOOKING AT ONE STILL FRAME,
+phrased so that "yes" means the frame satisfies the proposition. A question must never
+mention the narration, the sentence, sound, what happens before or after, or how a viewer
+feels.
+
+Worked example — narration "가냘픈 실루엣, 바닥까지 닿는 검은 로브." (a frail silhouette, a black
+robe reaching the floor). EVERY proposition here is about a body, so all four are `person`:
+{{"propositions": [
+  {{"id": "p1", "kind": "person", "subject": "silhouette", "about_body": true, "parent": null, "question": "Is a human-shaped figure present?"}},
+  {{"id": "p2", "kind": "person", "subject": "silhouette", "about_body": true, "parent": "p1", "question": "Is the figure's silhouette thin or frail?"}},
+  {{"id": "p3", "kind": "person", "subject": "robe", "about_body": true, "parent": "p1", "question": "Is the figure wearing a black robe?"}},
+  {{"id": "p4", "kind": "person", "subject": "robe", "about_body": true, "parent": "p3", "question": "Does the black robe reach down to the floor?"}}
+]}}
+
+Second worked example — "손이 닿는 순간, 그는 죽었습니다." (the moment the hand touched, he died).
+A hand is a body part and dying is something a body does, so those are `person`; the marks
+left behind on the floor are not:
+{{"propositions": [
+  {{"id": "p1", "kind": "place", "subject": "room", "about_body": false, "parent": null, "question": "Is this the interior of a room?"}},
+  {{"id": "p2", "kind": "person", "subject": "hand", "about_body": true, "parent": null, "question": "Is a hand visible?"}},
+  {{"id": "p3", "kind": "person", "subject": "body", "about_body": true, "parent": null, "question": "Is a motionless body present?"}},
+  {{"id": "p4", "kind": "state", "subject": "floor", "about_body": false, "parent": "p1", "question": "Are there scuff marks or disturbance on the floor?"}}
+]}}
+
+Reply with a single JSON object in exactly that shape and nothing else."""
+
+# Deliberately WITHOUT `_CARD_NOTE`. The card confound is removed structurally here
+# (person-kind propositions leave the fraction entirely), not by asking the judge to
+# be lenient — v2 asked, and `S00202` still scored `match: 5` off a composited mask.
+# This judge answers one factual question about one frame and nothing else.
+QA_PROMPT = """You are answering ONE yes/no question about a single rendered frame from an
+animated SCP Foundation video.
+
+Question: {question}
+
+Answer only from what this frame actually shows. If the frame does not show it, the answer is
+false. Reply with a single JSON object and nothing else:
+{{"answer": true or false}}"""
 
 
 def _parse(text: str) -> dict:
@@ -227,6 +357,218 @@ async def sample(
     return statistics.median_low(scores), samples
 
 
+def _propositions_field(verdict: dict, field: str = "propositions") -> list[dict]:
+    """The proposition list, validated, or raise.
+
+    Strict for the same reason ``_bool_field`` is: a malformed graph does not fail
+    loudly, it silently produces a wrong denominator. Requires a non-empty list of
+    objects, each with a unique string ``id``, a ``kind`` from ``_PROP_KINDS``, a
+    non-empty ``question``, and a ``parent`` that is either null or an id *already
+    listed* — which is also what guarantees a parent is answered before its child.
+    """
+    props = verdict.get(field)
+    if not isinstance(props, list) or not props:
+        raise ValueError(f"{field}={props!r} is not a non-empty list")
+    # The prompt asks for 3-7; nothing but this stops a runaway reply, and every
+    # proposition past the first costs one paid image call per frame.
+    if len(props) > _MAX_PROPOSITIONS:
+        raise ValueError(f"{len(props)} propositions is not a decomposition (max {_MAX_PROPOSITIONS})")
+    seen: set[str] = set()
+    for prop in props:
+        if not isinstance(prop, dict):
+            raise ValueError(f"proposition is not an object: {prop!r}")
+        pid, kind, question = prop.get("id"), prop.get("kind"), prop.get("question")
+        if not isinstance(pid, str) or not pid or pid in seen:
+            raise ValueError(f"proposition id={pid!r} is missing, empty or duplicated")
+        if kind not in _PROP_KINDS:
+            raise ValueError(f"proposition {pid}: kind={kind!r} not one of {_PROP_KINDS}")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError(f"proposition {pid}: question={question!r} is not a non-empty string")
+        # `about_body` is THE field the confound removal rests on, so it is required and
+        # must be a real bool. `"true"` or `1` would make `_is_person`'s `is True` test
+        # fail and put a body proposition straight back into the denominator — the
+        # precise failure the QG prompt's worked examples exist to prevent. A missing
+        # field is worse than a wrong one: it silently degrades `_is_person` to
+        # kind-only AND reads as perfect compliance in `dsg_label_disagreements`.
+        if not isinstance(prop.get("about_body"), bool):
+            raise ValueError(f"proposition {pid}: about_body={prop.get('about_body')!r} is not a boolean")
+        parent = prop.get("parent")
+        if parent is not None and parent not in seen:
+            raise ValueError(f"proposition {pid}: parent={parent!r} is not an earlier proposition")
+        seen.add(pid)
+    return props
+
+
+def _is_person(prop: dict) -> bool:
+    """Does this proposition's subject belong to the composited card layer?
+
+    ``kind == "person"`` OR ``about_body is True`` — either one is enough, deliberately.
+    The QG prompt requires the two to agree, and when they disagree the honest reading
+    is that the model noticed a body and then mislabelled it, so the union is the safe
+    direction: a stray exclusion costs one proposition of denominator, whereas a missed
+    one puts the card-absence confound back into the score.
+
+    Measured reason this exists (smoke run, 3 rows / 13 propositions, before the QG
+    prompt carried worked examples): ``qwen-plus`` labelled "Is there a hand visible in
+    the frame?" as ``object``, "Is a human figure present inside the containment cell?"
+    as ``object``, and a black robe's length as ``state`` — so 3 of 3 rows scored
+    almost entirely on body propositions the plate is not supposed to contain. No
+    regex over the question text: ``gotcha_person-token-regex-is-unusable-on-image-prompt``
+    is the recorded cost of that shortcut. The fix is the prompt plus this union, and
+    the residual disagreement is REPORTED (``dsg_label_disagreements``) rather than
+    silently patched.
+    """
+    return prop.get("kind") == _PERSON_KIND or prop.get("about_body") is True
+
+
+async def ask_text(settings: Settings, prompt: str) -> dict:
+    """One text-only ``QG_MODEL`` call. Same key, endpoint and ``temperature: 0`` as
+    ``ask`` — the only differences are the model and the absence of an image part."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+        resp = await client.post(
+            _DASHSCOPE_VISION_ENDPOINT,
+            headers={"Authorization": f"Bearer {settings.character_vision_api_key}"},
+            json={
+                "model": QG_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": settings.character_vision_max_tokens,
+                "temperature": 0,
+            },
+        )
+    resp.raise_for_status()
+    return _parse(resp.json()["choices"][0]["message"]["content"])
+
+
+async def _propositions(settings: Settings, sentences: list[str]) -> list[dict]:
+    """QG: the narration sentence(s) → atomic typed propositions + dependency graph.
+
+    One retry on a chatty/fenced/invalid reply (``_ask_once``'s posture), then it is
+    the *row's* ``dsg_error`` — never the run's. The frame is not consulted at all:
+    the decomposition is a property of the sentence, so it must not be able to see
+    what was rendered.
+    """
+    prompt = QG_PROMPT.format(sentences="\n".join(sentences))
+    for attempt in range(2):
+        try:
+            return _propositions_field(await ask_text(settings, prompt))
+        except Exception:  # noqa: BLE001 — retried once, then it is the row's error
+            if attempt == 1:
+                raise
+    raise AssertionError("unreachable")  # loop always returns or raises
+
+
+async def _answer_propositions(settings: Settings, props: list[dict], image_bytes: bytes) -> list[dict]:
+    """One yes/no VLM call per non-person proposition, parents before children.
+
+    DSG's dependency semantics, which is the whole reason to prefer it over TIFA: a
+    proposition whose parent answered **no** is *invalidated* — counted unsatisfied
+    and **its own question is never asked**. "There is no bed" followed by "the bed is
+    disturbed: yes" is exactly the inconsistency independent questions let through.
+    Invalidation is transitive, because an invalidated parent is itself recorded as
+    ``answer: False``. Skipping the call is also a real saving on a deep graph.
+
+    **Person propositions are never asked, and count as SATISFIED for dependency
+    resolution.** This is the research's "marked as satisfied by the card layer", and
+    it is load-bearing, not an optimisation: the card layer composites every body
+    afterwards, so asking the plate about a body can only produce a false negative, and
+    a false negative on a *parent* propagates — the smoke run had "is the person moving
+    toward the interior" answer False and invalidate its child "is the cell door open",
+    which is a legitimate plate proposition. Excluding person propositions from the
+    fraction is therefore not sufficient on its own; they must also be unable to
+    invalidate scenery. They still cost a QG slot and are counted, which is what makes
+    the confound removal a measured quantity.
+
+    A QA call that errors after its retry counts unsatisfied and records ``error``,
+    keeping the row scorable — same row-level posture as ``sample``'s dead reps.
+    """
+    answers: list[dict] = []
+    satisfied: dict[str, bool] = {}
+    for prop in props:
+        if _is_person(prop):
+            satisfied[prop["id"]] = True  # the card layer supplies it
+            answers.append({**prop, "answer": None, "invalidated": False, "excluded": True})
+            continue
+        parent = prop.get("parent")
+        if parent is not None and not satisfied.get(parent, False):
+            satisfied[prop["id"]] = False
+            answers.append({**prop, "answer": False, "invalidated": True, "excluded": False})
+            continue
+        try:
+            verdict = await _ask_once(settings, QA_PROMPT.format(question=prop["question"]),
+                                      image_bytes, "answer", _bool_field)
+        except Exception as exc:  # noqa: BLE001 — a dead proposition is data, not a crash
+            satisfied[prop["id"]] = False
+            answers.append({**prop, "answer": False, "invalidated": False, "excluded": False,
+                            "error": f"{type(exc).__name__}: {exc}"})
+            continue
+        answer = _bool_field(verdict, "answer")
+        satisfied[prop["id"]] = answer
+        answers.append({**prop, "answer": answer, "invalidated": False, "excluded": False})
+    return answers
+
+
+def dsg_score(answers: list[dict]) -> tuple[float | None, int, int, int, int]:
+    """``(score, scored_n, excluded_person_n, invalidated_n, label_disagreements)``.
+
+    The score is satisfied ÷ scored over the **non-person** propositions. Person ones
+    are dropped from numerator *and* denominator — the card layer composites every body
+    separately, so a plate with nobody in it is correct and must not be docked for it.
+    They are generated first precisely so the removal is a counted quantity rather than
+    an assertion, and ``_answer_propositions`` additionally stops them invalidating
+    scenery.
+
+    ``None`` — never 0.0 and never 1.0 — when every proposition was person-kind (a
+    sentence purely about a person, e.g. "아주 협조적으로요"). That row is *unscorable*,
+    which is a different fact from "the frame shows none of it", and the two must not
+    be averaged together. ``invalidated_n`` counts only propositions inside the
+    denominator, since those are the ones the score was actually affected by.
+
+    ``label_disagreements`` counts propositions where ``kind == "person"`` and
+    ``about_body`` disagree. ``_is_person`` takes the union, so a disagreement never
+    silently pollutes the score — but it is a live measure of how well the decomposer
+    obeys the one rule the whole confound removal rests on, so it is reported instead
+    of hidden.
+    """
+    scored = [a for a in answers if not _is_person(a)]
+    excluded = len(answers) - len(scored)
+    invalidated = sum(1 for a in scored if a.get("invalidated"))
+    disagreements = sum(
+        1 for a in answers
+        if "about_body" in a and (a.get("kind") == _PERSON_KIND) != (a.get("about_body") is True)
+    )
+    if not scored:
+        return None, 0, excluded, invalidated, disagreements
+    satisfied = sum(1 for a in scored if a["answer"])
+    return round(satisfied / len(scored), 4), len(scored), excluded, invalidated, disagreements
+
+
+async def _score_dsg(settings: Settings, row: dict, sentences: list[str], image_bytes: bytes) -> None:
+    """Fill ``row``'s DSG fields in place. Never raises — QG failure is row-level.
+
+    A row that loses its decomposition keeps ``readable``/``match_score``: the whole
+    point of scoring both instruments in one sweep is that one dying does not cost the
+    other. ``dsg_score: None`` here means "not measured", same as an all-person row
+    means "not scorable" — neither is a zero.
+    """
+    try:
+        props = await _propositions(settings, sentences)
+    except Exception as exc:  # noqa: BLE001 — an unscored row is data, not a crash
+        row.update(dsg_error=f"{type(exc).__name__}: {exc}", dsg_score=None,
+                   dsg_scored_n=0, dsg_excluded_person_n=0, dsg_invalidated_n=0,
+                   dsg_label_disagreements=0)
+        return
+    answers = await _answer_propositions(settings, props, image_bytes)
+    score, scored_n, excluded, invalidated, disagreements = dsg_score(answers)
+    row.update(propositions=props, proposition_answers=answers, dsg_score=score,
+               dsg_scored_n=scored_n, dsg_excluded_person_n=excluded,
+               dsg_invalidated_n=invalidated, dsg_label_disagreements=disagreements,
+               # A QA call that died after its retry counts unsatisfied, so a transient
+               # DashScope failure LOWERS this row's score. Without this counter that is
+               # indistinguishable from the frame genuinely not showing the thing —
+               # exactly the "silently produces a wrong measurement" case.
+               dsg_qa_errors_n=sum(1 for a in answers if "error" in a))
+
+
 def shot_sentences(scene: dict, shot: dict) -> list[str]:
     """The sentence(s) this shot illustrates, in narration order.
 
@@ -290,9 +632,14 @@ def fail_reason(row: dict) -> str | None:
 async def score_run(
     settings: Settings, state: dict, run_id: str, *,
     frames: str = "images", reps: int = 1, limit: int | None = None,
-    only: set[str] | None = None, tmp: Path | None = None,
+    only: set[str] | None = None, tmp: Path | None = None, dsg: bool = False,
 ) -> list[dict]:
-    """One row per shot, blind call before match call, in scene/shot order."""
+    """One row per shot, blind call before match call, in scene/shot order.
+
+    ``dsg=True`` adds the Story 13.2 decomposition after the two Likert calls, so a
+    single sweep produces v2's and v3's numbers on the identical frame and the two are
+    comparable by construction.
+    """
     rows: list[dict] = []
     with tempfile.TemporaryDirectory() as td:
         tmp = tmp or Path(td)
@@ -343,14 +690,63 @@ async def score_run(
                     blind_samples=blind_samples, match_samples=match_samples,
                 )
                 row["fail_reason"] = fail_reason(row)
+                if dsg:
+                    await _score_dsg(settings, row, sentences, image_bytes)
                 mark = "✓" if row["fail_reason"] is None else "✗"
                 print(f"  {mark} {row['shot_id']}{' [HOOK]' if row['hook'] else ''}: "
                       f"readable={readable} match={match_score} place={blind.get('place')!r} "
                       f"event={blind.get('event')!r}"
+                      + (f" dsg={row['dsg_score']} ({row['dsg_scored_n']} props, "
+                         f"-{row['dsg_excluded_person_n']} person, "
+                         f"{row['dsg_invalidated_n']} invalidated)" if dsg and "dsg_error" not in row else "")
+                      + (f" dsg=ERROR {row['dsg_error']}" if dsg and "dsg_error" in row else "")
                       + ("" if row["fail_reason"] is None else f"  [FAIL: {row['fail_reason']}]"),
                       flush=True)
                 rows.append(row)
     return rows
+
+
+def summarize_dsg(rows: list[dict]) -> dict:
+    """The v3 block, merged into ``summarize`` only when ``--dsg`` actually ran.
+
+    ``mean_dsg`` averages the **scorable** rows only. An all-person row is excluded
+    rather than counted as 0.0 — counting it would say the frame failed a test it was
+    never given, which is the exact conflation this instrument exists to end.
+    ``dsg_distribution`` is keyed by the score's own value (not a bucket), because the
+    claim under test is "more distinct values than v2's five".
+    """
+    attempted = [r for r in rows if "dsg_score" in r or "dsg_error" in r]
+    scorable = [r for r in attempted if r.get("dsg_score") is not None]
+    distribution: dict[str, int] = {}
+    for row in scorable:
+        key = str(row["dsg_score"])
+        distribution[key] = distribution.get(key, 0) + 1
+    return {
+        "dsg_rows": len(attempted),
+        "dsg_scorable": len(scorable),
+        "dsg_errored": sum("dsg_error" in r for r in attempted),
+        "mean_dsg": round(statistics.fmean(r["dsg_score"] for r in scorable), 4) if scorable else None,
+        "dsg_distribution": dict(sorted(distribution.items(), key=lambda kv: float(kv[0]))),
+        "dsg_distinct_values": len(distribution),
+        # Unscorable ≠ zero: every proposition was person-kind (a sentence purely
+        # about a person). Reported as its own count, never folded into mean_dsg.
+        "dsg_unscorable": sum(r.get("dsg_score") is None and "dsg_error" not in r for r in attempted),
+        "dsg_propositions_total": sum(r.get("dsg_scored_n", 0) + r.get("dsg_excluded_person_n", 0)
+                                      for r in attempted),
+        # The card-absence confound, as a number: how many person-propositions left
+        # the fraction, and how many rows were carrying at least one.
+        "dsg_excluded_person_total": sum(r.get("dsg_excluded_person_n", 0) for r in attempted),
+        "dsg_rows_with_person_prop": sum(r.get("dsg_excluded_person_n", 0) > 0 for r in attempted),
+        "dsg_invalidated_total": sum(r.get("dsg_invalidated_n", 0) for r in attempted),
+        # How often the decomposer's own `kind`/`about_body` disagreed. `_is_person`
+        # takes the union so the score is unaffected, but this is the compliance rate
+        # of the one rule the confound removal rests on — reported, never hidden.
+        "dsg_label_disagreements_total": sum(r.get("dsg_label_disagreements", 0) for r in attempted),
+        # Propositions whose QA call died after its retry. They count unsatisfied, so a
+        # nonzero total here means mean_dsg is biased DOWN by API failures rather than
+        # by frames. Read this before reading mean_dsg.
+        "dsg_qa_errors_total": sum(r.get("dsg_qa_errors_n", 0) for r in attempted),
+    }
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -358,7 +754,9 @@ def summarize(rows: list[dict]) -> dict:
     failed = [r for r in scored if r["fail_reason"]]
     hook = next((r for r in rows if r["hook"]), None)
     covered = [i for r in rows for i in (r.get("sentence_indices") or [])]
+    dsg = summarize_dsg(rows) if any("dsg_score" in r or "dsg_error" in r for r in rows) else {}
     return {
+        **dsg,
         "rows": len(rows), "scored": len(scored),
         "skipped": sum(r["status"] == "skipped" for r in rows),
         "errored": sum(r["status"] == "error" for r in rows),
@@ -466,6 +864,10 @@ def report(rows: list[dict], settings: Settings, run_id: str, args, state: dict 
         "summary": summarize(rows),
         "rows": rows,
     }
+    # getattr, not args.dsg: run_baseline.py feeds `report` a synthesized
+    # argparse.Namespace, and adding a required attribute there would break it.
+    if getattr(args, "dsg", False):
+        out.update(dsg=True, qg_model=QG_MODEL, qg_prompt=QG_PROMPT, qa_prompt=QA_PROMPT)
     if getattr(args, "pair_by", "shot") == "sentence" and state is not None:
         sentence_rows = pair_by_sentence(state, rows)
         out["sentence_summary"] = summarize_sentences(sentence_rows)
@@ -478,8 +880,8 @@ async def run(args) -> int:
     if not settings.character_vision_api_key:
         sys.exit("YTFLOW_CHARACTER_VISION_API_KEY is not set — the axis needs the Qwen-VL key")
     state = await _load_state(args.run, settings.db_path)
-    rows = await score_run(settings, state, args.run,
-                           frames=args.frames, reps=args.reps, limit=args.limit)
+    rows = await score_run(settings, state, args.run, frames=args.frames, reps=args.reps,
+                           limit=args.limit, dsg=getattr(args, "dsg", False))
     out = report(rows, settings, args.run, args, state)
     summary = out["summary"]
     print(f"\n{summary['scored'] - summary['failed']}/{summary['scored']} shots passed "
@@ -491,10 +893,46 @@ async def run(args) -> int:
           f"shots={summary['n_shots']} sentences/shot={summary['sentences_per_shot']}")
     if "sentence_summary" in out:
         print(f"per sentence: {json.dumps(out['sentence_summary'], ensure_ascii=False)}")
+    if "mean_dsg" in summary:
+        print(f"dsg: mean={summary['mean_dsg']} distinct={summary['dsg_distinct_values']} "
+              f"dist={summary['dsg_distribution']} unscorable={summary['dsg_unscorable']} "
+              f"errored={summary['dsg_errored']} person-props excluded="
+              f"{summary['dsg_excluded_person_total']} from {summary['dsg_rows_with_person_prop']} rows")
     if args.json:
         Path(args.json).write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"rows -> {args.json}")
-    return 1 if summary["skipped"] or summary["errored"] else 0
+    if getattr(args, "dsg", False):
+        # The consumer's path, spelled once (eval_service owns the constant): this is
+        # where `evaluate_ab` reads unreadable_rate / mean_dsg_score from.
+        #
+        # PUBLISHED ONLY FOR A COMPLETE SWEEP OF THE PLATES. Nothing downstream can tell
+        # a partial report from a full one — `_unreadable_rate` divides
+        # summary.unreadable by summary.scored and has no idea 3 of 66 shots were
+        # scored — so a `--limit 3` smoke run would otherwise persist a 3-frame
+        # readability rate as the run's readability, ingest it into Langfuse and render
+        # it in the UI. `--frames shots` is excluded for a different reason: those are
+        # composited clip mid-frames, a different population from the plates the axis
+        # is calibrated on.
+        reasons = []
+        if args.limit:
+            reasons.append(f"--limit {args.limit} scored a subset")
+        if args.frames != "images":
+            reasons.append(f"--frames {args.frames} is not the plate population")
+        if summary["skipped"] or summary["errored"]:
+            reasons.append(f"{summary['skipped']} skipped / {summary['errored']} errored shots")
+        if summary.get("dsg_errored"):
+            reasons.append(f"{summary['dsg_errored']} rows failed decomposition")
+        if reasons:
+            print(f"visual scores NOT published ({'; '.join(reasons)}) — a partial sweep "
+                  f"cannot be told apart from a full one downstream")
+        else:
+            artifact = Path(settings.workspace_path) / args.run / VISUAL_SCORE_FILENAME
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"visual scores -> {artifact}")
+    # dsg_errored counts too: a --dsg run where every decomposition failed measured
+    # nothing, and exiting 0 on it would report a clean sweep it did not take.
+    return 1 if summary["skipped"] or summary["errored"] or summary.get("dsg_errored") else 0
 
 
 def main() -> None:
@@ -505,6 +943,10 @@ def main() -> None:
     ap.add_argument("--frames", choices=("images", "shots"), default="images",
                     help="'images' = the generated plate (default), 'shots' = the composited clip's mid-frame")
     ap.add_argument("--limit", type=int, help="score only the first N shots")
+    ap.add_argument("--dsg", action="store_true",
+                    help="also run the Story 13.2 DSG decomposition (proposition fraction, "
+                         "person-kind propositions excluded and counted) and write the report "
+                         f"to <workspace>/<run>/{VISUAL_SCORE_FILENAME}")
     ap.add_argument("--pair-by", choices=("shot", "sentence"), default="shot",
                     help="'sentence' also emits one row per narration sentence (the covering "
                          "shot's verdict) — the only pairing two legs with different shot counts share")

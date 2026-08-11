@@ -24,8 +24,22 @@ type PairState =
 
 type LightboxState = { variant: AbVariant; index: number } | null
 
+// Keys must match eval_service's `_axis_scores_to_dict` / `_rule_metrics_to_dict`
+// exactly — see the note on AbResult in lib/types.ts. Story 13.2 corrected these and
+// added the four new rule metrics; the visual pair is only present for runs the
+// offline scorer was run on, so those two rows show "—" for everyone else, which is
+// the honest rendering of "not measured".
 const LLM_AXES = ["atmosphere", "narrative_coherence", "article_fidelity"] as const
-const RULE_METRICS = ["scene_count_match", "subtitle_sync", "audio_duration_variance"] as const
+const RULE_METRICS = [
+  "scene_count_match_rate",
+  "subtitle_sync_error",
+  "audio_duration_variance",
+  "cut_alignment_error",
+  "motion_archetype_coverage",
+  "motion_repeat_ratio",
+  "unreadable_rate",
+  "mean_dsg_score",
+] as const
 
 export function RunAbComparisonPage({ runId }: { runId: string }) {
   const [pair, setPair] = useState<PairState>({ kind: "loading" })
@@ -213,8 +227,8 @@ function VariantPane({
         <StatusBadge status={run.status} />
       </div>
 
-      <ScoreTable title="LLM-as-judge" rows={LLM_AXES} scores={result?.llm_scores?.[variant]} />
-      <ScoreTable title="rule-based" rows={RULE_METRICS} scores={result?.rule_scores?.[variant]} />
+      <ScoreTable title="LLM-as-judge" rows={LLM_AXES} scores={result?.axis_scores?.[variant]} />
+      <ScoreTable title="rule-based" rows={RULE_METRICS} scores={result?.rule_based_scores?.[variant]} />
 
       <div className="mt-5 border-t border-border pt-4">
         <ArtifactPanel

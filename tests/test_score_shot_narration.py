@@ -458,3 +458,149 @@ def test_both_prompts_say_absent_people_are_not_a_defect(script):
     for prompt in (script.BLIND_PROMPT, script.MATCH_PROMPT):
         assert "composited" in prompt
         assert "never a mismatch" in prompt or "NEVER a defect" in prompt
+
+
+# ── DSG instrument (Story 13.2) ──────────────────────────────────────────────
+#
+# The confound removal is the whole point of this instrument, and it rests on exactly
+# one thing: a proposition whose subject is a body must leave the fraction AND must not
+# be able to invalidate scenery. Both were caught failing on live data during the smoke
+# run (see 13-2-live-validation/README.md §3), so both are pinned here.
+
+
+def _prop(pid, kind, question="q?", parent=None, about_body=None):
+    return {"id": pid, "kind": kind, "question": question, "parent": parent,
+            "about_body": kind == "person" if about_body is None else about_body}
+
+
+def test_propositions_field_accepts_a_well_formed_graph(script):
+    props = [_prop("p1", "place"), _prop("p2", "object", parent="p1"),
+             _prop("p3", "person")]
+    assert script._propositions_field({"propositions": props}) == props
+
+
+@pytest.mark.parametrize("props,why", [
+    ("nope", "not a list"),
+    ([], "empty"),
+    ([{"kind": "place", "question": "q?", "about_body": False}], "missing id"),
+    ([_prop("p1", "place"), _prop("p1", "object")], "duplicate id"),
+    ([_prop("p1", "scenery")], "kind not in the closed set"),
+    ([_prop("p1", "place", question="  ")], "blank question"),
+    ([_prop("p1", "state", parent="p9")], "parent is not an earlier proposition"),
+    ([_prop("p2", "state", parent="p2")], "self-referencing parent"),
+])
+def test_propositions_field_rejects_malformed_graphs(script, props, why):
+    with pytest.raises(ValueError):
+        script._propositions_field({"propositions": props})
+    assert why  # label only, keeps the parametrize table readable
+
+
+@pytest.mark.parametrize("about_body", [None, "true", 1, 0])
+def test_propositions_field_requires_a_real_boolean_about_body(script, about_body):
+    """The one field the exclusion depends on. `"true"` and `1` are truthy but fail
+    `is True`, so an unvalidated non-bool puts a body straight back in the denominator —
+    and a MISSING field is worse still: it degrades `_is_person` to kind-only and reads
+    as perfect compliance in `dsg_label_disagreements`."""
+    prop = {"id": "p1", "kind": "object", "question": "Is a hand visible?", "parent": None}
+    if about_body is not None:
+        prop["about_body"] = about_body
+    with pytest.raises(ValueError, match="about_body"):
+        script._propositions_field({"propositions": [prop]})
+
+
+def test_propositions_field_caps_a_runaway_decomposition(script):
+    """The prompt asks for 3-7 and nothing else enforces it. Every proposition past the
+    first costs one paid image call per frame."""
+    ok = [_prop(f"p{i}", "place") for i in range(script._MAX_PROPOSITIONS)]
+    assert len(script._propositions_field({"propositions": ok})) == script._MAX_PROPOSITIONS
+    too_many = [_prop(f"p{i}", "place") for i in range(script._MAX_PROPOSITIONS + 1)]
+    with pytest.raises(ValueError, match="not a decomposition"):
+        script._propositions_field({"propositions": too_many})
+
+
+def test_is_person_takes_the_union_of_kind_and_about_body(script):
+    """The live decomposer mislabelled `hand`/`robe`/`silhouette` as object/state on 3 of
+    3 smoke rows. Either signal alone is enough to exclude: a stray exclusion costs one
+    proposition of denominator, a missed one re-imports the confound."""
+    assert script._is_person(_prop("p1", "person", about_body=True))
+    assert script._is_person(_prop("p1", "object", about_body=True))    # mislabelled kind
+    assert script._is_person({"kind": "person"})                        # about_body absent
+    assert not script._is_person(_prop("p1", "place", about_body=False))
+
+
+def test_person_propositions_are_never_asked_and_never_invalidate_scenery(script, settings, monkeypatch):
+    """Both halves of the structural fix, in the shape that broke live: the plate has no
+    body, so asking about one can only produce a false negative — and under the first
+    implementation that false negative propagated to the child scenery proposition
+    ("is the cell door open") and silently docked a real measurement."""
+    props = [_prop("p1", "person", "Is the person moving?"),
+             _prop("p2", "state", "Is the cell door open?", parent="p1")]
+    payloads = _fake_httpx(script, monkeypatch, [json.dumps({"answer": True})])
+
+    answers = asyncio.run(script._answer_propositions(settings, props, b"png"))
+
+    # Exactly one call, and it is the scenery question — the person was never asked.
+    assert len(payloads) == 1
+    assert "cell door" in json.dumps(payloads[0], ensure_ascii=False)
+    assert answers[0]["excluded"] is True and answers[0]["answer"] is None
+    assert answers[1]["answer"] is True and answers[1]["invalidated"] is False
+
+
+def test_a_no_parent_invalidates_its_child_without_asking(script, settings, monkeypatch):
+    """DSG's advantage over TIFA: "there is no bed" then "the bed is disturbed: yes" is
+    the inconsistency independent questions let through."""
+    props = [_prop("p1", "object", "Is there a bed?", about_body=False),
+             _prop("p2", "state", "Is the bed disturbed?", parent="p1", about_body=False)]
+    payloads = _fake_httpx(script, monkeypatch, [json.dumps({"answer": False})])
+
+    answers = asyncio.run(script._answer_propositions(settings, props, b"png"))
+
+    assert len(payloads) == 1                      # the child was never asked
+    assert answers[1]["invalidated"] is True and answers[1]["answer"] is False
+
+
+def test_dsg_score_excludes_person_propositions_from_both_halves(script):
+    answers = [
+        {"id": "p1", "kind": "place", "about_body": False, "answer": True},
+        {"id": "p2", "kind": "state", "about_body": False, "answer": False},
+        {"id": "p3", "kind": "person", "about_body": True, "answer": None},
+    ]
+    score, scored_n, excluded, invalidated, disagreements = script.dsg_score(answers)
+    assert (score, scored_n, excluded, invalidated, disagreements) == (0.5, 2, 1, 0, 0)
+
+
+def test_dsg_score_is_none_not_zero_when_every_proposition_is_a_body(script):
+    """"Unscorable" and "the frame shows none of it" are different facts and must not be
+    averaged together — a sentence purely about a person gives a plate nothing to check."""
+    answers = [{"id": f"p{i}", "kind": "person", "about_body": True, "answer": None}
+               for i in range(3)]
+    score, scored_n, excluded, _, _ = script.dsg_score(answers)
+    assert score is None and scored_n == 0 and excluded == 3
+
+
+def test_dsg_score_counts_label_disagreements_without_letting_them_change_the_score(script):
+    answers = [
+        {"id": "p1", "kind": "object", "about_body": True, "answer": True},   # disagrees
+        {"id": "p2", "kind": "place", "about_body": False, "answer": True},
+    ]
+    score, scored_n, excluded, _, disagreements = script.dsg_score(answers)
+    assert disagreements == 1
+    assert (score, scored_n, excluded) == (1.0, 1, 1)   # the union excluded p1
+
+
+def test_summarize_dsg_surfaces_qa_errors_and_unscorable_separately(script):
+    rows = [
+        {"dsg_score": 0.5, "dsg_scored_n": 2, "dsg_excluded_person_n": 1,
+         "dsg_invalidated_n": 0, "dsg_label_disagreements": 0, "dsg_qa_errors_n": 1},
+        {"dsg_score": None, "dsg_scored_n": 0, "dsg_excluded_person_n": 3,
+         "dsg_invalidated_n": 0, "dsg_label_disagreements": 0, "dsg_qa_errors_n": 0},
+        {"dsg_error": "RuntimeError: boom"},
+    ]
+    out = script.summarize_dsg(rows)
+    assert out["dsg_rows"] == 3 and out["dsg_scorable"] == 1
+    assert out["dsg_errored"] == 1 and out["dsg_unscorable"] == 1
+    assert out["mean_dsg"] == 0.5                      # only the scorable row
+    # A transient API failure lowers mean_dsg; without this count that is
+    # indistinguishable from the frame genuinely not showing the thing.
+    assert out["dsg_qa_errors_total"] == 1
+    assert out["dsg_excluded_person_total"] == 4 and out["dsg_rows_with_person_prop"] == 2
