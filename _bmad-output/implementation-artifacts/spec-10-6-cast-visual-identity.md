@@ -2,11 +2,12 @@
 title: 'Story 10.6 — Cast visual identity: derived-card look inheritance + D-class re-inspection (지적 14·15)'
 type: 'bugfix'
 created: '2026-08-11'
-status: 'in-review'
+status: 'done'
 baseline_revision: '25bed30'
+final_revision: '4a57740'
 baseline_tests: '2672 passed, 1 skipped, 0 failed'
-review_loop_iteration: 0
-followup_review_recommended: false
+review_loop_iteration: 1
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
 warnings: ['multiple-goals', 'oversized']
@@ -291,3 +292,74 @@ pixels, so the ① new-rule leg is what confirms it; record it if the frame come
 **Manual checks (if no CLI):**
 - View each rendered leg and the four D-class `epoch_2/*_candidate_1.png` frames directly; the judgments
   in the README must be written from those views, not inferred from filenames or metadata.
+
+## Auto Run Result
+
+Status: **done** — `final_revision` `4a57740`, baseline `25bed30`.
+
+### What changed
+
+지적 15's cause was code, not data. `_ensure_derived_entity_cards` built a derived entity's
+descriptor as the base entity's verbatim `visual_descriptor` plus one qualifier line, and passed the
+base's own front card as an IPAdapter identity anchor — so `SCP-049-2` rendered as a second hooded,
+beak-masked plague doctor. `recompose_service.CARD_LOOKS` already distinguished the two; only the card
+generator inherited. Fixed by authoring the look (`DERIVED_DESCRIPTORS`), dropping the anchor, applying
+the suppression and read-back scrub, and **refusing to guess** for unauthored derived keys.
+
+지적 14 was **not** in the 8.15-approved standing set (verdict "없음", recorded per frame). It came from
+the ungated on-demand pose-hint card `hint_a40ec9c170`, composited into 7 of the 19 D-class shots. A
+pre-registered 2-leg isolation at a shared seed triple selected H1 (the missing `negative_suffix`) over
+H2 (10.3's stale LoRA chain), so the suffix wiring shipped — scoped so it can never suppress a mask an
+entity's own descriptor requests.
+
+### Files changed
+
+- `src/yt_flow/domain/state.py` — `DERIVED_DESCRIPTORS` authored; `STOCK_NEGATIVE` / `BANNED_STOCK_TOKEN` relocated here (run_service needs them and `src/` may not import `scripts/`); key-shape assert; module docstring now admits the authored tables.
+- `src/yt_flow/services/run_service.py` — authored descriptor, `anchor_path=None`, suffix + `enrich_ban`; unauthored keys skipped with a WARNING; authored-first filtering moved ahead of the cap.
+- `src/yt_flow/services/character_service.py` — `_maskless_negative_suffix(card_key, descriptor)` wired into `generate_special_pose_card`, scoped on the descriptor actually in play.
+- `scripts/seed_stock_cast.py` — re-exports the relocated names; authored derived keys now get the same suffix/ban as stock keys, and `--key` defaults its descriptor from the authored table.
+- `tests/…` (3 files) — +8 tests: authored-key kwargs, unauthored no-call, cap-not-consumed regression, stale-descriptor suffix suppression, design-time masklessness invariant, CARD_LOOKS lockstep, manual-path parity both ways.
+- `_bmad-output/implementation-artifacts/10-6-live-validation/` — 8 rendered legs, `README.md` (pre-registered rule, per-render verdicts, per-frame D-class verdict, recompute commands), `render_legs.py` (read-only DB, provider/mock guards, logs the injected KSampler seed).
+
+### Review
+
+Two reviewers in parallel. **11 patches** (high 2, medium 5, low 4), **3 deferred**, **9 rejected** —
+8 of the rejections were findings about story 10.4b's files, which entered the first reviewer's diff
+through my own scoping error and were excluded for the second. The two high-severity patches:
+
+1. The pose-card suffix keyed on table membership while the prompt is built from the *stored*
+   descriptor — for the pre-10.6 `SCP-049-2` row that meant demanding a beak mask while suppressing
+   masks. Both reviewers found it independently.
+2. The cap was applied before the authored filter, so unauthored keys consumed the budget and skipped,
+   starving an authored key behind them.
+
+### Verification
+
+- `uv run pytest -q` → **2680 passed, 1 skipped, 0 failed** (baseline 2672/1/0, +8).
+- `uv run ruff check src scripts tests …/render_legs.py` → **All checks passed!**
+- `render_legs.py` → 8 PNGs, all `alpha=True`, exit 0, idempotent re-run (no GPU spend).
+- `git status --porcelain assets/` → empty. DB unmutated, asserted directly (9 characters / 12 cards /
+  `SCP-049-2` descriptor unchanged) rather than via `git status`, which is **vacuous** for
+  `yt_flow.db` — `.gitignore:15` makes it untracked.
+- ComfyUI `/system_stats` → 200 before and after; never stopped, no `pkill`, 8 renders total.
+- Every pixel judgment was made by viewing the file, including an independent re-verification of the
+  D-class `side_candidate_1.png` artefact and of the leg-B eye region that the first read got wrong.
+
+### Residual risks
+
+- **The fix is not retroactive, so 지적 15 is still on screen.** Generation fires only when no
+  `Character` row exists, and `SCP-049-2` has one. Its live cards and descriptor are still the masked
+  ones. Replacing them is Jay's gate; auto-regenerating was rejected on purpose because it would
+  publish an unreviewed look to `angle_*_path`, which has no approval filter. This is the exact failure
+  mode Epic 10 exists to prevent, so it is recorded in `epics.md`, `sprint-status.yaml`, the README and
+  `deferred-work.md`.
+- Leg ① compares the **whole rule** — descriptor, anchor, suffix and t2i-vs-i2i topology changed
+  together — so it must not be cited as attributing the change to the descriptor.
+- Leg ②'s pre-registered tally (2/3 vs 1/3) is weak on its own: every scored failure was the hand
+  criterion, which failed in both legs. The mechanism and the seed-1062 pair (adult + chibi child vs
+  one adult, against a suffix naming `2boys, child, chibi`) carry the conclusion. The rule was not
+  re-tuned after the fact, and its blind spot — no figure-count criterion — is recorded.
+- Newly provisioned derived cards still publish unattended (unchanged from 8.13); no gated promote path
+  accepts derived keys. Deferred.
+- Refuse-to-guess means every SCP other than 049 loses its derived card entirely. Deliberate and
+  spec-recorded, but it restores 8.13's original symptom for those entities. Deferred.
