@@ -2,10 +2,11 @@
 title: 'Story 10.1c — Close-out: AD-1 boundary, default-enable verdict, obsolete-code cleanup'
 type: 'chore'
 created: '2026-08-11'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
 baseline_revision: 'fae0b98'
+final_revision: '044692d'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
 warnings: ['oversized']
