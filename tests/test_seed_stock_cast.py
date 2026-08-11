@@ -89,14 +89,43 @@ async def test_seed_key_generates_derived_descriptor(tmp_path, monkeypatch):
             assert descriptor == "reanimated human"
             assert pose == "standing"
             assert anchor_path is None
-            assert negative_suffix is None  # STOCK-only suppression, not derived keys
-            assert enrich_ban is None  # derived keys are SCP entities; nothing to scrub
+            # Story 10.6 reversed both of these for *authored* derived keys, so this
+            # manual path can no longer produce a different card than run_service does
+            # for the same key. Before, hand-seeding SCP-049-2 got neither the mask
+            # suppression nor the read-back scrub while the pipeline applied both.
+            assert negative_suffix == seed.STOCK_NEGATIVE
+            assert enrich_ban == seed.BANNED_STOCK_TOKEN
             return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
 
         monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
         paths = await seed.seed_key(service, "SCP-049-2", "reanimated human")
 
     assert len(paths) == 4
+
+
+async def test_seed_key_leaves_unauthored_derived_keys_unsuppressed(tmp_path, monkeypatch):
+    """The reversal is scoped to the authored table, not to key *shape*. An unauthored
+    `<scp_id>-<n>` key is free-text by definition, so nothing is known about whether the
+    operator wants a mask — suppressing one would fight their own descriptor."""
+    seed = _load_script()
+    db.init("sqlite://")
+    from sqlmodel import Session
+
+    from yt_flow.db import _engine
+
+    with Session(_engine) as session:
+        service = CharacterService(session, settings=Settings(workspace_path=str(tmp_path)))
+        captured = {}
+
+        async def fake_generate(key, *, descriptor, negative_suffix=None, enrich_ban=None, **kwargs):
+            captured.update(negative_suffix=negative_suffix, enrich_ban=enrich_ban)
+            return [f"/tmp/{angle}.png" for angle in ("front", "back", "side", "three_quarter")]
+
+        monkeypatch.setattr(service, "generate_cards_from_descriptor", fake_generate)
+        await seed.seed_key(service, "SCP-173-2", "a masked concrete statue")
+
+    assert captured["negative_suffix"] is None
+    assert captured["enrich_ban"] is None
 
 
 async def test_seed_key_rejects_incomplete_generation(tmp_path, monkeypatch):
@@ -230,6 +259,55 @@ def test_stock_descriptors_pin_a_bare_human_face():
         for term in forbidden:
             assert term not in text, f"{key} descriptor names {term!r}"
         assert not re.search(r"\bno\b", text), f"{key} descriptor negates; move it to STOCK_NEGATIVE"
+
+
+def test_derived_descriptors_are_affirmative_and_unpoisoned():
+    """Story 10.6 — the authored derived-entity looks obey the same two landmines the
+    STOCK descriptors were purged of, because they reach the same checkpoint by the same
+    path: text encoders do not negate (a "no mask" in the positive prompt summons masks,
+    so every prohibition belongs in STOCK_NEGATIVE), and the "SCP Foundation" token alone
+    collapses a figure into a masked, hazmat-suited one. This is the one runnable check
+    that fails if a future authored look reintroduces either.
+
+    Kept deliberately narrower than the STOCK descriptor test: a derived SCP entity may
+    legitimately be undead, sutured or ashen, which STOCK extras may not be."""
+    from yt_flow.domain.state import BANNED_STOCK_TOKEN, DERIVED_DESCRIPTORS
+
+    assert DERIVED_DESCRIPTORS, "an empty table would make this test vacuous"
+    for key, descriptor in DERIVED_DESCRIPTORS.items():
+        text = descriptor.lower()
+        assert BANNED_STOCK_TOKEN.lower() not in text, f"{key} names the mask attractor"
+        assert not re.search(r"\bno\b", text), f"{key} descriptor negates; move it to STOCK_NEGATIVE"
+        assert not re.search(r"\bnot\b|\bwithout\b", text), f"{key} descriptor negates"
+        # Danbooru tags lead: the checkpoint is AnimagineXL and "solo, 1boy"/"solo, 1girl"
+        # is its one-character control — prose alone came back as a character sheet.
+        assert text.startswith("solo, "), f"{key} descriptor does not lead with Danbooru tags"
+
+
+def test_derived_descriptor_for_scp_049_2_is_not_the_base_entity():
+    """지적 15's regression in text form: SCP-049-2 is SCP-049's *victim* reanimated, so
+    its authored look must carry none of the base's wardrobe. recompose_service.CARD_LOOKS
+    already promised "torn surgical scrubs" while the card generator drew a beak mask."""
+    from yt_flow.domain.state import DERIVED_DESCRIPTORS
+
+    text = DERIVED_DESCRIPTORS["SCP-049-2"].lower()
+    for token in ("plague", "beak", "hooded", "hood", "mask", "robe"):
+        assert token not in text, f"SCP-049-2 descriptor inherits the base's {token!r}"
+    assert "surgical scrubs" in text  # the look CARD_LOOKS already describes to the recomposer
+
+
+def test_every_authored_derived_look_is_known_to_the_recomposer():
+    """Lockstep, the habit `STOCK_CAST_ROLES` already follows one screen above its keys:
+    `recompose_service.CARD_LOOKS` is the authority every 10.6 comment cites for the
+    correct look, and it *skips* any card key it has no entry for. An authored derived
+    card with no CARD_LOOKS entry would therefore be generated and then silently dropped
+    from the re-creation path. `state.py` cannot assert this itself — it may not import
+    `services` (AD-1) — so the guard lives here."""
+    from yt_flow.domain.state import DERIVED_DESCRIPTORS
+    from yt_flow.services.recompose_service import CARD_LOOKS
+
+    missing = sorted(set(DERIVED_DESCRIPTORS) - set(CARD_LOOKS))
+    assert not missing, f"authored derived looks with no CARD_LOOKS entry: {missing}"
 
 
 def test_stock_negative_carries_the_prohibitions():

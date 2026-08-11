@@ -406,6 +406,81 @@ class TestMultiAngleGeneration:
         assert card.image_path == path
         assert mock_provider.generate.call_args.kwargs["ref_image_path"] == str(tmp_path / "front.png")
 
+    def test_generate_special_pose_card_applies_stock_negative_to_maskless_keys(self, service, tmp_path):
+        """Story 10.6 ② — this was the one card path that never passed a negative
+        suffix, so `glowing eyes, monster, child, chibi, 2boys` never reached it. Live
+        isolation on today's chain at a shared seed triple: 2/3 renders failed the
+        pre-registered criteria without the suffix and 1/3 with it, and at seed 1062 the
+        no-suffix frame came back as an adult plus a chibi child in matching jumpsuits
+        while the suffixed one is a single adult (`10-6-live-validation/README.md`).
+
+        Scoped on the descriptor in play, because the suffix suppresses `skull mask, gas
+        mask, helmet, visor` and SCP-049 legitimately *is* a beaked mask. Table
+        membership was not enough: a derived key provisioned before 10.6 still carries
+        the inherited base descriptor, so `SCP-049-2` would ask for a beaked mask in the
+        positive prompt while the suffix suppressed masks in the negative."""
+        from yt_flow.domain.state import DERIVED_DESCRIPTORS, STOCK_NEGATIVE
+
+        stale_049_2 = (
+            "SCP-049 plague doctor humanoid, black hooded robe, white beaked plague "
+            "doctor mask, dark gloves, full body\nA reclassified/duplicate instance."
+        )
+        # The read-back is appended to the authored text, so a healthy row starts with it.
+        looks = {
+            "STOCK-d-class": "STOCK-d-class look",
+            "SCP-049-2": f"{DERIVED_DESCRIPTORS['SCP-049-2']}\nenriched read-back",
+            "SCP-049": "SCP-049 look",
+            "SCP-049-3": stale_049_2,  # stands in for a pre-10.6 row, whatever its key
+        }
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        for key, look in looks.items():
+            character = service.create_character(key, key)
+            service.update_character(character.id, visual_descriptor=look,
+                                     angle_front_path=str(tmp_path / "front.png"))
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.produces_alpha = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        suffixes = {}
+        with patch.object(service, "_get_image_provider", return_value=mock_provider):
+            for key in looks:
+                mock_provider.generate.reset_mock()
+                assert asyncio_run(service.generate_special_pose_card(key, "lying supine on table"))
+                # Assert the call happened, so a regression that returns before calling
+                # the provider fails here instead of silently reading the previous key's
+                # kwargs and reporting the wrong suffix.
+                assert mock_provider.generate.call_count == 1, key
+                suffixes[key] = mock_provider.generate.call_args.kwargs["negative_suffix"]
+
+        assert suffixes["STOCK-d-class"] == STOCK_NEGATIVE
+        assert suffixes["SCP-049-2"] == STOCK_NEGATIVE  # authored derived look is maskless
+        assert suffixes["SCP-049"] is None  # the entity IS a mask; suppressing it erases it
+        # The defect this scoping exists for: never suppress masks over a descriptor that
+        # asks for one, even for a `<scp_id>-<n>`-shaped key.
+        assert suffixes["SCP-049-3"] is None
+
+    def test_authored_derived_looks_never_request_what_stock_negative_suppresses(self):
+        """The runtime gate assumes authored derived looks are compatible with
+        ``STOCK_NEGATIVE``; that assumption is enforced here, at design time, rather
+        than re-derived per call. Adding an authored look that wants a mask, a monster,
+        a glowing eye or a female subject must fail this test, not render a figure with
+        the requested trait suppressed."""
+        from yt_flow.domain.state import DERIVED_DESCRIPTORS, STOCK_NEGATIVE
+
+        suppressed = [term.strip() for term in STOCK_NEGATIVE.split(",") if term.strip()]
+        for key, descriptor in DERIVED_DESCRIPTORS.items():
+            lowered = descriptor.lower()
+            for term in suppressed:
+                assert term not in lowered, (
+                    f"{key} requests {term!r}, which STOCK_NEGATIVE suppresses — the pose-card "
+                    f"and provisioning paths would fight their own positive prompt"
+                )
+            # "mask"/"hood" are the specific 지적 15 collision: the whole point of a
+            # derived look is a face with nothing over it.
+            for term in ("mask", "hood", "beak"):
+                assert term not in lowered, f"{key} requests {term!r}; derived looks must be uncovered"
+
     def test_generate_special_pose_card_missing_front_returns_none(self, service, tmp_path):
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service.create_character("SCP-049", "Plague Doctor")

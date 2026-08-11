@@ -12,7 +12,15 @@ from sqlmodel import Session  # noqa: E402
 from yt_flow import db  # noqa: E402
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.domain.png import has_alpha  # noqa: E402
-from yt_flow.domain.state import STOCK_CAST_KEYS  # noqa: E402
+# BANNED_STOCK_TOKEN / STOCK_NEGATIVE live in domain/state.py beside STOCK_CAST_KEYS
+# (Story 10.6) because run_service needs them too and src/ must never import scripts/.
+# Re-exported here, so seed.STOCK_NEGATIVE and seed.BANNED_STOCK_TOKEN still resolve.
+from yt_flow.domain.state import (  # noqa: E402
+    BANNED_STOCK_TOKEN,
+    DERIVED_DESCRIPTORS,
+    STOCK_CAST_KEYS,
+    STOCK_NEGATIVE,
+)
 from yt_flow.services.character_service import CharacterService, _sanitize_scp_id  # noqa: E402
 from yt_flow.services.image_search import DuckDuckGoImageSearch  # noqa: E402
 
@@ -55,9 +63,8 @@ _KEY_FEATURES = {
     # dress uniform: epaulettes, gold braid and rank insignia on every angle but the front.
     "STOCK-security": "short moustache, plain black baseball cap",
 }
-BANNED_STOCK_TOKEN = "SCP Foundation"
-# The token above is deliberately absent below: probing the live checkpoint showed that
-# token alone is what collapsed these extras into a masked, hazmat-suited figure —
+# BANNED_STOCK_TOKEN is deliberately absent below: probing the live checkpoint showed
+# that token alone is what collapsed these extras into a masked, hazmat-suited figure —
 # with it the render is a skull mask or a visored helmet, without it an ordinary
 # person, every other lever held constant. The wardrobe carries the setting instead.
 STOCK_DESCRIPTORS = {
@@ -81,28 +88,6 @@ STOCK_DESCRIPTORS = {
         "cargo trousers, alert disciplined posture"
     ),
 }
-# Suppression stays per-call and STOCK-scoped: the shared workflow's own negative
-# node must stay mask-neutral because SCP-049 legitimately needs a mask.
-#
-# Deliberately short, and it names "face" zero times. CLIP negative conditioning is
-# a token bag, not a set of phrases: a longer list that repeated "face" (full-face
-# mask, face shield, hood covering face, monster face, horror creature face) got the
-# word itself suppressed — STOCK-security rendered a blank white face with white
-# blob hands and STOCK-d-class a black void with eye slits. Body/age terms
-# (bald, child, shorts…) are steered affirmatively by the descriptor instead.
-#
-# LENGTH IS THE CONSTRAINT, not just wording. This list is appended to the workflow's
-# own ~30-term negative, and every defect met along the way tempted one more clause.
-# Twice now that ended badly: a version repeating "face" blanked the faces, and a
-# ~40-term version turned all four STOCK-security cards into giant abstract polygons
-# with a thumbnail-sized guard inside them. Keep it to the defects that actually
-# recurred, steer everything else affirmatively from the descriptor, and re-add a term
-# only when its defect comes back — never pre-emptively.
-STOCK_NEGATIVE = (
-    "skull mask, gas mask, helmet, visor, glowing eyes, monster, "
-    "character sheet, multiple views, 2boys, "
-    "child, 1girl, chibi"
-)
 VALID_POSES = ("standing", "sitting")
 
 # Sidecar written into the staged directory so approve_stock_cast.py --reject can put
@@ -211,7 +196,12 @@ async def seed_key(
     if not force and not stage and _pose_complete(service, key, pose):
         print(f"skipped: {key} ({pose})")
         return []
-    is_stock = key in STOCK_DESCRIPTORS
+    # Story 10.6: authored derived keys get the same treatment as stock keys, so this
+    # manual path cannot contradict run_service's runtime rule. Before that they got
+    # neither the suffix nor the ban here while run_service applied both — the same key
+    # seeded by hand came out different from the same key seeded by the pipeline, and
+    # the hand path was the one a human was most likely to use.
+    is_maskless = key in STOCK_DESCRIPTORS or key in DERIVED_DESCRIPTORS
     if stage:
         _snapshot_prestage_descriptor(service, key, service._asset_service.style_epoch + 1)
     paths = await service.generate_cards_from_descriptor(
@@ -219,13 +209,14 @@ async def seed_key(
         descriptor=descriptor,
         pose=pose,
         anchor_path=anchor,
-        negative_suffix=STOCK_NEGATIVE if is_stock else None,
+        negative_suffix=STOCK_NEGATIVE if is_maskless else None,
         # Vision enrichment describes the generated front back into visual_descriptor,
         # and its prompt says "an SCP Foundation character" — the one token these
         # descriptors were purged of, because it is what attracts the mask. Keep the
         # enrichment (it is what holds the four angles to one face) and strip the
-        # token from its output. Derived keys are SCP entities, so they keep it.
-        enrich_ban=BANNED_STOCK_TOKEN if is_stock else None,
+        # token from its output. Authored derived looks are defined by the *absence* of
+        # a mask, so 10.6 stopped exempting them from the ban.
+        enrich_ban=BANNED_STOCK_TOKEN if is_maskless else None,
         stage=stage,
     )
     if len(paths) < 4:
@@ -245,7 +236,14 @@ async def run(args) -> int:
     with Session(db._engine) as session:
         service = CharacterService(session, settings=settings)
         if args.key:
-            descriptor = args.descriptor or STOCK_DESCRIPTORS.get(args.key)
+            # DERIVED_DESCRIPTORS is consulted too (Story 10.6), so seeding an authored
+            # derived key by hand reproduces the pipeline's look instead of needing the
+            # operator to retype it — free-text was how the authored table got bypassed.
+            descriptor = (
+                args.descriptor
+                or STOCK_DESCRIPTORS.get(args.key)
+                or DERIVED_DESCRIPTORS.get(args.key)
+            )
             if not descriptor:
                 raise SystemExit("--descriptor is required with --key")
             targets = {args.key: descriptor}

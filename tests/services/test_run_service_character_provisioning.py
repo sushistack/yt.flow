@@ -8,7 +8,6 @@ exactly like ``tests/services/test_character_service*.py`` fake them — no
 network, no ComfyUI.
 """
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -17,6 +16,7 @@ from sqlmodel import Session, select
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.db.models import Character as CharacterModel
+from yt_flow.domain.state import BANNED_STOCK_TOKEN, DERIVED_DESCRIPTORS, STOCK_NEGATIVE
 from yt_flow.services import character_service, run_service
 from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
 from tests.stubs.fakes import TINY_PNG
@@ -442,7 +442,8 @@ async def test_derived_entity_provisioning_skips_mock_mode(monkeypatch, tmp_path
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         return ["/tmp/derived.png"]
 
@@ -459,7 +460,8 @@ async def test_derived_entity_provisioning_no_derived_keys_noop(monkeypatch, tmp
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         return ["/tmp/derived.png"]
 
@@ -481,7 +483,8 @@ async def test_derived_entity_provisioning_dedup_generates_once(monkeypatch, tmp
         CharacterService(session, settings=settings).create_character("SCP-049", "SCP-049")
     calls = []
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         return ["/tmp/derived.png"]
 
@@ -505,7 +508,8 @@ async def test_derived_entity_provisioning_existing_row_skips(monkeypatch, tmp_p
         svc.create_character("SCP-049-2", "SCP-049-2")
     calls = []
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         return ["/tmp/derived.png"]
 
@@ -516,7 +520,12 @@ async def test_derived_entity_provisioning_existing_row_skips(monkeypatch, tmp_p
     assert calls == []  # a Character row already exists for SCP-049-2 — nothing to do
 
 
-async def test_derived_entity_provisioning_uses_base_front_card_as_anchor(monkeypatch, tmp_path):
+async def test_derived_entity_provisioning_uses_authored_look_without_anchor(monkeypatch, tmp_path):
+    """Story 10.6 (지적 15). This test previously asserted the *bug*: the derived card
+    inherited the base's verbatim visual_descriptor and was IPAdapter-locked to the base's
+    own front card, so SCP-049-2 rendered as a second hooded plague doctor in a white beak
+    mask and read as the same person as SCP-049 in 13 of 66 shots. The contract is now the
+    authored look, no anchor, STOCK_NEGATIVE suppression and the enrichment token ban."""
     db.init("sqlite://")
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
@@ -524,14 +533,13 @@ async def test_derived_entity_provisioning_uses_base_front_card_as_anchor(monkey
         svc = CharacterService(session, settings=settings)
         base = svc.create_character("SCP-049", "SCP-049")
         svc.update_character(base.id, angle_front_path="SCP-049/epoch_1/front_candidate_1.png",
-                              visual_descriptor="a plague doctor in tattered robes")
+                              visual_descriptor="a plague doctor in tattered robes, white beaked mask, black hooded robe")
     captured = {}
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
-        captured["card_key"] = card_key
-        captured["descriptor"] = descriptor
-        captured["anchor_path"] = anchor_path
-        captured["pose"] = pose
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
+        captured.update(card_key=card_key, descriptor=descriptor, anchor_path=anchor_path,
+                        pose=pose, negative_suffix=negative_suffix, enrich_ban=enrich_ban)
         return ["/tmp/derived.png"]
 
     monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
@@ -540,12 +548,45 @@ async def test_derived_entity_provisioning_uses_base_front_card_as_anchor(monkey
 
     assert captured["card_key"] == "SCP-049-2"
     assert captured["pose"] == "standing"
-    assert captured["anchor_path"] == str(Path(settings.assets_path) / "SCP-049/epoch_1/front_candidate_1.png")
-    assert "a plague doctor in tattered robes" in captured["descriptor"]
-    assert "SCP-049" in captured["descriptor"]
+    assert captured["anchor_path"] is None  # a family-resemblance lock is the bug, not a feature
+    assert captured["descriptor"] == DERIVED_DESCRIPTORS["SCP-049-2"]
+    assert captured["negative_suffix"] == STOCK_NEGATIVE
+    assert captured["enrich_ban"] == BANNED_STOCK_TOKEN
+    # Nothing of the base's wardrobe, and not the live-proven mask attractor either.
+    for token in ("plague", "beak", "hooded", BANNED_STOCK_TOKEN.lower()):
+        assert token not in captured["descriptor"].lower()
 
 
-async def test_derived_entity_provisioning_missing_base_front_card_degrades(monkeypatch, tmp_path, caplog):
+async def test_derived_entity_provisioning_unauthored_key_skips_with_warning(monkeypatch, tmp_path, caplog):
+    """A derived key with no authored look generates nothing and does not fail the run
+    (AD-10): cast resolution already skips an unprovisioned key, and cast_decision.md's
+    rule is "a wrong card is far worse than no card" — guessing is what produced 지적 15."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    with Session(db._engine) as session:
+        CharacterService(session, settings=settings).create_character("SCP-173", "SCP-173")
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    with caplog.at_level("WARNING"):
+        await run_service._ensure_derived_entity_cards("SCP-173", _derived_entity_scenes("SCP-173-2"))
+
+    assert calls == []
+    assert "SCP-173-2" in caplog.text
+    assert "no authored look" in caplog.text
+
+
+async def test_derived_entity_provisioning_frontless_base_still_generates(monkeypatch, tmp_path):
+    """The base entity supplied only the anchor, and there is no anchor any more — so a
+    missing/frontless base row no longer degrades anything and no longer warns about a
+    lost "family-resemblance anchor"."""
     db.init("sqlite://")
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
@@ -553,27 +594,31 @@ async def test_derived_entity_provisioning_missing_base_front_card_degrades(monk
         CharacterService(session, settings=settings).create_character("SCP-049", "SCP-049")  # no front card
     captured = {}
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
-        captured["anchor_path"] = anchor_path
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
+        captured.update(anchor_path=anchor_path, descriptor=descriptor)
         return ["/tmp/derived.png"]
 
     monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
 
-    with caplog.at_level("WARNING"):
-        await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
+    await run_service._ensure_derived_entity_cards("SCP-049", _derived_entity_scenes("SCP-049-2"))
 
-    assert captured["anchor_path"] is None  # degrade path — no anchor, generation still proceeds
-    assert "no front card" in caplog.text
+    assert captured["anchor_path"] is None
+    assert captured["descriptor"] == DERIVED_DESCRIPTORS["SCP-049-2"]
 
 
 async def test_derived_entity_provisioning_cap_and_warning(monkeypatch, tmp_path, caplog):
+    """The cap applies among *authored* keys — unauthored ones are dropped earlier and
+    must not consume the budget (see the authored-first test below)."""
     db.init("sqlite://")
     settings = _settings(tmp_path)
     settings.derived_entity_max_per_run = 1
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    monkeypatch.setitem(run_service.DERIVED_DESCRIPTORS, "SCP-049-3", "solo, 1boy, a second authored look")
     calls = []
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         return ["/tmp/derived.png"]
 
@@ -589,12 +634,43 @@ async def test_derived_entity_provisioning_cap_and_warning(monkeypatch, tmp_path
     assert "SCP-049-3" in caplog.text
 
 
+async def test_derived_entity_provisioning_unauthored_keys_do_not_consume_the_cap(
+    monkeypatch, tmp_path, caplog,
+):
+    """Regression: the authored filter used to run *inside* the generation loop, after
+    the cap slice, so unauthored keys ahead of an authored one burned the budget and
+    then skipped — the authored key was never generated at all."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.derived_entity_max_per_run = 2
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
+        calls.append(card_key)
+        return ["/tmp/derived.png"]
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    with caplog.at_level("WARNING"):
+        await run_service._ensure_derived_entity_cards(
+            # Two unauthored keys first, filling the cap of 2 under the old ordering.
+            "SCP-049", _derived_entity_scenes("SCP-049-8", "SCP-049-9", "SCP-049-2"),
+        )
+
+    assert calls == ["SCP-049-2"]
+    assert "SCP-049-8" in caplog.text and "SCP-049-9" in caplog.text
+    assert "capped at" not in caplog.text  # only one authored key, so the cap never fires
+
+
 async def test_derived_entity_provisioning_generation_failure_swallowed(monkeypatch, tmp_path):
     db.init("sqlite://")
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
 
-    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                            angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
@@ -612,7 +688,8 @@ async def test_derived_entity_provisioning_swallowed_failure_rolls_back_stub_row
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate_no_front(self, card_key, descriptor, *, pose="standing", anchor_path=None, angles=None):
+    async def fake_generate_no_front(self, card_key, descriptor, *, pose="standing", anchor_path=None,
+                                     angles=None, negative_suffix=None, enrich_ban=None, stage=False):
         calls.append(card_key)
         self._ensure_character(card_key)  # mimics the real generator creating the row up front
         return []  # every angle failed — no front card ever gets set

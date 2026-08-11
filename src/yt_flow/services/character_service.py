@@ -26,6 +26,7 @@ from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.domain.png import has_alpha
+from yt_flow.domain.state import DERIVED_DESCRIPTORS, STOCK_CAST_KEYS, STOCK_NEGATIVE
 from yt_flow.observability import get_client, observe
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
@@ -906,6 +907,42 @@ class CharacterService:
             self.update_character(character.id, **updates)
         return saved
 
+    @staticmethod
+    def _maskless_negative_suffix(card_key: str, descriptor: str | None) -> str | None:
+        """``STOCK_NEGATIVE`` when the descriptor in play is a maskless authored look.
+
+        Story 10.6's ② isolation: `generate_special_pose_card` was the one card path
+        that never passed a negative suffix, so the `glowing eyes, monster, child,
+        chibi, 2boys` suppression every base STOCK card gets never reached it. The
+        mechanism is what justifies the wiring — the suffix names the exact defects
+        seen — and the seed-1062 pair shows it acting: without the suffix that frame
+        came back as an adult *plus a chibi child* in matching jumpsuits, with it a
+        single adult. Read `10-6-live-validation/README.md` before quoting the
+        pre-registered 2/3-vs-1/3 tally: every scored failure was the hand criterion,
+        which failed in both legs, so the count is weak evidence on its own.
+
+        Scoped on the **descriptor actually in play**, not on table membership. This
+        suffix suppresses `skull mask, gas mask, helmet, visor`, and SCP-049
+        legitimately *is* a beaked mask, so applying it to an entity's pose card would
+        erase the entity. Table membership alone was not enough: a derived key
+        provisioned before 10.6 still carries the *inherited* base descriptor, so
+        `SCP-049-2` today asks for a "white beaked plague doctor mask" in the positive
+        prompt — pairing that with mask suppression fights itself. A derived key
+        therefore qualifies only while its stored descriptor is still the authored one
+        (the vision read-back is appended, hence ``startswith``).
+
+        STOCK keys need no such check: their stored descriptor started as the authored
+        stock text and that text is what the suffix was tuned against. That authored
+        looks never request what the suffix suppresses is enforced at design time by
+        ``tests/test_seed_stock_cast.py``, not re-derived here.
+        """
+        if card_key in STOCK_CAST_KEYS:
+            return STOCK_NEGATIVE
+        authored = DERIVED_DESCRIPTORS.get(card_key)
+        if authored and (descriptor or "").startswith(authored):
+            return STOCK_NEGATIVE
+        return None
+
     async def generate_special_pose_card(self, card_key: str, pose_hint: str) -> str | None:
         """Generate one front-angle special-pose card, or ``None`` on any recoverable miss.
 
@@ -952,6 +989,9 @@ class CharacterService:
                 width=self._settings.character_image_width,
                 height=self._settings.character_image_height,
                 ipadapter_weight=_ANGLE_IPADAPTER_WEIGHTS["front"],
+                # visual_desc, not the table: this is the text the positive prompt above
+                # was built from, so the suffix can never fight it (Story 10.6).
+                negative_suffix=self._maskless_negative_suffix(card_key, visual_desc),
             )
             if not has_alpha(img_bytes):
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")

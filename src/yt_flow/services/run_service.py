@@ -27,7 +27,12 @@ from sqlmodel import Session
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.db.models import Run
-from yt_flow.domain.state import PipelineState
+from yt_flow.domain.state import (
+    BANNED_STOCK_TOKEN,
+    DERIVED_DESCRIPTORS,
+    STOCK_NEGATIVE,
+    PipelineState,
+)
 from yt_flow.pipeline.graph import build_graph
 from yt_flow.pipeline.nodes import image as image_node
 from yt_flow.services import comfyui_client, eval_service
@@ -584,7 +589,30 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
 
         with Session(db._engine) as session:
             svc = CharacterService(session, settings=settings)
-            to_generate = [key for key in keys if svc.check_existing_character(key) is None]
+            missing = [key for key in keys if svc.check_existing_character(key) is None]
+            if not missing:
+                return
+
+            # Story 10.6 (지적 15): the authored look, never the base entity's. 8.13 built
+            # the descriptor as the base's verbatim visual_descriptor plus a qualifier line
+            # and locked identity to the base's own front card via IPAdapter, so SCP-049-2
+            # rendered as a second hooded plague doctor in a white beak mask — 13 of the 66
+            # cast slots in run 8a9a288b named it. There is no anchor now: a
+            # family-resemblance lock is exactly what must not happen for a derived entity
+            # whose whole point is looking different.
+            #
+            # Authored-first, *then* the cap. Filtering inside the generation loop instead
+            # let unauthored keys consume the budget and skip immediately, so an authored
+            # key sitting behind two unauthored ones never got generated at all.
+            unauthored = [key for key in missing if key not in DERIVED_DESCRIPTORS]
+            if unauthored:
+                logger.warning(
+                    "derived entity provisioning for %s: no authored look in "
+                    "DERIVED_DESCRIPTORS for %s; skipping those (a wrong card is worse "
+                    "than no card — cast resolution already skips these keys)",
+                    scp_id, unauthored,
+                )
+            to_generate = [key for key in missing if key in DERIVED_DESCRIPTORS]
             if not to_generate:
                 return
             cap = max(0, settings.derived_entity_max_per_run)
@@ -595,29 +623,26 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
                     scp_id, cap, skipped,
                 )
 
-            base = svc.check_existing_character(scp_id)
-            anchor_path: str | None = None
-            if base is not None and base.angle_front_path:
-                anchor_path = svc._abs_asset_path(base.angle_front_path)
-            elif base is None:
-                logger.warning(
-                    "derived entity provisioning for %s: base entity has no Character row, "
-                    "generating without a family-resemblance anchor", scp_id,
-                )
-            else:
-                logger.warning(
-                    "derived entity provisioning for %s: base entity has no front card, "
-                    "generating without a family-resemblance anchor", scp_id,
-                )
-            base_descriptor = (base.visual_descriptor if base is not None else "") or (
-                f"{scp_id}, an SCP Foundation anomaly"
-            )
-            descriptor = f"{base_descriptor}\nA reclassified/duplicate instance of {scp_id}."
-
             for card_key in to_generate[:cap]:
+                descriptor = DERIVED_DESCRIPTORS[card_key]
                 try:
                     await svc.generate_cards_from_descriptor(
-                        card_key, descriptor, pose="standing", anchor_path=anchor_path,
+                        card_key, descriptor, pose="standing", anchor_path=None,
+                        negative_suffix=STOCK_NEGATIVE,
+                        # Reversed for derived keys in 10.6: seed_stock_cast kept the
+                        # "SCP Foundation" token for them ("derived keys are SCP
+                        # entities"), but the vision read-back reinjecting it is the
+                        # live-proven mask attractor, and SCP-049-2's authored look is
+                        # defined by the *absence* of a mask. Untested in isolation: the
+                        # ① legs changed descriptor, anchor and ban together, so credit
+                        # for the bare head is not attributable to this argument alone.
+                        enrich_ban=BANNED_STOCK_TOKEN,
+                        # ponytail: no `stage=` — a brand-new derived key has nothing to
+                        # protect, so this publishes on first provision exactly as 8.13
+                        # did. Ceiling: an authored look no human has seen goes live
+                        # (`_resolve_card_path` reads the columns with no status/epoch
+                        # filter). Gating it needs a promote path that accepts derived
+                        # keys, which `approve_stock_cast.py` does not have — deferred.
                     )
                     character = svc.check_existing_character(card_key)
                     if character is None or not character.angle_front_path:

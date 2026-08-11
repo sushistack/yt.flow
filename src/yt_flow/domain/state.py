@@ -1,13 +1,22 @@
 """Domain state types — the single shared type substrate for the pipeline.
 
-Pure stdlib typing only. This module MUST NOT import any upper layer
+Pure stdlib only. This module MUST NOT import any upper layer
 (pipeline, services, db, api); the layered dependency rule is
 `api -> services -> (pipeline | db) -> domain`. [AD-1]
 
 These are TypedDicts, not Pydantic models, because LangGraph state is the
 source of truth and must stay plain JSON-serializable for checkpointing. [AD-2]
+
+Alongside the types this module also holds the **closed vocabularies and authored
+cast/prompt tables** that more than one upper layer must agree on — stock cast keys and
+roles, story archetypes, location keys, and the derived-entity looks plus their negative
+suffix. They live here for the same reason: `services/` and `scripts/` both read them and
+neither may import the other, so `domain` is the only shared floor. Each table keeps its
+live tuning rationale in a comment and, where a sibling table must cover it, an `assert`
+that fails at import rather than drifting silently.
 """
 
+import re
 from typing import Literal, NotRequired, TypedDict, get_args
 
 StageName = Literal["scenario", "image", "tts", "subtitle", "video"]
@@ -101,6 +110,82 @@ STOCK_CAST_ROLES: dict[str, str] = {
     "STOCK-security": "Foundation site security — black tactical vest and cap, alert posture. A facility guard, never civilian police or military.",
 }
 assert set(STOCK_CAST_ROLES) == set(STOCK_CAST_KEYS)  # the prompt catalog must cover every key
+
+BANNED_STOCK_TOKEN = "SCP Foundation"
+# Relocated from scripts/seed_stock_cast.py in Story 10.6: run_service needs this token,
+# STOCK_NEGATIVE and DERIVED_DESCRIPTORS, and src/ must never import scripts/. The script
+# re-exports all three, so seed.STOCK_NEGATIVE / seed.BANNED_STOCK_TOKEN still resolve.
+#
+# The token is deliberately absent from every authored cast descriptor — both
+# DERIVED_DESCRIPTORS here and STOCK_DESCRIPTORS in scripts/seed_stock_cast.py: probing
+# the live checkpoint showed that token alone is what collapsed these extras into a
+# masked, hazmat-suited figure — with it the render is a skull mask or a visored helmet,
+# without it an ordinary person, every other lever held constant. The wardrobe carries the
+# setting instead.
+
+# Story 10.6 — authored looks for `<scp_id>-<n>` derived entities (지적 15). Story 8.13
+# built the derived-card path by inheriting the *base* entity's verbatim visual_descriptor
+# plus one qualifier line, so SCP-049-2 rendered as a second hooded plague doctor in a
+# white beak mask; 13 of the 66 cast slots in run 8a9a288b named it. (A slot count, not a
+# defect count — nobody judged those 13 frames individually. The identity collision itself
+# was judged on one same-seed render pair, `10-6-live-validation/`.) Meanwhile
+# recompose_service.CARD_LOOKS already encoded the correct distinction ("torn surgical
+# scrubs"). Only an authored look can carry that distinction into the card generator.
+#
+# Same discipline as STOCK_DESCRIPTORS, for the same live reasons: Danbooru tags lead
+# (AnimagineXL is Danbooru-trained and "solo, 1boy" is its one-character control),
+# purely affirmative (text encoders do not negate — "no mask" in a positive prompt
+# summons masks, so every prohibition belongs in STOCK_NEGATIVE), one concrete
+# reproducible hook feature so the non-front angles have something to hold, and hair/eye
+# colour pinned concretely rather than as "dark".
+#
+# ponytail: a hand-authored table, and an unauthored derived key is skipped rather than
+# guessed at — cast_decision.md's "a wrong card is far worse than no card", the same rule
+# CARD_LOOKS already states. Guessing is what produced 지적 15. The natural upgrade is to
+# mine the derived entity's look from the article via the existing research step; that is
+# a new LLM path and its own story, not speculative code here.
+DERIVED_DESCRIPTORS: dict[str, str] = {
+    # SCP-049-2 is a *victim* SCP-049 reanimated — maskless and hoodless by definition,
+    # which is exactly what the inherited descriptor destroyed. The hook feature is the
+    # suture line; the scrubs are what CARD_LOOKS already promises the recomposer.
+    "SCP-049-2": (
+        "solo, 1boy, mature adult man, adult male body proportions, "
+        "bare uncovered head, ordinary human face, visible nose and mouth, "
+        "short dark brown hair, grey eyes, ashen grey skin, "
+        "coarse black surgical sutures across the chest and forearms, "
+        "torn pale green surgical scrubs, bare feet, "
+        "slack expressionless features, stiff upright stance"
+    ),
+}
+# `_ensure_derived_entity_cards` only ever looks up keys matching `<scp_id>-<n>`, so a key
+# of any other shape here is dead weight that reads as authored. Same lockstep habit as
+# STOCK_CAST_ROLES above.
+assert all(re.fullmatch(r"SCP-\d+-\d+", key) for key in DERIVED_DESCRIPTORS), (
+    "DERIVED_DESCRIPTORS keys must match the <scp_id>-<n> shape cast_decision emits"
+)
+
+# Suppression stays per-call and STOCK-scoped: the shared workflow's own negative
+# node must stay mask-neutral because SCP-049 legitimately needs a mask.
+#
+# Deliberately short, and it names "face" zero times. CLIP negative conditioning is
+# a token bag, not a set of phrases: a longer list that repeated "face" (full-face
+# mask, face shield, hood covering face, monster face, horror creature face) got the
+# word itself suppressed — STOCK-security rendered a blank white face with white
+# blob hands and STOCK-d-class a black void with eye slits. Body/age terms
+# (bald, child, shorts…) are steered affirmatively by the descriptor instead.
+#
+# LENGTH IS THE CONSTRAINT, not just wording. This list is appended to the workflow's
+# own ~30-term negative, and every defect met along the way tempted one more clause.
+# Twice now that ended badly: a version repeating "face" blanked the faces, and a
+# ~40-term version turned all four STOCK-security cards into giant abstract polygons
+# with a thumbnail-sized guard inside them. Keep it to the defects that actually
+# recurred, steer everything else affirmatively from the descriptor, and re-add a term
+# only when its defect comes back — never pre-emptively.
+STOCK_NEGATIVE = (
+    "skull mask, gas mask, helmet, visor, glowing eyes, monster, "
+    "character sheet, multiple views, 2boys, "
+    "child, 1girl, chibi"
+)
 
 # Story 8.5 — closed location key vocabulary for pre-built stock background
 # plates. Closed because an LLM emitting an unknown key degrades to free-text
