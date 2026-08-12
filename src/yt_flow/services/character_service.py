@@ -11,6 +11,7 @@ import ipaddress
 import json
 import logging
 import mimetypes
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -193,6 +194,18 @@ def _normalize_pose(pose: object) -> str:
 def pose_hint_key(hint: str) -> str:
     """Deterministic storage key for Story 8.4 on-demand special-pose cards."""
     return "hint:" + hashlib.sha256(hint.strip().lower().encode()).hexdigest()[:10]
+
+
+def _pose_guide_workflow_path() -> Path:
+    """Where the provider will look for the Story 10.5 ControlNet graph.
+
+    Duplicated resolution rather than a shared helper, because the provider owns the
+    constant and importing it at module scope would make services import the provider
+    eagerly. Kept in one expression so the two cannot drift silently.
+    """
+    from yt_flow.services.character_image_provider import _POSE_GUIDE_WORKFLOW_PATH
+
+    return Path(os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd())) / _POSE_GUIDE_WORKFLOW_PATH
 
 
 def _first_available_angle(character: CharacterModel) -> str | None:
@@ -943,11 +956,21 @@ class CharacterService:
             return STOCK_NEGATIVE
         return None
 
-    async def generate_special_pose_card(self, card_key: str, pose_hint: str) -> str | None:
+    async def generate_special_pose_card(
+        self, card_key: str, pose_hint: str, pose_guide_key: str | None = None
+    ) -> str | None:
         """Generate one front-angle special-pose card, or ``None`` on any recoverable miss.
 
         Story 8.4 keeps special poses anchored to an existing standing front card:
         no front identity anchor means no generation, so we never t2i a stranger.
+
+        Story 10.5: with ``pose_guide_conditioning_enabled`` on and ``pose_guide_key``
+        resolvable, generation runs on the ControlNet Union graph with the guide raster
+        as an openpose control. The hint had been reaching the model as **text only**,
+        and text alone does not move this chain: at a shared seed triple the guided leg
+        drew the requested supine pose 3/3 while the unguided control drew it 0/3 and
+        dropping the IPAdapter anchor to 0.0 also drew it 0/3. Off by default, and every
+        rejection path below degrades to exactly the pre-10.5 call.
         """
         hint_key = pose_hint_key(pose_hint)
         character = self.check_existing_character(card_key)
@@ -979,6 +1002,37 @@ class CharacterService:
         safe_scp = _sanitize_scp_id(card_key)
         assets_root = Path(self._settings.assets_path)
         asset_service = self._asset_service
+
+        guide_path: str | None = None
+        if pose_guide_key and self._settings.pose_guide_conditioning_enabled:
+            # `resolve_pose_guide` fails closed to None on every rejection (unspellable
+            # key, unapproved entry, integrity mismatch, schema/anatomy incompatible with
+            # the character's profile) and logs its reason, so the warning below is only
+            # about which card lost its conditioning.
+            guide = asset_service.resolve_pose_guide(pose_guide_key, character.pose_conditioning)
+            reason: str | None = None
+            if guide is None:
+                reason = f"unusable under profile {character.pose_conditioning!r}"
+            elif guide.get("control_type") != "openpose":
+                # The graph pins SetUnionControlNetType to "openpose" and only that pair
+                # was ever rendered (3/3 supine). `scribble` guides are legal for the
+                # creature profiles, so without this a silhouette raster would be fed to
+                # the union model declared as a skeleton — an unmeasured control type.
+                # Widening this means measuring the scribble pair, not editing the check.
+                reason = f"control_type {guide.get('control_type')!r} is not openpose (unmeasured on this graph)"
+            elif not _pose_guide_workflow_path().is_file():
+                # Checked here, not left to the provider's own fallback: that fallback
+                # renders unconditioned and still returns success, and the manifest write
+                # below would then record a `pose_guide` for a card that never saw one.
+                reason = f"guide workflow {_pose_guide_workflow_path()} is missing"
+            if reason:
+                logger.warning(
+                    "special pose %s/%s: guide %r not applied — %s; degrading to the unconditioned workflow",
+                    card_key, hint_key, pose_guide_key, reason,
+                )
+            else:
+                guide_path = guide["abs_path"]
+
         chars_dir = assets_root / "characters" / safe_scp / f"epoch_{asset_service.style_epoch}"
         chars_dir.mkdir(parents=True, exist_ok=True)
         out_path = chars_dir / f"{hint_key.replace(':', '_')}_front.png"
@@ -992,6 +1046,7 @@ class CharacterService:
                 # visual_desc, not the table: this is the text the positive prompt above
                 # was built from, so the suffix can never fight it (Story 10.6).
                 negative_suffix=self._maskless_negative_suffix(card_key, visual_desc),
+                pose_guide_path=guide_path,
             )
             if not has_alpha(img_bytes):
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
@@ -1000,7 +1055,14 @@ class CharacterService:
             # Manifest write before the DB row (see generate_candidates_from_reference).
             asset_service.add_asset(
                 f"{safe_scp}/{hint_key}_front", rel_path,
-                source={"type": "comfyui_generation", "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS["front"]},
+                source={
+                    "type": "comfyui_generation",
+                    "ipadapter_weight": _ANGLE_IPADAPTER_WEIGHTS["front"],
+                    # Recorded, not inferred: two cards for the same hint key look
+                    # identical in the manifest otherwise, and only one of them was
+                    # structurally conditioned.
+                    "pose_guide": pose_guide_key if guide_path else None,
+                },
                 card_key=safe_scp, pose=hint_key, angle="front",
             )
             asset_service.approve_asset(f"{safe_scp}/{hint_key}_front")

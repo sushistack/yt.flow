@@ -511,8 +511,16 @@ async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
         settings = _settings()
         if settings.comfyui_mock:
             return
-        pairs: list[tuple[str, str]] = []
-        seen: set[tuple[str, str]] = set()
+        # Story 10.5: the guide key travels with the pair. It used to be dropped here,
+        # which is why 8.20's whole pose-guide apparatus had no consumer at generation
+        # time. Dedup stays on (card_key, hint) because that is what names the card file
+        # and the card row — the same hint carrying two different guide keys would
+        # otherwise generate twice into one path. The *first non-empty* guide wins: taking
+        # the first occurrence outright would silently drop conditioning whenever an
+        # earlier shot spelled the same hint without a guide key, which is the common
+        # shape (`cast_decision.md` makes `pose_guide_key` optional alongside the hint).
+        triples: list[tuple[str, str, str | None]] = []
+        seen: dict[tuple[str, str], int] = {}
         for scene in scenes or []:
             for shot in scene.get("shots", []):
                 for member in shot.get("cast", []) or []:
@@ -523,28 +531,32 @@ async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
                     if not isinstance(card_key, str) or not isinstance(pose_hint, str) or not pose_hint.strip():
                         continue
                     pair = (card_key, pose_hint.strip())
+                    guide_key = member.get("pose_guide_key")
+                    guide_key = guide_key if isinstance(guide_key, str) and guide_key else None
                     if pair not in seen:
-                        seen.add(pair)
-                        pairs.append(pair)
-        if not pairs:
+                        seen[pair] = len(triples)
+                        triples.append((*pair, guide_key))
+                    elif guide_key and triples[seen[pair]][2] is None:
+                        triples[seen[pair]] = (*pair, guide_key)
+        if not triples:
             return
 
         with Session(db._engine) as session:
             svc = CharacterService(session, settings=settings)
-            to_generate: list[tuple[str, str]] = []
-            for card_key, hint in pairs:
+            to_generate: list[tuple[str, str, str | None]] = []
+            for card_key, hint, guide_key in triples:
                 if svc.get_card(card_key, pose_hint_key(hint), "front") is None:
-                    to_generate.append((card_key, hint))
+                    to_generate.append((card_key, hint, guide_key))
             cap = max(0, settings.special_pose_max_per_run)
             skipped = to_generate[cap:]
             if skipped:
                 logger.warning(
                     "special pose provisioning for %s capped at %d; skipped %s",
-                    scp_id, cap, [f"{card_key}:{hint}" for card_key, hint in skipped],
+                    scp_id, cap, [f"{card_key}:{hint}" for card_key, hint, _ in skipped],
                 )
-            for card_key, hint in to_generate[:cap]:
+            for card_key, hint, guide_key in to_generate[:cap]:
                 try:
-                    await svc.generate_special_pose_card(card_key, hint)
+                    await svc.generate_special_pose_card(card_key, hint, guide_key)
                 except Exception:  # noqa: BLE001 — one special pose must not block a run
                     logger.warning(
                         "special pose provisioning failed for %s pose_hint=%r",

@@ -332,7 +332,7 @@ async def test_special_pose_provisioning_skips_mock_mode(monkeypatch, tmp_path):
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate(self, card_key, pose_hint):
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
         calls.append((card_key, pose_hint))
         return "/tmp/special.png"
 
@@ -349,7 +349,7 @@ async def test_special_pose_provisioning_no_cast_noop(monkeypatch, tmp_path):
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate(self, card_key, pose_hint):
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
         calls.append((card_key, pose_hint))
         return "/tmp/special.png"
 
@@ -370,7 +370,7 @@ async def test_special_pose_provisioning_cache_hit_skips_generation(monkeypatch,
         )
     calls = []
 
-    async def fake_generate(self, card_key, pose_hint):
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
         calls.append((card_key, pose_hint))
         return "/tmp/special.png"
 
@@ -388,7 +388,7 @@ async def test_special_pose_provisioning_cap_and_warning(monkeypatch, tmp_path, 
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
     calls = []
 
-    async def fake_generate(self, card_key, pose_hint):
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
         calls.append((card_key, pose_hint))
         return "/tmp/special.png"
 
@@ -417,7 +417,7 @@ async def test_special_pose_provisioning_generation_failure_swallowed(monkeypatc
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
 
-    async def fake_generate(self, card_key, pose_hint):
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
         raise RuntimeError("renderer down")
 
     monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
@@ -735,3 +735,72 @@ async def test_resume_run_invokes_derived_entity_provisioning(monkeypatch):
     await run_service.resume_run("run-1", "scenario", "approve")
 
     assert calls == ["SCP-049"]
+
+
+# ── Story 10.5: the pose guide key must survive the harvest ──────────────────
+# `_ensure_special_pose_cards` used to collect `(card_key, pose_hint)` and drop
+# `pose_guide_key` on the floor, which is the whole reason 8.20's guide apparatus had
+# no consumer at generation time. Without these two tests, reverting the triple to a
+# pair leaves the suite green.
+
+
+def _guided_scenes(*triples):
+    """One shot per triple; `guide` may be None to model a hint with no guide key."""
+    return [{
+        "scene_num": 1,
+        "shots": [{
+            "shot_id": f"S001{i}",
+            "cast": [{
+                "card_key": card_key, "position": "center", "depth": "near",
+                "pose": "standing", "pose_hint": hint,
+                **({"pose_guide_key": guide} if guide is not None else {}),
+            }],
+        } for i, (card_key, hint, guide) in enumerate(triples, start=1)],
+    }]
+
+
+async def test_special_pose_provisioning_forwards_the_guide_key(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
+        calls.append((card_key, pose_hint, pose_guide_key))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", _guided_scenes(
+        ("STOCK-d-class", "lying supine on table", "humanoid_lying_supine"),
+        ("SCP-049", "extending hand", None),
+    ))
+
+    assert calls == [
+        ("STOCK-d-class", "lying supine on table", "humanoid_lying_supine"),
+        ("SCP-049", "extending hand", None),
+    ]
+
+
+async def test_dedup_keeps_the_first_non_empty_guide_not_the_first_shot(monkeypatch, tmp_path):
+    """The common shape: an earlier shot spells the hint with no guide key and a later
+    one supplies it. Taking the first occurrence outright would silently render that
+    card unconditioned — the defect being fixed is invisible without this case."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+    calls = []
+
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
+        calls.append((card_key, pose_hint, pose_guide_key))
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    await run_service._ensure_special_pose_cards("SCP-049", _guided_scenes(
+        ("STOCK-d-class", "lying supine on table", None),
+        ("STOCK-d-class", "lying supine on table", "humanoid_lying_supine"),
+    ))
+
+    # One card (dedup on the pair that names the file), and it keeps the guide.
+    assert calls == [("STOCK-d-class", "lying supine on table", "humanoid_lying_supine")]

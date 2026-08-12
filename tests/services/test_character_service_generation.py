@@ -460,6 +460,111 @@ class TestMultiAngleGeneration:
         # asks for one, even for a `<scp_id>-<n>`-shaped key.
         assert suffixes["SCP-049-3"] is None
 
+    def _special_pose_guide_call(self, service, tmp_path, *, enabled, resolved, caplog=None):
+        """Run one `generate_special_pose_card` with a guide key and return the kwargs.
+
+        Patches `resolve_pose_guide` rather than building a manifest: the behaviour under
+        test is the *wiring* (setting gate → resolver → provider kwarg), and the resolver
+        already has its own tests. `resolved=None` stands for every one of its fail-closed
+        paths at once — unspellable key, unapproved entry, integrity mismatch,
+        incompatible schema/anatomy.
+        """
+        from unittest.mock import patch as _patch
+
+        from yt_flow.services.asset_service import AssetService
+
+        service._settings = Settings(
+            workspace_path=str(tmp_path), assets_path=str(tmp_path),
+            pose_guide_conditioning_enabled=enabled,
+        )
+        character = service.create_character("STOCK-d-class", "D-class")
+        service.update_character(
+            character.id, visual_descriptor="orange jumpsuit", angle_front_path=str(tmp_path / "front.png"),
+        )
+        # Set outside `update_character`: `pose_conditioning` is deliberately absent from
+        # its allowlist, so 8.20's backfill script is the only writer. The model default
+        # is `edit_only`, whose accepted-schema set is empty — a fresh row therefore
+        # fails closed to no guide, which is the intended safe default.
+        character = service.check_existing_character("STOCK-d-class")
+        character.pose_conditioning = "openpose"
+        service._session.add(character)
+        service._session.commit()
+        mock_provider = MagicMock()
+        mock_provider.supports_i2i = True
+        mock_provider.produces_alpha = True
+        mock_provider.generate = AsyncMock(return_value=TINY_PNG)
+
+        with _patch.object(service, "_get_image_provider", return_value=mock_provider), \
+             _patch.object(AssetService, "resolve_pose_guide", return_value=resolved) as resolver:
+            assert asyncio_run(service.generate_special_pose_card(
+                "STOCK-d-class", "lying supine on table", "humanoid_lying_supine",
+            ))
+        return mock_provider.generate.call_args.kwargs, resolver
+
+    def test_special_pose_guide_is_not_even_resolved_while_the_setting_is_off(self, service, tmp_path):
+        """AC: at the default setting the arguments passed to `provider.generate` are
+        identical to before this story — `pose_guide_path` is None and the resolver is
+        never consulted, so an unapproved or corrupt guide cannot change one byte."""
+        kwargs, resolver = self._special_pose_guide_call(
+            service, tmp_path, enabled=False, resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"},
+        )
+
+        assert kwargs["pose_guide_path"] is None
+        assert resolver.call_count == 0
+
+    def test_special_pose_guide_is_passed_when_enabled_and_resolvable(self, service, tmp_path):
+        kwargs, resolver = self._special_pose_guide_call(
+            service, tmp_path, enabled=True, resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"},
+        )
+
+        assert kwargs["pose_guide_path"] == "/guides/supine.png"
+        # The character's own conditioning profile decides compatibility — never the card
+        # key and never a descriptor keyword (domain/pose.py AC4).
+        assert resolver.call_args.args == ("humanoid_lying_supine", "openpose")
+
+    def test_unresolvable_guide_degrades_to_the_existing_path_and_says_so(self, service, tmp_path, caplog):
+        """A silent fallback is a defect by this epic's own rule, so the degrade must be
+        audible: the card is still generated, just without conditioning."""
+        with caplog.at_level("WARNING"):
+            kwargs, _ = self._special_pose_guide_call(service, tmp_path, enabled=True, resolved=None)
+
+        assert kwargs["pose_guide_path"] is None
+        assert "degrading to the unconditioned workflow" in caplog.text
+
+    def test_a_non_openpose_guide_is_refused_rather_than_fed_to_an_openpose_graph(
+        self, service, tmp_path, caplog,
+    ):
+        """`SetUnionControlNetType` is pinned to `openpose` in the graph, but the catalog
+        also holds `scribble` silhouette guides that `guide_compatible` legitimately
+        approves for the creature profiles. Only the openpose pair was ever rendered
+        (3/3 supine), so anything else fails closed instead of shipping an unmeasured
+        control type at strength 0.9."""
+        with caplog.at_level("WARNING"):
+            kwargs, _ = self._special_pose_guide_call(
+                service, tmp_path, enabled=True,
+                resolved={"abs_path": "/guides/lunge.png", "control_type": "scribble"},
+            )
+
+        assert kwargs["pose_guide_path"] is None
+        assert "not openpose" in caplog.text
+
+    def test_a_missing_guide_workflow_refuses_before_the_manifest_can_claim_conditioning(
+        self, service, tmp_path, caplog, monkeypatch,
+    ):
+        """The provider degrades to the default graph when its guide workflow file is
+        absent and still returns a successful render — so without this check the manifest
+        would record `pose_guide` for a card that was never conditioned."""
+        monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(tmp_path))  # no data/workflows/ under it
+
+        with caplog.at_level("WARNING"):
+            kwargs, _ = self._special_pose_guide_call(
+                service, tmp_path, enabled=True,
+                resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"},
+            )
+
+        assert kwargs["pose_guide_path"] is None
+        assert "is missing" in caplog.text
+
     def test_authored_derived_looks_never_request_what_stock_negative_suppresses(self):
         """The runtime gate assumes authored derived looks are compatible with
         ``STOCK_NEGATIVE``; that assumption is enforced here, at design time, rather
@@ -884,6 +989,116 @@ class TestReferenceImageInjectionAndFallback:
 
         assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
         assert updated["7"]["inputs"]["text"] == original_negative
+
+    # ── Story 10.5: structural conditioning ──────────────────────────────────
+    # Live basis (`_bmad-output/implementation-artifacts/10-5-live-validation/README.md`):
+    # shared seed triple 1061/1062/1063, everything but the named variable held. The
+    # guided leg drew the requested supine pose 3/3, the unguided control 0/3, and
+    # dropping the IPAdapter anchor to 0.0 also 0/3 — so the guide is the cause and the
+    # anchor is not. These tests fix the *wiring* only; the frames are the evidence.
+
+    @pytest.fixture
+    def guide_workflow(self):
+        import json
+        path = Path(__file__).resolve().parents[2] / "data" / "workflows" / "comfyui_character_pose_guide_api.json"
+        return json.loads(path.read_text())
+
+    def test_guide_lands_in_the_guide_node_and_the_reference_stays_out_of_it(self, guide_workflow):
+        """The defect this narrowing exists for: `_inject_reference_image` writes
+        *every* LoadImage, so on the two-input guide graph the character's own card
+        would land in the ControlNet input and condition the pose on itself."""
+        updated = ComfyUICharacterProvider._inject_guide_image(guide_workflow, "supine.png [input]")
+        updated = ComfyUICharacterProvider._inject_reference_image(updated, "ref_1.png [input]")
+
+        loaders = {
+            n.get("_meta", {}).get("title"): n
+            for n in updated.values() if n.get("class_type") == "LoadImage"
+        }
+        assert len(loaders) == 2, "the guide graph must have a reference loader and a guide loader"
+        assert loaders["ytflow:guide_image"]["inputs"]["image"] == "supine.png [input]"
+        assert [
+            n["inputs"]["image"] for title, n in loaders.items() if title != "ytflow:guide_image"
+        ] == ["ref_1.png [input]"]
+
+    def test_t2i_fallback_keeps_the_guide_loader_alive(self, guide_workflow):
+        """`_drop_reference_only_nodes` deletes every LoadImage. On this graph the guide
+        loader is wired into ControlNetApplyAdvanced, so deleting it would leave a
+        dangling link and ComfyUI would reject the whole prompt — the i2i fallback would
+        turn a recoverable miss into a hard failure."""
+        updated = ComfyUICharacterProvider._remove_i2i_input(guide_workflow)
+
+        guide_ids = [
+            nid for nid, n in updated.items()
+            if n.get("class_type") == "LoadImage" and n.get("_meta", {}).get("title") == "ytflow:guide_image"
+        ]
+        assert len(guide_ids) == 1
+        apply_node = next(n for n in updated.values() if n.get("class_type") == "ControlNetApplyAdvanced")
+        assert apply_node["inputs"]["image"] == [guide_ids[0], 0]
+
+    def test_no_guide_loads_the_unchanged_default_workflow(self, workflow, monkeypatch):
+        """AC: with no guide the graph loaded is the pre-10.5 one.
+
+        `monkeypatch`, not `os.environ.setdefault`: a leaked (or pre-existing) project
+        root makes `_load_workflow` read a *different tree's* workflow while the fixture
+        reads this one — the editable-install shadowing hazard this repo already has on
+        record."""
+        monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+        provider = ComfyUICharacterProvider(Settings())
+
+        assert provider._load_workflow() == workflow
+        assert provider._load_workflow(pose_guide=True) != workflow
+
+    async def test_generate_routes_a_guide_through_upload_and_the_controlnet_graph(self, monkeypatch):
+        """End-to-end through `generate()`, because the helper-level tests above would all
+        still pass if the `pose_guide_path` block were deleted from it outright."""
+        monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+        submitted: dict = {}
+        uploaded: list[str] = []
+
+        async def fake_upload(base_url, data, name):
+            uploaded.append(name)
+            return f"{name} [input]"
+
+        async def fake_submit(base_url, workflow):
+            submitted.update(workflow)
+            return TINY_PNG
+
+        import yt_flow.services.comfyui_client as comfyui_client
+        monkeypatch.setattr(comfyui_client, "upload_image", fake_upload)
+        monkeypatch.setattr(comfyui_client, "submit_and_fetch", fake_submit)
+
+        guide = Path(__file__).resolve().parents[2] / "assets" / "pose_guides" / "humanoid_lying_supine.png"
+        await ComfyUICharacterProvider(Settings()).generate(
+            "a d-class in an orange jumpsuit", None, pose_guide_path=str(guide),
+        )
+
+        assert uploaded == ["humanoid_lying_supine.png"]
+        assert any(n.get("class_type") == "ControlNetApplyAdvanced" for n in submitted.values())
+        guide = next(n for n in submitted.values() if n.get("_meta", {}).get("title") == "ytflow:guide_image")
+        assert guide["inputs"]["image"] == "humanoid_lying_supine.png [input]"
+
+    async def test_an_unreadable_guide_costs_the_conditioning_not_the_card(self, monkeypatch, caplog):
+        """The read/upload sits before the graph choice precisely so this degrades. If it
+        raised out of `generate()` the card would never be produced, while the identical
+        failure on the identity reference merely falls back to t2i."""
+        monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+        submitted: dict = {}
+
+        async def fake_submit(base_url, workflow):
+            submitted.update(workflow)
+            return TINY_PNG
+
+        import yt_flow.services.comfyui_client as comfyui_client
+        monkeypatch.setattr(comfyui_client, "submit_and_fetch", fake_submit)
+
+        with caplog.at_level("WARNING"):
+            out = await ComfyUICharacterProvider(Settings()).generate(
+                "a d-class in an orange jumpsuit", None, pose_guide_path="/nope/missing_guide.png",
+            )
+
+        assert out  # a card came back
+        assert not any(n.get("class_type") == "ControlNetApplyAdvanced" for n in submitted.values())
+        assert "rendering unconditioned" in caplog.text
 
     def test_clean_alpha_noise_drops_disconnected_speck_keeps_main_blob(self):
         """Story 8.2 follow-up: InSPyReNet leaves dithered alpha noise as small

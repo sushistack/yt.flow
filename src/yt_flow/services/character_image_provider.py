@@ -22,10 +22,29 @@ logger = logging.getLogger(__name__)
 _NEGATIVE_NODE_IDS = {"7", "37_neg"}  # ponytail: well-known negative prompt node IDs
 _NEGATIVE_TITLE_KEYWORDS = ("negative", "neg ", "bad")
 
+# The structural-conditioning graph and the title that marks its guide input. A second
+# workflow file rather than dynamic node insertion (Story 10.5): it is shorter, and with
+# the feature off the existing graph does not change by one byte.
+# ponytail: a constant, not a Settings field — there is exactly one such workflow and
+# nothing configures it. Promote it to config the day a second guide graph exists.
+_POSE_GUIDE_WORKFLOW_PATH = "data/workflows/comfyui_character_pose_guide_api.json"
+_GUIDE_NODE_TITLE = "ytflow:guide_image"
+
 
 def _is_negative_node(node_id: str, node: dict) -> bool:
     title = node.get("_meta", {}).get("title", "").lower()
     return node_id in _NEGATIVE_NODE_IDS or any(kw in title for kw in _NEGATIVE_TITLE_KEYWORDS)
+
+
+def _is_guide_node(node: dict) -> bool:
+    """True for the pose-guide ``LoadImage``, which is not the identity reference.
+
+    The guide graph has two ``LoadImage`` nodes and the helpers below address
+    ``LoadImage`` by class alone, so without this the reference would be written over
+    the guide (and the t2i fallback would delete the guide out from under an
+    otherwise-live ControlNet link).
+    """
+    return node.get("_meta", {}).get("title") == _GUIDE_NODE_TITLE
 
 
 def _drop_reference_only_nodes(workflow: dict) -> None:
@@ -33,7 +52,7 @@ def _drop_reference_only_nodes(workflow: dict) -> None:
     for node_id, node in list(workflow.items()):
         if not isinstance(node, dict):
             continue
-        if node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced", "LoadImage"):
+        if node.get("class_type") in ("IPAdapter", "IPAdapterAdvanced", "LoadImage") and not _is_guide_node(node):
             workflow.pop(node_id, None)
 
 
@@ -168,6 +187,7 @@ class CharacterImageProvider(ABC):
         height: int = 1216,
         ipadapter_weight: float | None = None,
         negative_suffix: str | None = None,
+        pose_guide_path: str | None = None,
     ) -> bytes:
         """Generate a character image. Returns raw PNG bytes.
 
@@ -178,6 +198,9 @@ class CharacterImageProvider(ABC):
             height: Target image height.
             ipadapter_weight: Optional IPAdapter conditioning weight.
             negative_suffix: Optional per-call terms appended to the negative prompt.
+            pose_guide_path: Optional structural guide raster (Story 10.5). When given,
+                generation runs on the ControlNet workflow with this image as the control
+                signal; when ``None`` the call is byte-identical to the pre-10.5 path.
 
         Returns:
             Raw image bytes (PNG format).
@@ -227,10 +250,24 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         height: int = 1216,
         ipadapter_weight: float | None = None,
         negative_suffix: str | None = None,
+        pose_guide_path: str | None = None,
     ) -> bytes:
         from yt_flow.services.comfyui_client import submit_and_fetch, upload_image
 
-        workflow = self._load_workflow()
+        # The guide is uploaded before the graph is chosen so a failed read/upload picks
+        # the unconditioned graph instead of raising out of generate(). Raising here
+        # would cost the whole card, where the identical failure on the identity
+        # reference below merely falls back to t2i.
+        guide_name: str | None = None
+        if pose_guide_path is not None:
+            try:
+                guide_name = await upload_image(
+                    self._base_url, Path(pose_guide_path).read_bytes(), Path(pose_guide_path).name
+                )
+            except Exception as exc:  # noqa: BLE001 — an unreadable guide must not cost the card
+                logger.warning("pose guide %r unusable: %s; rendering unconditioned", pose_guide_path, exc)
+
+        workflow = self._load_workflow(pose_guide=guide_name is not None)
         workflow = self._inject_prompt(workflow, prompt)
         workflow = self._inject_dimensions(workflow, width, height)
         workflow = self._inject_seed(workflow)
@@ -238,6 +275,8 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._inject_negative_suffix(workflow, negative_suffix)
         if ipadapter_weight is not None:
             workflow = self._inject_ipadapter_weight(workflow, ipadapter_weight)
+        if guide_name is not None:
+            workflow = self._inject_guide_image(workflow, guide_name)
 
         if ref_image_path is None:
             workflow = self._remove_i2i_input(workflow)
@@ -266,16 +305,23 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         # set, logged as "ComfyUI i2i failed". Framing is not a reason to drop the anchor.
         return _normalize_subject_scale(cleaned)
 
-    def _load_workflow(self) -> dict:
+    def _load_workflow(self, pose_guide: bool = False) -> dict:
         """Load ComfyUI workflow JSON template.
 
         Relative paths resolve against ``YTFLOW_PROJECT_ROOT`` (falls back to CWD),
         matching ``character_service.py``'s existing convention — the app may run
         from a CWD other than the project root.
+
+        ``pose_guide`` selects the ControlNet-conditioned graph (Story 10.5). It is a
+        separate committed file, so the default path is untouched by that feature.
         """
         project_root = Path(os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd()))
-        path = project_root / self._workflow_path
+        path = project_root / (_POSE_GUIDE_WORKFLOW_PATH if pose_guide else self._workflow_path)
         if not path.exists():
+            if pose_guide:
+                # Not silent: falling through to the default graph would drop the
+                # structural conditioning while still reporting a successful render.
+                logger.warning("pose-guide workflow %s is missing; degrading to the unconditioned graph", path)
             # ponytail: fallback to default workflow path
             path = project_root / "data/workflows/comfyui_character_multi_angle_api.json"
         if path.exists():
@@ -364,10 +410,24 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         ``image_name`` must already be an uploaded-to-ComfyUI filename (see
         ``comfyui_client.upload_image``) — ``LoadImage.inputs.image`` resolves
         against ComfyUI's input directory, it does not accept raw image bytes.
+
+        Skips the pose-guide node: it writes *every* ``LoadImage``, so on the guide
+        graph the reference would land in the ControlNet input and the character would
+        be structurally conditioned on a copy of itself (Story 10.5).
         """
         for node in workflow.values():
-            if isinstance(node, dict) and node.get("class_type") == "LoadImage":
+            if isinstance(node, dict) and node.get("class_type") == "LoadImage" and not _is_guide_node(node):
                 node["inputs"]["image"] = image_name
+        return workflow
+
+    @staticmethod
+    def _inject_guide_image(workflow: dict, image_name: str) -> dict:
+        """Inject the uploaded structural guide into the ``ytflow:guide_image`` node."""
+        for node in workflow.values():
+            if isinstance(node, dict) and node.get("class_type") == "LoadImage" and _is_guide_node(node):
+                node["inputs"]["image"] = image_name
+                return workflow
+        logger.warning("No %r node in the workflow; pose guide %r not injected", _GUIDE_NODE_TITLE, image_name)
         return workflow
 
     @staticmethod
@@ -505,13 +565,16 @@ class QwenCharacterProvider(CharacterImageProvider):
         height: int = 1216,
         ipadapter_weight: float | None = None,
         negative_suffix: str | None = None,
+        pose_guide_path: str | None = None,
     ) -> bytes:
-        # ponytail: negative_suffix is accepted for signature parity and ignored —
-        # card generation refuses this provider outright (produces_alpha is False),
-        # so it can never receive one. Logged rather than dropped in silence in case
-        # some other caller ever does.
+        # ponytail: negative_suffix/pose_guide_path are accepted for signature parity and
+        # ignored — card generation refuses this provider outright (produces_alpha is
+        # False), so it can never receive either. Logged rather than dropped in silence in
+        # case some other caller ever does.
         if negative_suffix:
             logger.warning("QwenCharacterProvider ignores negative_suffix %r (API takes no negative prompt)", negative_suffix)
+        if pose_guide_path:
+            logger.warning("QwenCharacterProvider ignores pose_guide_path %r (no structural conditioning)", pose_guide_path)
         if not self._api_key:
             raise RuntimeError("Qwen API key not configured (YTFLOW_CHARACTER_QWEN_API_KEY)")
 

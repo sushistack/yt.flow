@@ -180,4 +180,223 @@ recorded in RESULTS.
 
 ## RESULTS
 
-_(written after rendering; the sections above are frozen)_
+Rendered 2026-08-12 00:23–00:33 KST, `ComfyUICharacterProvider`, AnimagineXL v3.1 +
+`darkness_xl_v2` @0.3 (the same chain 10.6's control was rendered on). ComfyUI 0.12.3,
+torch 2.11.0.dev+rocm7.1, AMD Radeon RX 9060 XT 16 GB. The queue was read before every
+render and was empty each time (the 10-4b session was not using the GPU). All 7 PNGs
+carry an alpha channel; the script asserts it and prints `alpha=True` per render.
+
+### (B) Decision: **adopt structural conditioning** (L1 0/3, L2 3/3, control 0/3)
+
+| Leg | seed 1061 | seed 1062 | seed 1063 | **supine** |
+|---|---|---|---|---|
+| **L0 control** (10.6 ②-B, `ipadapter 0.2`, no guide) | not supine | not supine | not supine | **0/3** |
+| **L1** (`ipadapter 0.0`, no guide) | not supine | not supine | not supine | **0/3** |
+| **L2** (`ipadapter 0.2`, openpose guide @0.9) | **supine** | **supine** | **supine** | **3/3** |
+
+Decision-table row **`L1 ≤1/3` + `L2 ≥2/3` → adopt structural conditioning.** The row is
+robust to the one ambiguous frame: even scoring L2 r1 as *not* supine leaves L2 at 2/3,
+which is the same row.
+
+**Per-render judgments, written from viewing each PNG.**
+
+- **L1 r1 (seed 1061)** — a single man standing upright, hands behind his back, torso
+  vertical, feet on the ground. Fails (i) outright. → **not supine**
+- **L1 r2 (seed 1062)** — a three-panel character sheet: a full-body standing figure, a
+  large bust close-up, and a third partial figure. No panel is horizontal. → **not supine**
+- **L1 r3 (seed 1063)** — a single man standing upright, arms at his sides, the cleanest
+  standing render in the set. → **not supine**
+- **L2 r1 (seed 1061)** — the figure lies on its back, head at frame left, torso
+  horizontal across the frame, face upward. (i) passes clearly. (ii) is **ambiguous**:
+  one leg extends right (its boot sits at roughly head height) while the other is bent
+  with the lower leg dropping toward the bottom of the frame, about 350 px below the
+  head against a ~810 px body length (≈0.43, over the one-third bound) — so (ii) passes
+  on the extended leg and fails on the bent one. Called **supine** on the body's
+  principal axis, and the ambiguity is recorded rather than resolved by rewriting the
+  rule. It changes no conclusion (see above).
+- **L2 r2 (seed 1062)** — flat on the back, head at frame left, feet at frame right,
+  arms out, head and feet at effectively the same height. Unambiguous on both (i) and
+  (ii). → **supine**
+- **L2 r3 (seed 1063)** — **two** figures, both lying flat on their backs, one above the
+  other, heads at frame left. Both satisfy (i) and (ii). → **supine** under the rule as
+  written, with the figure count recorded as a defect below.
+
+**Supporting metric (alpha-bbox `w/h`, threshold `alpha > 8`, full bbox).** It agrees
+with every viewing verdict, so there is no disagreement to report as a finding — but note
+it is *not* independent evidence of quality, only of horizontality:
+
+| frame | `w/h` | w × h |
+|---|---|---|
+| L0 control r1 / r2 / r3 | 0.319 / 0.574 / 0.309 | 365×1143 / 656×1143 / 353×1143 |
+| L1 r1 / r2 / r3 | 0.368 / 0.708 / 0.297 | 421×1143 / 809×1143 / 340×1143 |
+| **L2 r1 / r2 / r3** | **1.280 / 2.090 / 1.351** | 832×650 / 832×398 / 832×616 |
+
+Ceiling on the metric, recorded: every L2 frame is exactly 832 px wide because
+`_normalize_subject_scale` fits an over-wide subject to the canvas width, so `w` saturates
+and `w/h` **understates** how horizontal a supine figure is. It separates the classes with
+a 1.8× gap regardless (0.708 max standing vs 1.280 min supine), but it could not be used
+as a threshold for anything finer.
+
+**VRAM — the Block-If did not trigger.** Ceiling 15.92 GiB (`vram_total` = 17,095,983,104 B).
+Sampled every 2 s during each render, `max(vram_total − vram_free)`; raw rows in
+`measurements.jsonl`.
+
+| Leg | renders attempted | succeeded | wall (s) | **peak VRAM (GiB)** |
+|---|---|---|---|---|
+| L1 (no ControlNet — the control for this number) | 3 | 3 | 24.0 / 22.3 / 22.4 | 9.90 / 7.20 / 7.15 |
+| **L2 (ControlNet Union promax)** | **3** | **3** | 68.1 / 28.8 / 28.8 | **11.16 / 9.62 / 9.66** |
+
+Zero OOM, zero failed nodes. The ControlNet leg's worst peak is **11.16 GiB, 4.76 GiB
+under the ceiling**; its cost over the unguided leg is ~1.3–2.5 GiB and ~6 s per render
+(the 68.1 s first render includes the one-time 2.5 GB ControlNet load). This is the
+measurement 8.20 recommendation 2 asked for and it does **not** reproduce 8.20's numbers —
+as pre-registered, those were Qwen-Image-Edit-2511 Q4_K_M (13.24 GB resident) with
+`InspyrenetRembg` asking for a further 4.5 GB, an entirely different resident model.
+
+**Findings the pre-registered (B) rule does not cover — recorded, not patched in.**
+
+1. **Figure count.** L1 r2 came back as a three-panel character sheet and L2 r3 as two
+   supine men. The (B) criterion asks only about body orientation, so it scores both on
+   pose alone and is blind to this. It is a real defect in a card (a card must be one
+   subject) and it appears **with and without** the guide, so it is not caused by the
+   change adopted here — but shipping the guide on by default would ship it too. That is
+   the concrete reason `pose_guide_conditioning_enabled` stays **off**. Note this is the
+   *second* consecutive story whose pre-registration missed a figure-count defect; the
+   rule was not amended mid-flight, but a card-quality pre-registration that omits it
+   again is a repeat of a known miss.
+2. **Hands.** Chronic, as 10.6 recorded: hands are blobs or fused in several of these
+   frames in both legs. Unchanged by the guide, not this story's defect.
+3. **The guide dictates the whole silhouette, not just the axis.** L2's figures reproduce
+   the guide skeleton's arm and leg placement closely. That is what "structural
+   conditioning" means and it is why the guide catalog is closed — one guide raster is
+   one pose, not a family of them.
+
+**What is wired, and what it takes to actually fire.** `pose_guide_conditioning_enabled`
+(default `False`) → `run_service._ensure_special_pose_cards` now carries `pose_guide_key`
+through instead of discarding it → `generate_special_pose_card` resolves it with
+`asset_service.resolve_pose_guide(key, character.pose_conditioning)` and passes
+`pose_guide_path` to the provider, or warns and takes the pre-10.5 path. **The setting is
+not sufficient on its own**: `resolve_pose_guide` requires the character's
+`pose_conditioning` profile to accept the guide's schema, and the model default
+`edit_only` accepts nothing. Today's live rows are already backfilled — `STOCK-d-class`,
+`SCP-049`, `SCP-049-2`, `STOCK-researcher`, `STOCK-security`, `SCP-096` are `openpose`,
+`SCP-682` is `scribble`, `SCP-1471` and `SCP-999` are `edit_only` — so the humanoid keys
+would resolve and the last two would degrade with a warning. Verify with:
+
+```bash
+sqlite3 -readonly yt_flow.db "select scp_id, pose_conditioning from characters;"
+```
+
+### (A) Probe: **FAILED (a) — nothing was seeded**
+
+`probeA_sitting_front_seed1071.png`, one render, `alpha=True`.
+
+- (a) **fail** — the figure is **standing bolt upright**: hips high, thighs vertical, both
+  boots flat on the ground, no chair anywhere in the frame. The prompt asked for
+  `"sitting on a plain simple chair, seated pose"`.
+- (b) pass — one adult male figure, no child, no chibi, no second figure.
+- (c) pass — orange jumpsuit, unmasked ordinary human head, both eyes show pupils. (The
+  stencil renders as a literal "1.30" placard and the collar reads as a cowl rather than
+  a jumpsuit collar; neither is part of the rule.)
+- hands (excluded from the rule, observed anyway): both hands are pale blobs without
+  digits — the chronic defect again.
+
+Per the pre-registered fail branch: **nothing was seeded, and (A) closes 0 of the 14 slots
+rather than 11.** `characters` and `character_cards` are untouched (asserted below).
+
+**The instrument was checked before accepting the fail**, because a harness bug would look
+identical. The compiled prompt does contain the pose clause verbatim —
+`Angle: front — front view, facing camera, full body, feet visible, sitting on a plain
+simple chair, seated pose` — so the text reached the model and the model ignored it.
+
+```bash
+uv run python - <<'PY'
+import sys, os; from pathlib import Path
+ROOT = Path(".").resolve(); sys.path[:0] = [str(ROOT/"src"), str(ROOT/"scripts")]
+os.environ.setdefault("YTFLOW_PROJECT_ROOT", str(ROOT))
+from seed_stock_cast import STOCK_DESCRIPTORS
+from yt_flow.services.character_service import _ANGLE_DESCRIPTIONS, _POSE_DESCRIPTIONS, CharacterService
+print(CharacterService._compile_generation_prompt(
+    visual_descriptor=STOCK_DESCRIPTORS["STOCK-d-class"], angle="front",
+    angle_description=f"{_ANGLE_DESCRIPTIONS['front']}, {_POSE_DESCRIPTIONS['sitting']}",
+    scp_id="STOCK-d-class"))
+PY
+```
+
+**This is the same defect as (B), and it falsifies the premise (A) was written on.** The
+spec treated (A) as "missing assets, not a missing technique" — but the technique that
+would have produced those assets is the same text-only pose instruction that (B) just
+measured at 0/3. `seed_stock_cast.py --pose sitting` runs, and it would have written four
+approved `sitting` card rows; three of the four angles were never even sampled here, and
+the one that was came back standing. Seeding would have replaced a silent standing
+fallback with a *labelled* `sitting` card that is also standing — strictly worse, because
+the fallback at least logs `pose_fallback=True`.
+
+Counter-evidence held on record rather than suppressed:
+`assets/characters/SCP-049/epoch_1/sitting_front.png` (2026-07-07) **is** correctly seated
+on a chair, so this recipe has produced a seated card before. That card is 832×1216 opaque
+RGB on a grey background — no alpha, a pre-cutout chain — so it does not establish that
+today's chain can, and it was not re-rendered here.
+
+**Consequence, and what it is not.** The honest reading is that (A) and (B) are one defect
+with one cause, and the fix that worked for (B) is the candidate for (A) as well: a seated
+openpose guide. The closed catalog has no sitting guide (`humanoid_reaching_forward`,
+`humanoid_lying_supine`, `humanoid_kneeling`, `humanoid_collapsed`, `creature_prone_lunge`,
+`creature_rearing`), so authoring one plus a guided seeding path is new scope, was not
+pre-registered here, and is **not** being decided unattended. Handed off, not fixed.
+
+### DB and live-asset state (read-only assertions, since `git status` is vacuous here)
+
+`yt_flow.db` matches `.gitignore:15`, so `git status --porcelain yt_flow.db` returns empty
+whether or not the DB changed. The claim rests on this instead:
+
+```bash
+uv run python - <<'PY'
+import sqlite3
+c = sqlite3.connect("file:yt_flow.db?mode=ro", uri=True)
+assert c.execute("select count(*) from characters").fetchone()[0] == 9
+assert c.execute("select count(*) from character_cards").fetchone()[0] == 12
+assert c.execute("select count(*) from character_cards where scp_id='STOCK-d-class' and pose='sitting'").fetchone()[0] == 0
+assert c.execute("select angle_front_path from characters where scp_id='STOCK-d-class'").fetchone()[0] \
+    == "characters/STOCK-d-class/epoch_2/front_candidate_1.png"
+d = c.execute("select visual_descriptor from characters where scp_id='STOCK-d-class'").fetchone()[0]
+assert "disproportionately large torso" in d, "the vision read-back is still appended (no seeding ran)"
+print("DB unmutated: 9 characters, 12 cards, 0 sitting rows, standing paths and descriptor intact")
+PY
+```
+
+`git status --porcelain assets/` is valid (`assets/` is tracked) and is empty: no live card
+file was written. The pre-registered side effect of the seeding command — the
+`visual_descriptor` losing its vision read-back — **did not occur**, because the command
+was never run.
+
+### Corrections after review (appended 2026-08-12; the PRE-REGISTRATION above is untouched)
+
+1. **`git status --porcelain assets/` was the wrong instrument and its blank output proved
+   less than claimed.** `.gitignore:19-20` is `assets/*` with only `!assets/manifest.json`
+   unignored, so card PNGs are untracked and that command is blank whether or not one was
+   written — the same vacuousness this file correctly flagged for `yt_flow.db`, and it
+   applies to `assets/` too. The conclusion (nothing was seeded) still holds, on evidence
+   that can actually fail: `find assets/characters -name 'sitting_*'` returns nothing, and
+   every file in `assets/characters/STOCK-d-class/epoch_2/` is dated 2026-08-02/07/08,
+   i.e. before this session. The read-only DB assertions above are unaffected.
+2. **The single-variable comparison for the guide is L0 vs L2, not L1 vs L2.** L1 moves
+   `ipadapter_weight` *and* drops the guide, so it differs from L2 in two variables; it
+   exists to isolate the anchor hypothesis, and it answers that question (0/3). The
+   guide's own effect rests on L0 (0.2, no guide) vs L2 (0.2, guide) — and L0 is the
+   reused 10.6 leg, so the guide conclusion depends on frames rendered ~26 h earlier.
+   That reuse was pre-registered and disclosed above; it is restated here because the
+   decision table's row names L1 and L2 and could be read as the comparison.
+   `measurements.jsonl` records no prompt/reference hash, so the "same prompt, same
+   reference" premise for the reuse cannot be re-verified from the artifacts alone.
+3. **Timing was reported warm-only.** L2's first render was 68.1 s against 28.8/28.8 s for
+   the other two: ~44 s of one-time ControlNet load that a run paying
+   `special_pose_max_per_run=3` will meet on its first guided card.
+4. **(A)'s probe is n=1 and used the standing card as its IPAdapter anchor** (weight 0.2),
+   which is the confound the story hypothesized for pose lock — so a standing result is
+   partly what that setup predicts. L1's 0/3 at weight 0.0 is evidence against the anchor
+   being the cause, but it was measured on the supine hint, not the sitting one. The probe
+   also wrote no `measurements.jsonl` row and did not wait on the GPU queue. It is
+   sufficient to *stop* a live write, which is what it was for; it is not sufficient to
+   conclude "a sitting card can never be produced on this chain", and the deferred entry
+   is worded as new scope rather than as a proven impossibility.

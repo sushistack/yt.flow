@@ -186,6 +186,13 @@ class Settings(BaseSettings):
     character_image_width: int = 832
     character_image_height: int = 1216
     special_pose_max_per_run: int = 3
+    # Story 10.5: route special-pose cards through the ControlNet Union guide graph so
+    # the requested action state is drawn instead of ignored. Live isolation at a shared
+    # seed triple: 3/3 supine with the guide, 0/3 without it and 0/3 with the IPAdapter
+    # anchor removed (`10-5-live-validation/README.md`). Default off — the guided frames
+    # also produced a two-figure card at one of the three seeds, which is a real defect
+    # and is not this story's to fix.
+    pose_guide_conditioning_enabled: bool = False
 
     # Derived-entity on-demand cards (Story 8.13): a cast_decision `<scp_id>-<n>`
     # duplicate/offshoot gets a full card generated the first time it's referenced.
