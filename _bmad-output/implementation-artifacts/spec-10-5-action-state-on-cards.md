@@ -2,8 +2,9 @@
 title: 'Story 10.5 — Action state on cards (지적 6)'
 type: 'feature'
 created: '2026-08-12'
-status: 'in-review'
+status: 'done'
 baseline_revision: 'd04442f05562a539e296c5fca3845189456d2fd7'
+final_revision: '553ff0f73c1d130e07e74d41e164ca5688be4dff'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
