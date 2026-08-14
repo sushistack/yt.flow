@@ -1,0 +1,68 @@
+{
+  "captured": "2026-08-14 promotion of Epic 10 Jay gates",
+  "why": "angle_*_path / status writes ARE the publish (no status or epoch filter on read) — this is the rollback source",
+  "characters.SCP-049-2": {
+    "id": "82f8b350-a5ad-4cea-9e2b-7be65a2513ac",
+    "scp_id": "SCP-049-2",
+    "canonical_name": "SCP-049-2",
+    "aliases": "[]",
+    "visual_descriptor": "SCP-049 plague doctor humanoid, black hooded robe, white beaked plague doctor mask, dark gloves, full body\nA reclassified/duplicate instance of SCP-049.",
+    "style_guide": null,
+    "image_prompt_base": null,
+    "selected_image_path": "characters/SCP-049-2/epoch_1/front_candidate_1.png",
+    "angle_front_path": "characters/SCP-049-2/epoch_1/front_candidate_1.png",
+    "angle_back_path": "characters/SCP-049-2/epoch_1/back_candidate_1.png",
+    "angle_side_path": "characters/SCP-049-2/epoch_1/side_candidate_1.png",
+    "angle_three_quarter_path": "characters/SCP-049-2/epoch_1/three_quarter_candidate_1.png",
+    "created_at": "2026-07-12T05:57:12.073273+00:00",
+    "updated_at": "2026-07-12T05:59:09.209333+00:00",
+    "pose_conditioning": "openpose"
+  },
+  "approved_hint_cards": [
+    {
+      "id": "f3935428-015e-41e9-8283-dab326bb5224",
+      "scp_id": "SCP-049",
+      "pose": "hint:b36d4021a2",
+      "angle": "front",
+      "image_path": "characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+      "status": "approved",
+      "style_epoch": 1
+    },
+    {
+      "id": "7f793380-505e-46d7-9e2c-05aef8571526",
+      "scp_id": "SCP-049",
+      "pose": "hint:7031f483b8",
+      "angle": "front",
+      "image_path": "characters/SCP-049/epoch_1/hint_7031f483b8_front.png",
+      "status": "approved",
+      "style_epoch": 1
+    },
+    {
+      "id": "f818b67a-0648-4dd1-9b3c-8b700e67f16e",
+      "scp_id": "STOCK-d-class",
+      "pose": "hint:970ede32f4",
+      "angle": "front",
+      "image_path": "characters/STOCK-d-class/epoch_2/hint_970ede32f4_front.png",
+      "status": "approved",
+      "style_epoch": 2
+    },
+    {
+      "id": "b907c5be-2879-438b-90d5-46c9e65d4666",
+      "scp_id": "STOCK-d-class",
+      "pose": "hint:a40ec9c170",
+      "angle": "front",
+      "image_path": "characters/STOCK-d-class/epoch_2/hint_a40ec9c170_front.png",
+      "status": "approved",
+      "style_epoch": 2
+    },
+    {
+      "id": "a3e6cb09-b6cc-4ad8-b962-f7d9460a68e3",
+      "scp_id": "SCP-049-2",
+      "pose": "hint:475c8a9231",
+      "angle": "front",
+      "image_path": "characters/SCP-049-2/epoch_2/hint_475c8a9231_front.png",
+      "status": "approved",
+      "style_epoch": 2
+    }
+  ]
+}

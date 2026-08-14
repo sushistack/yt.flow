@@ -189,10 +189,18 @@ class Settings(BaseSettings):
     # Story 10.5: route special-pose cards through the ControlNet Union guide graph so
     # the requested action state is drawn instead of ignored. Live isolation at a shared
     # seed triple: 3/3 supine with the guide, 0/3 without it and 0/3 with the IPAdapter
-    # anchor removed (`10-5-live-validation/README.md`). Default off — the guided frames
-    # also produced a two-figure card at one of the three seeds, which is a real defect
-    # and is not this story's to fix.
-    pose_guide_conditioning_enabled: bool = False
+    # anchor removed (`10-5-live-validation/README.md`).
+    #
+    # 2026-08-14: flipped ON by Jay's promotion decision, together with retiring the
+    # defective pose-hint cards. The two go together — this flag reaches only cards that
+    # do not exist yet (`_ensure_special_pose_cards` skips any hint with an *approved*
+    # row), so turning it on without retiring would have changed nothing on screen.
+    #
+    # Known cost, accepted rather than discovered later: one of the three guided seeds
+    # drew two figures in one sprite. That defect appears with and without the guide, so
+    # it is not caused here, but it now ships. A figure-count check on the generated
+    # sprite is the thing that would retire this caveat.
+    pose_guide_conditioning_enabled: bool = True
 
     # Derived-entity on-demand cards (Story 8.13): a cast_decision `<scp_id>-<n>`
     # duplicate/offshoot gets a full card generated the first time it's referenced.

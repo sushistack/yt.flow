@@ -16,12 +16,12 @@
     },
     "SCP-049-2/standing_back": {
       "angle": "back",
-      "approved_at": "2026-07-12T05:58:19.849183+00:00",
+      "approved_at": "2026-08-14T08:25:34.858581+00:00",
       "card_key": "SCP-049-2",
-      "created_at": "2026-07-12T05:58:19.848541+00:00",
-      "path": "characters/SCP-049-2/epoch_1/back_candidate_1.png",
+      "created_at": "2026-08-14T08:25:34.856384+00:00",
+      "path": "characters/SCP-049-2/epoch_2/back_candidate_1.png",
       "pose": "standing",
-      "sha256": "ea084f20c310acf825f26d3aa9578701578d6cd03da7fc0630b64874b8f06710",
+      "sha256": "9af66a3d3499ace71250f6ccb94e083f027c107d56785229569940e26d3d1ced",
       "source": {
         "ipadapter_weight": 0.35,
         "type": "comfyui_generation"
@@ -30,12 +30,12 @@
     },
     "SCP-049-2/standing_front": {
       "angle": "front",
-      "approved_at": "2026-07-12T05:57:54.182902+00:00",
+      "approved_at": "2026-08-14T08:20:22.588166+00:00",
       "card_key": "SCP-049-2",
-      "created_at": "2026-07-12T05:57:54.182038+00:00",
-      "path": "characters/SCP-049-2/epoch_1/front_candidate_1.png",
+      "created_at": "2026-08-14T08:20:22.586315+00:00",
+      "path": "characters/SCP-049-2/epoch_2/front_candidate_1.png",
       "pose": "standing",
-      "sha256": "237498fcd06bfc68600112805c9c80f1a25f7f0dba5ac7668adca906de0e756c",
+      "sha256": "58eec8c6868515c397b39a9f7d5cda330119b317ee8d5c5c5eba89c69a1abb6c",
       "source": {
         "ipadapter_weight": 0.2,
         "type": "comfyui_generation"
@@ -44,28 +44,28 @@
     },
     "SCP-049-2/standing_side": {
       "angle": "side",
-      "approved_at": "2026-07-12T05:58:44.521459+00:00",
+      "approved_at": "2026-08-14T08:25:58.679106+00:00",
       "card_key": "SCP-049-2",
-      "created_at": "2026-07-12T05:58:44.520820+00:00",
-      "path": "characters/SCP-049-2/epoch_1/side_candidate_1.png",
+      "created_at": "2026-08-14T08:25:58.677267+00:00",
+      "path": "characters/SCP-049-2/epoch_2/side_candidate_1.png",
       "pose": "standing",
-      "sha256": "1a93cf78a895fdfe588313c9a3b8f5c73dcc6d48227081e76ad4ec344d4744a7",
+      "sha256": "d33b7324bceee1cfa94ab259d73a31970aa232ac00730ff0181204abd182e357",
       "source": {
-        "ipadapter_weight": 0.45,
+        "ipadapter_weight": 0.35,
         "type": "comfyui_generation"
       },
       "status": "approved"
     },
     "SCP-049-2/standing_three_quarter": {
       "angle": "three_quarter",
-      "approved_at": "2026-07-12T05:59:09.204237+00:00",
+      "approved_at": "2026-08-14T08:26:23.544757+00:00",
       "card_key": "SCP-049-2",
-      "created_at": "2026-07-12T05:59:09.203583+00:00",
-      "path": "characters/SCP-049-2/epoch_1/three_quarter_candidate_1.png",
+      "created_at": "2026-08-14T08:26:23.542938+00:00",
+      "path": "characters/SCP-049-2/epoch_2/three_quarter_candidate_1.png",
       "pose": "standing",
-      "sha256": "f6421a1a927d858c2ec4438fa04fcab07ec90d506f0e1a3e68e4fffb5c3b503b",
+      "sha256": "82b8eaeb2a4dd0ea96adf8b8762daae6993189db6229d933a5de5cf375aa2a02",
       "source": {
-        "ipadapter_weight": 0.5,
+        "ipadapter_weight": 0.4,
         "type": "comfyui_generation"
       },
       "status": "approved"
