@@ -20,7 +20,8 @@ from typing import Protocol, TypedDict
 from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
-from yt_flow.domain.state import PipelineState, SceneState, WordTiming
+from yt_flow.domain.state import PipelineState, RunWarning, SceneState, WordTiming
+from yt_flow.domain.warnings import make_warning, merge as merge_warnings
 from yt_flow.pipeline.nodes.scenario_chain import split_sentences
 
 logger = logging.getLogger(__name__)
@@ -409,6 +410,9 @@ def _record_trace(*, run_id: str, scene_count: int, latency_ms: int,
 async def subtitle_node(state: PipelineState) -> dict:
     run_id = state.get("run_id", "?")
     t0 = time.perf_counter()
+    # Story 13.1 — declared outside the try, like image_node's and video_node's: a scene
+    # that fails later must not discard the fallbacks earlier scenes already took.
+    warnings: list[RunWarning] = []
     try:
         s = _settings()
         if s.content_language != "ko":
@@ -463,6 +467,14 @@ async def subtitle_node(state: PipelineState) -> dict:
                         "subtitle: scene %d: WhisperX alignment degraded to "
                         "provisional word timings (%s)", n, cause)
                     fallback_count += 1
+                    # Story 13.1 completes Story 11.4: this was already in the log and the
+                    # trace, and in neither place the operator looks before approving.
+                    # Only the REAL fallback warns — the qwen_tts_mock branch above is an
+                    # intentional bypass (silent WAVs), not a degradation (AC2).
+                    warnings.append(make_warning(
+                        "subtitle_alignment_fallback", scene_num=n,
+                        detail=f"{type(cause).__name__}: {cause}" if isinstance(cause, BaseException) else str(cause),
+                    ))
 
             cues = sentence_cues(timings, narration, display)
             if not cues:
@@ -477,8 +489,10 @@ async def subtitle_node(state: PipelineState) -> dict:
 
         _record_trace(run_id=run_id, scene_count=len(new_scenes), latency_ms=_ms(t0),
                       alignment={"whisperx": aligned_count, "fallback": fallback_count})
-        return {"scenes": new_scenes, "current_stage": "subtitle", "error": None}
+        return {"scenes": new_scenes, "current_stage": "subtitle", "error": None,
+                "run_warnings": merge_warnings(state.get("run_warnings", []), warnings)}
     except Exception as exc:  # noqa: BLE001
         _record_trace(run_id=run_id, scene_count=len(state.get("scenes", [])),
                       latency_ms=_ms(t0), error=exc)
-        return {"current_stage": "subtitle", "error": f"stage=subtitle run_id={run_id}: {exc}"}
+        return {"current_stage": "subtitle", "error": f"stage=subtitle run_id={run_id}: {exc}",
+                "run_warnings": merge_warnings(state.get("run_warnings", []), warnings)}

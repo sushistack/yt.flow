@@ -89,25 +89,38 @@ export type ScenarioQuality = {
   review_issues: { scene_num: number; type: string; severity: string; description: string; correction: string }[]
   warning?: { code: string; message: string }
 }
-export type ScenarioArtifacts = {
+// Story 13.1: one non-fatal degradation recorded during the run. `code` is the stable
+// identifier (backend `RunWarningCode`), `message` the short Korean copy to render, and
+// `context` the narrowest identifiers the producer had. `context.detail` is diagnostic
+// only — never promote it to primary UI text.
+export type RunWarning = {
+  code: string
+  stage: StageName
+  message: string
+  context?: Record<string, string | number | boolean>
+}
+// Every stage DTO carries the run's warnings (`[]` on a legacy/clean checkpoint), so
+// the panel reads one field regardless of which stage is selected.
+type WithWarnings = { warnings?: RunWarning[] }
+export type ScenarioArtifacts = WithWarnings & {
   stage: "scenario"
   scenes: { scene_num: number; narration: string }[]
   // Optional AND nullable: absent on a pre-12.3 checkpoint, null once a retry cleared it.
   scenario_quality?: ScenarioQuality | null
 }
-export type ImageArtifacts = {
+export type ImageArtifacts = WithWarnings & {
   stage: "image"
-  images: { scene_num: number; shot_id: string; image_path: string; layered_fallback: boolean }[]
+  images: { scene_num: number; shot_id: string; image_path: string }[]
 }
-export type TtsArtifacts = {
+export type TtsArtifacts = WithWarnings & {
   stage: "tts"
   audio: { scene_num: number; audio_path: string; duration_sec: number | null }[]
 }
-export type SubtitleArtifacts = {
+export type SubtitleArtifacts = WithWarnings & {
   stage: "subtitle"
   subtitles: { scene_num: number; subtitle_path: string }[]
 }
-export type VideoArtifacts = { stage: "video"; video_path: string }
+export type VideoArtifacts = WithWarnings & { stage: "video"; video_path: string }
 export type StageArtifacts =
   | ScenarioArtifacts
   | ImageArtifacts

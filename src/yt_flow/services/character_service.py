@@ -27,7 +27,14 @@ from yt_flow.db.models import CharacterCandidate as CandidateModel
 from yt_flow.db.models import ReferenceImage as ReferenceImageModel
 from yt_flow.domain.exceptions import ValidationError
 from yt_flow.domain.png import has_alpha
-from yt_flow.domain.state import DERIVED_DESCRIPTORS, STOCK_CAST_KEYS, STOCK_NEGATIVE
+from yt_flow.domain.state import (
+    DERIVED_DESCRIPTORS,
+    STOCK_CAST_KEYS,
+    STOCK_NEGATIVE,
+    RunWarning,
+    RunWarningCode,
+)
+from yt_flow.domain.warnings import make_warning
 from yt_flow.observability import get_client, observe
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.image_search import DuckDuckGoImageSearch, ImageSearch, ScpWikiImageFetch
@@ -228,11 +235,23 @@ class CharacterService:
         image_search: ImageSearch | None = None,
         settings: Settings | None = None,
         wiki_fetch: ScpWikiImageFetch | None = None,
+        warnings: list[RunWarning] | None = None,
     ) -> None:
         self._session = session
         self._image_search = image_search or DuckDuckGoImageSearch()
         self._settings = settings or Settings()
         self._wiki_fetch = wiki_fetch or ScpWikiImageFetch()
+        # Story 13.1 collector seam. ONE optional sink on the service instead of a
+        # `warnings=` parameter on every generation method: enrichment failure is
+        # swallowed three call-levels below `_ensure_derived_entity_cards`, so passing
+        # a list down each signature would touch every caller for no added reach.
+        # `None` (the UI, scripts, most tests) keeps today's log-only behaviour.
+        self._run_warnings = warnings
+
+    def _warn(self, code: RunWarningCode, **context: object) -> None:
+        """Record one non-fatal degradation on the run's collector, if there is one."""
+        if self._run_warnings is not None:
+            self._run_warnings.append(make_warning(code, **context))
 
     @property
     def _asset_service(self) -> AssetService:
@@ -608,14 +627,23 @@ class CharacterService:
         Loads images as base64 data URIs and sends them to the DashScope Qwen-VL
         multimodal API with a vision enrichment prompt. Returns the descriptor string
         on success, or ``None`` on failure (non-fatal — the pipeline continues).
+
+        Story 13.1: every miss below also files a ``vision_enrichment_failed`` warning
+        on the collector. The return contract is unchanged — including the branch that
+        returns an *existing* descriptor after a failed call, which is precisely the
+        case a caller cannot detect: it gets a perfectly good string back and card
+        generation succeeds, while the cards it just made were never described by the
+        references they were supposed to come from.
         """
         if not ref_image_paths:
             logger.warning("enrich_descriptor_from_references: no reference images provided for %s", scp_id)
+            self._warn("vision_enrichment_failed", card_key=scp_id, reason="no_reference_images")
             return None
 
         s = self._settings
         if not s.character_vision_api_key:
             logger.warning("enrich_descriptor_from_references: vision API key not configured")
+            self._warn("vision_enrichment_failed", card_key=scp_id, reason="vision_api_key_missing")
             return None
 
         # Load images as base64 data URIs
@@ -640,6 +668,7 @@ class CharacterService:
 
         if not image_parts:
             logger.warning("enrich_descriptor_from_references: no valid images loaded for %s", scp_id)
+            self._warn("vision_enrichment_failed", card_key=scp_id, reason="no_readable_images")
             return None
 
         # Build prompt — try Langfuse prompt, fall back to built-in
@@ -665,12 +694,15 @@ class CharacterService:
             descriptor = data["choices"][0]["message"]["content"].strip()
             if not descriptor:
                 logger.warning("enrich_descriptor_from_references: empty response from Vision LLM for %s", scp_id)
+                self._warn("vision_enrichment_failed", card_key=scp_id, reason="empty_response")
                 return None
             logger.info("Vision LLM enriched descriptor for %s (%d chars)", scp_id, len(descriptor))
             return descriptor
 
         except (httpx.HTTPError, ValueError, KeyError, IndexError, AttributeError) as exc:
             logger.warning("enrich_descriptor_from_references: Vision LLM call failed for %s: %s", scp_id, exc)
+            self._warn("vision_enrichment_failed", card_key=scp_id, reason="vision_call_failed",
+                        detail=f"{type(exc).__name__}: {exc}")
             try:
                 get_client().update_current_span(level="ERROR", status_message=str(exc))
             except Exception:  # noqa: BLE001 — tracing must never break the pipeline
@@ -791,6 +823,11 @@ class CharacterService:
                     ipadapter_weight=_ANGLE_IPADAPTER_WEIGHTS.get(angle),
                     negative_suffix=negative_suffix,
                 )
+                # Story 13.1: the provider fell back to t2i, so this card was rendered
+                # WITHOUT the identity reference — a different person in the same set,
+                # and indistinguishable from a good card in the returned bytes.
+                if getattr(provider, "last_i2i_fallback", False):
+                    self._warn("character_card_i2i_fallback", card_key=scp_id, pose=pose, angle=angle)
                 if not has_alpha(img_bytes):
                     raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
                 out_path.write_bytes(img_bytes)
@@ -977,6 +1014,8 @@ class CharacterService:
         front_path = character.angle_front_path if character is not None else None
         if not front_path:
             logger.warning("generate_special_pose_card: no standing front card for %s", card_key)
+            self._warn("special_pose_generation_failed", card_key=card_key, pose_hint=hint_key,
+                        reason="no_standing_front_card")
             return None
         front_path = self._abs_asset_path(front_path)
 
@@ -986,6 +1025,8 @@ class CharacterService:
                 "generate_special_pose_card: %s does not produce alpha sprites",
                 provider.__class__.__name__,
             )
+            self._warn("special_pose_generation_failed", card_key=card_key, pose_hint=hint_key,
+                        reason="provider_produces_no_alpha")
             return None
 
         visual_desc = character.visual_descriptor or self._get_visual_descriptor(card_key) or ""
@@ -1030,6 +1071,11 @@ class CharacterService:
                     "special pose %s/%s: guide %r not applied — %s; degrading to the unconditioned workflow",
                     card_key, hint_key, pose_guide_key, reason,
                 )
+                # Story 13.1: the card still renders and still gets published, so the
+                # only difference an operator can see is the pose itself — 3/3 supine
+                # with the guide, 0/3 without it (Story 10.5). Name the card.
+                self._warn("special_pose_guide_unapplied", card_key=card_key, pose_hint=hint_key,
+                            pose_guide_key=pose_guide_key, detail=reason)
             else:
                 guide_path = guide["abs_path"]
 
@@ -1048,6 +1094,14 @@ class CharacterService:
                 negative_suffix=self._maskless_negative_suffix(card_key, visual_desc),
                 pose_guide_path=guide_path,
             )
+            # Story 13.1: the provider's own guide upload can fail after we resolved a
+            # usable guide — it degrades to an unconditioned render and still returns
+            # success, so the miss is only visible on this flag.
+            if guide_path and not getattr(provider, "last_pose_guide_applied", True):
+                self._warn("special_pose_guide_unapplied", card_key=card_key, pose_hint=hint_key,
+                            pose_guide_key=pose_guide_key, detail="provider could not upload the guide")
+            if getattr(provider, "last_i2i_fallback", False):
+                self._warn("character_card_i2i_fallback", card_key=card_key, pose=hint_key, angle="front")
             if not has_alpha(img_bytes):
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
             out_path.write_bytes(img_bytes)
@@ -1074,6 +1128,8 @@ class CharacterService:
                 "generate_special_pose_card: failed for %s pose_hint=%r: %s",
                 card_key, pose_hint, exc,
             )
+            self._warn("special_pose_generation_failed", card_key=card_key, pose_hint=hint_key,
+                        reason="generation_failed", detail=f"{type(exc).__name__}: {exc}")
             return None
 
     def _ensure_character(self, scp_id: str) -> CharacterModel:
@@ -1384,6 +1440,7 @@ class CharacterService:
                         continue
                     card_key = member["card_key"]
                     raw_hint = member.get("pose_hint")
+                    hint_fallback = False
                     if isinstance(raw_hint, str) and raw_hint.strip():
                         hint_pose = pose_hint_key(raw_hint)
                         hint_card = self.get_card(card_key, hint_pose, "front")
@@ -1406,6 +1463,11 @@ class CharacterService:
                                 "movement_pace": member.get("movement_pace", "slow"),
                             })
                             continue
+                        # Story 13.1: the requested pose is NOT what gets drawn, and until
+                        # now the resolved card said `fallback=False` — the miss existed
+                        # only in this log line, so Story 8.4/10.5's whole question ("did
+                        # the pose or the angle fall back?") was unanswerable downstream.
+                        hint_fallback = True
                         miss = (card_key, hint_pose)
                         if miss not in missed_hints:
                             logger.warning(
@@ -1437,20 +1499,26 @@ class CharacterService:
                         )
                         continue
                     path, resolved_pose, pose_fallback = resolved
+                    # One reason string, one component per lever that fell back, in a
+                    # fixed order — "angle", "asset", "pose_hint" or any "+"-joined
+                    # combination. `pose_hint` is Story 13.1's addition; the other two
+                    # keep their pre-13.1 spelling exactly.
+                    reasons = [
+                        name for name, fell_back in (
+                            ("angle", angle_fallback),
+                            ("asset", pose_fallback),
+                            ("pose_hint", hint_fallback),
+                        ) if fell_back
+                    ]
                     cards.append({
                         "card_key": card_key,
                         "pose": resolved_pose,
                         "angle": angle,
                         "path": path,
-                        "fallback": angle_fallback or pose_fallback,
+                        "fallback": bool(reasons),
                         "angle_fallback": angle_fallback,
                         "asset_fallback": pose_fallback,
-                        "fallback_reason": (
-                            "angle+asset" if angle_fallback and pose_fallback
-                            else "angle" if angle_fallback
-                            else "asset" if pose_fallback
-                            else None
-                        ),
+                        "fallback_reason": "+".join(reasons) or None,
                         "position": member.get("position", "center"),
                         "depth": member.get("depth", "mid"),
                         "motion_style": member.get("motion_style", "breath"),

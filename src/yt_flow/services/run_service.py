@@ -32,7 +32,9 @@ from yt_flow.domain.state import (
     DERIVED_DESCRIPTORS,
     STOCK_NEGATIVE,
     PipelineState,
+    RunWarning,
 )
+from yt_flow.domain.warnings import make_warning, merge as merge_warnings
 from yt_flow.pipeline.graph import build_graph
 from yt_flow.pipeline.nodes import image as image_node
 from yt_flow.services import comfyui_client, eval_service
@@ -84,6 +86,10 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
         raise LookupError("Run not found")
 
     scenes = values.get("scenes") or []
+    # Story 13.1: every stage DTO carries the run's degradation history, `[]` for a
+    # legacy/clean checkpoint. Run-wide, not stage-filtered — each record names its own
+    # stage, and this endpoint is the durable authority behind the gate's SSE frame.
+    warnings = values.get("run_warnings") or []
 
     if stage == "scenario":
         if not scenes:
@@ -91,7 +97,8 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
         # Story 12.3: always present, `null` for a pre-12.3 checkpoint or after a
         # retry cleared it — the durable path for the gate warning, so a reload or a
         # missed SSE frame still shows it.
-        return {"stage": "scenario", "scenario_quality": values.get("scenario_quality") or None, "scenes": [
+        return {"stage": "scenario", "scenario_quality": values.get("scenario_quality") or None,
+                "warnings": warnings, "scenes": [
             {
                 "scene_num": s["scene_num"],
                 "narration": s["narration"],
@@ -120,7 +127,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
         shots = [(s["scene_num"], sh) for s in scenes for sh in s["shots"]]
         if not shots or any(sh["image_path"] is None for _, sh in shots):
             raise LookupError("Stage not reached")
-        return {"stage": "image", "images": [
+        return {"stage": "image", "warnings": warnings, "images": [
             {"scene_num": n, "shot_id": sh["shot_id"], "image_path": sh["image_path"]}
             for n, sh in shots
         ]}
@@ -128,7 +135,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     if stage == "tts":
         if not scenes or any(s["audio_path"] is None for s in scenes):
             raise LookupError("Stage not reached")
-        return {"stage": "tts", "audio": [
+        return {"stage": "tts", "warnings": warnings, "audio": [
             {"scene_num": s["scene_num"], "audio_path": s["audio_path"],
              "duration_sec": s.get("audio_duration")}
             for s in scenes
@@ -137,7 +144,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     if stage == "subtitle":
         if not scenes or any(s["subtitle_path"] is None for s in scenes):
             raise LookupError("Stage not reached")
-        return {"stage": "subtitle", "subtitles": [
+        return {"stage": "subtitle", "warnings": warnings, "subtitles": [
             {"scene_num": s["scene_num"], "subtitle_path": s["subtitle_path"]}
             for s in scenes
         ]}
@@ -146,7 +153,7 @@ async def get_stage_artifacts(run_id: str, stage: str) -> dict:
     video_path = values.get("video_path")
     if video_path is None:
         raise LookupError("Stage not reached")
-    result: dict = {"stage": "video", "video_path": video_path}
+    result: dict = {"stage": "video", "video_path": video_path, "warnings": warnings}
     # ending_credit_error is only present in the checkpoint when cc_attribution
     # was on for this run (Story 5.20 AC:6) — its presence, not its value, is
     # the attempted/not-attempted signal.
@@ -242,7 +249,8 @@ def _mirror_gate_state(run_id: str, stage: str, value: str) -> None:
         session.commit()
 
 
-def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any = None) -> PipelineState:
+def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any = None,
+                    warnings: list[RunWarning] | None = None) -> PipelineState:
     return {
         "run_id": run_id,
         "scp_id": scp_id,
@@ -257,6 +265,10 @@ def _initial_state(run_id: str, scp_id: str, scp_text: str, prompt_variant: Any 
                                    # prior draft's review verdict (AC8)
         "story_archetype": None,   # Story 12.4 — same rule for the selected template
         "story_archetype_fallback_used": False,
+        # Story 13.1: pre-graph provisioning happens before there IS a state, so its
+        # warnings are seeded here. A full restart passes none — the deleted
+        # checkpoint's degradation history must not describe the new attempt (AC6).
+        "run_warnings": merge_warnings(None, warnings),
     }
 
 
@@ -309,6 +321,12 @@ async def _consume(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | N
             # stays a flat stage→string projection.
             if quality := value.get("scenario_quality"):
                 data["scenario_quality"] = quality
+            # Story 13.1: same forwarding, same reasoning — the gate already built a
+            # JSON-safe list, so this extends the existing gate_pending frame instead
+            # of adding a fifth event type. The artifact endpoint stays the authority.
+            if warnings := value.get("warnings"):
+                data["warnings"] = warnings
+                data["warning_count"] = value["warning_count"]  # the gate writes both or neither
             await _publish(sse_registry, run_id, "gate_pending", data)
             return "awaiting"
         for node, update in event.items():
@@ -423,7 +441,7 @@ async def _run(run_id: str, stream: Any, sse_registry: "SSEQueueRegistry | None"
         await _publish(sse_registry, run_id, "run_failed", {"run_id": run_id, "stage": stage, "error": str(exc)})
 
 
-async def _ensure_character_reference(scp_id: str) -> None:
+async def _ensure_character_reference(scp_id: str) -> list[RunWarning]:
     """Auto-provision search-based character references before the graph starts (Story 5.8).
 
     Reuses ``CharacterService.search_references``/``generate_candidates_from_reference``
@@ -452,18 +470,23 @@ async def _ensure_character_reference(scp_id: str) -> None:
     ``scp_id`` and is treated as "another run is already handling this" rather than
     a failure. No distributed lock — add one if duplicate-provisioning races become
     frequent enough to matter.
+
+    Story 13.1: returns the degradations it swallowed, for ``start_run`` to seed into
+    the fresh state. An empty list is the clean outcome — including the "character
+    already exists" fast path, which is not a degradation at all.
     """
+    warnings: list[RunWarning] = []
     try:
         settings = _settings()
         with Session(db._engine) as session:
-            svc = CharacterService(session, settings=settings)
+            svc = CharacterService(session, settings=settings, warnings=warnings)
             if svc.check_existing_character(scp_id) is not None:
-                return
+                return warnings
             try:
                 character = svc.create_character(scp_id, scp_id)  # memorization, same as select_candidate
             except IntegrityError:
                 logger.info("auto character reference: %s already being provisioned by another run", scp_id)
-                return
+                return warnings
             try:
                 refs = await svc.search_references(scp_id, workspace_path=settings.workspace_path)
                 if not refs:
@@ -474,9 +497,13 @@ async def _ensure_character_reference(scp_id: str) -> None:
                     )
                     if descriptor is not None:
                         svc.update_character(character.id, visual_descriptor=descriptor)
-                except Exception:  # noqa: BLE001 — enrichment is enrichment, not a hard requirement (AD-10)
+                except Exception as exc:  # noqa: BLE001 — enrichment is enrichment, not a hard requirement (AD-10)
                     logger.warning("auto character reference: vision descriptor enrichment or persistence failed for %s",
                                    scp_id, exc_info=True)
+                    warnings.append(make_warning(
+                        "vision_enrichment_failed", card_key=scp_id, reason="enrichment_or_persist_raised",
+                        detail=f"{type(exc).__name__}: {exc}",
+                    ))
                 angle_paths: dict[str, str] = {}
                 for angle in CANONICAL_ANGLES:
                     saved = await svc.generate_candidates_from_reference(
@@ -497,20 +524,30 @@ async def _ensure_character_reference(scp_id: str) -> None:
                 # transient rate limit clears) retries instead of skipping forever.
                 svc.delete_character(character.id)
                 raise
-    except Exception:  # noqa: BLE001 — auxiliary enrichment must never fail the run (AD-10)
+    except Exception as exc:  # noqa: BLE001 — auxiliary enrichment must never fail the run (AD-10)
         logger.warning("auto character reference provisioning failed for %s", scp_id, exc_info=True)
+        # The run continues with no card for this entity — every shot naming it renders
+        # background-only. That is the single most expensive silent outcome in Epic 13.
+        warnings.append(make_warning(
+            "character_provisioning_failed", card_key=scp_id, detail=f"{type(exc).__name__}: {exc}",
+        ))
+    return warnings
 
 
-async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
+async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> list[RunWarning]:
     """Best-effort post-scenario provisioning for Story 8.4 pose_hint cards.
 
     Mirrors ``_ensure_character_reference``'s AD-10 envelope: every miss or
     generation failure degrades to base-pose resolution later, never run failure.
+
+    Story 13.1: returns those degradations. The ``comfyui_mock`` bypass returns none —
+    a mock run is not degraded, it simply has no generator (AC2).
     """
+    warnings: list[RunWarning] = []
     try:
         settings = _settings()
         if settings.comfyui_mock:
-            return
+            return warnings
         # Story 10.5: the guide key travels with the pair. It used to be dropped here,
         # which is why 8.20's whole pose-guide apparatus had no consumer at generation
         # time. Dedup stays on (card_key, hint) because that is what names the card file
@@ -539,10 +576,10 @@ async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
                     elif guide_key and triples[seen[pair]][2] is None:
                         triples[seen[pair]] = (*pair, guide_key)
         if not triples:
-            return
+            return warnings
 
         with Session(db._engine) as session:
-            svc = CharacterService(session, settings=settings)
+            svc = CharacterService(session, settings=settings, warnings=warnings)
             to_generate: list[tuple[str, str, str | None]] = []
             for card_key, hint, guide_key in triples:
                 if svc.get_card(card_key, pose_hint_key(hint), "front") is None:
@@ -554,19 +591,37 @@ async def _ensure_special_pose_cards(scp_id: str, scenes: list[dict]) -> None:
                     "special pose provisioning for %s capped at %d; skipped %s",
                     scp_id, cap, [f"{card_key}:{hint}" for card_key, hint, _ in skipped],
                 )
+                # One warning per skipped key, never one aggregate count: the whole
+                # point is answering "which pose did this run give up on" (Story 8.4/8.13
+                # both produced empty-room output from exactly this skip).
+                warnings.extend(
+                    make_warning("special_pose_cap_exceeded", card_key=card_key,
+                                  pose_hint=pose_hint_key(hint), cap=cap)
+                    for card_key, hint, _ in skipped
+                )
             for card_key, hint, guide_key in to_generate[:cap]:
                 try:
                     await svc.generate_special_pose_card(card_key, hint, guide_key)
-                except Exception:  # noqa: BLE001 — one special pose must not block a run
+                except Exception as exc:  # noqa: BLE001 — one special pose must not block a run
                     logger.warning(
                         "special pose provisioning failed for %s pose_hint=%r",
                         card_key, hint, exc_info=True,
                     )
-    except Exception:  # noqa: BLE001 — auxiliary provisioning must never fail the run
+                    warnings.append(make_warning(
+                        "special_pose_generation_failed", card_key=card_key,
+                        pose_hint=pose_hint_key(hint), reason="unexpected_error",
+                        detail=f"{type(exc).__name__}: {exc}",
+                    ))
+    except Exception as exc:  # noqa: BLE001 — auxiliary provisioning must never fail the run
         logger.warning("special pose provisioning failed for %s", scp_id, exc_info=True)
+        warnings.append(make_warning(
+            "special_pose_generation_failed", card_key=scp_id, reason="provisioning_failed",
+            detail=f"{type(exc).__name__}: {exc}",
+        ))
+    return warnings
 
 
-async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
+async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> list[RunWarning]:
     """Best-effort post-scenario provisioning for Story 8.13 derived-entity cards.
 
     ``cast_decision.md`` teaches the LLM a ``<scp_id>-<n>`` vocabulary for a
@@ -575,11 +630,16 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
     every shot referencing it. Mirrors ``_ensure_special_pose_cards``'s AD-10
     envelope: any miss or generation failure degrades to that existing skip
     behavior, never run failure.
+
+    Story 13.1: returns those degradations — including the unauthored-look skip, whose
+    only trace until now was a log line, and whose effect on screen is a cast member
+    that simply never appears.
     """
+    warnings: list[RunWarning] = []
     try:
         settings = _settings()
         if settings.comfyui_mock:
-            return
+            return warnings
         prefix = f"{scp_id}-"
         keys: list[str] = []
         seen: set[str] = set()
@@ -597,13 +657,13 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
                         seen.add(card_key)
                         keys.append(card_key)
         if not keys:
-            return
+            return warnings
 
         with Session(db._engine) as session:
-            svc = CharacterService(session, settings=settings)
+            svc = CharacterService(session, settings=settings, warnings=warnings)
             missing = [key for key in keys if svc.check_existing_character(key) is None]
             if not missing:
-                return
+                return warnings
 
             # Story 10.6 (지적 15): the authored look, never the base entity's. 8.13 built
             # the descriptor as the base's verbatim visual_descriptor plus a qualifier line
@@ -624,15 +684,21 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
                     "than no card — cast resolution already skips these keys)",
                     scp_id, unauthored,
                 )
+                warnings.extend(
+                    make_warning("derived_entity_look_unauthored", card_key=key) for key in unauthored
+                )
             to_generate = [key for key in missing if key in DERIVED_DESCRIPTORS]
             if not to_generate:
-                return
+                return warnings
             cap = max(0, settings.derived_entity_max_per_run)
             skipped = to_generate[cap:]
             if skipped:
                 logger.warning(
                     "derived entity provisioning for %s capped at %d; skipped %s",
                     scp_id, cap, skipped,
+                )
+                warnings.extend(
+                    make_warning("derived_entity_cap_exceeded", card_key=key, cap=cap) for key in skipped
                 )
 
             for card_key in to_generate[:cap]:
@@ -659,17 +725,26 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> None:
                     character = svc.check_existing_character(card_key)
                     if character is None or not character.angle_front_path:
                         raise LookupError(f"generation produced no front card for {card_key}")
-                except Exception:  # noqa: BLE001 — one derived entity must not block a run
+                except Exception as exc:  # noqa: BLE001 — one derived entity must not block a run
                     logger.warning(
                         "derived entity card generation failed for %s", card_key, exc_info=True,
                     )
+                    warnings.append(make_warning(
+                        "derived_entity_generation_failed", card_key=card_key,
+                        detail=f"{type(exc).__name__}: {exc}",
+                    ))
                     # Roll back a partial/empty stub row so a future run retries
                     # instead of skipping forever (mirrors _ensure_character_reference).
                     stub = svc.check_existing_character(card_key)
                     if stub is not None and not stub.angle_front_path:
                         svc.delete_character(stub.id)
-    except Exception:  # noqa: BLE001 — auxiliary provisioning must never fail the run
+    except Exception as exc:  # noqa: BLE001 — auxiliary provisioning must never fail the run
         logger.warning("derived entity provisioning failed for %s", scp_id, exc_info=True)
+        warnings.append(make_warning(
+            "derived_entity_generation_failed", card_key=scp_id, reason="provisioning_failed",
+            detail=f"{type(exc).__name__}: {exc}",
+        ))
+    return warnings
 
 
 async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQueueRegistry | None" = None,
@@ -679,10 +754,10 @@ async def start_run(run_id: str, scp_id: str, scp_text: str, sse_registry: "SSEQ
     ``prompt_variant`` seeds the run's PipelineState — ``"B"`` for an A/B Variant B run
     (Story 4.1), ``None`` for a standard run.
     """
-    await _ensure_character_reference(scp_id)  # Story 5.8 — pre-graph, non-fatal
+    warnings = await _ensure_character_reference(scp_id)  # Story 5.8 — pre-graph, non-fatal
     config = {"configurable": {"thread_id": run_id}}
     _configs[run_id] = config
-    await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text, prompt_variant), config,
+    await _run(run_id, _graph.astream(_initial_state(run_id, scp_id, scp_text, prompt_variant, warnings), config,
                                       stream_mode="updates"), sse_registry)
 
 
@@ -730,8 +805,30 @@ async def resume_run(run_id: str, stage: str, action: str, sse_registry: "SSEQue
     if stage == "scenario" and decision == "approved":
         snap = await _graph.aget_state(config)
         values = snap.values or {}
-        await _ensure_special_pose_cards(values.get("scp_id", ""), values.get("scenes") or [])
-        await _ensure_derived_entity_cards(values.get("scp_id", ""), values.get("scenes") or [])
+        provisioning = [
+            *await _ensure_special_pose_cards(values.get("scp_id", ""), values.get("scenes") or []),
+            *await _ensure_derived_entity_cards(values.get("scp_id", ""), values.get("scenes") or []),
+        ]
+        if provisioning:
+            # Story 13.1: this provisioning runs AFTER the scenario gate opened, so its
+            # warnings can only reach the operator through the checkpoint — the image
+            # gate is the first place they surface. Attributed to `scenario` (the node
+            # whose "ok" edge already points at gate_scenario) so the graph stays paused
+            # exactly where it is: the pending interrupt is untouched, the next task is
+            # still gate_scenario, and the resume below consumes it normally. Same seam
+            # and same reasoning as the reject branch's `as_node=stage` write.
+            # AD-10 envelope like every other best-effort seam in this file: provisioning
+            # has already run, so a failed checkpoint write must cost the warning record,
+            # never the operator's approval.
+            try:
+                await _graph.aupdate_state(
+                    config,
+                    {"run_warnings": merge_warnings(values.get("run_warnings") or [], provisioning)},
+                    as_node="scenario",
+                )
+            except Exception:  # noqa: BLE001 — a lost warning must not 500 the approve
+                logger.warning("could not merge provisioning warnings into %s's checkpoint",
+                               run_id, exc_info=True)
     if decision == "rejected" and stage != _STAGES[0]:
         snap = await _graph.aget_state(config)
         values = snap.values or {}

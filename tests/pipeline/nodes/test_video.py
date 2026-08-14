@@ -3522,3 +3522,172 @@ def test_char_max_box_reserves_the_widest_macro_pan_budget():
     assert video.CHAR_MAX_H == (
         1080 - 2 * (16.5 + video._MACRO_PAN_RESERVE_PX)
     ) / video.CHAR_MAX_ZOOM / 1.075
+
+
+# ── Story 13.1: cast/relight degradations become gate-visible warnings ────────
+
+
+async def test_cast_resolver_failure_warns_with_bounded_detail(monkeypatch, tmp_path, assets):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+
+    async def _failing_resolver(scp_id, scenes):
+        raise RuntimeError("LLM down")
+
+    _inject_resolver(monkeypatch, fn=_failing_resolver)
+    scene = _scene(1, image=assets.image, cast=[_cast_member()], audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert out.get("error") is None            # still non-fatal (AC3)
+    assert out["video_path"]
+    codes = [w["code"] for w in out["run_warnings"]]
+    assert codes[0] == "cast_resolution_failed"
+    assert out["run_warnings"][0]["context"]["detail"] == "RuntimeError: LLM down"
+    # …and the declared-but-undrawn member is named, so "how much did it cost" is answerable.
+    missing = [w for w in out["run_warnings"] if w["code"] == "cast_card_missing"]
+    assert missing[0]["context"] == {"scene_num": 1, "shot_id": "S001", "card_key": "SCP-096"}
+
+
+async def test_unresolved_cast_member_names_scene_shot_and_card(monkeypatch, tmp_path, assets):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {})  # resolver ran, resolved nothing
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member("STOCK-d-class")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert [w["code"] for w in out["run_warnings"]] == ["cast_card_missing"]
+    assert out["run_warnings"][0]["stage"] == "video"
+    assert out["run_warnings"][0]["context"]["card_key"] == "STOCK-d-class"
+
+
+async def test_angle_and_pose_fallback_are_distinguishable(monkeypatch, tmp_path, assets):
+    """The producer this story exists for: `fallback`/`fallback_reason` had no consumer
+    beyond one aggregate integer that could not say which shot, nor which lever."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    card = {**_card(assets.character, card_key="SCP-096", pose="standing", angle="side", fallback=True),
+            "angle_fallback": True, "asset_fallback": False, "fallback_reason": "angle"}
+    _inject_resolver(monkeypatch, {"1:S001": [card]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member("SCP-096")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert [w["code"] for w in out["run_warnings"]] == ["cast_card_fallback"]
+    context = out["run_warnings"][0]["context"]
+    assert context["scene_num"] == 1 and context["shot_id"] == "S001"
+    assert context["card_key"] == "SCP-096"
+    assert context["fallback_reason"] == "angle"
+    assert context["angle"] == "side"
+
+
+async def test_clean_cast_resolution_is_warning_free(monkeypatch, tmp_path, assets):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="SCP-096")]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member("SCP-096")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+    assert out["run_warnings"] == []
+
+
+async def test_background_only_shot_is_warning_free(monkeypatch, tmp_path, assets):
+    """An empty cast asked for nothing, so nothing is missing (AC2)."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {})
+
+    scene = _scene(1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+    assert out["run_warnings"] == []
+
+
+async def test_video_warnings_merge_with_prior_stage_history(monkeypatch, tmp_path, assets):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {})
+
+    prior = {"code": "subtitle_alignment_fallback", "stage": "subtitle", "message": "이전",
+             "context": {"scene_num": 1}}
+    scene = _scene(1, image=assets.image, cast=[_cast_member("SCP-096")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096", run_warnings=[prior]))
+    assert out["run_warnings"][0] == prior
+    assert [w["code"] for w in out["run_warnings"][1:]] == ["cast_card_missing"]
+
+
+def test_relight_warnings_carry_counts_and_bounded_identifiers():
+    stats = {
+        "computed": 3, "failed": 2, "skipped": 20,
+        "failed_details": [{"reason": "render_failed", "card_variant": "SCP-049__standing__front",
+                            "location_key": "corridor"}],
+        "skipped_details": [{"reason": "card_asset_unverified", "scene_num": 4, "shot_id": "S003",
+                             "card_key": "STOCK-security", "location_key": "corridor"}],
+    }
+    warnings = video._relight_warnings(stats)
+    codes = [w["code"] for w in warnings]
+    assert codes == ["relight_failed", "relight_failed", "relight_pair_skipped", "relight_pair_skipped"]
+    assert warnings[0]["context"]["card_variant"] == "SCP-049__standing__front"
+    # The named samples are bounded, so the true totals ride their own row.
+    assert warnings[1]["context"] == {"failed_count": 2}
+    assert warnings[2]["context"]["shot_id"] == "S003"
+    assert warnings[3]["context"] == {"skipped_count": 20}
+
+
+def test_relight_warnings_are_empty_for_a_clean_precompute():
+    assert video._relight_warnings({"computed": 5, "failed": 0}) == []
+
+
+def test_relight_warnings_report_a_count_when_nothing_was_named():
+    warnings = video._relight_warnings({"computed": 0, "failed": 4})
+    assert [w["context"] for w in warnings] == [{"failed_count": 4}]
+
+
+async def test_a_malformed_card_produces_exactly_one_row(monkeypatch, tmp_path, assets):
+    """One lost cast member, one warning. Reporting the same card from both the member
+    loop and the card loop put two rows with different context in front of the operator
+    — different context means `merge()` keeps both, so the count inflated too."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    broken = {**_card(assets.character, card_key="SCP-096"), "path": None}
+    _inject_resolver(monkeypatch, {"1:S001": [broken]})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member("SCP-096")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert [w["code"] for w in out["run_warnings"]] == ["cast_card_missing"]
+    # …and the row still says *why* it was lost: a broken card record, not an absent one.
+    assert out["run_warnings"][0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "card_key": "SCP-096", "reason": "malformed_card"}
+
+
+async def test_a_never_resolved_member_is_not_labelled_malformed(monkeypatch, tmp_path, assets):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake_ffmpeg_ok)
+    _inject_resolver(monkeypatch, {})
+
+    scene = _scene(1, image=assets.image, cast=[_cast_member("STOCK-d-class")],
+                    audio=assets.audio, subtitle=assets.subtitle)
+    out = await video_node(_state([scene], scp_id="SCP-096"))
+
+    assert "reason" not in out["run_warnings"][0]["context"]
+
+
+def test_cast_warnings_are_bounded_by_the_shared_sample_cap():
+    """These render one line each above the Approve button and ride the checkpoint into
+    every gate payload; a 155-shot run with a resolver outage must not put 155 there."""
+    from yt_flow.domain.warnings import MAX_SAMPLE_RECORDS, cap_samples
+
+    n = MAX_SAMPLE_RECORDS + 8
+    scenes = [{"scene_num": 1, "shots": [
+        {"shot_id": f"S{i:03d}", "cast": [{"card_key": "STOCK-d-class"}]} for i in range(n)
+    ]}]
+    warnings = cap_samples(video._cast_warnings(scenes, {}))
+
+    named = [w for w in warnings if "shot_id" in w["context"]]
+    assert len(named) == MAX_SAMPLE_RECORDS
+    assert warnings[-1]["context"] == {"total_count": n}

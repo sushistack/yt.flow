@@ -264,4 +264,74 @@ describe("RunDetail", () => {
     expect(await screen.findByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
     expect(before).toBeGreaterThan(0)
   })
+
+  // ── Story 13.1: run warnings arrive at NON-scenario gates too (AC5) ─────────
+
+  const PLATE_WARNING = {
+    code: "stock_plate_missing",
+    stage: "image",
+    message: "승인된 스톡 배경이 없어 배경을 생성했습니다",
+    context: { scene_num: 3, shot_id: "S002", location_key: "corridor" },
+  }
+
+  function mockImageGate(warnings: unknown[]) {
+    const run = { ...RUN, current_stage: "image", status: "awaiting_approval", gate_states: JSON.stringify({ scenario: "approved", image: "pending" }) }
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
+      if (url.includes("/stages/image/artifacts"))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ stage: "image", images: [{ scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png" }], warnings }),
+        })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("image gate_pending re-reads artifacts so run warnings appear without reload", async () => {
+    mockImageGate([])
+    render(<RunDetail runId="r1" />)
+    await screen.findByRole("button", { name: "승인" })
+    expect(screen.queryByRole("heading", { name: /경고 1건/ })).not.toBeInTheDocument()
+
+    // Story 12.3 refreshed on the scenario gate only; the image stage writes warnings
+    // of its own, so the refresh has to happen at every gate.
+    mockImageGate([PLATE_WARNING])
+    act(() => MockEventSource.instances[0].emit("gate_pending", { run_id: "r1", stage: "image", warnings: [PLATE_WARNING], warning_count: 1 }))
+
+    expect(await screen.findByRole("heading", { name: /경고 1건/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "승인" })).toBeInTheDocument()
+  })
+
+  it("a gate_pending for another stage does not refetch the stage on screen", async () => {
+    // The refetch nulls artifacts before re-fetching, so firing it for an unrelated
+    // stage would throw away an in-progress narration edit in the panel.
+    const run = { ...RUN, current_stage: "scenario", status: "awaiting_approval", gate_states: JSON.stringify({ scenario: "pending" }) }
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/runs/r1") return Promise.resolve({ ok: true, status: 200, text: async () => JSON.stringify(run) })
+      if (url.includes("/stages/scenario/artifacts"))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ stage: "scenario", scenes: [{ scene_num: 1, narration: "초안" }], warnings: [] }),
+        })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<RunDetail runId="r1" />)
+    await screen.findByRole("button", { name: "편집" })
+    fireEvent.click(screen.getByRole("button", { name: "편집" }))
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "수정 중" } })
+    const before = fetchMock.mock.calls.filter(([url]) => String(url).includes("/stages/scenario/artifacts")).length
+
+    act(() => MockEventSource.instances[0].emit("gate_pending", { run_id: "r1", stage: "image" }))
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/stages/scenario/artifacts")).length).toBe(before),
+    )
+    expect(screen.getByRole("textbox")).toHaveValue("수정 중")
+  })
 })

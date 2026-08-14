@@ -381,7 +381,16 @@ async def test_precompute_relights_excludes_unverified_card(tmp_path, workflow_p
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
-    assert stats == {"computed": 0, "failed": 0}
+    # Story 13.1: the skip is now *accounted for*, with the card and shot named — an
+    # unverified card silently compositing unlit is exactly the class of miss the
+    # {computed, failed} pair could not express.
+    assert stats["computed"] == 0
+    assert stats["failed"] == 0
+    assert stats["skipped"] == 1
+    assert stats["skipped_details"] == [{
+        "reason": "card_asset_unverified", "scene_num": 1, "shot_id": "S001",
+        "card_key": "SCP-049", "location_key": "corridor",
+    }]
     assert client.calls == 0
 
 
@@ -416,7 +425,12 @@ async def test_precompute_relights_non_fatal_on_comfyui_failure(tmp_path, workfl
         scenes, cast_cards, svc, client, workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
-    assert stats == {"computed": 0, "failed": 1}
+    assert stats["computed"] == 0
+    assert stats["failed"] == 1
+    assert stats["failed_details"] == [{
+        "reason": "render_failed", "card_variant": "STOCK-d-class__standing__front",
+        "location_key": "corridor",
+    }]
 
 
 @pytest.mark.asyncio
@@ -432,7 +446,9 @@ async def test_precompute_relights_unverified_workflow_is_non_fatal(tmp_path, un
         unverified_workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
-    assert stats == {"computed": 0, "failed": 1}
+    assert stats["computed"] == 0
+    assert stats["failed"] == 1
+    assert [d["reason"] for d in stats["failed_details"]] == ["render_failed"]
 
 
 @pytest.mark.asyncio
@@ -448,7 +464,12 @@ async def test_precompute_relights_skips_unsafe_cache_keys(tmp_path, workflow_pa
         workflow_path, tmp_path, "http://fake",
     )
     assert relit_map == {}
-    assert stats == {"computed": 0, "failed": 0}
+    assert stats["computed"] == 0
+    assert stats["failed"] == 0
+    assert stats["skipped"] == 1
+    assert stats["skipped_details"] == [
+        {"reason": "unsafe_location_key", "scene_num": 1, "shot_id": "S001"},
+    ]
 
 
 @pytest.mark.asyncio
@@ -665,3 +686,30 @@ def test_inject_relight_without_size_leaves_canvases_alone():
     }
     out = _inject_relight_inputs(template, "card.png", "bg.png", None)
     assert (out["20"]["inputs"]["width"], out["20"]["inputs"]["height"]) == (832, 1216)
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_shot_does_not_disable_tier3_for_the_run(tmp_path, workflow_path):
+    """The isolation this function's docstring promises. Story 13.1 briefly moved the
+    `shot.get(...)` identifier binding ABOVE the try, which let one non-dict shot raise
+    an AttributeError out of `precompute_relights` and cost the whole run its relights.
+    """
+    (tmp_path / "bg.png").write_bytes(b"bg")
+    (tmp_path / "card.png").write_bytes(b"card")
+    good = _shot("S002", location_key="corridor", image_path=str(tmp_path / "bg.png"))
+    scenes = [_scene(1, ["not a shot at all", good])]
+    cast_cards = {"1:S002": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
+    svc = _FakeAssetService(tmp_path)
+    _seed_stock_assets(svc)
+
+    relit_map, stats = await precompute_relights(
+        scenes, cast_cards, svc, _FakeComfyUIClient(), workflow_path, tmp_path, "http://fake",
+    )
+
+    # The healthy pair still relit…
+    assert ("STOCK-d-class__standing__front", "corridor") in relit_map
+    assert stats["computed"] == 1
+    # …and the malformed one is accounted for rather than silently swallowed.
+    assert stats["skipped"] == 1
+    assert stats["skipped_details"] == [
+        {"reason": "shot_metadata_error", "scene_num": 1, "shot_id": None}]

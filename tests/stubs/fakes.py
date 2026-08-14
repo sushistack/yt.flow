@@ -137,8 +137,21 @@ def fake_get_image_provider(self) -> _FakeCharacterImageProvider:
     return _FakeCharacterImageProvider()
 
 
+# ── character_service.CharacterService.enrich_descriptor_from_references ───
+async def fake_enrich_descriptor(self, scp_id: str, ref_image_paths, timeout: float = 60.0) -> str:
+    """Canned vision descriptor — the real method POSTs to DashScope.
+
+    Without this the offline seams above are incomplete: `_ensure_character_reference`
+    calls enrichment between search and generation, and a developer `.env` that carries
+    `YTFLOW_CHARACTER_VISION_API_KEY` turns every gate/resume unit test into a live
+    multimodal API call whose outcome (and therefore whose Story 13.1 warning) depends
+    on the network.
+    """
+    return f"{scp_id} 참조 묘사"
+
+
 def patch_character_reference_seams(monkeypatch) -> None:
-    """Wire DuckDuckGo search + download + generation to the offline fakes above.
+    """Wire DuckDuckGo search + download + enrichment + generation to the offline fakes.
 
     Shared by every fixture that needs ``run_service._ensure_character_reference``
     (Story 5.8) to stay offline: ``conftest.stub_profile`` plus the gate/resume test
@@ -151,6 +164,8 @@ def patch_character_reference_seams(monkeypatch) -> None:
     monkeypatch.setattr(image_search.DuckDuckGoImageSearch, "search", fake_image_search)
     monkeypatch.setattr(character_service.CharacterService, "_download_reference_image",
                          fake_download_reference_image)
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references",
+                         fake_enrich_descriptor)
     monkeypatch.setattr(character_service.CharacterService, "_get_image_provider",
                          fake_get_image_provider)
 

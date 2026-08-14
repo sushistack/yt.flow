@@ -712,9 +712,10 @@ async def test_resume_run_invokes_derived_entity_provisioning(monkeypatch):
 
     async def fake_ensure(scp_id, scenes):
         calls.append(scp_id)
+        return []  # Story 13.1: both provisioning helpers return their warnings
 
     monkeypatch.setattr(run_service, "_ensure_derived_entity_cards", fake_ensure)
-    monkeypatch.setattr(run_service, "_ensure_special_pose_cards", AsyncMock())
+    monkeypatch.setattr(run_service, "_ensure_special_pose_cards", AsyncMock(return_value=[]))
 
     class _FakeSnapshot:
         values = {"scp_id": "SCP-049", "scenes": []}
@@ -804,3 +805,151 @@ async def test_dedup_keeps_the_first_non_empty_guide_not_the_first_shot(monkeypa
 
     # One card (dedup on the pair that names the file), and it keeps the guide.
     assert calls == [("STOCK-d-class", "lying supine on table", "humanoid_lying_supine")]
+
+
+# ── Story 13.1: provisioning degradations are returned, not just logged ───────
+
+
+async def test_special_pose_cap_names_every_skipped_key(monkeypatch, tmp_path):
+    """Stories 8.4/8.13 both produced empty-room output from this skip. A count would
+    not have said which pose went missing, so every skipped key gets its own record."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.special_pose_max_per_run = 1
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
+        return "/tmp/special.png"
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    warnings = await run_service._ensure_special_pose_cards(
+        "SCP-049",
+        _special_pose_scenes(
+            ("SCP-049", "kneeling over a corpse"),
+            ("SCP-049", "lying on operating table"),
+            ("STOCK-security", "aiming a rifle"),
+        ),
+    )
+
+    assert [w["code"] for w in warnings] == ["special_pose_cap_exceeded"] * 2
+    assert all(w["stage"] == "scenario" for w in warnings)
+    assert [w["context"]["card_key"] for w in warnings] == ["SCP-049", "STOCK-security"]
+    assert [w["context"]["pose_hint"] for w in warnings] == [
+        pose_hint_key("lying on operating table"), pose_hint_key("aiming a rifle"),
+    ]
+    assert warnings[0]["context"]["cap"] == 1
+
+
+async def test_special_pose_generation_failure_warns_with_the_card_named(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, card_key, pose_hint, pose_guide_key=None):
+        raise RuntimeError("renderer down")
+
+    monkeypatch.setattr(CharacterService, "generate_special_pose_card", fake_generate)
+
+    warnings = await run_service._ensure_special_pose_cards(
+        "SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse")))
+
+    assert [w["code"] for w in warnings] == ["special_pose_generation_failed"]
+    assert warnings[0]["context"]["card_key"] == "SCP-049"
+    assert warnings[0]["context"]["detail"] == "RuntimeError: renderer down"
+
+
+async def test_mock_mode_provisioning_is_warning_free(monkeypatch, tmp_path):
+    """AC2: a bypass that exists only because comfyui_mock=True is not a degradation."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.comfyui_mock = True
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    assert await run_service._ensure_special_pose_cards(
+        "SCP-049", _special_pose_scenes(("SCP-049", "kneeling over a corpse"))) == []
+    assert await run_service._ensure_derived_entity_cards(
+        "SCP-049", _derived_entity_scenes("SCP-049-2")) == []
+
+
+async def test_unauthored_derived_key_warns_instead_of_vanishing(monkeypatch, tmp_path):
+    """Story 10.6 skips a derived key with no authored look — correct, and until now
+    invisible: the cast member simply never appears on screen."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, *args, **kwargs):
+        raise AssertionError("an unauthored key must not be generated")
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    warnings = await run_service._ensure_derived_entity_cards(
+        "SCP-096", _derived_entity_scenes("SCP-096-2", "SCP-096-3"))
+
+    assert [w["code"] for w in warnings] == ["derived_entity_look_unauthored"] * 2
+    assert [w["context"]["card_key"] for w in warnings] == ["SCP-096-2", "SCP-096-3"]
+
+
+async def test_derived_entity_generation_failure_warns(monkeypatch, tmp_path):
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def fake_generate(self, *args, **kwargs):
+        raise RuntimeError("comfy down")
+
+    monkeypatch.setattr(CharacterService, "generate_cards_from_descriptor", fake_generate)
+
+    warnings = await run_service._ensure_derived_entity_cards(
+        "SCP-049", _derived_entity_scenes("SCP-049-2"))
+
+    assert [w["code"] for w in warnings] == ["derived_entity_generation_failed"]
+    assert warnings[0]["context"]["card_key"] == "SCP-049-2"
+
+
+async def test_pre_graph_provisioning_failure_is_seeded_into_the_initial_state(monkeypatch, tmp_path):
+    """The warning has to survive the only boundary it can be lost at: there is no
+    state yet when pre-graph provisioning runs."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(run_service, "_settings", lambda: settings)
+
+    async def boom(self, scp_id, workspace_path=None):
+        raise RuntimeError("search down")
+
+    monkeypatch.setattr(CharacterService, "search_references", boom)
+
+    warnings = await run_service._ensure_character_reference("SCP-096")
+    assert [w["code"] for w in warnings] == ["character_provisioning_failed"]
+
+    state = run_service._initial_state("run-1", "SCP-096", "text", None, warnings)
+    assert state["run_warnings"] == warnings
+    # A restart passes none, so the new attempt starts clean (AC6).
+    assert run_service._initial_state("run-1", "SCP-096", "text")["run_warnings"] == []
+
+
+async def test_swallowed_enrichment_failure_survives_successful_card_generation(monkeypatch, tmp_path):
+    """The case a caller cannot detect: enrichment fails, an OLD descriptor comes back,
+    generation succeeds, and nothing downstream knows the cards were never described by
+    the references they were supposed to come from."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.character_vision_api_key = ""  # capability unavailable at runtime
+    collected: list = []
+    with Session(db._engine) as session:
+        service = CharacterService(session, settings=settings, warnings=collected)
+        assert await service.enrich_descriptor_from_references("SCP-049", ["/tmp/ref.png"]) is None
+
+    assert [w["code"] for w in collected] == ["vision_enrichment_failed"]
+    assert collected[0]["context"] == {"card_key": "SCP-049", "reason": "vision_api_key_missing"}
+
+
+async def test_a_collectorless_service_keeps_its_old_behaviour(monkeypatch, tmp_path):
+    """Every non-run caller (the Character UI, scripts, most tests) passes no collector."""
+    db.init("sqlite://")
+    settings = _settings(tmp_path)
+    settings.character_vision_api_key = ""
+    with Session(db._engine) as session:
+        service = CharacterService(session, settings=settings)
+        assert await service.enrich_descriptor_from_references("SCP-049", ["/tmp/ref.png"]) is None

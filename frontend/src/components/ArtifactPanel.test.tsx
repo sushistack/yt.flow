@@ -65,8 +65,8 @@ describe("ArtifactPanel", () => {
         data: {
           stage: "image",
           images: [
-            { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png", layered_fallback: false },
-            { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png", layered_fallback: false },
+            { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png" },
+            { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png" },
           ],
         },
         onOpenImage,
@@ -79,17 +79,18 @@ describe("ArtifactPanel", () => {
     expect(onOpenImage).toHaveBeenCalledWith(1)
   })
 
-  it("image: shows a flat-fallback warning indicator on degraded shots (Story 5.11)", () => {
+  // Story 5.11's per-image `layered_fallback` indicator is GONE: Story 8.3 retired the
+  // layered/segmentation path it reported on, so the flag had been dead on the backend
+  // for six epics while the UI kept reading it. Story 13.1 replaces it with the generic
+  // run-warning surface below, which is fed by producers that actually still run.
+  it("image: no dead per-image fallback indicator remains (Story 8.3 retirement)", () => {
     renderPanel({
       data: {
         stage: "image",
-        images: [
-          { scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png", layered_fallback: false },
-          { scene_num: 2, shot_id: "s2", image_path: "workspace/r1/images/b.png", layered_fallback: true },
-        ],
+        images: [{ scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png" }],
       },
     })
-    expect(screen.getByText("⚠ 플랫 폴백")).toBeInTheDocument()
+    expect(screen.queryByText("⚠ 플랫 폴백")).not.toBeInTheDocument()
   })
 
   it("tts: sorted native audio controls with scene index + duration (AC5)", () => {
@@ -404,5 +405,125 @@ describe("ArtifactPanel", () => {
     const alerts = screen.getAllByRole("alert")
     expect(alerts.some((a) => a.textContent?.includes("이 스테이지를 다시 실행합니까?"))).toBe(true)
     expect(alerts.some((a) => a.textContent?.includes("재검토 후에도 품질 문제가 남아 있습니다."))).toBe(true)
+  })
+
+  // ── Story 13.1: run warnings at every gate (AC5) ───────────────────────────
+
+  const PLATE_WARNING = {
+    code: "stock_plate_missing",
+    stage: "image" as const,
+    message: "승인된 스톡 배경이 없어 배경을 생성했습니다",
+    context: { scene_num: 3, shot_id: "S002", location_key: "corridor" },
+  }
+  // The exact shape `video._cast_warnings()` emits for a fallback card — `fallback_reason`,
+  // not `reason`. A fixture that invents its own context certifies a path the backend
+  // cannot produce (the same class of bug 13.2's review found one story ago).
+  const CAST_WARNING = {
+    code: "cast_card_fallback",
+    stage: "video" as const,
+    message: "요청한 포즈·앵글 카드가 없어 대체 카드를 사용했습니다",
+    context: {
+      scene_num: 1,
+      shot_id: "S001",
+      card_key: "STOCK-d-class",
+      fallback_reason: "angle+pose_hint",
+      pose: "standing",
+      angle: "front",
+      detail: "boom",
+    },
+  }
+  const imageData = (warnings?: unknown) => ({
+    stage: "image" as const,
+    images: [{ scene_num: 1, shot_id: "s1", image_path: "workspace/r1/images/a.png" }],
+    ...(warnings === undefined ? {} : { warnings }),
+  })
+
+  it("no warnings: no badge, no list, controls untouched (AC5)", () => {
+    renderPanel({ data: imageData([]) as StageArtifacts, gateState: "pending" })
+    expect(screen.queryByText(/경고 \d+건/)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /승인/ })).toBeInTheDocument()
+  })
+
+  it("a legacy response with no `warnings` key does not crash (AC1)", () => {
+    renderPanel({ data: imageData() as StageArtifacts, gateState: "pending" })
+    expect(screen.queryByText(/경고 \d+건/)).not.toBeInTheDocument()
+    expect(screen.getByText("이미지 1개")).toBeInTheDocument()
+  })
+
+  it("one warning: header count badge + message + identifiers (AC5)", () => {
+    renderPanel({ data: imageData([PLATE_WARNING]) as StageArtifacts, gateState: "pending" })
+
+    // Icon + text + count, twice: the compact header badge and the list heading.
+    expect(screen.getAllByText(/경고 1건/).length).toBeGreaterThanOrEqual(1)
+    // A labelled region, not an alert — the list is statically rendered and the header
+    // badge already carries the count; re-announcing the history on every stage switch
+    // is noise, and `role="alert"` would also contradict a polite live region.
+    const region = screen.getByRole("region", { name: /경고 1건/ })
+    expect(region).not.toHaveAttribute("role", "alert")
+    expect(region).not.toHaveAttribute("aria-live")
+    expect(region.textContent).toContain("⚠")
+    expect(region.textContent).toContain("승인된 스톡 배경이 없어 배경을 생성했습니다")
+    expect(region.textContent).toContain("씬 3")
+    expect(region.textContent).toContain("S002")
+    expect(region.textContent).toContain("corridor")
+    // Neutral tokens only — a warning is not a gate state.
+    expect(region.className).toContain("border-border")
+    expect(region.className).not.toContain("status-")
+  })
+
+  it("multiple warnings across stages: each row names its own stage, order preserved (AC5)", () => {
+    renderPanel({ data: imageData([PLATE_WARNING, CAST_WARNING]) as StageArtifacts, gateState: "pending" })
+
+    const rows = screen.getAllByRole("listitem")
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain("image")
+    expect(rows[0].textContent).toContain("stock_plate_missing")
+    expect(rows[1].textContent).toContain("video")
+    expect(rows[1].textContent).toContain("STOCK-d-class")
+    // The whole point of the story: which lever fell back, on which shot.
+    expect(rows[1].textContent).toContain("대체 angle+pose_hint")
+    expect(rows[1].textContent).toContain("포즈 standing")
+    expect(rows[1].textContent).toContain("앵글 front")
+    // `detail` is diagnostic context, never primary copy.
+    expect(rows[1].textContent).not.toContain("boom")
+  })
+
+  it("the retry confirmation alert is the only alert next to a run warning (AC5)", async () => {
+    renderPanel({ data: imageData([PLATE_WARNING]) as StageArtifacts, stage: "image", gateState: "approved" })
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "재시도" }))
+    })
+    const alerts = screen.getAllByRole("alert")
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0].textContent).toContain("이 스테이지를 다시 실행합니까?")
+    // …and the warning is still on screen, just not shouted.
+    expect(screen.getByRole("region", { name: /경고 1건/ })).toBeInTheDocument()
+  })
+
+  it("warnings never block the gate — approve still submits (AC5)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" })
+    vi.stubGlobal("fetch", fetchMock)
+    const onGateStateChange = vi.fn()
+    renderPanel({
+      data: imageData([PLATE_WARNING]) as StageArtifacts,
+      stage: "image",
+      gateState: "pending",
+      onGateStateChange,
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /승인/ }))
+    await waitFor(() => expect(onGateStateChange).toHaveBeenCalledWith("image", "approved"))
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/runs/r1/stages/image/gate",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "approve" }) }),
+    )
+    expect(screen.getAllByText(/경고 1건/).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("both contracts render together at the scenario gate (AC5)", () => {
+    const data = { ...scenarioData(QUALITY), warnings: [PLATE_WARNING] }
+    renderPanel({ data: data as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("heading", { name: /2차 검토 경고/ })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /경고 1건/ })).toBeInTheDocument()
   })
 })

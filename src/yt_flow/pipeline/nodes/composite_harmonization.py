@@ -27,6 +27,7 @@ from typing import Any
 
 from yt_flow.domain.png import dimensions, has_alpha
 from yt_flow.domain.state import CastDepth, CastMember, SceneState
+from yt_flow.domain.warnings import MAX_SAMPLE_RECORDS
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,10 @@ GREY_MATTE_NODE = "20"
 LIGHT_SOURCE_NODE = "22"
 
 _RELIGHT_CONCURRENCY = 3  # ponytail: fixed cap, matches Story 5.10-era ComfyUI concurrency norms
+# Story 13.1: the per-pair skip/failure samples returned to video_node land in the
+# LangGraph checkpoint, so they are bounded — by the one shared sampling policy every
+# per-shot warning family uses. The COUNTS are always exact; only the named examples stop.
+_MAX_DIAGNOSTIC_RECORDS = MAX_SAMPLE_RECORDS
 
 
 class RelightCache:
@@ -476,23 +481,53 @@ async def precompute_relights(
     cache = RelightCache(assets_path, asset_service)
     style_epoch = asset_service.style_epoch
 
+    # Story 13.1: every eligible pair that falls back must be accounted for, not just
+    # the ones that failed to render — the verification/metadata skips below were
+    # invisible in 8.7's {computed, failed} pair and are the majority of them in
+    # practice. `skipped`/`failed` count ALL of them; the `*_details` lists are bounded
+    # samples with the narrowest identifiers, because these ride a checkpoint.
+    skipped_details: list[dict] = []
+    failed_details: list[dict] = []
+    # `skipped`/`*_details` appear only when they are non-empty, so a clean Tier-3 run
+    # returns the byte-identical pre-13.1 ``{computed, failed}`` its callers already read.
+    stats: dict[str, Any] = {"computed": 0, "failed": 0}
+
+    def _skipped(reason: str, **identifiers: Any) -> None:
+        stats["skipped"] = stats.get("skipped", 0) + 1
+        if len(skipped_details) < _MAX_DIAGNOSTIC_RECORDS:
+            skipped_details.append({"reason": reason, **identifiers})
+
     pairs: dict[tuple[str, str], tuple[Path, Path]] = {}
     for scene in scenes:
         for shot in scene.get("shots") or []:
+            # Bound inside the try, not above it: this whole block's promise is that one
+            # malformed shot cannot disable Tier 3 for the run, and `shot.get` on a
+            # non-dict is exactly the AttributeError that would escape. Pre-set so the
+            # handlers below can still name whatever was readable.
+            scene_num = shot_id = None
             try:
+                # Separate statements, not a tuple assignment: the RHS of a tuple
+                # assignment is evaluated whole, so a raising `shot.get` would also
+                # throw away the scene number the handlers below can still report.
+                scene_num = scene.get("scene_num")
+                shot_id = shot.get("shot_id")
                 location_key = shot.get("location_key")
                 bg_path = shot.get("image_path")
                 if not location_key or not bg_path:
-                    continue
+                    continue  # free-text background: never eligible, never a degradation
                 _safe_cache_part(location_key)
                 if not _verified_location_asset(asset_service, location_key):
+                    _skipped("location_asset_unverified", scene_num=scene_num, shot_id=shot_id,
+                             location_key=location_key)
                     continue
                 shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
             except ValueError:
                 logger.warning("Skipping unsafe relight location key: %r", location_key)
+                _skipped("unsafe_location_key", scene_num=scene_num, shot_id=shot_id)
                 continue
             except Exception as exc:  # noqa: BLE001 — one malformed shot must not disable Tier 3
                 logger.warning("Skipping relight shot %r after metadata error: %s", shot, exc)
+                _skipped("shot_metadata_error", scene_num=scene_num, shot_id=shot_id)
                 continue
             for card in cast_cards.get(shot_key, []):
                 variant = None
@@ -505,20 +540,30 @@ async def precompute_relights(
                     variant = card_variant(card)
                     _safe_cache_part(location_key)
                     if not _verified_card_asset(asset_service, card):
+                        _skipped("card_asset_unverified", scene_num=scene_num, shot_id=shot_id,
+                                 card_key=card.get("card_key"), location_key=location_key)
                         continue
                 except ValueError:
                     # `variant` is still None here — card_variant() raises before it binds — so
                     # log the card itself or the failure is undiagnosable.
                     logger.warning("Skipping unsafe relight cache pair: %r over %r", card, location_key)
+                    _skipped("unsafe_card_variant", scene_num=scene_num, shot_id=shot_id,
+                             location_key=location_key)
                     continue
                 except Exception as exc:  # noqa: BLE001 — one bad card must not disable all relights
                     logger.warning("Skipping relight card %r after metadata error: %s", card, exc)
+                    _skipped("card_metadata_error", scene_num=scene_num, shot_id=shot_id,
+                             location_key=location_key)
                     continue
                 pairs.setdefault((variant, location_key), (Path(card_path), Path(bg_path)))
 
     relit_map: dict[tuple[str, str], Path] = {}
-    stats = {"computed": 0, "failed": 0}
     sem = asyncio.Semaphore(_RELIGHT_CONCURRENCY)
+
+    def _failed(reason: str, variant: str, location_key: str) -> None:
+        stats["failed"] += 1
+        if len(failed_details) < _MAX_DIAGNOSTIC_RECORDS:
+            failed_details.append({"reason": reason, "card_variant": variant, "location_key": location_key})
 
     async def _resolve_pair(pair: tuple[str, str], paths: tuple[Path, Path]) -> None:
         variant, location_key = pair
@@ -531,14 +576,18 @@ async def precompute_relights(
             async with sem:
                 image_bytes = await relight_sprite(paths[0], paths[1], comfyui_client, workflow_path, comfyui_url)
             if image_bytes is None or not has_alpha(image_bytes):
-                stats["failed"] += 1
+                _failed("render_failed" if image_bytes is None else "no_alpha", variant, location_key)
                 return
             relit_map[pair] = cache.store(variant, location_key, style_epoch, image_bytes)
             stats["computed"] += 1
         except Exception as exc:  # noqa: BLE001 — AC:11: per-pair relight is non-fatal
             logger.warning("IC-Light relight failed for %s/%s: %s", variant, location_key, exc)
-            stats["failed"] += 1
+            _failed("relight_error", variant, location_key)
 
     if pairs:
         await asyncio.gather(*(_resolve_pair(pair, paths) for pair, paths in pairs.items()))
+    if skipped_details:
+        stats["skipped_details"] = skipped_details
+    if failed_details:
+        stats["failed_details"] = failed_details
     return relit_map, stats

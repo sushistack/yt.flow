@@ -412,6 +412,61 @@ class ScenarioQuality(TypedDict):
     warning: NotRequired[ScenarioWarning]
 
 
+# ── Story 13.1: run-warning contract carried to every human gate ──────────────
+# Parallel to (never a replacement for) ScenarioQuality above: that one describes the
+# scenario stage's review verdict, this one is the run-wide history of *non-fatal
+# degradations* — a best-effort path that fell back instead of failing. A warning is
+# never an error: it never populates PipelineState.error and never fails a run.
+#
+# The vocabulary is closed because the UI, the tests and the dedupe key all agree on
+# these exact strings. Each code owns exactly one stage — see RUN_WARNING_CATALOG in
+# domain/warnings.py, which pairs every code below with its stage and Korean operator
+# copy and fails at import if the two drift.
+RunWarningCode = Literal[
+    # pre-graph / scenario-approval character provisioning (run_service)
+    "vision_enrichment_failed",
+    "character_provisioning_failed",
+    "special_pose_cap_exceeded",
+    "special_pose_generation_failed",
+    "special_pose_guide_unapplied",     # Story 10.5 — guide rejected, rendered unconditioned
+    "derived_entity_cap_exceeded",
+    "derived_entity_generation_failed",
+    "derived_entity_look_unauthored",   # Story 10.6 — no authored look, key skipped
+    "character_card_i2i_fallback",      # provider i2i failed -> t2i, identity anchor lost
+    # image_node
+    "stock_plate_resolver_unavailable",
+    "stock_plate_missing",
+    "stock_plate_resolution_failed",
+    "background_guard_unscreened",      # Story 10.2 — guard wanted but not applied
+    # subtitle_node
+    "subtitle_alignment_fallback",
+    # video_node (+ relight diagnostics)
+    "cast_resolution_failed",
+    "cast_card_missing",
+    "cast_card_fallback",
+    "relight_resolver_unavailable",
+    "relight_pair_skipped",
+    "relight_failed",
+    "relit_sprite_invalid",
+]
+
+
+class RunWarning(TypedDict):
+    """One non-fatal degradation, JSON-safe end to end (checkpoint -> interrupt
+    payload -> SSE frame -> artifact response -> UI).
+
+    ``context`` carries the narrowest identifiers the producer had — ``scene_num``,
+    ``shot_id``, ``card_key``, ``location_key``, ``pose_hint``, counts — plus at most
+    one bounded ``detail`` string. ``detail`` is diagnostic only: it is never rendered
+    as primary UI copy and is deliberately excluded from warning identity, because
+    exception text varies between attempts and would defeat deduplication.
+    """
+    code: RunWarningCode
+    stage: StageName
+    message: str          # short Korean operator copy, from RUN_WARNING_CATALOG
+    context: NotRequired[dict[str, str | int | float | bool]]
+
+
 class PipelineState(TypedDict):
     run_id: str
     scp_id: str
@@ -431,6 +486,11 @@ class PipelineState(TypedDict):
                                    # research selected for THIS run. Observability only:
                                    # non-authoritative outside LangGraph state, never read back
                                    # to steer generation. None == not generated / cleared.
+    run_warnings: NotRequired[list[RunWarning]]  # Story 13.1 — non-fatal degradation history
+                                   # for the whole run, shown at every human gate. NotRequired
+                                   # so pre-13.1 checkpoints still deserialize; every reader
+                                   # uses state.get("run_warnings", []). No reducer: producers
+                                   # return the whole merged list (domain.warnings.merge).
     story_archetype_fallback_used: NotRequired[bool]  # Story 12.4 — True when the selection was
                                    # resolved deterministically (invalid value or missing source
                                    # evidence) instead of chosen. Required as its own signal:

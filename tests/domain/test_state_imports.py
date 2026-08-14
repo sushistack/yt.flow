@@ -47,7 +47,11 @@ EXPECTED_FIELDS = {
         # Story 12.4 — both NotRequired for the same reason; observability only, never
         # read back to steer generation.
         "story_archetype", "story_archetype_fallback_used",
+        "run_warnings",  # Story 13.1 — NotRequired, so pre-13.1 checkpoints still load
     },
+    # Story 13.1 run-warning contract — checkpoint-, interrupt- AND artifact-serialized,
+    # so its shape is a compatibility surface exactly like ScenarioQuality's below.
+    "RunWarning": {"code", "stage", "message", "context"},
     # Story 12.3 quality contract — checkpoint- AND interrupt-serialized, so its shape
     # is as much a compatibility surface as PipelineState's.
     "RuleCounts": {

@@ -30,6 +30,17 @@ def _gate(stage: StageName):
         payload: dict = {"stage": stage}
         if stage == "scenario" and (quality := state.get("scenario_quality")):
             payload["scenario_quality"] = quality
+        # Story 13.1: the run's non-fatal degradation history, so approving a fallback
+        # result is a knowing act at EVERY gate — not just scenario's. Read-only, like
+        # the block above: this node re-runs from the top on resume, so it must never
+        # write warnings, only carry the ones already persisted. Run-wide rather than
+        # stage-filtered because provisioning warnings are produced *after* the scenario
+        # gate resumes and would otherwise reach no gate at all; each record names its
+        # own stage. Absent when empty, keeping a clean run's payload byte-identical to
+        # a pre-13.1 one (same compatibility discipline as scenario_quality).
+        if warnings := state.get("run_warnings"):
+            payload["warnings"] = warnings
+            payload["warning_count"] = len(warnings)
         decision = interrupt(payload)
         if decision not in GATE_DECISIONS:
             raise ValueError(

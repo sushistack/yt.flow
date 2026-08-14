@@ -30,6 +30,12 @@ export function RunDetail({ runId }: { runId: string }) {
   // identity changing, so the refresh can't be lost to a later state-update tweak.
   const [artifactRefresh, setArtifactRefresh] = useState(0)
   const mainRef = useRef<HTMLElement>(null)
+  // Read by the SSE handlers, which are memoized so the EventSource is not torn down
+  // and rebuilt every time the operator clicks another stage in the sidebar.
+  const selectedRef = useRef(selected)
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
 
   // Fetch run metadata; default the selected stage to the furthest one reached.
   useEffect(() => {
@@ -66,8 +72,11 @@ export function RunDetail({ runId }: { runId: string }) {
     return () => {
       alive = false
     }
-    // reachedIdx captures run status/current_stage changes that flip reachability.
-  }, [runId, selected, run, reachedIdx, artifactRefresh])
+    // reachedIdx captures run status/current_stage changes that flip reachability, and
+    // `artifactRefresh` is the explicit re-read signal (12.3). Depending on the whole
+    // `run` object instead would re-fetch — and null out the panel mid-edit — on every
+    // unrelated gate-state tweak, which is the reason 12.3 made the signal explicit.
+  }, [runId, selected, run !== null, reachedIdx, artifactRefresh])
 
   const setStageGateState = useCallback((stage: StageName, gateState: GateState) => {
     setRun((r) => {
@@ -97,10 +106,13 @@ export function RunDetail({ runId }: { runId: string }) {
       onGatePending: ({ stage }: { stage?: StageName }) => {
         if (!stage) return
         setStageGateState(stage, "pending")
-        // The scenario gate payload may carry a fresh quality warning. Re-read the
-        // artifact endpoint instead of trusting this frame to be the record — SSE is
-        // acceleration, the checkpoint is the authority (Story 12.3 AC6).
-        if (stage === "scenario") setArtifactRefresh((n) => n + 1)
+        // The gate payload may carry a fresh quality warning (12.3, scenario) or run
+        // warnings written by the stage that just finished (13.1, any stage). Re-read
+        // the artifact endpoint instead of trusting this frame to be the record — SSE
+        // is acceleration, the checkpoint is the authority (Story 12.3 AC6).
+        // Only for the stage on screen: the refetch nulls artifacts first, so refreshing
+        // on another stage's gate would discard an in-progress narration edit.
+        if (stage === selectedRef.current) setArtifactRefresh((n) => n + 1)
       },
       onRunFailed: ({ stage, error: err }: { stage?: StageName; error?: string }) => {
         setRun((r) => {

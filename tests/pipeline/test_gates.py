@@ -6,6 +6,7 @@ Exercises the compiled graph directly with an AsyncSqliteSaver checkpointer:
   - non-scenario reject loops back to the same stage and re-interrupts (retry).
 """
 
+import json
 import uuid
 
 import pytest
@@ -239,5 +240,92 @@ async def test_quality_does_not_change_decision_validation(tmp_path, stub_stage_
         await graph.ainvoke({**_state(run_id), "scenario_quality": _QUALITY}, config)
         with pytest.raises(ValueError, match="expected one of"):
             await graph.ainvoke(Command(resume="maybe"), config)
+    finally:
+        await saver.conn.close()
+
+
+# ── Story 13.1: every gate carries the run's degradation history ──────────────
+
+_WARNINGS = [
+    {"code": "stock_plate_missing", "stage": "image",
+     "message": "승인된 스톡 배경이 없어 배경을 생성했습니다",
+     "context": {"scene_num": 3, "shot_id": "S002", "location_key": "corridor"}},
+    {"code": "subtitle_alignment_fallback", "stage": "subtitle",
+     "message": "WhisperX 정렬에 실패해 임시 단어 타이밍으로 자막을 만들었습니다",
+     "context": {"scene_num": 1}},
+]
+
+
+async def test_gate_interrupt_carries_warnings_and_count(tmp_path, stub_stage_nodes):
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke({**_state(run_id), "run_warnings": _WARNINGS}, config)
+        value = result["__interrupt__"][0].value
+        assert value["stage"] == "scenario"
+        assert value["warning_count"] == 2
+        assert value["warnings"] == _WARNINGS          # order preserved, contexts intact
+        json.dumps(value)                               # interrupt payloads must serialize
+    finally:
+        await saver.conn.close()
+
+
+async def test_downstream_gates_carry_warnings_too(tmp_path, stub_stage_nodes):
+    """Provisioning warnings are written AFTER the scenario gate resumes, so the image
+    gate is the first place an operator can see them — run-wide, not stage-filtered."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        await graph.ainvoke({**_state(run_id), "run_warnings": _WARNINGS}, config)
+        result = await graph.ainvoke(Command(resume="approved"), config)
+        value = result["__interrupt__"][0].value
+        assert value["stage"] == "image"
+        assert value["warning_count"] == 2
+    finally:
+        await saver.conn.close()
+
+
+async def test_scenario_gate_carries_quality_and_warnings_together(tmp_path, stub_stage_nodes):
+    """Additive, not exclusive: 12.3's contract and 13.1's are parallel (AC4)."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        result = await graph.ainvoke(
+            {**_state(run_id), "scenario_quality": _QUALITY, "run_warnings": _WARNINGS}, config,
+        )
+        value = result["__interrupt__"][0].value
+        assert value["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+        assert value["warning_count"] == 2
+    finally:
+        await saver.conn.close()
+
+
+@pytest.mark.parametrize("warnings", [None, []])
+async def test_clean_run_gate_payload_is_byte_identical(tmp_path, stub_stage_nodes, warnings):
+    """A pre-13.1 checkpoint (no key) and a clean run (empty list) both stay unchanged."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    state = _state(run_id) if warnings is None else {**_state(run_id), "run_warnings": warnings}
+    try:
+        result = await graph.ainvoke(state, config)
+        assert result["__interrupt__"][0].value == {"stage": "scenario"}
+    finally:
+        await saver.conn.close()
+
+
+async def test_gate_does_not_write_warnings(tmp_path, stub_stage_nodes):
+    """The gate only READS persisted warnings — it re-runs from the top on resume, so a
+    write here would double every record (AC4)."""
+    graph, saver = await build_graph(_settings(tmp_path))
+    run_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": run_id}}
+    try:
+        await graph.ainvoke({**_state(run_id), "run_warnings": _WARNINGS}, config)
+        result = await graph.ainvoke(Command(resume="approved"), config)
+        assert result["run_warnings"] == _WARNINGS
     finally:
         await saver.conn.close()

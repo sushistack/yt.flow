@@ -7,6 +7,7 @@ import {
   rejectGate,
   retryStage,
   videoDownloadUrl,
+  type RunWarning,
   type ScenarioQuality,
   type StageArtifacts,
 } from "@/lib/api"
@@ -67,6 +68,10 @@ export function ArtifactPanel({
   }
 
   const canRetry = gateState === "approved" || gateState === "rejected" || gateState === "failed"
+  // Story 13.1: one field, every stage — the DTO carries the whole run's degradation
+  // history and each record names the stage it belongs to. `?? []` covers a legacy
+  // checkpoint's response, which has no `warnings` key at all.
+  const warnings = data?.warnings ?? []
 
   return (
     <section className="flex min-h-full flex-col gap-4" aria-label={`${stage} artifact`}>
@@ -74,6 +79,11 @@ export function ArtifactPanel({
         <div className="flex items-center gap-2">
           <h1 className="font-mono text-[13px] font-semibold text-foreground">{stage}</h1>
           {gateState !== "n/a" && <StatusBadge status={gateState} />}
+          {warnings.length > 0 && (
+            <span className="rounded-sm border border-border bg-card px-2 py-0.5 text-[11px] text-foreground">
+              <span aria-hidden="true">⚠</span> 경고 {warnings.length}건
+            </span>
+          )}
         </div>
         {canRetry && (
           <div className="flex flex-col items-end gap-2">
@@ -114,15 +124,89 @@ export function ArtifactPanel({
         <PanelBody runId={runId} stage={stage} data={data} onOpenImage={onOpenImage} onDirtyChange={onDirtyChange} />
       </div>
 
+      {/* Both contracts render when both are present: 12.3's block is the scenario
+          review verdict, this one is the run's fallback history. Neither replaces
+          the other, and neither is a gate state. */}
       {data?.stage === "scenario" && data.scenario_quality?.warning && (
         <ScenarioQualityWarning quality={data.scenario_quality} />
       )}
+
+      {warnings.length > 0 && <RunWarningList warnings={warnings} />}
 
       {gateState === "pending" && (
         <GateControls runId={runId} stage={stage} onGateStateChange={onGateStateChange} />
       )}
     </section>
   )
+}
+
+// Story 13.1: the run's non-fatal degradations, rendered above the gate controls for
+// the same reason 12.3's block is — approving a fallback result has to be a knowing act.
+// Deliberately neutral: `border-border`/`bg-card`/`text-foreground` plus icon + count,
+// never a status colour. `status-awaiting` and friends mean gate STATE, and a warning is
+// not a gate state; a run can be fully approved and still carry ten of these.
+function RunWarningList({ warnings }: { warnings: RunWarning[] }) {
+  // A labelled region, NOT an alert: `role="alert"` implies assertive (and contradicts
+  // `aria-live="polite"`), and this block is statically rendered with the panel rather
+  // than inserted in response to anything — announcing it would re-read the whole run
+  // history on every stage switch, over the header badge that already says "경고 N건".
+  return (
+    <section
+      aria-labelledby="run-warning-list-heading"
+      className="rounded-md border border-border bg-card p-4 text-[12px] text-foreground"
+    >
+      <h2 id="run-warning-list-heading" className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
+        <span aria-hidden="true">⚠</span>
+        경고 {warnings.length}건
+      </h2>
+      <p className="mb-3 text-subtle-foreground">
+        실행 중 발생한 품질 저하 기록입니다. 실패가 아니며, 재시도할 때마다 다시 일어나지는 않습니다.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {warnings.map((warning, i) => {
+          const where = identifierText(warning.context)
+          return (
+            <li key={`${warning.code}-${i}`} className="border-l-2 border-border pl-2">
+              <span className="font-mono text-[11px] text-subtle-foreground">
+                {warning.stage} · {warning.code}
+                {where && ` · ${where}`}
+              </span>
+              <p className="leading-[1.6]">{warning.message}</p>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+// The identifiers an operator can act on, in a fixed order so two runs read the same
+// way. `detail` is excluded by construction — it is raw provider/exception text.
+// `fallback_reason` is the single most valuable field the backend produces here: it is
+// what finally distinguishes an angle fallback from an asset one from a missed pose hint.
+const IDENTIFIER_LABELS: [string, (v: string | number | boolean) => string][] = [
+  ["scene_num", (v) => `씬 ${v}`],
+  ["shot_id", (v) => `${v}`],
+  ["card_key", (v) => `${v}`],
+  ["card_variant", (v) => `${v}`],
+  ["location_key", (v) => `${v}`],
+  ["pose_hint", (v) => `요청 포즈 ${v}`],
+  ["pose", (v) => `포즈 ${v}`],
+  ["angle", (v) => `앵글 ${v}`],
+  ["fallback_reason", (v) => `대체 ${v}`],
+  ["reason", (v) => `${v}`],
+  ["cap", (v) => `한도 ${v}`],
+  ["attempts", (v) => `시도 ${v}`],
+  ["failed_count", (v) => `실패 ${v}건`],
+  ["skipped_count", (v) => `생략 ${v}건`],
+  ["total_count", (v) => `총 ${v}건`],
+]
+
+function identifierText(context: RunWarning["context"]): string {
+  if (!context) return ""
+  return IDENTIFIER_LABELS.filter(([key]) => context[key] !== undefined)
+    .map(([key, format]) => format(context[key]))
+    .join(" · ")
 }
 
 // Story 12.3: the scenario script is still degraded after its one allowed repair
@@ -386,7 +470,7 @@ function ImagePanel({
   images,
   onOpenImage,
 }: {
-  images: { scene_num: number; shot_id: string; image_path: string; layered_fallback: boolean }[]
+  images: { scene_num: number; shot_id: string; image_path: string }[]
   onOpenImage: (index: number) => void
 }) {
   return (
@@ -411,9 +495,6 @@ function ImagePanel({
             <span className="mt-1 block font-mono text-[11px] text-subtle-foreground">
               씬 {img.scene_num} · {img.shot_id}
             </span>
-            {img.layered_fallback && (
-              <span className="mt-0.5 block text-[11px] text-status-awaiting">⚠ 플랫 폴백</span>
-            )}
           </button>
         ))}
       </div>

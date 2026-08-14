@@ -552,7 +552,13 @@ async def test_gate_pending_forwards_scenario_quality(stub_stage_nodes, quality_
 
 
 async def test_gate_pending_omits_quality_when_absent(env):
-    """Pre-12.3 scenario output: the payload is byte-identical to before."""
+    """Pre-12.3 scenario output: the payload is byte-identical to before.
+
+    Exact-dict on purpose, and it stays exact after Story 13.1: this is the only guard
+    that a CLEAN run's gate frame gained no keys at all. `env`'s offline seams now cover
+    vision enrichment too, so provisioning here degrades for no reason and adds no
+    `warnings`/`warning_count`.
+    """
     run_id = str(uuid.uuid4())
     _seed(run_id)
     reg = _FakeRegistry()

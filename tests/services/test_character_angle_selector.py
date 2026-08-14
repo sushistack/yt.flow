@@ -661,3 +661,26 @@ class TestResolveCastCardsSpecialPose:
         assert card["pose"] == "standing"
         assert card["path"] == "/tmp/front.png"
         assert "special-pose card" in caplog.text
+        # Story 13.1: the miss used to live ONLY in that log line — the card came back
+        # `fallback=False`, so video_node's warning (and its Langfuse `fallback_used`
+        # counter) could not tell a knowing base-pose render from a lost pose_hint.
+        assert card["fallback"] is True
+        assert card["fallback_reason"] == "pose_hint"
+        # The two pre-13.1 component flags keep their exact meanings.
+        assert card["angle_fallback"] is False
+        assert card["asset_fallback"] is False
+
+    @pytest.mark.asyncio
+    async def test_pose_hint_miss_combines_with_an_asset_fallback(self, service):
+        """Two levers fell back at once, so the reason names both (Story 13.1)."""
+        _seed_character(service, "STOCK-d-class")  # standing/front only
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member(
+                "STOCK-d-class", pose="sitting", pose_hint="reaching toward camera")]),
+        ])]
+
+        result = await service.resolve_cast_cards("SCP-999", scenes)
+
+        card = result["1:S001"][0]
+        assert card["fallback"] is True
+        assert card["fallback_reason"] == "asset+pose_hint"

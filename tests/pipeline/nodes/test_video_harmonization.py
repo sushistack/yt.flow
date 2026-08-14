@@ -614,3 +614,119 @@ async def test_tier3_two_poses_of_one_card_key_get_their_own_sprites(monkeypatch
     assert str(relit_standing) in captured
     assert str(relit_hinted) in captured
     assert assets.character not in captured
+
+
+# ── Story 13.1: Tier-3 relight degradations reach the gate ───────────────────
+
+
+def _relight_scene(assets):
+    return _scene(
+        1, image=assets.image, audio=assets.audio, subtitle=assets.subtitle,
+        cast=[_cast_member(card_key="STOCK-d-class")], location_key="corridor",
+    )
+
+
+async def _relight_warnings_for(monkeypatch, tmp_path, assets, *, resolver, cards=None):
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=3))
+    monkeypatch.setattr(video, "_relight_resolver", resolver)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, cards if cards is not None else {
+        "1:S001": [_card(assets.character, card_key="STOCK-d-class")],
+    })
+    out = await video_node(_state([_relight_scene(assets)]))
+    assert out.get("error") is None      # relight degradation is never fatal (AC3)
+    assert out["video_path"]
+    return out["run_warnings"]
+
+
+async def test_tier3_without_an_injected_resolver_warns_once(monkeypatch, tmp_path, assets):
+    """Tier 3 was ASKED for and the seam is unwired — every card composites unlit."""
+    warnings = await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=None)
+    assert [w["code"] for w in warnings] == ["relight_resolver_unavailable"]
+    assert warnings[0]["stage"] == "video"
+    assert warnings[0]["context"] == {"reason": "resolver_not_injected"}
+
+
+async def test_tier_below_three_is_warning_free(monkeypatch, tmp_path, assets):
+    """`composite_harmonization_tier = 1` is the shipped default — a config choice,
+    not a degradation (AC2)."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path, composite_harmonization_tier=1))
+    monkeypatch.setattr(video, "_relight_resolver", None)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+    out = await video_node(_state([_relight_scene(assets)]))
+    assert out["run_warnings"] == []
+
+
+async def test_a_raising_relight_resolver_warns_with_bounded_detail(monkeypatch, tmp_path, assets):
+    async def _boom(scenes, cast_cards):
+        raise RuntimeError("IC-Light workflow missing")
+
+    warnings = await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_boom)
+    assert [w["code"] for w in warnings] == ["relight_resolver_unavailable"]
+    assert warnings[0]["context"]["reason"] == "resolver_raised"
+    assert warnings[0]["context"]["detail"] == "RuntimeError: IC-Light workflow missing"
+
+
+async def test_an_opaque_relit_sprite_warns_and_names_the_shot(monkeypatch, tmp_path, assets):
+    """The original card still renders — the operator's only clue is this record."""
+    relit_path = tmp_path / "relit-opaque.png"
+    relit_path.write_bytes(_make_rgb_png())
+
+    async def _resolver(scenes, cast_cards):
+        return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+
+    warnings = await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_resolver)
+    assert [w["code"] for w in warnings] == ["relit_sprite_invalid"]
+    assert warnings[0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "card_key": "STOCK-d-class",
+        "location_key": "corridor", "reason": "no_alpha",
+    }
+
+
+async def test_an_unreadable_relit_sprite_warns_with_the_os_error(monkeypatch, tmp_path, assets):
+    missing = tmp_path / "vanished.png"  # in the map, never on disk
+
+    async def _resolver(scenes, cast_cards):
+        return {("STOCK-d-class__standing__front", "corridor"): missing}, {"computed": 1, "failed": 0}
+
+    warnings = await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_resolver)
+    assert [w["code"] for w in warnings] == ["relit_sprite_invalid"]
+    assert warnings[0]["context"]["reason"] == "unreadable"
+    assert "FileNotFoundError" in warnings[0]["context"]["detail"]
+
+
+async def test_precompute_counts_become_warnings_at_the_gate(monkeypatch, tmp_path, assets):
+    """`precompute_relights` can only report aggregates for pairs it never materialised;
+    those counts are what reach the operator."""
+    async def _resolver(scenes, cast_cards):
+        return {}, {"computed": 0, "failed": 2, "skipped": 3,
+                    "skipped_details": [{"reason": "card_asset_unverified", "scene_num": 1,
+                                          "shot_id": "S001", "location_key": "corridor"}]}
+
+    warnings = await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_resolver)
+    assert [w["code"] for w in warnings] == [
+        "relight_failed", "relight_pair_skipped", "relight_pair_skipped"]
+    assert warnings[0]["context"] == {"failed_count": 2}
+    assert warnings[1]["context"]["reason"] == "card_asset_unverified"
+    assert warnings[2]["context"] == {"skipped_count": 3}
+
+
+async def test_a_clean_tier3_run_is_warning_free(monkeypatch, tmp_path, assets):
+    relit_path = tmp_path / "relit.png"
+    relit_path.write_bytes(Path(assets.character).read_bytes())
+
+    async def _resolver(scenes, cast_cards):
+        return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
+
+    assert await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_resolver) == []

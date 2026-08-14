@@ -844,3 +844,77 @@ def test_no_db_api_service_imports():
     for forbidden in ("from yt_flow.db", "from yt_flow.api", "from yt_flow.services",
                       "import yt_flow.db", "import yt_flow.api", "import yt_flow.services"):
         assert forbidden not in source, f"subtitle.py must not import {forbidden}"
+
+
+# ── Story 13.1: WhisperX fallback reaches the gate, not just the log ─────────
+
+
+class _RaisingAligner:
+    async def align(self, audio_path: str, transcript: str) -> list[dict]:
+        raise RuntimeError("whisperx model unavailable")
+
+
+async def test_real_alignment_fallback_warns_per_scene(monkeypatch, tmp_path, audio_file):
+    """Story 11.4 made this visible in logs and traces; 13.1 puts it where the
+    operator decides. The subtitles are still written — a warning is not a failure."""
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _RaisingAligner())
+
+    scenes = [_scene(1, "하나 둘", audio_path=audio_file, word_timings=_timings(["하나", "둘"])),
+              _scene(2, "셋 넷", audio_path=audio_file, word_timings=_timings(["셋", "넷"]))]
+    out = await subtitle_node(_state(scenes))
+
+    assert out.get("error") is None
+    assert all(sc["subtitle_path"] for sc in out["scenes"])
+    warnings = out["run_warnings"]
+    assert [w["code"] for w in warnings] == ["subtitle_alignment_fallback"] * 2
+    assert [w["context"]["scene_num"] for w in warnings] == [1, 2]
+    assert all(w["stage"] == "subtitle" for w in warnings)
+    assert warnings[0]["context"]["detail"] == "RuntimeError: whisperx model unavailable"
+
+
+async def test_successful_alignment_is_warning_free(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    scenes = [_scene(1, "하나 둘", audio_path=audio_file, word_timings=_timings(["하나", "둘"]))]
+    out = await subtitle_node(_state(scenes))
+    assert out["run_warnings"] == []
+
+
+async def test_mock_tts_bypass_is_warning_free(monkeypatch, tmp_path, audio_file):
+    """AC2: the explicit qwen_tts_mock bypass is intentional, not a degradation."""
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path, qwen_tts_mock=True))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _FakeAligner())
+
+    scenes = [_scene(1, "하나 둘", audio_path=audio_file, word_timings=_timings(["하나", "둘"]))]
+    out = await subtitle_node(_state(scenes))
+    assert out["run_warnings"] == []
+
+
+async def test_alignment_warning_merges_with_prior_stage_history(monkeypatch, tmp_path, audio_file):
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _RaisingAligner())
+
+    prior = {"code": "stock_plate_missing", "stage": "image", "message": "이전",
+             "context": {"scene_num": 1, "shot_id": "S001"}}
+    scenes = [_scene(1, "하나 둘", audio_path=audio_file, word_timings=_timings(["하나", "둘"]))]
+    out = await subtitle_node({**_state(scenes), "run_warnings": [prior]})
+    assert out["run_warnings"][0] == prior
+    assert out["run_warnings"][1]["code"] == "subtitle_alignment_fallback"
+
+
+async def test_the_error_path_keeps_the_warnings_earlier_scenes_earned(monkeypatch, tmp_path, audio_file):
+    """`warnings` is declared outside the try for the same reason image_node's and
+    video_node's are: scene 2 blowing up must not erase scene 1's fallback."""
+    monkeypatch.setattr(subtitle, "_settings", lambda: _settings_ns(tmp_path))
+    monkeypatch.setattr(subtitle, "_get_aligner", lambda s: _RaisingAligner())
+
+    scenes = [
+        _scene(1, "하나 둘", audio_path=audio_file, word_timings=_timings(["하나", "둘"])),
+        _scene(2, "", audio_path=audio_file, word_timings=[]),  # empty narration → raises
+    ]
+    out = await subtitle_node(_state(scenes))
+
+    assert out["error"] and "stage=subtitle" in out["error"]
+    assert [w["context"]["scene_num"] for w in out["run_warnings"]] == [1]

@@ -25,7 +25,8 @@ from yt_flow.observability import get_client, observe
 
 from yt_flow.config import Settings
 from yt_flow.domain.png import has_alpha
-from yt_flow.domain.state import CastDepth, PipelineState, SceneState, ShotData
+from yt_flow.domain.state import CastDepth, PipelineState, RunWarning, SceneState, ShotData
+from yt_flow.domain.warnings import cap_samples, make_warning, merge as merge_warnings
 from yt_flow.pipeline.nodes import camera_path, character_motion, character_movement, shot_timing
 from yt_flow.pipeline.nodes.color_grade import build_post_filter
 from yt_flow.pipeline.nodes.sound_design import (
@@ -2340,6 +2341,80 @@ async def _join_with_fades(
 
 
 
+def _relight_warnings(stats: dict) -> list[RunWarning]:
+    """Turn ``precompute_relights``'s counts + bounded samples into warnings (Story 13.1).
+
+    Aggregate by nature — the cache is keyed on (card variant, location), not on shots,
+    so a failed pair can affect many shots — hence counts plus whatever identifiers the
+    precompute could name, exactly as AC2 asks of aggregate-only sources.
+    """
+    out: list[RunWarning] = []
+    for code, count_key, details_key in (
+        ("relight_failed", "failed", "failed_details"),
+        ("relight_pair_skipped", "skipped", "skipped_details"),
+    ):
+        count = stats.get(count_key) or 0
+        if not count:
+            continue
+        details = stats.get(details_key) or []
+        out.extend(
+            make_warning(code, **{k: v for k, v in d.items() if v is not None}) for d in details
+        )
+        if len(details) < count:
+            # The named samples are bounded; this row keeps the true total visible
+            # without letting a long run write an unbounded list into the checkpoint.
+            out.append(make_warning(code, **{f"{count_key}_count": count}))
+    return out
+
+
+def _cast_warnings(scenes: list, cast_cards: dict[str, list[dict]]) -> list[RunWarning]:
+    """Compare what the script cast into each shot with what actually resolved (Story 13.1).
+
+    Pure and shot-scoped: the resolver's own logs name a *card key*, which cannot tell
+    an operator whether the missing extra costs one shot or forty. Three outcomes are
+    distinguished because they need different fixes — the cast member never resolved
+    (no character row / no card asset), the resolver returned a record video cannot
+    draw, or a card resolved but only via the angle/pose fallback (Story 5.11's lesson:
+    a warning without ``scene_num`` is not actionable).
+
+    Exactly ONE row per lost cast member: the member loop owns "this person is not on
+    screen" and says why, and the card loop only reports cards that *did* draw. Emitting
+    from both would put two contradictory rows (different context, so `merge()` keeps
+    both) in front of the operator for a single defect.
+    """
+    out: list[RunWarning] = []
+    for scene in scenes:
+        scene_num = scene.get("scene_num")
+        for shot in scene.get("shots") or []:
+            cast = shot.get("cast") or []
+            if not cast:
+                continue  # background-only shot: nothing was asked for, nothing is missing
+            shot_id = shot.get("shot_id")
+            resolved = [c for c in cast_cards.get(f"{scene_num}:{shot_id}", []) if isinstance(c, dict)]
+            by_key = {c.get("card_key"): c for c in resolved}
+            for member in cast:
+                if not isinstance(member, dict) or not member.get("card_key"):
+                    out.append(make_warning("cast_card_missing", scene_num=scene_num, shot_id=shot_id,
+                                             reason="malformed_cast_member"))
+                elif not (by_key.get(member["card_key"]) or {}).get("path"):
+                    # Resolved-but-undrawable and never-resolved need different fixes
+                    # (a broken card record vs. a missing character/asset), so the row
+                    # says which — still one row.
+                    out.append(make_warning(
+                        "cast_card_missing", scene_num=scene_num, shot_id=shot_id,
+                        card_key=member["card_key"], pose_hint=member.get("pose_hint"),
+                        reason="malformed_card" if member["card_key"] in by_key else None,
+                    ))
+            for card in resolved:
+                if card.get("path") and card.get("fallback"):
+                    out.append(make_warning(
+                        "cast_card_fallback", scene_num=scene_num, shot_id=shot_id,
+                        card_key=card.get("card_key"), fallback_reason=card.get("fallback_reason") or "unknown",
+                        pose=card.get("pose"), angle=card.get("angle"),
+                    ))
+    return out
+
+
 # ── Node ──────────────────────────────────────────────────────────────────────
 
 
@@ -2347,6 +2422,9 @@ async def _join_with_fades(
 async def video_node(state: PipelineState) -> dict:
     run_id = state.get("run_id", "?")
     t0 = time.perf_counter()
+    # Story 13.1 — declared outside the try for the same reason as the trace counters:
+    # a stage that fails later must still report what already degraded.
+    warnings: list[RunWarning] = []
     try:
         if not shutil.which("ffmpeg"):
             raise EnvironmentError("ffmpeg not found in PATH; install ffmpeg to use video_node")
@@ -2386,6 +2464,20 @@ async def video_node(state: PipelineState) -> dict:
             except Exception as exc:  # noqa: BLE001 — AD-10: resolver/LLM failures degrade, never fail the run
                 logger.warning("Cast resolution failed, continuing background-only: %s", exc)
                 cast_cards = {}
+                warnings.append(make_warning(
+                    "cast_resolution_failed", scp_id=scp_id, detail=f"{type(exc).__name__}: {exc}",
+                ))
+            # Story 13.1: the resolver already computes `fallback`/`fallback_reason` per
+            # card and video_node collapsed all of it into ONE trace integer — which
+            # could not say which shot, nor whether the angle or the pose was the one
+            # that fell back. This is where that becomes answerable.
+            warnings.extend(_cast_warnings(scenes, cast_cards))
+        elif any(sh.get("cast") for sc in scenes for sh in sc.get("shots") or []):
+            # The writer cast people into shots and no resolver was injected, so not one
+            # of them can reach the screen. One warning, not one per shot: the cause is
+            # run-level (an unwired seam), so that is the narrowest honest identifier.
+            warnings.append(make_warning("cast_resolution_failed", scp_id=scp_id,
+                                          reason="resolver_not_injected"))
 
         # AC:10 — hard alpha validation, after resolution (can't live in
         # _validate_scene_assets, which runs before the resolver). Asset
@@ -2450,6 +2542,13 @@ async def video_node(state: PipelineState) -> dict:
             except Exception as exc:  # noqa: BLE001 — AD-10/AC:11: IC-Light never fails the run
                 logger.warning("Tier 3 relight precompute failed, continuing without: %s", exc)
                 relit_map, relight_stats = {}, {"computed": 0, "failed": 0}
+                warnings.append(make_warning("relight_resolver_unavailable", reason="resolver_raised",
+                                              detail=f"{type(exc).__name__}: {exc}"))
+            warnings.extend(_relight_warnings(relight_stats))
+        elif s.composite_harmonization_tier >= 3:
+            # Tier 3 was asked for and the seam is not wired: every card composites
+            # unlit. Tier < 3 is a config choice and warns nothing (AC2).
+            warnings.append(make_warning("relight_resolver_unavailable", reason="resolver_not_injected"))
 
         # ── Story 1.9/1.9b: FFmpeg composition ────────────────────────────
 
@@ -2503,9 +2602,20 @@ async def video_node(state: PipelineState) -> dict:
                             else:
                                 logger.warning("Relit sprite has no alpha; using original card: %s", relit_path)
                                 relit_shot_cards.append(card)
+                                warnings.append(make_warning(
+                                    "relit_sprite_invalid", scene_num=scene["scene_num"],
+                                    shot_id=sh["shot_id"], card_key=card.get("card_key"),
+                                    location_key=location_key, reason="no_alpha",
+                                ))
                         except OSError as exc:
                             logger.warning("Relit sprite unreadable; using original card %s: %s", relit_path, exc)
                             relit_shot_cards.append(card)
+                            warnings.append(make_warning(
+                                "relit_sprite_invalid", scene_num=scene["scene_num"],
+                                shot_id=sh["shot_id"], card_key=card.get("card_key"),
+                                location_key=location_key, reason="unreadable",
+                                detail=f"{type(exc).__name__}: {exc}",
+                            ))
                     shot_cards = relit_shot_cards
                 cards_by_shot[sh["shot_id"]] = shot_cards
 
@@ -2682,7 +2792,11 @@ async def video_node(state: PipelineState) -> dict:
         )
         if renderer_counts:
             logger.info("video_node 2.5D renderers: %s", renderer_counts)
-        result = {"current_stage": "video", "video_path": str(output), "error": None}
+        result = {"current_stage": "video", "video_path": str(output), "error": None,
+                  # cap_samples first: the cast/relit-sprite families are per shot, and a
+                  # 155-shot run with a resolver outage would otherwise write hundreds of
+                  # rows into the checkpoint and render them above the Approve button.
+                  "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}
         if cc_attribution:
             result["ending_credit_error"] = ending_credit_error
         return result
@@ -2692,4 +2806,5 @@ async def video_node(state: PipelineState) -> dict:
             run_id=run_id, scene_count=len(state.get("scenes", [])),
             latency_ms=_ms(t0), error=exc,
         )
-        return {"current_stage": "video", "error": f"stage=video run_id={run_id}: {exc}"}
+        return {"current_stage": "video", "error": f"stage=video run_id={run_id}: {exc}",
+                "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}

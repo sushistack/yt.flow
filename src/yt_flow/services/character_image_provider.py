@@ -234,6 +234,13 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         self._settings = settings
         self._base_url = settings.comfyui_url.rstrip("/")
         self._workflow_path = settings.character_comfyui_workflow_path
+        # Story 13.1: both degradations below are invisible in the returned bytes — a
+        # t2i fallback is a different person, an unapplied guide is an unconditioned
+        # pose, and both come back as a perfectly valid PNG. The caller (which knows
+        # the card_key and the run) reads these after each generate() and files the
+        # warning; a plain attribute keeps this provider free of any run/state import.
+        self.last_i2i_fallback = False
+        self.last_pose_guide_applied = False
 
     @property
     @override
@@ -258,6 +265,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         # the unconditioned graph instead of raising out of generate(). Raising here
         # would cost the whole card, where the identical failure on the identity
         # reference below merely falls back to t2i.
+        self.last_i2i_fallback = False
         guide_name: str | None = None
         if pose_guide_path is not None:
             try:
@@ -267,6 +275,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             except Exception as exc:  # noqa: BLE001 — an unreadable guide must not cost the card
                 logger.warning("pose guide %r unusable: %s; rendering unconditioned", pose_guide_path, exc)
 
+        self.last_pose_guide_applied = guide_name is not None
         workflow = self._load_workflow(pose_guide=guide_name is not None)
         workflow = self._inject_prompt(workflow, prompt)
         workflow = self._inject_dimensions(workflow, width, height)
@@ -294,6 +303,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             cleaned = _clean_alpha_noise(result)
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
+            self.last_i2i_fallback = True
             # Fallback: bypass the reference-image conditioning and use t2i
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)

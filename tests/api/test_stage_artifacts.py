@@ -222,7 +222,8 @@ def test_subtitle_artifacts(client, monkeypatch):
 def test_video_artifacts(client, monkeypatch):
     _mock_graph(monkeypatch, _COMPLETE)
     body = client.get(f"/runs/{RUN_ID}/stages/video/artifacts").json()
-    assert body == {"stage": "video", "video_path": "workspace/x/output.mp4"}
+    # Story 13.1: `warnings` is on every stage DTO, `[]` for a legacy/clean checkpoint.
+    assert body == {"stage": "video", "video_path": "workspace/x/output.mp4", "warnings": []}
 
 
 def test_video_artifacts_ending_credit_success(client, monkeypatch):

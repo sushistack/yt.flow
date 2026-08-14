@@ -1438,3 +1438,217 @@ def asyncio_run(coro):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(asyncio.run, coro)
         return future.result()
+
+
+# ── Story 13.1: the provider-flag degradations, which the bytes cannot reveal ──
+
+
+class TestProviderDegradationWarnings:
+    """A t2i fallback and an unapplied pose guide both return a perfectly valid PNG.
+
+    Nothing in the bytes, the return type or the DB row distinguishes them from a good
+    card, which is the whole argument for the `last_i2i_fallback` /
+    `last_pose_guide_applied` flags: the provider states what it did, and the caller —
+    which knows the card key and the run — turns that into an operator-visible record.
+    """
+
+    @pytest.fixture
+    def collected(self, session):
+        """A CharacterService with the Story 13.1 collector sink attached."""
+        sink: list = []
+        return CharacterService(session, warnings=sink), sink
+
+    def _provider(self, *, i2i_fallback=False, guide_applied=True):
+        provider = MagicMock()
+        provider.supports_i2i = True
+        provider.produces_alpha = True
+        provider.last_i2i_fallback = i2i_fallback
+        provider.last_pose_guide_applied = guide_applied
+        provider.generate = AsyncMock(return_value=TINY_PNG)
+        return provider
+
+    def test_no_collector_keeps_todays_log_only_behaviour(self, service, temp_ref_image, tmp_path):
+        """The UI, scripts and every pre-13.1 caller construct the service without a
+        sink; `_warn` must be a no-op for them, not a crash."""
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+
+        with patch.object(service, "_get_image_provider", return_value=self._provider(i2i_fallback=True)):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert len(paths) == 4  # the cards still generated
+
+    def test_i2i_fallback_names_every_angle_it_cost(self, collected, temp_ref_image, tmp_path):
+        """The identity anchor was lost, so these four angles are a different person."""
+        service, sink = collected
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+
+        with patch.object(service, "_get_image_provider", return_value=self._provider(i2i_fallback=True)):
+            asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert [w["code"] for w in sink] == ["character_card_i2i_fallback"] * 4
+        assert all(w["stage"] == "scenario" for w in sink)
+        assert {w["context"]["angle"] for w in sink} == {"front", "side", "back", "three_quarter"}
+        assert sink[0]["context"]["card_key"] == "SCP-096"
+
+    def test_a_clean_i2i_generation_warns_nothing(self, collected, temp_ref_image, tmp_path):
+        service, sink = collected
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+
+        with patch.object(service, "_get_image_provider", return_value=self._provider()):
+            asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert sink == []
+
+    def _pose_card(self, service, tmp_path, provider, *, enabled=True, resolved=None):
+        from yt_flow.services.asset_service import AssetService
+
+        service._settings = Settings(
+            workspace_path=str(tmp_path), assets_path=str(tmp_path),
+            pose_guide_conditioning_enabled=enabled,
+        )
+        character = service.create_character("STOCK-d-class", "D-class")
+        service.update_character(
+            character.id, visual_descriptor="orange jumpsuit", angle_front_path=str(tmp_path / "front.png"),
+        )
+        character = service.check_existing_character("STOCK-d-class")
+        character.pose_conditioning = "openpose"
+        service._session.add(character)
+        service._session.commit()
+        with patch.object(service, "_get_image_provider", return_value=provider), \
+             patch.object(AssetService, "resolve_pose_guide", return_value=resolved):
+            return asyncio_run(service.generate_special_pose_card(
+                "STOCK-d-class", "lying supine on table", "humanoid_lying_supine",
+            ))
+
+    def test_a_service_side_guide_rejection_warns_and_still_publishes_the_card(
+        self, collected, tmp_path,
+    ):
+        """Story 10.5's measured difference is 3/3 supine with the guide and 0/3 without
+        it, and the unconditioned card is published either way — so the rejection reason
+        is the only thing that tells the operator which one they are looking at."""
+        service, sink = collected
+        assert self._pose_card(service, tmp_path, self._provider(), resolved=None)  # fails closed
+
+        assert [w["code"] for w in sink] == ["special_pose_guide_unapplied"]
+        assert sink[0]["context"]["card_key"] == "STOCK-d-class"
+        assert sink[0]["context"]["pose_guide_key"] == "humanoid_lying_supine"
+        assert "unusable under profile" in sink[0]["context"]["detail"]
+
+    def test_a_non_openpose_guide_rejection_carries_its_reason(self, collected, tmp_path):
+        service, sink = collected
+        self._pose_card(service, tmp_path, self._provider(),
+                         resolved={"abs_path": "/guides/lunge.png", "control_type": "scribble"})
+
+        assert [w["code"] for w in sink] == ["special_pose_guide_unapplied"]
+        assert "not openpose" in sink[0]["context"]["detail"]
+
+    def test_a_provider_side_guide_upload_failure_warns(self, collected, tmp_path, monkeypatch):
+        """The service resolved a usable guide and the provider still rendered
+        unconditioned — it returns success either way, so the flag is the only signal."""
+        service, sink = collected
+        monkeypatch.setattr(
+            "yt_flow.services.character_service._pose_guide_workflow_path",
+            lambda: Path(__file__),  # any existing file: the workflow check must pass
+        )
+        provider = self._provider(guide_applied=False)
+        assert self._pose_card(service, tmp_path, provider,
+                                resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"})
+
+        assert provider.generate.call_args.kwargs["pose_guide_path"] == "/guides/supine.png"
+        assert [w["code"] for w in sink] == ["special_pose_guide_unapplied"]
+        assert sink[0]["context"]["detail"] == "provider could not upload the guide"
+
+    def test_an_applied_guide_warns_nothing(self, collected, tmp_path, monkeypatch):
+        service, sink = collected
+        monkeypatch.setattr(
+            "yt_flow.services.character_service._pose_guide_workflow_path", lambda: Path(__file__),
+        )
+        assert self._pose_card(service, tmp_path, self._provider(),
+                                resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"})
+        assert sink == []
+
+    def test_a_special_pose_i2i_fallback_warns_against_the_hint(self, collected, tmp_path, monkeypatch):
+        service, sink = collected
+        monkeypatch.setattr(
+            "yt_flow.services.character_service._pose_guide_workflow_path", lambda: Path(__file__),
+        )
+        self._pose_card(service, tmp_path, self._provider(i2i_fallback=True),
+                         resolved={"abs_path": "/guides/supine.png", "control_type": "openpose"})
+
+        assert [w["code"] for w in sink] == ["character_card_i2i_fallback"]
+        assert sink[0]["context"]["pose"] == pose_hint_key("lying supine on table")
+        assert sink[0]["context"]["angle"] == "front"
+
+
+# ── Story 13.1: the provider flags themselves ────────────────────────────────
+
+
+class TestProviderFlags:
+    """`last_i2i_fallback` / `last_pose_guide_applied` are the load-bearing part of the
+    "the degradation is invisible in the returned bytes" argument, so they get their own
+    tests rather than being asserted only through their caller."""
+
+    @pytest.fixture
+    def provider(self, tmp_path):
+        return ComfyUICharacterProvider(Settings(
+            comfyui_url="http://comfy.test:8188", workspace_path=str(tmp_path), assets_path=str(tmp_path),
+        ))
+
+    def test_flags_start_false(self, provider):
+        assert provider.last_i2i_fallback is False
+        assert provider.last_pose_guide_applied is False
+
+    def test_a_successful_i2i_leaves_the_fallback_flag_clear(self, provider, temp_ref_image, monkeypatch):
+        monkeypatch.setattr(provider, "_load_workflow", lambda pose_guide=False: {})
+        for name in ("_inject_prompt", "_inject_dimensions", "_inject_seed",
+                     "_inject_negative_suffix", "_inject_ipadapter_weight",
+                     "_inject_reference_image", "_remove_i2i_input", "_inject_guide_image"):
+            monkeypatch.setattr(provider, name, lambda wf, *a, **k: wf)
+        monkeypatch.setattr("yt_flow.services.comfyui_client.upload_image", AsyncMock(return_value="ref.png"))
+        monkeypatch.setattr("yt_flow.services.comfyui_client.submit_and_fetch", AsyncMock(return_value=TINY_PNG))
+        provider.last_i2i_fallback = True  # stale value from a previous card must be reset
+
+        asyncio_run(provider.generate("prompt", temp_ref_image))
+        assert provider.last_i2i_fallback is False
+
+    def test_an_i2i_failure_sets_the_flag_and_still_returns_bytes(self, provider, temp_ref_image, monkeypatch):
+        monkeypatch.setattr(provider, "_load_workflow", lambda pose_guide=False: {})
+        for name in ("_inject_prompt", "_inject_dimensions", "_inject_seed",
+                     "_inject_negative_suffix", "_inject_ipadapter_weight",
+                     "_inject_reference_image", "_remove_i2i_input", "_inject_guide_image"):
+            monkeypatch.setattr(provider, name, lambda wf, *a, **k: wf)
+        monkeypatch.setattr("yt_flow.services.comfyui_client.upload_image",
+                             AsyncMock(side_effect=RuntimeError("upload refused")))
+        monkeypatch.setattr("yt_flow.services.comfyui_client.submit_and_fetch", AsyncMock(return_value=TINY_PNG))
+
+        out = asyncio_run(provider.generate("prompt", temp_ref_image))
+        # Valid PNG back, identity anchor gone — exactly the case the flag exists for.
+        assert out
+        assert provider.last_i2i_fallback is True
+
+    def test_an_unusable_pose_guide_clears_the_applied_flag(self, provider, temp_ref_image, monkeypatch):
+        monkeypatch.setattr(provider, "_load_workflow", lambda pose_guide=False: {})
+        for name in ("_inject_prompt", "_inject_dimensions", "_inject_seed",
+                     "_inject_negative_suffix", "_inject_ipadapter_weight",
+                     "_inject_reference_image", "_remove_i2i_input", "_inject_guide_image"):
+            monkeypatch.setattr(provider, name, lambda wf, *a, **k: wf)
+        monkeypatch.setattr("yt_flow.services.comfyui_client.upload_image", AsyncMock(return_value="up.png"))
+        monkeypatch.setattr("yt_flow.services.comfyui_client.submit_and_fetch", AsyncMock(return_value=TINY_PNG))
+
+        asyncio_run(provider.generate("prompt", None, pose_guide_path="/nonexistent/guide.png"))
+        assert provider.last_pose_guide_applied is False
+
+    def test_a_readable_pose_guide_sets_the_applied_flag(self, provider, temp_ref_image, monkeypatch):
+        monkeypatch.setattr(provider, "_load_workflow", lambda pose_guide=False: {})
+        for name in ("_inject_prompt", "_inject_dimensions", "_inject_seed",
+                     "_inject_negative_suffix", "_inject_ipadapter_weight",
+                     "_inject_reference_image", "_remove_i2i_input", "_inject_guide_image"):
+            monkeypatch.setattr(provider, name, lambda wf, *a, **k: wf)
+        monkeypatch.setattr("yt_flow.services.comfyui_client.upload_image", AsyncMock(return_value="up.png"))
+        monkeypatch.setattr("yt_flow.services.comfyui_client.submit_and_fetch", AsyncMock(return_value=TINY_PNG))
+
+        asyncio_run(provider.generate("prompt", None, pose_guide_path=temp_ref_image))
+        assert provider.last_pose_guide_applied is True

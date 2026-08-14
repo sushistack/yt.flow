@@ -13,6 +13,7 @@ module rather than the stub. [mirrors test_scenario.py]
 """
 
 import json
+import shutil
 import subprocess
 import sys
 
@@ -1530,3 +1531,225 @@ async def test_breaker_trips_on_total_undecidables_not_only_consecutive(monkeypa
     assert captured["guard_counts"]["unavailable"] == TOTAL
     assert len(calls) == 2 * TOTAL - 1  # the TOTAL-th undecidable is the last call
     assert "total undecidable verdicts" in caplog.text
+
+
+# ── Story 13.1: plate fallbacks become gate-visible warnings ─────────────────
+
+async def _plate_warnings(monkeypatch, tmp_path, *, resolver, substitution=True, state=None):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=substitution))
+    if resolver is not None:
+        img.inject_location_service(resolver)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+    out = await img.image_node(state or _stock_state())
+    assert out.get("error") is None
+    # The fallback still produced an image — a warning is never a failure (AC3).
+    for scene in out["scenes"]:
+        for shot in scene["shots"]:
+            assert shot["image_path"]
+    return out["run_warnings"]
+
+
+async def test_plate_missing_warns_per_affected_shot(monkeypatch, tmp_path):
+    """One lookup per location key, but one warning per SHOT: "which shots lost the
+    plate" is unanswerable from a per-key record."""
+    async def resolve(location_key):
+        return []
+
+    state = _stock_state()
+    state["scenes"][0]["shots"].append({
+        **state["scenes"][0]["shots"][0], "shot_id": "S002",
+    })
+    warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve, state=state)
+    assert [w["code"] for w in warnings] == ["stock_plate_missing"] * 2
+    assert [w["context"]["shot_id"] for w in warnings] == ["S001", "S002"]
+    assert all(w["stage"] == "image" for w in warnings)
+    assert warnings[0]["context"] == {"scene_num": 1, "shot_id": "S001", "location_key": "corridor"}
+
+
+async def test_plate_resolution_failure_warns_with_bounded_detail(monkeypatch, tmp_path):
+    async def resolve(location_key):
+        raise RuntimeError("plate db is down")
+
+    warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve)
+    assert [w["code"] for w in warnings] == ["stock_plate_resolution_failed"]
+    assert warnings[0]["context"]["location_key"] == "corridor"
+    assert warnings[0]["context"]["detail"] == "RuntimeError: plate db is down"
+
+
+async def test_uninjected_resolver_warns_once_per_shot(monkeypatch, tmp_path):
+    warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=None)
+    assert [w["code"] for w in warnings] == ["stock_plate_resolver_unavailable"]
+    assert warnings[0]["context"]["shot_id"] == "S001"
+
+
+async def test_substitution_disabled_is_warning_free(monkeypatch, tmp_path):
+    """The shipped default. A config-disabled subsystem is not a degradation (AC2)."""
+    async def resolve(location_key):
+        return []
+
+    assert await _plate_warnings(monkeypatch, tmp_path, resolver=resolve, substitution=False) == []
+
+
+async def test_shot_without_location_key_is_warning_free(monkeypatch, tmp_path):
+    async def resolve(location_key):
+        raise AssertionError("no location_key means no lookup at all")
+
+    warnings = await _plate_warnings(
+        monkeypatch, tmp_path, resolver=resolve, state=_stock_state(location_key=None),
+    )
+    assert warnings == []
+
+
+async def test_warnings_merge_with_the_checkpoint_and_do_not_duplicate(monkeypatch, tmp_path):
+    """AC6: a retried image stage re-derives the same records and must not grow the list."""
+    async def resolve(location_key):
+        return []
+
+    prior = {"code": "character_provisioning_failed", "stage": "scenario",
+             "message": "이전 경고", "context": {"card_key": "SCP-173"}}
+    state = {**_stock_state(), "run_warnings": [prior]}
+    first = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve, state=state)
+    assert first[0] == prior                      # earlier stages' history is preserved
+    assert len(first) == 2
+
+    # Re-run the stage for real (retry deletes the resume artifacts, run_service
+    # ._delete_image_artifacts) over the state as the checkpoint now holds it.
+    shutil.rmtree(tmp_path / "workspace")
+    again = await _plate_warnings(
+        monkeypatch, tmp_path, resolver=resolve, state={**_stock_state(), "run_warnings": first},
+    )
+    assert again == first
+
+
+# ── Story 13.1: the background-person guard's four unscreened outcomes ────────
+#
+# `attempts = 0` (the shipped default) is deliberately NOT here: an operator-set knob
+# at its shipped value is AC2's "intentionally non-applicable", not a degradation.
+# What warns is the guard being ASKED for and not delivered.
+
+
+async def test_guard_without_a_vision_key_warns_once_for_the_run(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path, vision_api_key=""))
+    _counting_fetch(monkeypatch)
+
+    out = await img.image_node(_many_shots_state(3))
+
+    assert out.get("error") is None
+    # Run-level cause, one row — not one per unscreened shot.
+    assert [w["code"] for w in out["run_warnings"]] == ["background_guard_unscreened"]
+    assert out["run_warnings"][0]["stage"] == "image"
+    assert out["run_warnings"][0]["context"] == {"reason": "vision_api_key_missing", "attempts": 2}
+
+
+async def test_guard_disabled_by_config_is_warning_free(monkeypatch, tmp_path):
+    """`background_person_guard_attempts = 0` is the shipped default (AC2)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, guard_attempts=0, vision_api_key=""))
+    _counting_fetch(monkeypatch)
+
+    out = await img.image_node(_one_shot_state())
+    assert out["run_warnings"] == []
+
+
+async def test_guard_breaker_warns_once_and_carries_its_tallies(monkeypatch, tmp_path):
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_STREAK as STREAK
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [None])
+
+    out = await img.image_node(_many_shots_state(6))
+
+    assert out.get("error") is None
+    breaker = [w for w in out["run_warnings"] if w["context"].get("reason") == "detector_undecidable"]
+    assert len(breaker) == 1  # the closure short-circuits after it trips
+    assert breaker[0]["context"]["undecidable_streak"] == STREAK
+    assert breaker[0]["context"]["undecidable_total"] == STREAK
+
+
+async def test_exhausted_ladder_warns_per_shot_with_scene_and_shot(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])  # never clean → every shot exhausts its ladder
+
+    out = await img.image_node(_one_shot_state())
+
+    assert out.get("error") is None
+    assert [w["code"] for w in out["run_warnings"]] == ["background_guard_unscreened"]
+    assert out["run_warnings"][0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "reason": "ladder_exhausted"}
+
+
+async def test_a_resumed_exhausted_shot_still_warns(monkeypatch, tmp_path):
+    """The sidecar remembers the verdict, so a resume must not present a known-populated
+    frame as a clean pass — the guard count already worked this way, the warning follows."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+    assert (await img.image_node(_one_shot_state())).get("error") is None
+
+    seeds = _counting_fetch(monkeypatch)
+    out = await img.image_node(_one_shot_state())
+
+    assert seeds == []  # resumed, not regenerated
+    assert out["run_warnings"][0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "reason": "ladder_exhausted_earlier_run"}
+
+
+async def test_a_clean_guarded_run_is_warning_free(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [False])
+
+    out = await img.image_node(_one_shot_state())
+    assert out["run_warnings"] == []
+
+
+async def test_error_path_keeps_the_warnings_the_run_already_earned(monkeypatch, tmp_path):
+    """Same reason the guard counters are declared outside the try: a stage that dies on
+    shot 2 must still report what shot 1 degraded into."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _fake_detector(monkeypatch, [True])
+    fetches = 0
+
+    async def fetch_then_die(url, workflow):
+        nonlocal fetches
+        fetches += 1
+        if fetches > 3:  # shot 1 exhausted its 3 rungs; shot 2 explodes
+            raise RuntimeError("comfy went away")
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fetch_then_die)
+
+    out = await img.image_node(_state())
+
+    assert out["error"] and "stage=image" in out["error"]
+    assert [w["context"]["shot_id"] for w in out["run_warnings"]] == ["S001"]
+
+
+async def test_per_shot_warnings_are_bounded_by_the_shared_sample_cap(monkeypatch, tmp_path):
+    """These rows ride a checkpoint into every gate payload and render one line each
+    above the Approve button; a 155-shot run must not put 155 of them there."""
+    from yt_flow.domain.warnings import MAX_SAMPLE_RECORDS
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])
+    n = MAX_SAMPLE_RECORDS + 5
+
+    out = await img.image_node(_many_shots_state(n))
+
+    named = [w for w in out["run_warnings"] if "shot_id" in w["context"]]
+    assert len(named) == MAX_SAMPLE_RECORDS
+    # …and the true total is still on screen, on one aggregate row.
+    assert {"total_count": n} in [w["context"] for w in out["run_warnings"]]

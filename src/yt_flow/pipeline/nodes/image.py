@@ -47,7 +47,8 @@ from yt_flow.config import (
     BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS,
     Settings,
 )
-from yt_flow.domain.state import PipelineState, SceneState, ShotData
+from yt_flow.domain.state import PipelineState, RunWarning, SceneState, ShotData
+from yt_flow.domain.warnings import cap_samples, make_warning, merge as merge_warnings
 from yt_flow.services import comfyui_client, vision_check
 from yt_flow.services.comfyui_client import ComfyUIError
 
@@ -367,6 +368,9 @@ async def image_node(state: PipelineState) -> dict:
     # fails mid-run must not lose its guard/depth accounting.
     guard_counts = {"regenerated": 0, "exhausted": 0, "unavailable": 0, "unscreened": 0}
     depth_counts = {"hit": 0, "miss": 0, "unavailable": 0}
+    # Story 13.1: same reason they are declared out here — a stage that fails mid-run
+    # must not lose the degradations it already accumulated.
+    warnings: list[RunWarning] = []
     try:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
@@ -395,6 +399,14 @@ async def image_node(state: PipelineState) -> dict:
                 "background person guard disabled: YTFLOW_CHARACTER_VISION_API_KEY is unset; "
                 "generated backgrounds are NOT screened for people this run",
             )
+            # Story 13.1: run-level cause -> run-level warning. `attempts < 1` is NOT
+            # warned: that is the operator's own config choice (the shipped default),
+            # i.e. AC2's "intentionally non-applicable", whereas asking for the guard and
+            # not getting it is a runtime degradation.
+            warnings.append(make_warning(
+                "background_guard_unscreened", reason="vision_api_key_missing",
+                attempts=s.background_person_guard_attempts,
+            ))
 
         async def _populated(image_bytes: bytes) -> bool:
             """True only when the detector positively says a person is in frame.
@@ -427,6 +439,12 @@ async def image_node(state: PipelineState) -> dict:
                         "consecutive / %d total undecidable verdicts",
                         undecidable_streak, undecidable_total,
                     )
+                    # Fires at most once — `guard_off` short-circuits this closure from
+                    # here on. Run-level cause again: every later shot is unscreened.
+                    warnings.append(make_warning(
+                        "background_guard_unscreened", reason="detector_undecidable",
+                        undecidable_streak=undecidable_streak, undecidable_total=undecidable_total,
+                    ))
                 return False
             undecidable_streak = 0
             return verdict
@@ -483,6 +501,10 @@ async def image_node(state: PipelineState) -> dict:
                         # A frame a previous run kept while knowing it was populated
                         # stays unverified on resume — the warning must still fire.
                         guard_counts["exhausted"] += 1
+                        warnings.append(make_warning(
+                            "background_guard_unscreened", scene_num=scene["scene_num"],
+                            shot_id=shot["shot_id"], reason="ladder_exhausted_earlier_run",
+                        ))
                     new_shots.append(await _with_depth(shot, existing))
                     continue
 
@@ -508,10 +530,34 @@ async def image_node(state: PipelineState) -> dict:
                         logger.warning(
                             "location_key %r has no approved plates, falling back to generation", location_key,
                         )
+                        # Per SHOT, not per location key: the lookup is cached once per run
+                        # (and stays cached), but "which shots ended up on a generated
+                        # background instead of the plate the writer asked for" is the
+                        # question this story exists to answer. The identity is
+                        # code+stage+scene+shot+location, so a retry re-derives the same
+                        # record and merges to the same list.
+                        warnings.append(make_warning(
+                            "stock_plate_missing", scene_num=scene["scene_num"],
+                            shot_id=shot["shot_id"], location_key=location_key,
+                        ))
                     except Exception as exc:  # noqa: BLE001 — AD-10: plate lookup is best-effort, never fails the stage
                         logger.warning(
                             "stock plate resolution failed for %r, falling back to generation: %s", location_key, exc,
                         )
+                        warnings.append(make_warning(
+                            "stock_plate_resolution_failed", scene_num=scene["scene_num"],
+                            shot_id=shot["shot_id"], location_key=location_key,
+                            detail=f"{type(exc).__name__}: {exc}",
+                        ))
+                elif s.stock_plate_substitution_enabled and location_key:
+                    # Substitution is ON and the writer named a location, but the service
+                    # seam was never injected — the shot silently generates instead. Not
+                    # warned when substitution is off: that is a config choice, not a
+                    # degradation (it is the shipped default, Story 8.19).
+                    warnings.append(make_warning(
+                        "stock_plate_resolver_unavailable", scene_num=scene["scene_num"],
+                        shot_id=shot["shot_id"], location_key=location_key,
+                    ))
 
                 if not s.comfyui_mock:
                     if not health_checked:
@@ -570,6 +616,10 @@ async def image_node(state: PipelineState) -> dict:
                             "shot %s: background still populated after %d attempt(s), keeping last render",
                             shot["shot_id"], len(ladder),
                         )
+                        warnings.append(make_warning(
+                            "background_guard_unscreened", scene_num=scene["scene_num"],
+                            shot_id=shot["shot_id"], reason="ladder_exhausted",
+                        ))
                     if guard_off:
                         # Knob 0, no key, or the breaker tripped: this frame was never
                         # screened. Without its own count it is indistinguishable in the
@@ -602,7 +652,13 @@ async def image_node(state: PipelineState) -> dict:
             skipped_count=skipped_count, stock_plate_count=stock_plate_count,
             depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0),
         )
-        return {"scenes": new_scenes, "current_stage": "image", "error": None}
+        return {"scenes": new_scenes, "current_stage": "image", "error": None,
+                # Whole-field replacement, merged against what the checkpoint already
+                # holds: no reducer in this graph, and a re-run must not double the list.
+                # cap_samples bounds the per-shot families (plate misses, unscreened
+                # backgrounds) — one outage on a 155-shot run must not put 155 rows in
+                # front of the Approve button. The true total rides an aggregate row.
+                "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}
     except Exception as exc:  # noqa: BLE001 — surfaced as PipelineState.error, never raised past the node
         _record_trace(
             comfyui_url=s.comfyui_url if s else "?",
@@ -611,4 +667,5 @@ async def image_node(state: PipelineState) -> dict:
             skipped_count=skipped_count, stock_plate_count=stock_plate_count,
             depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0), error=exc,
         )
-        return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}"}
+        return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}",
+                "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}
