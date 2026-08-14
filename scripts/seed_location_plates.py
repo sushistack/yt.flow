@@ -15,12 +15,18 @@ and upscales to the 1920x1080 on-disk contract, resumes at the first plate
 without a file after a ComfyUI abort, re-rolls a rejected plate to a different
 image with --reroll, and can render its own style-anchor candidates.
 
-Workflow node map (data/workflows/comfyui_location_plate_api.json):
-  6 = positive CLIPTextEncode, 7 = negative CLIPTextEncode, 3 = KSampler (seed),
-  5 = EmptyLatentImage (render size), 11 = last LoraLoader (model chain),
-  20 = IPAdapter anchor LoadImage, 23 = IPAdapterAdvanced (weight),
-  30 = scribble ControlNetLoader, 31 = structure-hint LoadImage,
-  33 = FakeScribblePreprocessor, 32 = ControlNetApplyAdvanced.
+Workflow node manifest (data/workflows/comfyui_location_plate_api.json):
+Story 13.3 replaced the node-id map this docstring used to publish as the
+contract — ids are not the contract, declared `_meta.title`s are. The eleven
+keys (`ytflow:positive_prompt`, `ytflow:negative_prompt`, `ytflow:sampler`,
+`ytflow:latent`, `ytflow:model`, `ytflow:style_anchor`, `ytflow:ipadapter`,
+`ytflow:structure_hint`, `ytflow:scribble`, `ytflow:controlnet_apply`,
+`ytflow:controlnet_loader`) are resolved to ids once at load by
+`comfyui_client.resolve_nodes`, which raises if one no longer resolves. That
+matters most for the three *link* rewrites below (`[id, 0]` edges): under the
+old id map a ComfyUI renumber produced a structurally valid but wrong graph and
+no error at all. See PLATE_NODE_KEYS below and
+data/workflows/README-location-plate.md for what each key addresses.
 """
 
 import argparse
@@ -48,13 +54,22 @@ from yt_flow.services.asset_service import AssetService  # noqa: E402
 from yt_flow.services.comfyui_client import ComfyUIError  # noqa: E402
 
 VARIANTS = ("a", "b", "c")
-POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE = "6", "7", "3"
-ANCHOR_NODE, IPADAPTER_NODE = "20", "23"
-BLOCKOUT_NODE = "31"
+# Story 13.3: the eleven injection targets, resolved from ``_meta.title`` once at
+# load and threaded through as a {key: node_id} map. They used to be hardcoded id
+# strings, and three of the writes below are *link* rewrites (`[id, 0]` edges) —
+# so a ComfyUI renumber produced a structurally valid but wrong graph rather than
+# an error. See data/workflows/README-location-plate.md.
+POSITIVE_KEY, NEGATIVE_KEY, SAMPLER_KEY = "ytflow:positive_prompt", "ytflow:negative_prompt", "ytflow:sampler"
+ANCHOR_KEY, IPADAPTER_KEY = "ytflow:style_anchor", "ytflow:ipadapter"
+BLOCKOUT_KEY = "ytflow:structure_hint"
 BLOCKOUT_STRENGTH = 0.5
-SCRIBBLE_NODE, CONTROLNET_APPLY_NODE = "33", "32"
-CONTROLNET_LOADER_NODE = "30"
-LATENT_NODE, MODEL_NODE = "5", "11"
+SCRIBBLE_KEY, CONTROLNET_APPLY_KEY = "ytflow:scribble", "ytflow:controlnet_apply"
+CONTROLNET_LOADER_KEY = "ytflow:controlnet_loader"
+LATENT_KEY, MODEL_KEY = "ytflow:latent", "ytflow:model"
+PLATE_NODE_KEYS = (
+    POSITIVE_KEY, NEGATIVE_KEY, SAMPLER_KEY, LATENT_KEY, MODEL_KEY, ANCHOR_KEY,
+    IPADAPTER_KEY, BLOCKOUT_KEY, SCRIBBLE_KEY, CONTROLNET_APPLY_KEY, CONTROLNET_LOADER_KEY,
+)
 LOCATION_PLATE_WIDTH = 1920
 LOCATION_PLATE_HEIGHT = 1080
 # Render at an SDXL-native bucket, not at the on-disk contract: a 1920x1080 latent is
@@ -211,7 +226,7 @@ def _reference_path(settings, location_key: str, variant: str) -> Path | None:
     return siblings[VARIANTS.index(variant) % len(siblings)]
 
 
-def _bypass_scribble(workflow: dict) -> dict:
+def _bypass_scribble(workflow: dict, nodes: dict[str, str]) -> dict:
     """Feed the ControlNet straight from LoadImage, skipping the scribble preprocessor.
 
     The blockout is *already* white-on-black structural line art. Running scribble_hed
@@ -219,28 +234,31 @@ def _bypass_scribble(workflow: dict) -> dict:
     pair of thin parallel ones — a worse hint than the input. The preprocessor exists
     for the reference-photo path only, so the fallback path drops it.
     """
-    workflow[CONTROLNET_APPLY_NODE]["inputs"]["image"] = [BLOCKOUT_NODE, 0]
-    workflow.pop(SCRIBBLE_NODE, None)
+    workflow[nodes[CONTROLNET_APPLY_KEY]]["inputs"]["image"] = [nodes[BLOCKOUT_KEY], 0]
+    workflow.pop(nodes[SCRIBBLE_KEY], None)
     # Weaker than the reference path, and the difference is the point. A reference photo
     # carries the room's contents as well as its shape, so it can be followed hard. The
     # blockout is an empty box: at 0.9 the sampler obeyed it literally and returned empty
     # boxes — an autopsy room with no table, a medical bay with no bed, a cafeteria with
     # no tables. The geometry still lands at 0.5; the furniture comes from the prompt.
-    workflow[CONTROLNET_APPLY_NODE]["inputs"]["strength"] = BLOCKOUT_STRENGTH
+    workflow[nodes[CONTROLNET_APPLY_KEY]]["inputs"]["strength"] = BLOCKOUT_STRENGTH
     return workflow
 
 
-async def _upload_structure_hint(settings, workflow: dict, location_key: str, variant: str) -> tuple[str, dict]:
+async def _upload_structure_hint(
+    settings, workflow: dict, nodes: dict[str, str], location_key: str, variant: str,
+) -> tuple[str, dict]:
     """Wire this plate's ControlNet hint: the curated photo if there is one, else the blockout.
 
-    COPYRIGHT: the reference is uploaded to node 31 and nowhere else, and node 31 feeds
-    only the scribble preprocessor. It never reaches the IPAdapter (node 23, whose image
-    input is the style-anchor batch) and never reaches the latent (node 5 is an
-    EmptyLatentImage). What the sampler sees of somebody's photograph is a line drawing.
+    COPYRIGHT: the reference is uploaded to ``ytflow:structure_hint`` and nowhere else,
+    and that node feeds only the scribble preprocessor. It never reaches the IPAdapter
+    (``ytflow:ipadapter``, whose image input is the style-anchor batch) and never reaches
+    the latent (``ytflow:latent`` is an EmptyLatentImage). What the sampler sees of
+    somebody's photograph is a line drawing.
     """
     reference = _reference_path(settings, location_key, variant)
     if reference is None:
-        _bypass_scribble(workflow)
+        _bypass_scribble(workflow, nodes)
         name = await _upload_blockout(settings, location_key, variant)
         shot = _blockout_shot(location_key, variant)
         return name, {"kind": "blockout", "shot": shot, "strength": BLOCKOUT_STRENGTH}
@@ -250,7 +268,7 @@ async def _upload_structure_hint(settings, workflow: dict, location_key: str, va
     # Record which photo, because a borrowed sibling or cross-key reference is why two
     # plates can share a composition — the seed alone cannot explain that.
     return name, {"kind": "reference", "ref": str(reference.relative_to(Path(settings.location_refs_dir))),
-                  "strength": workflow[CONTROLNET_APPLY_NODE]["inputs"]["strength"]}
+                  "strength": workflow[nodes[CONTROLNET_APPLY_KEY]]["inputs"]["strength"]}
 
 
 def _plate_prompt(location_key: str, variant: str) -> str:
@@ -262,16 +280,19 @@ def _plate_prompt(location_key: str, variant: str) -> str:
     return ", ".join(parts)
 
 
-def _load_workflow(path: str) -> dict:
+def _load_workflow(path: str) -> tuple[dict, dict[str, str]]:
+    """Load the plate graph and resolve all eleven injection targets by title.
+
+    Returns ``(workflow, nodes)``. ``resolve_nodes`` raises on a missing or
+    duplicated title, naming what is actually in the file — the same fail-loud
+    contract the old id presence-check had, minus the ability to resolve to the
+    wrong node after a renumber.
+    """
     try:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
         sys.exit(f"cannot load ComfyUI workflow at {path!r}: {exc}")
-    for node_id in (POSITIVE_NODE, NEGATIVE_NODE, SAMPLER_NODE, LATENT_NODE, ANCHOR_NODE, IPADAPTER_NODE,
-                    BLOCKOUT_NODE, SCRIBBLE_NODE, CONTROLNET_APPLY_NODE):
-        if node_id not in workflow:
-            raise ValueError(f"location plate workflow at {path!r} missing node {node_id!r}")
-    return workflow
+    return workflow, comfyui_client.resolve_nodes(workflow, PLATE_NODE_KEYS)
 
 
 def _load_anchor_paths(anchor_dir: Path) -> list[Path]:
@@ -293,37 +314,41 @@ def _check_lookdev_decision(anchor_dir: Path) -> None:
         )
 
 
-def _inject_anchors(workflow: dict, anchor_names: list[str]) -> dict:
+def _inject_anchors(workflow: dict, nodes: dict[str, str], anchor_names: list[str]) -> dict:
     """Wire N uploaded anchor images into one batched IMAGE tensor for IPAdapter.
 
     ComfyUI's LoadImage loads one file each; multiple anchors are combined
     via chained ImageBatch nodes so IPAdapterAdvanced sees a single batched
     reference (Saved Question #3: caps at however many anchors are curated,
     typically 3-5).
+
+    The synthetic ids are derived from the *resolved* anchor id, so they stay
+    unique whatever the anchor node is numbered.
     """
-    workflow[ANCHOR_NODE]["inputs"]["image"] = anchor_names[0]
-    batch_ref = [ANCHOR_NODE, 0]
+    anchor_id = nodes[ANCHOR_KEY]
+    workflow[anchor_id]["inputs"]["image"] = anchor_names[0]
+    batch_ref = [anchor_id, 0]
     for i, name in enumerate(anchor_names[1:], start=1):
-        load_id, batch_id = f"{ANCHOR_NODE}_extra_{i}", f"{ANCHOR_NODE}_batch_{i}"
+        load_id, batch_id = f"{anchor_id}_extra_{i}", f"{anchor_id}_batch_{i}"
         workflow[load_id] = {"class_type": "LoadImage", "inputs": {"image": name}}
         workflow[batch_id] = {"class_type": "ImageBatch", "inputs": {"image1": batch_ref, "image2": [load_id, 0]}}
         batch_ref = [batch_id, 0]
-    workflow[IPADAPTER_NODE]["inputs"]["image"] = batch_ref
+    workflow[nodes[IPADAPTER_KEY]]["inputs"]["image"] = batch_ref
     return workflow
 
 
-def _inject(template: dict, prompt: str, seed: int, weight: float) -> dict:
+def _inject(template: dict, nodes: dict[str, str], prompt: str, seed: int, weight: float) -> dict:
     workflow = copy.deepcopy(template)
-    workflow[POSITIVE_NODE]["inputs"]["text"] = prompt
-    workflow[NEGATIVE_NODE]["inputs"]["text"] = PLATE_NEGATIVE_PROMPT
-    workflow[IPADAPTER_NODE]["inputs"]["weight"] = weight
-    workflow[SAMPLER_NODE]["inputs"]["seed"] = seed
-    workflow[LATENT_NODE]["inputs"]["width"] = PLATE_RENDER_WIDTH
-    workflow[LATENT_NODE]["inputs"]["height"] = PLATE_RENDER_HEIGHT
+    workflow[nodes[POSITIVE_KEY]]["inputs"]["text"] = prompt
+    workflow[nodes[NEGATIVE_KEY]]["inputs"]["text"] = PLATE_NEGATIVE_PROMPT
+    workflow[nodes[IPADAPTER_KEY]]["inputs"]["weight"] = weight
+    workflow[nodes[SAMPLER_KEY]]["inputs"]["seed"] = seed
+    workflow[nodes[LATENT_KEY]]["inputs"]["width"] = PLATE_RENDER_WIDTH
+    workflow[nodes[LATENT_KEY]]["inputs"]["height"] = PLATE_RENDER_HEIGHT
     return workflow
 
 
-def _strip_ipadapter(workflow: dict) -> dict:
+def _strip_ipadapter(workflow: dict, nodes: dict[str, str]) -> dict:
     """Drop the IPAdapter *and* ControlNet branches, leaving prompt + LoRA chain only.
 
     An anchor *candidate* is the image the style will later be anchored to, so it
@@ -333,16 +358,18 @@ def _strip_ipadapter(workflow: dict) -> dict:
     IPAdapterModelLoader loaders go with it and ComfyUI sees no dangling inputs.
 
     The ControlNet branch goes too, and not only for symmetry: dropping every LoadImage
-    took node 31 out while ControlNetApplyAdvanced still pointed at it, so the candidate
-    prompt ComfyUI received had a dangling link and would have been rejected outright.
-    A candidate is also supposed to show what the checkpoint does unconditioned.
+    took the structure-hint node out while ControlNetApplyAdvanced still pointed at it,
+    so the candidate prompt ComfyUI received had a dangling link and would have been
+    rejected outright. A candidate is also supposed to show what the checkpoint does
+    unconditioned.
     """
     workflow = copy.deepcopy(workflow)
-    workflow[SAMPLER_NODE]["inputs"]["model"] = [MODEL_NODE, 0]
-    workflow[SAMPLER_NODE]["inputs"]["positive"] = [POSITIVE_NODE, 0]
-    workflow[SAMPLER_NODE]["inputs"]["negative"] = [NEGATIVE_NODE, 0]
-    for node_id in (SCRIBBLE_NODE, CONTROLNET_APPLY_NODE, CONTROLNET_LOADER_NODE):
-        workflow.pop(node_id, None)
+    sampler_id = nodes[SAMPLER_KEY]
+    workflow[sampler_id]["inputs"]["model"] = [nodes[MODEL_KEY], 0]
+    workflow[sampler_id]["inputs"]["positive"] = [nodes[POSITIVE_KEY], 0]
+    workflow[sampler_id]["inputs"]["negative"] = [nodes[NEGATIVE_KEY], 0]
+    for key in (SCRIBBLE_KEY, CONTROLNET_APPLY_KEY, CONTROLNET_LOADER_KEY):
+        workflow.pop(nodes[key], None)
     for node_id, node in list(workflow.items()):
         if node.get("class_type") in ("LoadImage", "CLIPVisionLoader", "IPAdapterModelLoader", "IPAdapterAdvanced"):
             workflow.pop(node_id)
@@ -454,6 +481,7 @@ async def seed_plate(
     settings: Settings,
     asset_service: AssetService,
     template: dict | None,
+    nodes: dict[str, str] | None,
     anchor_names: list[str],
     location_key: str,
     variant: str,
@@ -485,16 +513,17 @@ async def seed_plate(
         if settings.comfyui_mock:
             dest.write_bytes(_mock_fixture().read_bytes())
         else:
-            if template is None:
+            if template is None or nodes is None:
                 raise ValueError("workflow must be loaded in real mode")
             workflow = _inject_anchors(
-                _inject(template, _plate_prompt(location_key, variant), seed, settings.location_ipadapter_weight),
-                anchor_names,
+                _inject(template, nodes, _plate_prompt(location_key, variant), seed,
+                        settings.location_ipadapter_weight),
+                nodes, anchor_names,
             )
             hint_name, hint_provenance = await _upload_structure_hint(
-                settings, workflow, location_key, variant
+                settings, workflow, nodes, location_key, variant
             )
-            workflow[BLOCKOUT_NODE]["inputs"]["image"] = hint_name
+            workflow[nodes[BLOCKOUT_KEY]]["inputs"]["image"] = hint_name
             image_bytes = await _submit_with_recovery(settings, workflow, done=done, total=total)
             dest.write_bytes(_upscale_to_contract(image_bytes))
 
@@ -529,7 +558,9 @@ async def seed_plate(
         return False
 
 
-async def generate_anchor_candidates(settings: Settings, template: dict, *, count: int, location_key: str) -> int:
+async def generate_anchor_candidates(
+    settings: Settings, template: dict, nodes: dict[str, str], *, count: int, location_key: str,
+) -> int:
     """Render N unconditioned candidates into a review dir and stop — no DB, no manifest.
 
     Satisfies the anchor gate without hand-made art: the operator picks one, copies it
@@ -543,7 +574,9 @@ async def generate_anchor_candidates(settings: Settings, template: dict, *, coun
     for index in range(1, count + 1):
         dest = review_dir / f"candidate_{index}.png"
         workflow = _strip_ipadapter(
-            _inject(template, LOCATION_PROMPTS[location_key], _plate_seed(location_key, f"anchor{index}"), 0.0)
+            _inject(template, nodes, LOCATION_PROMPTS[location_key],
+                    _plate_seed(location_key, f"anchor{index}"), 0.0),
+            nodes,
         )
         try:
             dest.write_bytes(await comfyui_client.submit_and_fetch(settings.comfyui_url, workflow))
@@ -569,13 +602,14 @@ async def run(args) -> int:
         sys.exit("--anchor-candidates renders real images; it does nothing in YTFLOW_COMFYUI_MOCK mode")
 
     template = None
+    nodes: dict[str, str] | None = None
     anchor_names: list[str] = []
     if not settings.comfyui_mock:
-        template = _load_workflow(settings.location_plate_workflow_path)
+        template, nodes = _load_workflow(settings.location_plate_workflow_path)
         if args.anchor_candidates:
             # Before the gates on purpose: this mode exists to satisfy them.
             return await generate_anchor_candidates(
-                settings, template,
+                settings, template, nodes,
                 count=args.anchor_candidates, location_key=args.key or ANCHOR_CANDIDATE_KEY,
             )
         _check_lookdev_decision(anchor_dir)
@@ -599,7 +633,7 @@ async def run(args) -> int:
             try:
                 success = await seed_plate(
                     session=session, settings=settings, asset_service=asset_service,
-                    template=template, anchor_names=anchor_names,
+                    template=template, nodes=nodes, anchor_names=anchor_names,
                     location_key=location_key, variant=variant, force=args.force,
                     salt=salt, done=index, total=len(plates),
                 )

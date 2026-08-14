@@ -8,6 +8,7 @@ without a running ComfyUI. Covers the AC2 validation/failure paths.
 import httpx
 import pytest
 
+from yt_flow.config import Settings
 from yt_flow.services import comfyui_client as cc
 
 
@@ -514,3 +515,155 @@ async def test_upload_declares_content_type_from_filename():
     async with _client(handler) as c:
         await cc._upload(c, b"JPEGBYTES", "ref.jpg")
     assert b"Content-Type: image/jpeg" in captured["body"]
+
+
+# ── Workflow node manifest (Story 13.3 AC1) ──────────────────────────────────
+
+def _node(class_type: str, title: str | None = None) -> dict:
+    node: dict = {"class_type": class_type, "inputs": {}}
+    if title is not None:
+        node["_meta"] = {"title": title}
+    return node
+
+
+WF = {
+    "6": _node("CLIPTextEncode", "ytflow:positive_prompt"),
+    "7": _node("CLIPTextEncode", "ytflow:negative_prompt"),
+    "3": _node("KSampler"),
+}
+
+
+def test_resolve_nodes_maps_keys_to_ids():
+    assert cc.resolve_nodes(WF, ("ytflow:positive_prompt", "ytflow:negative_prompt")) == {
+        "ytflow:positive_prompt": "6", "ytflow:negative_prompt": "7",
+    }
+
+
+def test_resolve_nodes_is_indifferent_to_node_ids():
+    """The whole point: a ComfyUI re-export renumbers, and nothing moves."""
+    renumbered = {"901": WF["7"], "902": WF["6"], "903": WF["3"]}
+    assert cc.resolve_nodes(renumbered, ("ytflow:positive_prompt",)) == {
+        "ytflow:positive_prompt": "902",
+    }
+
+
+def test_resolve_nodes_missing_key_names_the_key_and_the_titles_present():
+    """An operator who renamed a node in the UI must be able to fix it from the
+    error alone, without reading code."""
+    with pytest.raises(ValueError) as exc:
+        cc.resolve_nodes(WF, ("ytflow:card_image",))
+    message = str(exc.value)
+    assert "ytflow:card_image" in message
+    assert "ytflow:positive_prompt" in message and "ytflow:negative_prompt" in message
+
+
+def test_resolve_nodes_duplicate_title_raises():
+    """Ambiguity is a defect, not a coin flip — copy/paste in the UI does this."""
+    duplicated = {**WF, "16": _node("CLIPTextEncode", "ytflow:positive_prompt")}
+    with pytest.raises(ValueError, match="ambiguous"):
+        cc.resolve_nodes(duplicated, ("ytflow:positive_prompt",))
+
+
+def test_resolve_nodes_matches_exactly_never_by_substring():
+    """The shipped layered_inspyrenet graph is the live trap: it carries both
+    "Negative Prompt" and "Background Inpaint Negative Prompt (entity exclusion)",
+    so a substring rule resolves two nodes and picks one arbitrarily."""
+    import json
+    from pathlib import Path
+
+    # Anchored on this file, not the CWD — pytest is run from worktrees too, and
+    # tests/test_workflow_definitions.py already anchors its glob the same way.
+    path = (Path(__file__).resolve().parents[2] / "data" / "workflows"
+            / "comfyui_sdxl_anime_lora_layered_inspyrenet_api.json")
+    workflow = json.loads(path.read_text(encoding="utf-8"))
+    titles = [
+        node["_meta"]["title"] for node in workflow.values()
+        if isinstance(node, dict) and isinstance(node.get("_meta"), dict)
+    ]
+    assert "Negative Prompt" in titles
+    assert "Background Inpaint Negative Prompt (entity exclusion)" in titles
+    # Exact match resolves the one node; a substring rule would raise "ambiguous".
+    assert cc.resolve_nodes(workflow, ("Negative Prompt",)) == {"Negative Prompt": "7"}
+
+
+def test_resolve_nodes_skips_non_node_scalars():
+    """API-format graphs carry provenance scalars beside the nodes; a scan that
+    assumes every value is a node crashes on `ytflow_verified_iclight: true`."""
+    with_scalars = {**WF, "ytflow_verified_iclight": True, "_ytflow_note": "prose"}
+    assert cc.resolve_nodes(with_scalars, ("ytflow:positive_prompt",)) == {
+        "ytflow:positive_prompt": "6",
+    }
+
+
+def test_resolve_nodes_empty_keys_is_a_no_op():
+    assert cc.resolve_nodes(WF, ()) == {}
+
+
+# ── get_system_stats (Story 13.3 AC7) ────────────────────────────────────────
+
+def _mock_client(monkeypatch, handler):
+    """Route get_system_stats' own AsyncClient through a MockTransport.
+
+    The real class is captured first — patching ``cc.httpx.AsyncClient`` patches
+    httpx itself, so a factory that calls it again recurses.
+    """
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        cc.httpx, "AsyncClient",
+        lambda **kw: real(base_url=kw.get("base_url", ""), transport=httpx.MockTransport(handler)),
+    )
+
+
+async def test_get_system_stats_returns_the_payload(monkeypatch):
+    payload = {"system": {"comfyui_version": "0.12.3"}, "devices": [{"name": "cuda:0"}]}
+    _mock_client(monkeypatch, lambda req: httpx.Response(200, json=payload))
+    assert await cc.get_system_stats("http://comfy.test") == payload
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(500, text="boom"),
+    httpx.Response(200, text="not json"),
+])
+async def test_get_system_stats_swallows_failures(monkeypatch, response):
+    """[AD-10] provenance is observability — it records null, it never raises."""
+    _mock_client(monkeypatch, lambda req: response)
+    assert await cc.get_system_stats("http://comfy.test") is None
+
+
+async def test_get_system_stats_swallows_transport_errors(monkeypatch):
+    def _raise(req):
+        raise httpx.ConnectError("connection refused")
+
+    _mock_client(monkeypatch, _raise)
+    assert await cc.get_system_stats("http://comfy.test") is None
+
+
+async def test_check_health_returns_nothing_on_success(monkeypatch):
+    """~15 test fakes and seed_location_plates.py replace this with an
+    ``async def ok(url) -> None``; the day it starts *returning* the stats payload
+    every one of them silently becomes a lie. The behaviour, not the annotation —
+    a pinned annotation is self-verification (see the ffmpeg-arg-string gotcha).
+    """
+    payload = {"system": {"comfyui_version": "0.12.3"}}
+    _mock_client(monkeypatch, lambda req: httpx.Response(200, json=payload))
+    assert await cc.check_health("http://comfy.test") is None
+
+
+async def test_get_system_stats_uses_the_short_timeout_not_the_health_budget(monkeypatch):
+    """Story 13.3 review: image_node awaits this before any resume decision, so a
+    fully-resumed run behind a busy GPU would block on the 120s health budget just
+    to record a version string. Provenance is best-effort [AD-10] — it gets its own
+    short timeout and records null."""
+    seen: list[httpx.Timeout] = []
+    real = httpx.AsyncClient
+
+    def factory(**kw):
+        seen.append(kw["timeout"])
+        return real(base_url=kw.get("base_url", ""),
+                    transport=httpx.MockTransport(lambda req: httpx.Response(200, json={})))
+
+    monkeypatch.setattr(cc.httpx, "AsyncClient", factory)
+    await cc.get_system_stats("http://comfy.test")
+
+    assert seen[0].read == cc.STATS_READ_TIMEOUT
+    assert cc.STATS_READ_TIMEOUT < Settings().comfyui_health_read_timeout_sec

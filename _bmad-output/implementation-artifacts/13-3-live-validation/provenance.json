@@ -1,0 +1,14 @@
+{
+  "workflow_path": "data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json",
+  "workflow_sha256": "8fd05afa0ee38eb411d6e6e24ed05d9e21e617613a47d0415871c824653d84fc",
+  "nodes": {
+    "ytflow:positive_prompt": "6",
+    "ytflow:negative_prompt": "7"
+  },
+  "env_snapshot_sha256": "fbd2e117173b2bde032b368fe37f17c36fdb1b5ac1640cca131852082e1a3a2a",
+  "comfyui": {
+    "comfyui_version": "0.12.3",
+    "pytorch_version": "2.11.0.dev20260206+rocm7.1",
+    "device": "cuda:0 AMD Radeon Graphics : native"
+  }
+}

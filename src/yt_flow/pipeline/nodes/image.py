@@ -1,8 +1,11 @@
 """image_node — the ComfyUI image-generation stage (Story 1.6).
 
 Consumes ``SceneState.shots`` from ``scenario_node`` and, per shot, submits the
-configured ComfyUI workflow with the shot's prompts injected into workflow nodes
-``"6"`` (positive) and ``"7"`` (negative), writing each output under
+configured ComfyUI workflow with the shot's prompts injected into the nodes whose
+``_meta.title`` is ``ytflow:positive_prompt`` / ``ytflow:negative_prompt``
+(Story 13.3 — resolved once at load, never addressed by node id: the ComfyUI UI
+renumbers nodes on re-export, and the old hardcoded ``"6"``/``"7"`` would then
+write a prompt into an unrelated node), writing each output under
 ``workspace/{run_id}/images/``. Pure function of state: reads a few fields and
 returns only the changed ones (``scenes``, ``current_stage``, and ``error`` on
 failure). No DB / SSE writes and no ``interrupt()`` — gate behaviour stays in
@@ -34,6 +37,7 @@ import copy
 import hashlib
 import json
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -54,8 +58,20 @@ from yt_flow.services.comfyui_client import ComfyUIError
 
 logger = logging.getLogger(__name__)
 
-POSITIVE_NODE = "6"
-NEGATIVE_NODE = "7"
+# Story 13.3: manifest keys, resolved to node ids by exact ``_meta.title`` match.
+# There is deliberately no id fallback — a silent re-target is the failure being
+# removed, so an unresolvable title fails the stage at load.
+POSITIVE_KEY = "ytflow:positive_prompt"
+NEGATIVE_KEY = "ytflow:negative_prompt"
+
+# The ComfyUI-Manager snapshot pinned into every render's provenance (Story 13.3
+# AC6/AC7). Repo-relative, resolved against ``YTFLOW_PROJECT_ROOT`` at read time
+# the same way ``character_image_provider._load_workflow`` resolves workflow
+# paths — that helper exists precisely because the app does not always run from
+# the repo root, and a pin that quietly stops pinning is the failure this story
+# removes. ponytail: a module constant, not a config field; it does not vary per
+# deployment and there is no restore automation.
+ENV_SNAPSHOT_PATH = "data/comfyui/env-snapshot.json"
 
 # ── Location plate resolution injection (Story 8.5) ────────────────────────
 # Injected by the service layer to avoid AD-1 violation (LocationService needs
@@ -116,22 +132,32 @@ def _ms(t0: float) -> int:
     return int((time.perf_counter() - t0) * 1000)
 
 
-def _load_workflow(path: str) -> dict:
-    """Load and validate the API-format workflow, asserting the prompt nodes exist."""
+def _load_workflow(path: str) -> tuple[dict, dict[str, str]]:
+    """Load the API-format workflow and resolve its prompt nodes by declared title.
+
+    Returns ``(workflow, nodes)`` where ``nodes`` maps manifest key -> node id.
+    Resolution is eager because ComfyUI validation belongs at ``image_node``
+    entry [AD-10]: a workflow whose titles no longer resolve must fail before the
+    first shot, not silently paint a prompt onto the wrong node.
+
+    The class-type check survives the switch to titles — it just runs on the
+    *resolved* nodes now, so a ``ytflow:positive_prompt`` title pasted onto a
+    ``LoraLoader`` in the UI still fails loudly.
+    """
     try:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
         raise ValueError(f"cannot load ComfyUI workflow at {path!r}: {exc}") from exc
     if not isinstance(workflow, dict):
         raise ValueError(f"ComfyUI workflow at {path!r} is not an API-format object")
-    for node_id in (POSITIVE_NODE, NEGATIVE_NODE):
-        node = workflow.get(node_id)
-        if not isinstance(node, dict) or node.get("class_type") != "CLIPTextEncode" \
-                or not isinstance(node.get("inputs"), dict):
+    nodes = comfyui_client.resolve_nodes(workflow, (POSITIVE_KEY, NEGATIVE_KEY))
+    for key, node_id in nodes.items():
+        node = workflow[node_id]
+        if node.get("class_type") != "CLIPTextEncode" or not isinstance(node.get("inputs"), dict):
             raise ValueError(
-                f"workflow node {node_id!r} must be a CLIPTextEncode with an 'inputs' dict"
+                f"workflow node {node_id!r} ({key}) must be a CLIPTextEncode with an 'inputs' dict"
             )
-    return workflow
+    return workflow, nodes
 
 
 def _effective_negative_prompt(negative_prompt: str) -> str:
@@ -167,17 +193,24 @@ def _seed_ladder(run_id: str, scene_num: int, shot_id: str) -> list[int]:
     return [_shot_seed(run_id, scene_num, shot_id, a) for a in range(BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS + 1)]
 
 
-def _inject_prompts(template: dict, image_prompt: str, negative_prompt: str, seed: int) -> dict:
-    """Return a deep copy of the workflow with prompts injected into nodes 6/7
-    and ``seed`` into every KSampler node (class_type match, Story 11.1 AC1).
+def _inject_prompts(
+    template: dict, nodes: dict[str, str], image_prompt: str, negative_prompt: str, seed: int,
+) -> dict:
+    """Return a deep copy of the workflow with prompts injected into the nodes
+    ``_load_workflow`` resolved, and ``seed`` into every KSampler node
+    (class_type match, Story 11.1 AC1).
+
+    Titles resolve *interchange* nodes (which prompt is which); class_type drives
+    *uniform* writes (every sampler gets the seed). That split is deliberate —
+    don't convert the KSampler loop to titles.
 
     Pure: never mutates ``template`` so one loaded workflow can be reused per shot.
     Appends ``BG_NEGATIVE_SUFFIX`` to the negative prompt (AC2) unconditionally —
     background-only is the only path left, so every generation gets it.
     """
     workflow = copy.deepcopy(template)
-    workflow[POSITIVE_NODE]["inputs"]["text"] = image_prompt
-    workflow[NEGATIVE_NODE]["inputs"]["text"] = _effective_negative_prompt(negative_prompt)
+    workflow[nodes[POSITIVE_KEY]]["inputs"]["text"] = image_prompt
+    workflow[nodes[NEGATIVE_KEY]]["inputs"]["text"] = _effective_negative_prompt(negative_prompt)
     for node in workflow.values():
         if isinstance(node, dict) and node.get("class_type") == "KSampler":
             node["inputs"]["seed"] = seed
@@ -201,8 +234,67 @@ def _sidecar_path(out_dir: Path, scene_num: int, shot: ShotData) -> Path:
     return out_dir / f"{_shot_base(scene_num, shot)}_done.json"
 
 
+def _env_snapshot_sha256() -> str | None:
+    """sha256 of the committed ComfyUI-Manager snapshot, ``None`` if absent. [AD-10]
+
+    Non-fatal, but never silent: an unreadable snapshot means every render this
+    run records an unpinned environment, which is the exact blind spot AC6 exists
+    to close — so the miss is logged with the path it actually tried.
+    """
+    path = Path(os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd())) / ENV_SNAPSHOT_PATH
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        logger.warning(
+            "ComfyUI env snapshot unreadable at %s, recording null provenance pin: %s", path, exc,
+        )
+        return None
+
+
+def _build_provenance(
+    workflow_path: str, template: dict | None, nodes: dict[str, str] | None, stats: dict | None,
+) -> dict:
+    """What produced this run's renders (Story 13.3 AC7) — computed once per run.
+
+    ``workflow_sha256`` hashes the loaded **template**, before per-shot
+    injection: a hash of the submitted graph would differ for every shot and be
+    useless for comparing two runs.
+
+    Nulls are the honest answer on the paths that never load a workflow or touch
+    ComfyUI (mock mode, stock plates, an unreachable ``/system_stats``). Pure and
+    non-raising: provenance is observability and must never fail the stage.
+
+    ``stats`` is read defensively down to each key. ``/system_stats``' payload
+    differs across ComfyUI versions — which is the reason to record it at all —
+    so an unexpected shape must produce nulls, not an AttributeError that kills
+    the image stage [AD-10].
+    """
+    stats_map = stats if isinstance(stats, dict) else {}
+    system = stats_map.get("system")
+    system = system if isinstance(system, dict) else {}
+    devices = stats_map.get("devices")
+    devices = devices if isinstance(devices, list) else []
+    device = devices[0] if devices and isinstance(devices[0], dict) else {}
+    return {
+        "workflow_path": workflow_path if template is not None else None,
+        "workflow_sha256": hashlib.sha256(
+            json.dumps(template, sort_keys=True).encode("utf-8")
+        ).hexdigest() if template is not None else None,
+        "nodes": nodes,
+        "env_snapshot_sha256": _env_snapshot_sha256(),
+        # Whatever the server returned, read defensively — the key set differs
+        # across ComfyUI versions, which is the reason to record it at all.
+        "comfyui": {
+            "comfyui_version": system.get("comfyui_version"),
+            "pytorch_version": system.get("pytorch_version"),
+            "device": device.get("name"),
+        } if stats else None,
+    }
+
+
 def _write_sidecar(
-    out_dir: Path, scene_num: int, shot: ShotData, seed: int, guard_exhausted: bool = False,
+    out_dir: Path, scene_num: int, shot: ShotData, seed: int, provenance: dict,
+    guard_exhausted: bool = False,
 ) -> None:
     """Completion sentinel, written last after the shot's image file.
 
@@ -216,6 +308,14 @@ def _write_sidecar(
     ``guard_exhausted`` (Story 10.2) marks a frame the guard KNOWS is populated
     and kept anyway. It is deliberately NOT part of the resume equality check:
     sidecars written before this key existed must keep matching.
+
+    ``provenance`` (Story 13.3) is additive for exactly the same reason, and more
+    sharply: it changes whenever ComfyUI is upgraded or the env snapshot is
+    refreshed, so putting it anywhere near ``_existing_complete_shot``'s three
+    compared keys would re-render every cached background on the next upgrade.
+    It is **required**, not defaulted: 11.1's lesson (``seed``) is that a writer
+    path which silently omits a sidecar field is only discovered in a live run,
+    and each of the three paths owes a *different, honest* provenance object.
     """
     _sidecar_path(out_dir, scene_num, shot).write_text(
         json.dumps({
@@ -223,6 +323,7 @@ def _write_sidecar(
             "negative_prompt": _effective_negative_prompt(shot["negative_prompt"]),
             "seed": seed,
             "guard_exhausted": guard_exhausted,
+            "provenance": provenance,
         }),
         encoding="utf-8",
     )
@@ -375,7 +476,23 @@ async def image_node(state: PipelineState) -> dict:
         s = _settings()  # inside try: a config/env failure surfaces as PipelineState.error too
         out_dir = Path(s.workspace_path) / run_id / "images"
         out_dir.mkdir(parents=True, exist_ok=True)
-        template = None if s.comfyui_mock else _load_workflow(s.comfyui_workflow_path)
+        template: dict | None = None
+        prompt_nodes: dict[str, str] | None = None
+        stats: dict | None = None
+        if not s.comfyui_mock:
+            template, prompt_nodes = _load_workflow(s.comfyui_workflow_path)
+            # Once per run, not per shot, and best-effort: a failure records null
+            # and logs rather than failing the stage [AD-10]. Skipped entirely in
+            # mock mode, which never talks to ComfyUI at all.
+            stats = await comfyui_client.get_system_stats(s.comfyui_url)
+        provenance = _build_provenance(s.comfyui_workflow_path, template, prompt_nodes, stats)
+        # A stock plate was rendered by the plate script weeks ago, from another
+        # graph, on another machine. Stamping this run's workflow hash and today's
+        # ComfyUI version onto it would be provenance that actively lies — worse
+        # than absent provenance, which is the whole premise of Epic 13. Only the
+        # env-snapshot pin survives, and only because it is a fact about the
+        # checkout that wrote the sidecar, not a claim about the render.
+        plate_provenance = _build_provenance(s.comfyui_workflow_path, None, None, None)
         total_shots = sum(len(scene["shots"]) for scene in state.get("scenes", []))
 
         async def _recover() -> None:
@@ -518,7 +635,8 @@ async def image_node(state: PipelineState) -> dict:
                             plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
                             dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                             shutil.copyfile(plate["path"], dest)
-                            _write_sidecar(out_dir, scene["scene_num"], shot, seed)
+                            _write_sidecar(out_dir, scene["scene_num"], shot, seed,
+                                           plate_provenance)
                             image_count += 1
                             stock_plate_count += 1
                             logger.info(
@@ -582,7 +700,7 @@ async def image_node(state: PipelineState) -> dict:
                 if s.comfyui_mock:
                     shutil.copyfile(_mock_source(), dest)
                 else:
-                    if template is None:
+                    if template is None or prompt_nodes is None:
                         raise ValueError("workflow must be loaded in real mode")
                     # Story 10.2: bounded regeneration ladder. The first render the
                     # guard does not call populated wins and `seed` is left bound to
@@ -591,7 +709,9 @@ async def image_node(state: PipelineState) -> dict:
                     # populated: keep the last render rather than degrade the run.
                     ladder = seeds[: s.background_person_guard_attempts + 1]
                     for rung, seed in enumerate(ladder):
-                        workflow = _inject_prompts(template, shot["image_prompt"], shot["negative_prompt"], seed)
+                        workflow = _inject_prompts(
+                            template, prompt_nodes, shot["image_prompt"], shot["negative_prompt"], seed,
+                        )
                         try:
                             image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
                         except ComfyUIError:  # AC4: a submit-time crash reuses the same recovery loop
@@ -628,7 +748,8 @@ async def image_node(state: PipelineState) -> dict:
                     dest.write_bytes(image_bytes)
                 generated_count += 1
                 image_count += 1
-                _write_sidecar(out_dir, scene["scene_num"], shot, seed, guard_exhausted=exhausted)
+                _write_sidecar(out_dir, scene["scene_num"], shot, seed, provenance,
+                               guard_exhausted=exhausted)
                 # Copy the shot; set only image_path/depth_map_path — never mutate the
                 # input state. [AD-4]
                 new_shots.append(await _with_depth(shot, str(dest)))

@@ -7,6 +7,9 @@
   },
   "11": {
     "class_type": "LoraLoader",
+    "_meta": {
+      "title": "ytflow:model"
+    },
     "inputs": {
       "lora_name": "darkness_xl_v2.safetensors",
       "strength_model": 0.5,
@@ -24,7 +27,7 @@
   "6": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "ytflow:positive_prompt"
     },
     "inputs": {
       "text": "location plate placeholder",
@@ -37,7 +40,7 @@
   "7": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Negative Prompt"
+      "title": "ytflow:negative_prompt"
     },
     "inputs": {
       "text": "lowres, bad anatomy, worst quality, person, people, human, character",
@@ -49,6 +52,9 @@
   },
   "5": {
     "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "ytflow:latent"
+    },
     "inputs": {
       "width": 1920,
       "height": 1080,
@@ -58,7 +64,7 @@
   "20": {
     "class_type": "LoadImage",
     "_meta": {
-      "title": "Style Anchor Reference (uploaded per-run; seed script batches additional anchors as 20_extra_N / 20_batch_N)"
+      "title": "ytflow:style_anchor"
     },
     "inputs": {
       "image": "placeholder.png"
@@ -85,7 +91,7 @@
   "23": {
     "class_type": "IPAdapterAdvanced",
     "_meta": {
-      "title": "IPAdapter (style transfer only \u2014 anchor must not impose its corridor layout)"
+      "title": "ytflow:ipadapter"
     },
     "inputs": {
       "model": [
@@ -114,6 +120,9 @@
   },
   "3": {
     "class_type": "KSampler",
+    "_meta": {
+      "title": "ytflow:sampler"
+    },
     "inputs": {
       "seed": 0,
       "steps": 30,
@@ -171,7 +180,7 @@
       "control_net_name": "controlnet-scribble-sdxl-1.0.safetensors"
     },
     "_meta": {
-      "title": "Scribble ControlNet (SDXL)"
+      "title": "ytflow:controlnet_loader"
     }
   },
   "31": {
@@ -180,7 +189,7 @@
       "image": "blockout_placeholder.png"
     },
     "_meta": {
-      "title": "Structure hint \u2014 a curated reference photo (default) or the procedural room blockout (fallback); the seed script uploads one per plate"
+      "title": "ytflow:structure_hint"
     }
   },
   "33": {
@@ -194,7 +203,7 @@
       "resolution": 1024
     },
     "_meta": {
-      "title": "scribble_hed \u2014 the only thing the reference photo is allowed to contribute: line structure, never pixels"
+      "title": "ytflow:scribble"
     }
   },
   "32": {
@@ -221,7 +230,7 @@
       "end_percent": 0.7
     },
     "_meta": {
-      "title": "Apply structure hint \u2014 strength 0.9/end 0.7: at 0.55/0.55 the library was still 69% corridors, i.e. a hint the sampler ignored"
+      "title": "ytflow:controlnet_apply"
     }
   }
 }

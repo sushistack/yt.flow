@@ -278,7 +278,8 @@ def leg_state(leg: str, scenes: list[dict]) -> dict:
 
 async def render(leg: str, scenes: list[dict], settings) -> dict:
     """Render every shot of one leg. Returns attempted/succeeded so a thin slate is visible."""
-    template = image._load_workflow(settings.comfyui_workflow_path)
+    # Story 13.3: (workflow, resolved node map); prompts inject by declared title.
+    template, nodes = image._load_workflow(settings.comfyui_workflow_path)
     await comfyui_client.check_health(settings.comfyui_url)
     (HERE / f"ab_{leg}").mkdir(exist_ok=True)
     attempted = succeeded = reused = 0
@@ -291,7 +292,7 @@ async def render(leg: str, scenes: list[dict], settings) -> dict:
             attempted += 1
             t0 = time.perf_counter()
             workflow = image._inject_prompts(
-                template, shot["image_prompt"], shot["negative_prompt"], shot["seed"])
+                template, nodes, shot["image_prompt"], shot["negative_prompt"], shot["seed"])
             try:
                 out.write_bytes(await comfyui_client.submit_and_fetch(
                     settings.comfyui_url, workflow, poll_interval=3.0, max_polls=600))

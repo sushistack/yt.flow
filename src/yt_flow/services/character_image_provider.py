@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-_NEGATIVE_NODE_IDS = {"7", "37_neg"}  # ponytail: well-known negative prompt node IDs
+_POSITIVE_NODE_TITLE = "ytflow:positive_prompt"  # the declared manifest keys (Story 13.3)
+_NEGATIVE_NODE_TITLE = "ytflow:negative_prompt"
 _NEGATIVE_TITLE_KEYWORDS = ("negative", "neg ", "bad")
 
 # The structural-conditioning graph and the title that marks its guide input. A second
@@ -31,9 +32,32 @@ _POSE_GUIDE_WORKFLOW_PATH = "data/workflows/comfyui_character_pose_guide_api.jso
 _GUIDE_NODE_TITLE = "ytflow:guide_image"
 
 
-def _is_negative_node(node_id: str, node: dict) -> bool:
-    title = node.get("_meta", {}).get("title", "").lower()
-    return node_id in _NEGATIVE_NODE_IDS or any(kw in title for kw in _NEGATIVE_TITLE_KEYWORDS)
+def _node_title(node: dict) -> str:
+    """The node's declared ``_meta.title``, or ``""`` for every shape that isn't one.
+
+    Foreign workflows are this module's whole reason to exist, and they carry
+    ``_meta: null`` and non-string titles — both of which crashed the callers
+    below when they reached into ``_meta`` directly. Same posture as
+    ``comfyui_client.resolve_nodes``, which guards these exact two shapes.
+    """
+    meta = node.get("_meta")
+    title = meta.get("title") if isinstance(meta, dict) else None
+    return title if isinstance(title, str) else ""
+
+
+def _is_negative_node(node: dict) -> bool:
+    """The declared manifest title first, the title-keyword heuristic second.
+
+    Story 13.3 deleted the node-ID set this used to consult (``{"7", "37_neg"}``):
+    a renumber that lands a *positive* encoder on ``"7"`` had it misclassified as
+    negative and skipped.
+
+    ponytail: the keyword fallback stays. This provider also runs against foreign
+    workflows and :meth:`_default_workflow`, which carry no manifest, so an
+    exact-match-only rule would silently stop finding the negative encoder there.
+    """
+    title = _node_title(node)
+    return title == _NEGATIVE_NODE_TITLE or any(kw in title.lower() for kw in _NEGATIVE_TITLE_KEYWORDS)
 
 
 def _is_guide_node(node: dict) -> bool:
@@ -44,7 +68,7 @@ def _is_guide_node(node: dict) -> bool:
     the guide (and the t2i fallback would delete the guide out from under an
     otherwise-live ControlNet link).
     """
-    return node.get("_meta", {}).get("title") == _GUIDE_NODE_TITLE
+    return _node_title(node) == _GUIDE_NODE_TITLE
 
 
 def _drop_reference_only_nodes(workflow: dict) -> None:
@@ -342,14 +366,24 @@ class ComfyUICharacterProvider(CharacterImageProvider):
     def _inject_prompt(self, workflow: dict, prompt: str) -> dict:
         """Inject the generation prompt into the positive CLIP text encoder node.
 
-        Only modifies the positive prompt node (typically node "6" in SDXL).
-        Never touches the negative prompt node (typically node "7").
+        The declared ``ytflow:positive_prompt`` title wins when the graph carries
+        one — the mirror of :func:`_is_negative_node`, and for the same reason.
+        The old id set excluded node ``"7"`` *even untitled*, so with it deleted a
+        manifest-less foreign workflow whose untitled negative encoder comes first
+        in file order would take the positive prompt straight into the negative.
+        Never touches a node :func:`_is_negative_node` claims.
         """
-        for node_id, node in workflow.items():
-            if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode":
-                if not _is_negative_node(node_id, node) and "text" in node.get("inputs", {}):
-                    node["inputs"]["text"] = prompt
-                    break
+        encoders = [
+            node for node in workflow.values()
+            if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+            and "text" in (node.get("inputs") or {})
+        ]
+        target = next(
+            (n for n in encoders if _node_title(n) == _POSITIVE_NODE_TITLE),
+            next((n for n in encoders if not _is_negative_node(n)), None),
+        )
+        if target is not None:
+            target["inputs"]["text"] = prompt
         return workflow
 
     @staticmethod
@@ -369,7 +403,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         for node_id, node in workflow.items():
             if not isinstance(node, dict) or node.get("class_type") != "CLIPTextEncode":
                 continue
-            if not _is_negative_node(node_id, node):
+            if not _is_negative_node(node):
                 continue
             inputs = node.get("inputs")
             if not isinstance(inputs, dict) or "text" not in inputs:
@@ -520,12 +554,19 @@ class ComfyUICharacterProvider(CharacterImageProvider):
                 "class_type": "EmptyLatentImage",
                 "inputs": {"width": 832, "height": 1216, "batch_size": 1},
             },
+            # Titled, unlike the rest of this graph: node "7" used to be found as
+            # the negative encoder by its *id*, and Story 13.3 deleted that route.
+            # Its text ("bad quality...") is not a title, so the keyword fallback
+            # would not have caught it and the negative suffix would have been
+            # dropped with only a log line to show for it.
             "6": {
                 "class_type": "CLIPTextEncode",
+                "_meta": {"title": "ytflow:positive_prompt"},
                 "inputs": {"text": "prompt placeholder", "clip": ["4", 1]},
             },
             "7": {
                 "class_type": "CLIPTextEncode",
+                "_meta": {"title": _NEGATIVE_NODE_TITLE},
                 "inputs": {"text": "bad quality, blurry", "clip": ["4", 1]},
             },
             "8": {

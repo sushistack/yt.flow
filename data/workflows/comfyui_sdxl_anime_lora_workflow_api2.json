@@ -17,7 +17,7 @@
   },
   "6": {
     "class_type": "CLIPTextEncode",
-    "_meta": {"title": "Positive Prompt"},
+    "_meta": {"title": "ytflow:positive_prompt"},
     "inputs": {
       "text": "masterpiece, best quality",
       "clip": ["11", 1]
@@ -25,7 +25,7 @@
   },
   "7": {
     "class_type": "CLIPTextEncode",
-    "_meta": {"title": "Negative Prompt"},
+    "_meta": {"title": "ytflow:negative_prompt"},
     "inputs": {
       "text": "lowres, bad anatomy, worst quality",
       "clip": ["11", 1]

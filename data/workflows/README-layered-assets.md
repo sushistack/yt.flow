@@ -151,6 +151,19 @@ nodes — hence the explicit `YTFLOW_COMFYUI_CHARACTER_NODE=13` below.
 
 ## `.env` variables
 
+**This recipe no longer runs (Story 13.3).** `image_node._load_workflow` now
+resolves its two prompt nodes by exact `_meta.title` (`ytflow:positive_prompt` /
+`ytflow:negative_prompt`) and raises when a key does not resolve — there is
+deliberately no node-id fallback. The layered workflows below carry no `ytflow:`
+titles and are **not** being retitled: Story 8.3 retired layered generation, and
+`comfyui_sdxl_anime_lora_layered_inspyrenet_api.json` is kept precisely as the
+un-retitled substring trap (`"Negative Prompt"` vs `"Background Inpaint Negative
+Prompt (entity exclusion)"`) that `tests/services/test_comfyui_client.py` asserts
+exact matching against. So pointing `YTFLOW_COMFYUI_WORKFLOW_PATH` at either file
+fails at load, before the first shot, with the missing key and the titles present.
+Reviving the path means adding the two titles at that time — the rest of this
+document stays as the InSPyReNet reference it is.
+
 ```
 YTFLOW_COMFYUI_LAYERED=true
 YTFLOW_COMFYUI_WORKFLOW_PATH=data/workflows/comfyui_sdxl_anime_lora_layered_inspyrenet_api.json

@@ -45,6 +45,16 @@ only accepts the unified loader's combined pipeline dict, while
 `IPAdapterAdvanced` has direct optional `ipadapter`/`clip_vision` inputs (see
 the node pack's `NODES.md`).
 
+## Manifest titles (Story 13.3)
+
+Nodes `"6"` and `"7"` carry `_meta.title` = `ytflow:positive_prompt` /
+`ytflow:negative_prompt` (they used to read `Positive Prompt` / `Negative
+Prompt`). `character_image_provider._is_negative_node` prefers that exact title
+and only then falls back to its title-keyword heuristic — the fallback stays
+because this provider also has to cope with foreign workflows and
+`_default_workflow()`, neither of which is manifest-bearing. Everything else in
+this provider is `class_type`-scanned and unaffected.
+
 ## Reference image injection — upload, not base64
 
 `ComfyUICharacterProvider._inject_reference_image` (Story 1.12) used to set

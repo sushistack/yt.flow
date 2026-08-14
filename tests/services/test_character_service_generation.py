@@ -990,6 +990,81 @@ class TestReferenceImageInjectionAndFallback:
         assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
         assert updated["7"]["inputs"]["text"] == original_negative
 
+    # ── Story 13.3: negative node by manifest title, not by node id ───────────
+
+    def test_negative_node_is_found_by_manifest_title_after_a_renumber(self):
+        """The `{"7", "37_neg"}` id set is gone. A renumber that lands a POSITIVE
+        encoder on "7" used to have it misclassified as negative and skipped."""
+        from yt_flow.services.character_image_provider import _is_negative_node
+
+        positive_on_7 = {"class_type": "CLIPTextEncode",
+                         "_meta": {"title": "ytflow:positive_prompt"}, "inputs": {"text": "p"}}
+        negative_on_99 = {"class_type": "CLIPTextEncode",
+                          "_meta": {"title": "ytflow:negative_prompt"}, "inputs": {"text": "n"}}
+        assert not _is_negative_node(positive_on_7)
+        assert _is_negative_node(negative_on_99)
+
+    def test_keyword_fallback_survives_for_manifestless_workflows(self):
+        """AC5 keeps the heuristic: foreign graphs carry no `ytflow:` titles."""
+        from yt_flow.services.character_image_provider import _is_negative_node
+
+        assert _is_negative_node({"_meta": {"title": "Negative Prompt"}})
+        assert _is_negative_node({"_meta": {"title": "BAD quality terms"}})
+        assert not _is_negative_node({"_meta": {"title": "Positive Prompt"}})
+        assert not _is_negative_node({})
+
+    @pytest.mark.parametrize("first_negative", [
+        {"class_type": "CLIPTextEncode", "inputs": {"text": "bad quality, blurry"}},   # untitled
+        {"class_type": "CLIPTextEncode", "_meta": {"title": "Negative Prompt"},
+         "inputs": {"text": "bad quality, blurry"}},
+    ])
+    def test_a_declared_positive_title_outranks_file_order(self, first_negative):
+        """The hole deleting the id set opened, and the mirror of the negative rule.
+
+        `_inject_prompt` writes the first CLIPTextEncode `_is_negative_node` does not
+        claim, and the old id set excluded node "7" *even when untitled* — so with it
+        gone, a graph whose untitled negative encoder comes first in file order took
+        the positive prompt straight into the negative. The declared title fixes it
+        for every graph this provider actually loads (the shipped multi-angle file
+        and `_default_workflow` both declare it).
+
+        A wholly manifest-less foreign graph still falls back to the scan: AC5 keeps
+        that fallback on purpose and forbids reintroducing an id to backstop it.
+        """
+        workflow = {
+            "7": first_negative,
+            "6": {"class_type": "CLIPTextEncode", "_meta": {"title": "ytflow:positive_prompt"},
+                  "inputs": {"text": "placeholder"}},
+        }
+        updated = ComfyUICharacterProvider(Settings())._inject_prompt(workflow, "a bare-faced guard")
+
+        assert updated["7"]["inputs"]["text"] == "bad quality, blurry"
+        assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
+
+    @pytest.mark.parametrize("node", [
+        {"_meta": None},
+        {"_meta": {"title": None}},
+        {"_meta": {"title": 7}},
+        {"_meta": []},
+    ])
+    def test_title_reading_survives_the_shapes_foreign_workflows_actually_carry(self, node):
+        """`resolve_nodes` guards these two shapes; the provider's own title reads
+        raised AttributeError on them — and coping with foreign workflows is this
+        function's entire remaining job."""
+        from yt_flow.services.character_image_provider import _is_guide_node, _is_negative_node
+
+        assert _is_negative_node(node) is False
+        assert _is_guide_node(node) is False
+
+    def test_default_workflow_still_takes_a_negative_suffix(self):
+        """`_default_workflow`'s node "7" was found by id and has no descriptive
+        title, so it is now manifest-titled — otherwise deleting the id set would
+        have dropped every negative suffix on that path with only a log line."""
+        workflow = ComfyUICharacterProvider._default_workflow()
+        updated = ComfyUICharacterProvider._inject_negative_suffix(workflow, "skull mask")
+        assert updated["7"]["inputs"]["text"] == "bad quality, blurry, skull mask"
+        assert updated["6"]["inputs"]["text"] == "prompt placeholder"
+
     # ── Story 10.5: structural conditioning ──────────────────────────────────
     # Live basis (`_bmad-output/implementation-artifacts/10-5-live-validation/README.md`):
     # shared seed triple 1061/1062/1063, everything but the named variable held. The

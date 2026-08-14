@@ -12,7 +12,11 @@ built and injected by the services layer via video.py's
 ``inject_relight_resolver`` seam (same pattern as Story 8.3's cast resolver
 and Story 8.5's location service).
 
-Layer rule: domain and config only; no db/, api/, services/. [AD-1]
+Layer rule: domain and config only; no db/, api/, services/. [AD-1] Story 13.3's
+title resolver lives in ``services.comfyui_client``, so it arrives the same way
+everything else from that module does — through the injected client, as
+``comfyui_client.resolve_nodes`` — rather than as an import this layer may not
+make.
 """
 
 import asyncio
@@ -178,12 +182,17 @@ def build_light_wrap(
 
 # ── Tier 3: IC-Light re-lighting with pre-computed caching ─────────────────
 
-CARD_IMAGE_NODE = "1"
-BACKGROUND_IMAGE_NODE = "2"
+# Story 13.3: manifest keys resolved by exact ``_meta.title``, never node ids.
+CARD_IMAGE_KEY = "ytflow:card_image"
+BACKGROUND_IMAGE_KEY = "ytflow:background_image"
 # Nodes whose canvas must match the card, so a non-832x1216 sprite is not
-# center-cropped to the graph's hardcoded aspect (Story 10.1b review).
-GREY_MATTE_NODE = "20"
-LIGHT_SOURCE_NODE = "22"
+# center-cropped to the graph's hardcoded aspect (Story 10.1b review). These two
+# were the worse half of the id coupling: they were looked up through
+# ``workflow.get()`` behind an isinstance guard, so a renumber dropped card-size
+# conditioning *silently*, with no exception anywhere.
+GREY_MATTE_KEY = "ytflow:grey_matte"
+LIGHT_SOURCE_KEY = "ytflow:light_source"
+ICLIGHT_NODE_KEYS = (CARD_IMAGE_KEY, BACKGROUND_IMAGE_KEY, GREY_MATTE_KEY, LIGHT_SOURCE_KEY)
 
 _RELIGHT_CONCURRENCY = 3  # ponytail: fixed cap, matches Story 5.10-era ComfyUI concurrency norms
 # Story 13.1: the per-pair skip/failure samples returned to video_node land in the
@@ -340,13 +349,22 @@ def _verified_location_asset(asset_service: Any, location_key: str) -> bool:
     return False
 
 
-def _load_iclight_workflow(path: str) -> dict:
-    """Load and validate the IC-Light API-format workflow's two image inputs.
+def _load_iclight_workflow(path: str, resolve_nodes: Any) -> tuple[dict, dict[str, str]]:
+    """Load the IC-Light workflow and resolve the four nodes this module writes.
 
-    Only validates the LoadImage interchange nodes this module writes to —
-    the internal IC-Light conditioning graph is opaque here (same posture as
-    image.py's ``_load_workflow``, which only validates its own CLIPTextEncode
-    interchange nodes).
+    ``resolve_nodes`` is ``comfyui_client.resolve_nodes``, passed in rather than
+    imported: this module may not import ``services/`` [AD-1], and the ComfyUI
+    client is already a duck-typed injection here.
+
+    Returns ``(workflow, nodes)`` mapping manifest key -> node id. Only the
+    interchange nodes are validated — the internal IC-Light conditioning graph is
+    opaque here (same posture as image.py's ``_load_workflow``).
+
+    Story 13.3: resolution is by exact ``_meta.title``, and the two canvas nodes
+    are resolved *eagerly* alongside the two LoadImages, so a graph that no
+    longer declares them raises here instead of quietly relighting a card at the
+    wrong aspect. A raise is still a non-fatal cache miss — ``relight_sprite``
+    catches it — but it is a logged one.
     """
     try:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -354,16 +372,35 @@ def _load_iclight_workflow(path: str) -> dict:
         raise ValueError(f"cannot load IC-Light workflow at {path!r}: {exc}") from exc
     if not isinstance(workflow, dict):
         raise ValueError(f"IC-Light workflow at {path!r} is not an API-format object")
-    for node_id in (CARD_IMAGE_NODE, BACKGROUND_IMAGE_NODE):
-        node = workflow.get(node_id)
-        if not isinstance(node, dict) or node.get("class_type") != "LoadImage":
-            raise ValueError(f"IC-Light workflow node {node_id!r} must be a LoadImage node")
+    nodes = resolve_nodes(workflow, ICLIGHT_NODE_KEYS)
+    for key in ICLIGHT_NODE_KEYS:
+        # ``class_type`` first, for all four: ``_inject_relight_inputs`` rebuilds
+        # the graph filtered to entries that HAVE one, so a titled dict without it
+        # passes load and then raises KeyError at inject — which the caller's
+        # blanket except turns back into a silent cache miss. Same for a non-dict
+        # ``inputs``, which used to surface as AttributeError instead of this
+        # named error.
+        node = workflow[nodes[key]]
+        if "class_type" not in node or not isinstance(node.get("inputs"), dict):
+            raise ValueError(
+                f"IC-Light workflow node {nodes[key]!r} ({key}) must be a node with a "
+                "'class_type' and an 'inputs' dict"
+            )
+    for key in (CARD_IMAGE_KEY, BACKGROUND_IMAGE_KEY):
+        if workflow[nodes[key]].get("class_type") != "LoadImage":
+            raise ValueError(f"IC-Light workflow node {nodes[key]!r} ({key}) must be a LoadImage node")
+    for key in (GREY_MATTE_KEY, LIGHT_SOURCE_KEY):
+        if not {"width", "height"} <= workflow[nodes[key]]["inputs"].keys():
+            raise ValueError(
+                f"IC-Light workflow node {nodes[key]!r} ({key}) must take width/height — "
+                "the card canvas cannot be sized to the sprite otherwise"
+            )
     if workflow.get("ytflow_verified_iclight") is not True:
         raise ValueError(
             "IC-Light workflow is not marked ytflow_verified_iclight=true; "
             "placeholder workflows are treated as non-fatal cache misses"
         )
-    return workflow
+    return workflow, nodes
 
 
 def _upload_name(path: Path) -> str:
@@ -383,6 +420,7 @@ def _upload_name(path: Path) -> str:
 
 def _inject_relight_inputs(
     template: dict,
+    nodes: dict[str, str],
     card_image_name: str,
     background_image_name: str,
     card_size: tuple[int, int] | None = None,
@@ -405,15 +443,16 @@ def _inject_relight_inputs(
     cached and auto-approved (Story 10.1b review, HIGH).
     """
     workflow = {k: copy.deepcopy(v) for k, v in template.items() if isinstance(v, dict) and "class_type" in v}
-    workflow[CARD_IMAGE_NODE]["inputs"]["image"] = card_image_name
-    workflow[BACKGROUND_IMAGE_NODE]["inputs"]["image"] = background_image_name
+    workflow[nodes[CARD_IMAGE_KEY]]["inputs"]["image"] = card_image_name
+    workflow[nodes[BACKGROUND_IMAGE_KEY]]["inputs"]["image"] = background_image_name
     if card_size:
         width, height = card_size
-        for node_id in (GREY_MATTE_NODE, LIGHT_SOURCE_NODE):
-            node = workflow.get(node_id)
-            if isinstance(node, dict) and {"width", "height"} <= node.get("inputs", {}).keys():
-                node["inputs"]["width"] = width
-                node["inputs"]["height"] = height
+        # No `.get()` + isinstance guard any more: ``_load_iclight_workflow``
+        # already proved both nodes exist and take width/height, so a miss here
+        # would be a bug worth a KeyError rather than a silent skip.
+        for key in (GREY_MATTE_KEY, LIGHT_SOURCE_KEY):
+            workflow[nodes[key]]["inputs"]["width"] = width
+            workflow[nodes[key]]["inputs"]["height"] = height
     return workflow
 
 
@@ -433,13 +472,13 @@ async def relight_sprite(
     layer per AD-1.
     """
     try:
-        template = _load_iclight_workflow(workflow_path)
+        template, nodes = _load_iclight_workflow(workflow_path, comfyui_client.resolve_nodes)
         card_bytes = card_path.read_bytes()
         card_name = await comfyui_client.upload_image(comfyui_url, card_bytes, _upload_name(card_path))
         bg_name = await comfyui_client.upload_image(
             comfyui_url, background_path.read_bytes(), _upload_name(background_path)
         )
-        workflow = _inject_relight_inputs(template, card_name, bg_name, dimensions(card_bytes))
+        workflow = _inject_relight_inputs(template, nodes, card_name, bg_name, dimensions(card_bytes))
         return await comfyui_client.submit_and_fetch(comfyui_url, workflow)
     except Exception as exc:  # noqa: BLE001 — AC:11: IC-Light failure is always non-fatal
         logger.warning("IC-Light relight failed for %s over %s: %s", card_path, background_path, exc)

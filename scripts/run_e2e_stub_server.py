@@ -108,6 +108,11 @@ def apply_stub_profile() -> None:
     tts._synthesize = fakes.fake_synthesize
     comfyui_client.submit_and_fetch = _delayed_submit_and_fetch
     comfyui_client.submit_and_fetch_outputs = _delayed_submit_and_fetch_outputs
+    comfyui_client.check_health = fakes.fake_check_health
+    # Story 13.3: image_node awaits this once per run in real mode, before any
+    # resume decision — an unpatched provenance probe is a real socket out of a
+    # process whose entire contract is zero real calls, and it fails silently.
+    comfyui_client.get_system_stats = fakes.fake_get_system_stats
     video._run_ffmpeg = fakes.fake_run_ffmpeg
     image_search.DuckDuckGoImageSearch.search = fakes.fake_image_search
     character_service.CharacterService._download_reference_image = fakes.fake_download_reference_image

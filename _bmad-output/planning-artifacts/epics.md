@@ -1798,6 +1798,26 @@ AD-10은 "조용한 강등 금지"를 요구하지만 실제로는 여러 경로
 
 리서치 Phase 2 #13. 현재 프롬프트 주입이 워크플로우 JSON의 **노드 ID 문자열 `"6"`/`"7"`에 하드코딩**돼 있다(PRD OQ-2가 그렇게 확정했고 `image.py _inject_prompts`가 그대로 구현) — 워크플로우를 편집해 노드가 재번호되면 조용히 엉뚱한 노드에 주입되거나 실패한다. 수정: **타이틀 기반 파라미터 매니페스트**(노드 `_meta.title`로 조회, ID 무관). 함께: ComfyUI-Manager 스냅샷 + 코어 버전을 git에 핀(현재 커스텀 노드 버전이 어디에도 기록 없음 — 8.7의 IC-Light 노드 부재 판단이 뒤집힌 것도 이 관측성 부재의 증상), **렌더 provenance**(워크플로우 해시/파라미터/시드/torch·ROCm 버전을 사이드카에 기록 — 11.1이 seed를 사이드카에 넣은 것의 확장). 8.6 매니페스트 체계와 동일 철학. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
+**CLOSED done 2026-08-14 (적대적 리뷰 완료 — 발견 17건 전부 수정, baseline c2f6b2f)** — `13-3-comfyui-workflow-ops-hardening.md`.
+
+① **리졸버.** `comfyui_client.resolve_nodes(workflow, keys)` — `_meta.title` **정확일치**(부분일치 아님), 매니페스트 키 → 노드 ID. **ID 폴백은 의도적으로 없다**: 조용한 오주입이 이 스토리가 제거하는 결함이므로, 미해결 키는 *존재하는 타이틀 전체 목록과 함께* `ValueError`(UI에서 이름을 바꾼 운영자가 코드를 읽지 않고 고칠 수 있어야 한다), 중복 타이틀도 `ValueError`(모호성은 동전던지기가 아니라 결함). 부분일치가 왜 틀린지는 실물이 증명한다 — `layered_inspyrenet`에 `"Negative Prompt"`와 `"Background Inpaint Negative Prompt (entity exclusion)"`이 공존한다.
+
+② **커플링 제거 범위.** image.py `"6"/"7"` → `ytflow:positive_prompt/negative_prompt`(로드 시 1회 즉시 해결, class_type 검사는 *해결된* 노드로 이동해 LoraLoader에 타이틀을 붙여넣어도 크게 실패). composite_harmonization 4개 — 스토리 원안의 2개가 아니라 **4개**였다: `GREY_MATTE`(20)/`LIGHT_SOURCE`(22)는 `workflow.get()`+isinstance 가드를 통과해 재번호 시 **예외 없이 카드 크기 조건화만 사라지는** 최악 경로였고, 이제 로드 시 함께 즉시 해결·검증된다. seed_location_plates 11개 — 링크 재배선 3곳(`[BLOCKOUT,0]`, t2i-fallback의 model/positive/negative) 포함. character_image_provider `_NEGATIVE_NODE_IDS = {"7","37_neg"}` 삭제 — 매니페스트 타이틀 우선 + **키워드 폴백 유지**(외부 워크플로와 `_default_workflow()`는 매니페스트를 갖지 않는다). 단 `_default_workflow()`의 노드 `"7"`은 *타이틀이 아예 없어* 폴백도 못 잡았으므로 매니페스트 타이틀을 부여했다 — 안 했으면 그 경로의 negative suffix가 로그 한 줄만 남기고 조용히 사라졌다.
+
+③ **AD-1 충돌 1건, 스토리 전제와 다르게 해결.** 스토리는 "모든 호출자가 이미 comfyui_client를 import한다"고 적었으나 `composite_harmonization.py`는 **아니다** — `tests/domain/test_state_imports.py`가 pipeline→services import를 실제로 강제하고 그 legacy 허용목록은 "must not grow"다. 리졸버는 이미 주입되고 있는 duck-typed 클라이언트를 통해 전달된다(`_load_iclight_workflow(path, resolve_nodes)`). 허용목록은 자라지 않았고 새 파일도 없다.
+
+④ **provenance(AC7).** `_done.json`에 `workflow_path` / `workflow_sha256`(**주입 전 템플릿**의 canonical 해시 — 제출 그래프 해시는 샷마다 달라 비교 불가) / `nodes`(해결된 맵) / `env_snapshot_sha256` / `comfyui`(버전·torch·device). `get_system_stats`는 `check_health`(`-> None`, 테스트 페이크 ~15개 의존)를 건드리지 않는 별도 함수, **런당 1회**, 실패는 null+로그로 스테이지를 절대 죽이지 않는다[AD-10]. mock/stock 경로는 워크플로를 로드하지 않으므로 null이 정직한 답. **AC8**: `_existing_complete_shot`의 비교 3키는 불변이며, provenance가 다른 사이드카가 여전히 캐시 히트임을 회귀 테스트로 고정했다(ComfyUI 업그레이드마다 155샷 재렌더를 막는 유일한 그물).
+
+⑤ **환경 핀(AC6) — 실제로 캡처했다.** 스토리의 "이 머신엔 ComfyUI 없음, 연기 가능"은 **거짓**이었다. `data/comfyui/env-snapshot.json`은 이 호스트에서 실캡처(`./venv/bin/python custom_nodes/ComfyUI-Manager/cm-cli.py save-snapshot --output <repo>/data/comfyui/env-snapshot.json --full-snapshot` — CLI는 ComfyUI 자체 venv의 typer가 필요하다): ComfyUI 코어 `f350a84`, 커스텀노드 9종(git 7 + registry 2), pip 179종. `data/comfyui/README.md`에 갱신 명령·갱신 시점·provenance 연결·복원 미자동화 이유 기록.
+
+⑥ **라이브 게이트 통과.** 동일 시드 3렌더, 전부 출하 코드 경로(`_load_workflow` → `_inject_prompts` → `submit_and_fetch`): 프롬프트 A(corridor) vs B(autopsy) **RMS 72.78**(주입이 샘플러에 도달), A vs **전 노드 ID +700 재번호 그래프** C **RMS 0.00 — 픽셀 동일**. 위치 비의존성을 논증이 아니라 측정으로 확정했다. 산출물: `13-3-live-validation/`(판정 그리드 + provenance.json + 재산출 2스크립트).
+
+⑦ **데이터 테스트.** `test_workflow_definitions.py`에 소비자별 키 표를 추가 — 커밋된 JSON이 *그 소비자가 실제로 조회하는 키*를 해결하는지 단정한다. ComfyUI UI 재익스포트를 잡는 유일한 그물이며, 키 목록은 소비자 모듈에서 직접 읽어 표가 코드와 어긋날 수 없다.
+
+⑧ **알려진 잔여 1건.** `_bmad-output/implementation-artifacts/10-2·10-4·10-4b-live-validation/`의 probe 스크립트 5개가 옛 `_load_workflow`/`_inject_prompts` 시그니처를 고정하고 있어 그대로는 재실행되지 않는다. 날짜가 박힌 실행 기록이라 의도적으로 손대지 않았다 — 재실행이 필요하면 반환 튜플과 `nodes` 인자만 맞추면 된다.
+
+검증: **2813 passed / 1 skipped**(신규 31건, 기준선 2782/1), `ruff check src/ scripts/ tests/` clean. 프론트 무변경.
+
 ### Story 13.4: A/B 승격 게이트 해제 — 품질튜닝 국면 진입
 
 2026-08-03 DEV MODE 전환(품질 게이팅 OFF, `PROMPT_POLICY.md` 배너)의 되돌림 스토리. 파이프라인이 완성되고 품질튜닝 국면에 들어갈 때: `PROMPT_POLICY.md` Rules 3/4의 SUSPENDED 해제, 6.12의 `YTFLOW_ALLOW_AB_GATE` 동결 해제, 6.10 median 게이트로 보류 후보 재평가, 13.2의 시각 축을 게이트에 포함. 6.12와 이 스토리의 관계: 6.12는 "동결한다", 13.4는 "해제한다" — 별개 스토리로 두는 이유는 해제 조건 판단(파이프라인 완성 정의)이 별도 의사결정이기 때문. **착수 조건**: Epic 8/11의 GPU 스토리가 닫히고 E2E 산출물이 Jay 기준을 통과한 뒤. (draft — 상세 스토리 파일은 create-story로 별도 생성)

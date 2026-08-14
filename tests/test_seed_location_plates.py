@@ -11,6 +11,7 @@ import importlib.util
 import io
 import json
 import struct
+from pathlib import Path
 
 import pytest
 from sqlmodel import Session, select
@@ -21,8 +22,20 @@ from yt_flow.db.models import LocationPlate
 from yt_flow.services.comfyui_client import ComfyUIError
 
 
+# Anchor on this file, never on the CWD: pytest is run from worktrees and from
+# the repo root alike, and `Settings().location_plate_workflow_path` is a
+# repo-relative default. `tests/test_workflow_definitions.py` anchors the same way.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _plate_workflow_path() -> str:
+    return str(_REPO_ROOT / Settings().location_plate_workflow_path)
+
+
 def _load_script():
-    spec = importlib.util.spec_from_file_location("seed_location_plates", "scripts/seed_location_plates.py")
+    spec = importlib.util.spec_from_file_location(
+        "seed_location_plates", _REPO_ROOT / "scripts" / "seed_location_plates.py",
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -120,6 +133,12 @@ def _reachable(workflow: dict, node_id: str, socket: str) -> set[str]:
     return seen
 
 
+def _nodes(module) -> dict[str, str]:
+    """manifest key -> node id, resolved from the shipped plate workflow the way
+    the script itself resolves it (Story 13.3 — ids are no longer constants)."""
+    return module._load_workflow(_plate_workflow_path())[1]
+
+
 def _rows() -> list[LocationPlate]:
     with Session(db._engine) as session:
         return list(session.exec(select(LocationPlate)).all())
@@ -207,6 +226,7 @@ def test_plate_seed_is_salt_sensitive_and_collision_free():
 
 def test_reroll_produces_a_different_image_and_records_a_reproducible_salt(tmp_path, monkeypatch):
     seed = _load_script()
+    nodes = _nodes(seed)
     assets, _ = _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
     argv = ["--key", "corridor", "--variant", "a"]
@@ -215,7 +235,7 @@ def test_reroll_produces_a_different_image_and_records_a_reproducible_salt(tmp_p
     assert _run(seed, [*argv, "--reroll"]) == 0
     assert _run(seed, [*argv, "--reroll"]) == 0
 
-    seeds = [call[seed.SAMPLER_NODE]["inputs"]["seed"] for call in calls]
+    seeds = [call[nodes[seed.SAMPLER_KEY]]["inputs"]["seed"] for call in calls]
     assert len(set(seeds)) == 3, "a bare --reroll must draw a fresh salt every invocation"
 
     source = json.loads((assets / "manifest.json").read_text())["assets"]["corridor/a"]["source"]
@@ -224,7 +244,7 @@ def test_reroll_produces_a_different_image_and_records_a_reproducible_salt(tmp_p
 
     # The recorded salt is what makes a re-rolled keeper reproducible.
     assert _run(seed, [*argv, "--reroll", source["reroll_salt"]]) == 0
-    assert calls[-1][seed.SAMPLER_NODE]["inputs"]["seed"] == seeds[-1]
+    assert calls[-1][nodes[seed.SAMPLER_KEY]]["inputs"]["seed"] == seeds[-1]
 
 
 # ── Render bucket + upscale ──────────────────────────────────────────────────
@@ -239,12 +259,13 @@ def test_upscale_to_contract_yields_exactly_1920x1080(tmp_path):
 
 def test_plate_renders_at_the_native_bucket_and_is_saved_at_the_contract(tmp_path, monkeypatch):
     seed = _load_script()
+    nodes = _nodes(seed)
     assets, _ = _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
 
     assert _run(seed, ["--key", "corridor", "--variant", "a"]) == 0
 
-    latent = calls[0][seed.LATENT_NODE]["inputs"]
+    latent = calls[0][nodes[seed.LATENT_KEY]]["inputs"]
     assert (latent["width"], latent["height"]) == (seed.PLATE_RENDER_WIDTH, seed.PLATE_RENDER_HEIGHT)
     assert _dimensions(assets / "locations" / "corridor" / "a.png") == (1920, 1080)
 
@@ -341,6 +362,7 @@ def test_an_exhausted_recovery_window_aborts_and_names_the_remaining_plates(tmp_
 
 def test_a_curated_reference_is_used_as_the_controlnet_hint(tmp_path, monkeypatch):
     seed = _load_script()
+    nodes = _nodes(seed)
     _env(tmp_path, monkeypatch)
     uploads: list[tuple[str, bytes]] = []
     calls = _fake_comfy(monkeypatch, seed, uploads=uploads)
@@ -349,30 +371,31 @@ def test_a_curated_reference_is_used_as_the_controlnet_hint(tmp_path, monkeypatc
     assert _run(seed, ["--key", "autopsy-room", "--variant", "a"]) == 0
 
     workflow = calls[0]
-    assert workflow[seed.BLOCKOUT_NODE]["inputs"]["image"] == "locref_autopsy-room_a.png"
+    assert workflow[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"] == "locref_autopsy-room_a.png"
     # The photo is preprocessed into line structure before it reaches the ControlNet.
-    assert workflow[seed.SCRIBBLE_NODE]["inputs"]["image"] == [seed.BLOCKOUT_NODE, 0]
-    assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["image"] == [seed.SCRIBBLE_NODE, 0]
+    assert workflow[nodes[seed.SCRIBBLE_KEY]]["inputs"]["image"] == [nodes[seed.BLOCKOUT_KEY], 0]
+    assert workflow[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["image"] == [nodes[seed.SCRIBBLE_KEY], 0]
     assert ("locref_autopsy-room_a.png", ref.read_bytes()) in uploads
 
 
 def test_a_plate_without_a_reference_falls_back_to_the_procedural_blockout(tmp_path, monkeypatch):
     seed = _load_script()
+    nodes = _nodes(seed)
     _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
     # No reference at all for this key — only then is the empty blockout the best hint.
     assert _run(seed, ["--key", "corridor"]) == 0
 
-    by_variant = {call[seed.BLOCKOUT_NODE]["inputs"]["image"]: call for call in calls}
+    by_variant = {call[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"]: call for call in calls}
     assert set(by_variant) == {
         "blockout_corridor_a.png", "blockout_corridor_b.png", "blockout_corridor_c.png",
     }
     # The blockout is already line art; passing it through scribble_hed would return each
     # stroke as a pair of thin parallel ones, so the fallback path drops the preprocessor.
     for workflow in by_variant.values():
-        assert seed.SCRIBBLE_NODE not in workflow
-        assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["image"] == [seed.BLOCKOUT_NODE, 0]
-        assert workflow[seed.CONTROLNET_APPLY_NODE]["inputs"]["strength"] == seed.BLOCKOUT_STRENGTH
+        assert nodes[seed.SCRIBBLE_KEY] not in workflow
+        assert workflow[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["image"] == [nodes[seed.BLOCKOUT_KEY], 0]
+        assert workflow[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["strength"] == seed.BLOCKOUT_STRENGTH
 
 
 def test_a_variant_without_its_own_reference_borrows_a_sibling_not_the_blockout(tmp_path, monkeypatch):
@@ -380,6 +403,7 @@ def test_a_variant_without_its_own_reference_borrows_a_sibling_not_the_blockout(
     variant `a` with furniture and `b`/`c` as bare boxes. Another photo of the right room
     beats an empty box: the seed and the variant's camera wording still differ."""
     seed = _load_script()
+    nodes = _nodes(seed)
     _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
     _write_ref(tmp_path, "corridor", "a")  # only variant a is curated
@@ -389,11 +413,11 @@ def test_a_variant_without_its_own_reference_borrows_a_sibling_not_the_blockout(
     # The upload is named per plate, not per source file, so the tell is which path ran:
     # every variant went through the photo path (preprocessor present, full strength) and
     # none fell back to the blockout.
-    used = {call[seed.BLOCKOUT_NODE]["inputs"]["image"] for call in calls}
+    used = {call[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"] for call in calls}
     assert used == {"locref_corridor_a.png", "locref_corridor_b.png", "locref_corridor_c.png"}
     for call in calls:
-        assert seed.SCRIBBLE_NODE in call
-        assert call[seed.CONTROLNET_APPLY_NODE]["inputs"]["strength"] != seed.BLOCKOUT_STRENGTH
+        assert nodes[seed.SCRIBBLE_KEY] in call
+        assert call[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["strength"] != seed.BLOCKOUT_STRENGTH
 
 
 def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monkeypatch):
@@ -402,6 +426,7 @@ def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monke
     photo's style, and into a latent it would be img2img — both reproduce the original.
     This asserts on the workflow that is actually submitted, not on intent."""
     seed = _load_script()
+    nodes = _nodes(seed)
     _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
     _write_ref(tmp_path, "cafeteria", "b")
@@ -409,18 +434,18 @@ def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monke
     assert _run(seed, ["--key", "cafeteria", "--variant", "b"]) == 0
 
     workflow = calls[0]
-    assert workflow[seed.BLOCKOUT_NODE]["inputs"]["image"] == "locref_cafeteria_b.png"
+    assert workflow[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"] == "locref_cafeteria_b.png"
 
     # The IPAdapter's image input resolves to the style-anchor LoadImage chain only.
-    upstream = _reachable(workflow, seed.IPADAPTER_NODE, "image")
-    assert seed.BLOCKOUT_NODE not in upstream
-    assert seed.SCRIBBLE_NODE not in upstream
-    assert upstream <= {node for node in workflow if node.startswith(seed.ANCHOR_NODE)}
+    upstream = _reachable(workflow, nodes[seed.IPADAPTER_KEY], "image")
+    assert nodes[seed.BLOCKOUT_KEY] not in upstream
+    assert nodes[seed.SCRIBBLE_KEY] not in upstream
+    assert upstream <= {node for node in workflow if node.startswith(nodes[seed.ANCHOR_KEY])}
 
     # The sampler starts from noise: an EmptyLatentImage, with nothing upstream of it.
-    assert workflow[seed.SAMPLER_NODE]["inputs"]["latent_image"] == [seed.LATENT_NODE, 0]
-    assert workflow[seed.LATENT_NODE]["class_type"] == "EmptyLatentImage"
-    assert _reachable(workflow, seed.SAMPLER_NODE, "latent_image") == {seed.LATENT_NODE}
+    assert workflow[nodes[seed.SAMPLER_KEY]]["inputs"]["latent_image"] == [nodes[seed.LATENT_KEY], 0]
+    assert workflow[nodes[seed.LATENT_KEY]]["class_type"] == "EmptyLatentImage"
+    assert _reachable(workflow, nodes[seed.SAMPLER_KEY], "latent_image") == {nodes[seed.LATENT_KEY]}
     assert not any(
         node["class_type"] in ("VAEEncode", "VAEEncodeForInpaint", "ImageScaleToTotalPixels")
         for node in workflow.values()
@@ -428,13 +453,14 @@ def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monke
 
     # The only node holding the uploaded filename is the structure-hint LoadImage.
     holders = [nid for nid, node in workflow.items() if node["inputs"].get("image") == "locref_cafeteria_b.png"]
-    assert holders == [seed.BLOCKOUT_NODE]
+    assert holders == [nodes[seed.BLOCKOUT_KEY]]
 
 
 # ── Anchor candidates ────────────────────────────────────────────────────────
 
 def test_anchor_candidates_render_unconditioned_and_touch_no_library_state(tmp_path, monkeypatch):
     seed = _load_script()
+    nodes = _nodes(seed)
     assets, _ = _env(tmp_path, monkeypatch, anchors=False, lookdev=False)
     calls = _fake_comfy(monkeypatch, seed)
 
@@ -445,17 +471,17 @@ def test_anchor_candidates_render_unconditioned_and_touch_no_library_state(tmp_p
         "candidate_1.png", "candidate_2.png", "candidate_3.png",
     ]
     assert len(calls) == 3
-    assert len({call[seed.SAMPLER_NODE]["inputs"]["seed"] for call in calls}) == 3
+    assert len({call[nodes[seed.SAMPLER_KEY]]["inputs"]["seed"] for call in calls}) == 3
     for call in calls:
         # No anchor exists yet, so the candidate cannot be style-anchored to one.
-        assert seed.ANCHOR_NODE not in call and seed.IPADAPTER_NODE not in call
+        assert nodes[seed.ANCHOR_KEY] not in call and nodes[seed.IPADAPTER_KEY] not in call
         assert not any("IPAdapter" in node.get("class_type", "") for node in call.values())
-        assert call[seed.SAMPLER_NODE]["inputs"]["model"] == [seed.MODEL_NODE, 0]
+        assert call[nodes[seed.SAMPLER_KEY]]["inputs"]["model"] == [nodes[seed.MODEL_KEY], 0]
         # Dropping every LoadImage used to leave ControlNetApplyAdvanced pointing at a
         # node that no longer existed — a dangling link ComfyUI rejects outright.
-        assert seed.CONTROLNET_APPLY_NODE not in call and seed.SCRIBBLE_NODE not in call
-        assert call[seed.SAMPLER_NODE]["inputs"]["positive"] == [seed.POSITIVE_NODE, 0]
-        assert call[seed.SAMPLER_NODE]["inputs"]["negative"] == [seed.NEGATIVE_NODE, 0]
+        assert nodes[seed.CONTROLNET_APPLY_KEY] not in call and nodes[seed.SCRIBBLE_KEY] not in call
+        assert call[nodes[seed.SAMPLER_KEY]]["inputs"]["positive"] == [nodes[seed.POSITIVE_KEY], 0]
+        assert call[nodes[seed.SAMPLER_KEY]]["inputs"]["negative"] == [nodes[seed.NEGATIVE_KEY], 0]
         assert all(
             isinstance(value, str) or value[0] in call
             for node in call.values() for value in node["inputs"].values()
@@ -487,3 +513,63 @@ def test_prompts_cover_every_location_key():
     assert set(seed.LOCATION_PROMPTS) == set(seed.LOCATION_KEYS)
     assert seed.ANCHOR_CANDIDATE_KEY in seed.LOCATION_PROMPTS
     assert settings.location_plate_workflow_path.endswith(".json")
+
+
+# ── Node resolution by title (Story 13.3) ────────────────────────────────────
+
+def _renumber(workflow: dict, offset: int = 500) -> dict:
+    """What the ComfyUI UI does on copy/paste + re-export: every id changes,
+    every link follows. The manifest titles are the only stable handles left."""
+    remap = {nid: str(int(nid) + offset) for nid in workflow}
+
+    def relink(value):
+        if isinstance(value, list) and len(value) == 2 and str(value[0]) in remap:
+            return [remap[str(value[0])], value[1]]
+        return value
+
+    return {
+        remap[nid]: {**node, "inputs": {k: relink(v) for k, v in node["inputs"].items()}}
+        for nid, node in workflow.items()
+    }
+
+
+def test_a_renumbered_workflow_still_resolves_and_rewires(tmp_path, monkeypatch):
+    """The failure Story 13.3 removes: with ids hardcoded, a renumber produced a
+    structurally valid but WRONG graph, because three of the writes are links."""
+    seed = _load_script()
+    path = tmp_path / "renumbered.json"
+    original = json.loads(Path(_plate_workflow_path()).read_text(encoding="utf-8"))
+    path.write_text(json.dumps(_renumber(original)), encoding="utf-8")
+
+    workflow, nodes = seed._load_workflow(str(path))
+    assert sorted(nodes) == sorted(seed.PLATE_NODE_KEYS)
+    assert all(int(nid) >= 500 for nid in nodes.values())
+
+    injected = seed._inject(workflow, nodes, "a corridor", 42, 0.5)
+    assert injected[nodes[seed.POSITIVE_KEY]]["inputs"]["text"] == "a corridor"
+    assert injected[nodes[seed.SAMPLER_KEY]]["inputs"]["seed"] == 42
+
+    # the link rewrites — the half a node-id constant silently corrupts
+    seed._bypass_scribble(injected, nodes)
+    assert injected[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["image"] == [nodes[seed.BLOCKOUT_KEY], 0]
+    assert nodes[seed.SCRIBBLE_KEY] not in injected
+
+    stripped = seed._strip_ipadapter(injected, nodes)
+    assert stripped[nodes[seed.SAMPLER_KEY]]["inputs"]["model"] == [nodes[seed.MODEL_KEY], 0]
+    assert stripped[nodes[seed.SAMPLER_KEY]]["inputs"]["positive"] == [nodes[seed.POSITIVE_KEY], 0]
+
+
+def test_load_workflow_reports_a_renamed_node(tmp_path):
+    """AC1: the error names the key and lists what the file actually declares."""
+    seed = _load_script()
+    original = json.loads(Path(_plate_workflow_path()).read_text(encoding="utf-8"))
+    for node in original.values():
+        if node.get("_meta", {}).get("title") == seed.SAMPLER_KEY:
+            node["_meta"]["title"] = "KSampler"
+    path = tmp_path / "renamed.json"
+    path.write_text(json.dumps(original), encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc:
+        seed._load_workflow(str(path))
+    assert seed.SAMPLER_KEY in str(exc.value)
+    assert seed.POSITIVE_KEY in str(exc.value)  # ...among the titles present

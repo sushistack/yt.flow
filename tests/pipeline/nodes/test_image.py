@@ -4,15 +4,18 @@ since Story 8.3).
 No live ComfyUI / Langfuse: the HTTP client, settings, trace sink, and (for
 mock mode) the fixtures dir are all monkeypatched. Tests assert the node's
 PipelineState contract (image_path set on every shot, error handling, purity),
-prompt injection into nodes "6"/"7" (including the AC2 negative-prompt
-suffix), the mock/real branch behaviour, and shot-level resume/health-check.
+prompt injection into the nodes resolved from their ``ytflow:`` manifest titles
+(including the AC2 negative-prompt suffix), the mock/real branch behaviour, and
+shot-level resume/health-check.
 
 Import the submodule explicitly: nodes/__init__.py still binds a stub `image`
 attribute (Story 1.4), so `import a.b.image as img` is what resolves to this
 module rather than the stub. [mirrors test_scenario.py]
 """
 
+import hashlib
 import json
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -22,10 +25,16 @@ import pytest
 import yt_flow.pipeline.nodes.image as img
 from yt_flow.services.comfyui_client import ComfyUIError
 
+# Story 13.3: injection targets are resolved by exact ``_meta.title``, so every
+# fixture workflow must declare them. The node ids stay "6"/"7" purely so the
+# assertions below still read naturally — nothing in the code looks at them.
 GOOD_WF = {
-    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "placeholder"}},
-    "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "placeholder"}},
+    "6": {"class_type": "CLIPTextEncode", "_meta": {"title": img.POSITIVE_KEY},
+          "inputs": {"text": "placeholder"}},
+    "7": {"class_type": "CLIPTextEncode", "_meta": {"title": img.NEGATIVE_KEY},
+          "inputs": {"text": "placeholder"}},
 }
+GOOD_NODES = {img.POSITIVE_KEY: "6", img.NEGATIVE_KEY: "7"}
 
 RGB_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
@@ -108,11 +117,30 @@ def _no_health_check(monkeypatch):
     monkeypatch.setattr(img.comfyui_client, "check_health", ok)
 
 
+FAKE_STATS = {
+    "system": {"comfyui_version": "0.12.3", "pytorch_version": "2.11.0.dev+rocm7.1"},
+    "devices": [{"name": "cuda:0 AMD Radeon Graphics : native", "vram_free": 13569163776}],
+}
+
+
+@pytest.fixture(autouse=True)
+def _fake_system_stats(monkeypatch):
+    """Story 13.3: real mode reads /system_stats once per run for provenance.
+
+    Stubbed by default so no test opens a socket to comfy.test; the provenance
+    tests below override it to assert the recorded shape and the failure path.
+    """
+    async def stats(*a, **k):
+        return FAKE_STATS
+    monkeypatch.setattr(img.comfyui_client, "get_system_stats", stats)
+
+
 # ── Prompt injection (AC1, AC2) — pure, no ComfyUI ──────────────────────────
 
-def test_inject_prompts_targets_nodes_6_and_7():
+def test_inject_prompts_targets_the_resolved_nodes():
     # Story 11.1: _inject_prompts grew a required seed arg (single call site).
-    out = img._inject_prompts(GOOD_WF, "positive text", "negative text", 1)
+    # Story 13.3: and a resolved {manifest key: node id} map.
+    out = img._inject_prompts(GOOD_WF, GOOD_NODES, "positive text", "negative text", 1)
     assert out["6"]["inputs"]["text"] == "positive text"
     # template is untouched — one loaded workflow is safely reused per shot
     assert GOOD_WF["6"]["inputs"]["text"] == "placeholder"
@@ -120,7 +148,7 @@ def test_inject_prompts_targets_nodes_6_and_7():
 
 def test_inject_prompts_appends_negative_suffix():
     """AC2: code-side entity exclusion belt, on top of the prompt-side (8.1) suspenders."""
-    out = img._inject_prompts(GOOD_WF, "a corridor", "watermark", 1)
+    out = img._inject_prompts(GOOD_WF, GOOD_NODES, "a corridor", "watermark", 1)
     assert out["7"]["inputs"]["text"] == "watermark" + img.BG_NEGATIVE_SUFFIX
     for term in ("person", "human", "character", "silhouette"):
         assert term in out["7"]["inputs"]["text"]
@@ -151,7 +179,7 @@ def test_inject_prompts_seeds_every_ksampler_by_class_type():
         "3": {"class_type": "KSampler", "inputs": {"seed": 0}},
         "42": {"class_type": "KSampler", "inputs": {"seed": 0}},
     }
-    out = img._inject_prompts(wf, "p", "n", 1234)
+    out = img._inject_prompts(wf, GOOD_NODES, "p", "n", 1234)
     assert out["3"]["inputs"]["seed"] == 1234
     assert out["42"]["inputs"]["seed"] == 1234
     # template purity holds for the seed too
@@ -159,13 +187,34 @@ def test_inject_prompts_seeds_every_ksampler_by_class_type():
 
 
 def test_inject_prompts_harmless_without_ksampler():
-    out = img._inject_prompts(GOOD_WF, "p", "n", 99)  # GOOD_WF has no KSampler
+    out = img._inject_prompts(GOOD_WF, GOOD_NODES, "p", "n", 99)  # GOOD_WF has no KSampler
     assert out["6"]["inputs"]["text"] == "p"
 
 
 def test_load_workflow_rejects_missing_prompt_nodes(tmp_path):
-    bad = {"6": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}}  # no node "7"
-    with pytest.raises(ValueError):
+    bad = {"6": GOOD_WF["6"]}  # no ytflow:negative_prompt anywhere
+    with pytest.raises(ValueError) as exc:
+        img._load_workflow(_wf_file(tmp_path, bad))
+    # AC1: the operator must be able to fix a UI rename without reading code.
+    assert img.NEGATIVE_KEY in str(exc.value)
+    assert img.POSITIVE_KEY in str(exc.value)  # ...listed among the titles present
+
+
+def test_load_workflow_resolves_by_title_not_by_node_id(tmp_path):
+    """Story 13.3: renumbering the graph must not move the injection target."""
+    renumbered = {"41": GOOD_WF["7"], "99": GOOD_WF["6"]}
+    workflow, nodes = img._load_workflow(_wf_file(tmp_path, renumbered))
+    assert nodes == {img.POSITIVE_KEY: "99", img.NEGATIVE_KEY: "41"}
+    out = img._inject_prompts(workflow, nodes, "a corridor", "watermark", 7)
+    assert out["99"]["inputs"]["text"] == "a corridor"
+    assert out["41"]["inputs"]["text"].startswith("watermark")
+
+
+def test_load_workflow_rejects_a_title_pasted_onto_the_wrong_class(tmp_path):
+    """The class-type check survives the switch to titles, on the resolved node."""
+    bad = {**GOOD_WF, "6": {"class_type": "LoraLoader", "_meta": {"title": img.POSITIVE_KEY},
+                            "inputs": {"lora_name": "x.safetensors"}}}
+    with pytest.raises(ValueError, match="CLIPTextEncode"):
         img._load_workflow(_wf_file(tmp_path, bad))
 
 
@@ -1753,3 +1802,251 @@ async def test_per_shot_warnings_are_bounded_by_the_shared_sample_cap(monkeypatc
     assert len(named) == MAX_SAMPLE_RECORDS
     # …and the true total is still on screen, on one aggregate row.
     assert {"total_count": n} in [w["context"] for w in out["run_warnings"]]
+
+
+# ── Render provenance (Story 13.3 AC7, AC8) ─────────────────────────────────
+
+def _provenance(tmp_path, base="scene_001_S001", run_id="run-img-1"):
+    d = tmp_path / "workspace" / run_id / "images"
+    return json.loads((d / f"{base}_done.json").read_text())["provenance"]
+
+
+async def test_generated_sidecar_records_provenance(monkeypatch, tmp_path):
+    """AC7: workflow hash, resolved node map, env snapshot and ComfyUI versions."""
+    monkeypatch.chdir(tmp_path)
+    path = _wf_file(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=path))
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(b'{"comfyui": "deadbeef"}')
+    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", snapshot)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    prov = _provenance(tmp_path)
+    assert prov["workflow_path"] == path
+    assert prov["nodes"] == GOOD_NODES
+    assert prov["comfyui"] == {
+        "comfyui_version": "0.12.3",
+        "pytorch_version": "2.11.0.dev+rocm7.1",
+        "device": "cuda:0 AMD Radeon Graphics : native",
+    }
+    assert prov["env_snapshot_sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    # The hash is of the *template*, before per-shot injection — otherwise it
+    # differs for every shot and cannot be compared across runs.
+    assert prov["workflow_sha256"] == hashlib.sha256(
+        json.dumps(GOOD_WF, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert _provenance(tmp_path, "scene_002_S003")["workflow_sha256"] == prov["workflow_sha256"]
+
+
+async def test_provenance_records_null_snapshot_when_absent(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", tmp_path / "not-there.json")
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    assert (await img.image_node(_state())).get("error") is None
+    assert _provenance(tmp_path)["env_snapshot_sha256"] is None
+
+
+async def test_system_stats_failure_is_null_and_does_not_fail_the_stage(monkeypatch, tmp_path):
+    """AC7 [AD-10]: provenance is observability — an unreachable ComfyUI records
+    null rather than losing the stage."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+
+    async def no_stats(*a, **k):
+        return None
+    monkeypatch.setattr(img.comfyui_client, "get_system_stats", no_stats)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert len(out["scenes"][0]["shots"]) == 2
+    prov = _provenance(tmp_path)
+    assert prov["comfyui"] is None
+    assert prov["workflow_sha256"] is not None  # the graph half is still recorded
+
+
+async def test_system_stats_is_fetched_once_per_run(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+    calls = []
+
+    async def stats(url):
+        calls.append(url)
+        return FAKE_STATS
+    monkeypatch.setattr(img.comfyui_client, "get_system_stats", stats)
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    await img.image_node(_state())  # three shots
+    assert calls == ["http://comfy.test:8188"]
+
+
+async def test_mock_mode_provenance_is_null_and_never_touches_comfyui(monkeypatch, tmp_path):
+    """AC7: the mock path loads no workflow, so workflow_*/comfyui are null."""
+    _mock_settings(monkeypatch, tmp_path)
+
+    async def boom(*a, **k):
+        raise AssertionError("mock mode must not call /system_stats")
+    monkeypatch.setattr(img.comfyui_client, "get_system_stats", boom)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    prov = _provenance(tmp_path)
+    assert prov["workflow_path"] is None
+    assert prov["workflow_sha256"] is None
+    assert prov["nodes"] is None
+    assert prov["comfyui"] is None
+
+
+async def test_differing_provenance_is_still_a_resume_hit(monkeypatch, tmp_path):
+    """AC8 — the one change in Story 13.3 that could silently re-render 155 shots.
+
+    A sidecar written by an older ComfyUI (or before a snapshot refresh) carries
+    different provenance. `_existing_complete_shot` compares only image_prompt /
+    negative_prompt / seed, and must keep doing so.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    for base, prompt, negative in (
+        ("scene_001_S001", "a dark room", "blurry"),
+        ("scene_001_S002", "an agent", "text"),
+        ("scene_002_S003", "a corridor", "watermark"),
+    ):
+        (d / f"{base}.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+        (d / f"{base}_done.json").write_text(json.dumps({
+            "image_prompt": prompt,
+            "negative_prompt": img._effective_negative_prompt(negative),
+            "seed": _shot_seed_for(base),
+            "provenance": {"workflow_sha256": "an-older-graph", "env_snapshot_sha256": "an-older-env",
+                           "comfyui": {"comfyui_version": "0.9.0"}},
+        }))
+
+    async def fake_fetch(url, workflow):
+        raise AssertionError("provenance drift must not trigger a re-render")
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert [pathlib.Path(s["image_path"]).name for s in out["scenes"][0]["shots"]] == [
+        "scene_001_S001.png", "scene_001_S002.png",
+    ]
+    # the sidecars were not rewritten either — a resume hit writes nothing
+    assert json.loads((d / "scene_001_S001_done.json").read_text())["provenance"][
+        "workflow_sha256"] == "an-older-graph"
+
+
+# ── Provenance review fixes (Story 13.3 review pass) ────────────────────────
+
+async def test_stock_plate_provenance_does_not_claim_this_run_s_graph(monkeypatch, tmp_path):
+    """A plate was rendered weeks ago by the plate script, from a different graph.
+
+    Stamping this run's ``workflow_path``/``workflow_sha256`` and today's ComfyUI
+    version onto its sidecar is provenance that actively lies — worse than absent
+    provenance, which is the premise of Epic 13. Only the env-snapshot pin stays:
+    that is a fact about the checkout that wrote the sidecar.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
+        mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(b'{"comfyui": "deadbeef"}')
+    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", snapshot)
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+
+    out = await img.image_node(_stock_state())
+    assert out.get("error") is None
+    prov = _provenance(tmp_path, run_id="run-stock-1")
+    assert prov["workflow_path"] is None
+    assert prov["workflow_sha256"] is None
+    assert prov["nodes"] is None
+    assert prov["comfyui"] is None
+    assert prov["env_snapshot_sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
+
+
+async def test_a_fully_resumed_run_pays_for_stats_at_most_once(monkeypatch, tmp_path):
+    """Story 5.14 made the health check lazy so an all-resume run never touches
+    ComfyUI. The provenance probe is awaited before any resume decision, so the
+    guarantee it can still give is "bounded, once" — and the timeout that bounds
+    it is asserted in test_comfyui_client.py.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    for base, prompt, negative in (
+        ("scene_001_S001", "a dark room", "blurry"),
+        ("scene_001_S002", "an agent", "text"),
+        ("scene_002_S003", "a corridor", "watermark"),
+    ):
+        _write_complete_shot(d, base, prompt, negative)
+
+    calls = []
+
+    async def stats(url):
+        calls.append(url)
+        return FAKE_STATS
+    monkeypatch.setattr(img.comfyui_client, "get_system_stats", stats)
+
+    async def fake_fetch(url, workflow):
+        raise AssertionError("a fully resumed run must render nothing")
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+    assert out.get("error") is None
+    assert len(calls) <= 1
+
+
+async def test_env_snapshot_resolves_against_the_project_root_not_the_cwd(monkeypatch, tmp_path, caplog):
+    """``character_image_provider._load_workflow`` exists because the app does not
+    always run from the repo root. A pin resolved against the CWD silently stops
+    pinning; a pin that misses must at least say so."""
+    root = tmp_path / "repo"
+    (root / "data" / "comfyui").mkdir(parents=True)
+    snapshot = root / "data" / "comfyui" / "env-snapshot.json"
+    snapshot.write_bytes(b'{"comfyui": "cafe"}')
+    monkeypatch.chdir(tmp_path)  # NOT the repo root
+    monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(root))
+
+    assert img._env_snapshot_sha256() == hashlib.sha256(snapshot.read_bytes()).hexdigest()
+
+    monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(tmp_path / "elsewhere"))
+    with caplog.at_level("WARNING"):
+        assert img._env_snapshot_sha256() is None
+    assert "env snapshot unreadable" in caplog.text
+
+
+@pytest.mark.parametrize("stats", [
+    {"system": ["not", "a", "dict"], "devices": {"not": "a list"}},
+    {"system": None, "devices": None},
+    {"devices": ["a bare string, not a device dict"]},
+    ["the whole payload is a list"],
+])
+def test_build_provenance_survives_any_system_stats_shape(stats):
+    """The key set differs across ComfyUI versions — which is the reason to record
+    it at all. An unexpected shape must produce nulls, never an AttributeError that
+    kills the image stage [AD-10]."""
+    prov = img._build_provenance("wf.json", GOOD_WF, GOOD_NODES, stats)
+    assert prov["comfyui"] == {"comfyui_version": None, "pytorch_version": None, "device": None}
+    assert prov["workflow_sha256"] is not None

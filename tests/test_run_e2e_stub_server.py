@@ -32,9 +32,23 @@ _PATCHED_SEAMS = [
     ("yt_flow.pipeline.nodes.video", "_run_ffmpeg"),
     ("yt_flow.services.comfyui_client", "submit_and_fetch"),
     ("yt_flow.services.comfyui_client", "submit_and_fetch_outputs"),
+    ("yt_flow.services.comfyui_client", "check_health"),
+    ("yt_flow.services.comfyui_client", "get_system_stats"),
     ("yt_flow.services.image_search", "DuckDuckGoImageSearch"),
     ("yt_flow.services.character_service", "CharacterService"),
 ]
+
+# Story 13.3: the ComfyUI adapter's network surface, classified. Listing the two
+# prompt-submission calls by hand is how ``check_health`` and ``get_system_stats``
+# stayed live in a "zero real calls" process — ``get_system_stats`` for a whole
+# story, and silently, because it swallows every failure [AD-10]. The set equality
+# below turns a newly added HTTP function into a failing test instead.
+_COMFYUI_STUBBED = {
+    "submit_and_fetch", "submit_and_fetch_outputs", "check_health", "get_system_stats",
+}
+# Reached only by character-card generation and IC-Light relight, neither of which
+# the stub server's pipeline drives; it has no fake and calling it would be the bug.
+_COMFYUI_UNREACHED = {"upload_image"}
 
 
 @pytest.fixture
@@ -69,6 +83,40 @@ def test_both_provider_keys_are_non_secret_dummies(stub_server):
     # Whatever the ambient environment held, the script overrode it.
     assert os.environ["YTFLOW_DEEPSEEK_API_KEY"] == "sk-e2e-stub-dummy"
     assert os.environ["YTFLOW_GEMINI_API_KEY"] == "gm-e2e-stub-dummy"
+
+
+def test_every_comfyui_network_function_is_classified():
+    """A new async function on the adapter must be explicitly stubbed or explicitly
+    declared unreached — the gap ``get_system_stats`` fell through."""
+    import inspect
+
+    import yt_flow.services.comfyui_client as cc
+
+    public_async = {
+        name for name, obj in vars(cc).items()
+        if not name.startswith("_") and inspect.iscoroutinefunction(obj)
+        and getattr(obj, "__module__", None) == cc.__name__
+    }
+    assert public_async == _COMFYUI_STUBBED | _COMFYUI_UNREACHED
+
+
+def test_every_stubbed_comfyui_seam_is_actually_rebound(stub_server):
+    """...and the script really rebinds each one — the classification is only a
+    contract if something checks it against ``apply_stub_profile``."""
+    import yt_flow.services.comfyui_client as cc
+
+    for name in _COMFYUI_STUBBED:
+        assert getattr(cc, name).__module__ in ("tests.stubs.fakes", "_e2e_stub_server"), name
+
+
+def test_pytest_stub_profile_rebinds_the_same_comfyui_seams(stub_profile):
+    """The in-process fixture and the standalone script must not drift apart:
+    ``tests/conftest.py`` had the identical ``get_system_stats`` hole, which sent
+    every offline stub-profile test at a real ``127.0.0.1:8188``."""
+    import yt_flow.services.comfyui_client as cc
+
+    for name in _COMFYUI_STUBBED:
+        assert getattr(cc, name).__module__ == "tests.stubs.fakes", name
 
 
 async def test_both_scenario_provider_seams_are_stubbed_and_stage_scoped(stub_server):

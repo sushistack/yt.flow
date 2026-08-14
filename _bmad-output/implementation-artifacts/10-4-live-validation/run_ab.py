@@ -218,7 +218,8 @@ def build_slate(state, legs) -> list[dict]:
 
 
 async def render(slate, settings, legs) -> None:
-    template = image._load_workflow(settings.comfyui_workflow_path)
+    # Story 13.3: (workflow, resolved node map); prompts inject by declared title.
+    template, nodes = image._load_workflow(settings.comfyui_workflow_path)
     await comfyui_client.check_health(settings.comfyui_url)
     for leg in legs:
         (HERE / leg).mkdir(exist_ok=True)
@@ -228,7 +229,7 @@ async def render(slate, settings, legs) -> None:
                 print(f"  {leg} {entry['base']}: already rendered", flush=True)
                 continue
             workflow = image._inject_prompts(
-                template, entry["prompts"][leg], entry["negative_prompt"], entry["seed"])
+                template, nodes, entry["prompts"][leg], entry["negative_prompt"], entry["seed"])
             t0 = time.perf_counter()
             out.write_bytes(await comfyui_client.submit_and_fetch(
                 settings.comfyui_url, workflow, poll_interval=3.0, max_polls=600))

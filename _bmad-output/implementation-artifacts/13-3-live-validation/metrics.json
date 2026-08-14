@@ -1,0 +1,33 @@
+{
+  "A_vs_B_rms": 72.78,
+  "A_vs_C_rms": 0.0,
+  "sizes": {
+    "corridor": [
+      1344,
+      768
+    ],
+    "autopsy": [
+      1344,
+      768
+    ],
+    "renumbered": [
+      1344,
+      768
+    ]
+  },
+  "file_bytes": {
+    "corridor": 1426434,
+    "autopsy": 1363475,
+    "renumbered": 1426468
+  },
+  "submitted_text_encoders": {
+    "corridor": {
+      "6": "ytflow:positive_prompt",
+      "7": "ytflow:negative_prompt"
+    },
+    "renumbered": {
+      "706": "ytflow:positive_prompt",
+      "707": "ytflow:negative_prompt"
+    }
+  }
+}

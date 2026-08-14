@@ -14,6 +14,7 @@ import logging
 import math
 import mimetypes
 import uuid
+from collections.abc import Iterable
 
 import httpx
 
@@ -32,6 +33,14 @@ CONNECT_RETRY_DELAY = 2.0
 # lives entirely in the connect timeout. The read timeout is the long,
 # configurable one (see Settings.comfyui_health_read_timeout_sec).
 HEALTH_CONNECT_TIMEOUT = 5.0
+
+# Provenance probe (Story 13.3): the SHORT read timeout, deliberately not
+# ``comfyui_health_read_timeout_sec``. That 120s budget exists because a health
+# *gate* must not read a mid-prompt stall as a crash; this call is observability
+# [AD-10] and is awaited before the shot loop, so a busy GPU would otherwise
+# stall even a fully-resumed run for two minutes to record a version string.
+# Timing out records ``null``, which is the honest answer.
+STATS_READ_TIMEOUT = 5.0
 
 # Dropped-prompt recovery. MEASURED over many live runs (2026-08-08): ComfyUI
 # intermittently *accepts* a submission — POST /prompt returns HTTP 200 with a
@@ -52,6 +61,58 @@ DROP_RESUBMITS = 2
 
 class ComfyUIError(RuntimeError):
     """A ComfyUI submission/validation/transport failure; becomes image-stage error."""
+
+
+# ── Workflow node manifest (no HTTP) ────────────────────────────────────────
+# Injection targets are addressed by a declared ``_meta.title``, never by JSON
+# node ID: the ComfyUI UI renumbers nodes on copy/paste and re-export, and an
+# injection pinned to ``"6"`` then writes the prompt into whatever landed there
+# — structurally valid, silently wrong. Keys are written ``ytflow:<name>``; the
+# prefix is the signal to whoever opens the graph that code reads that exact
+# string. (Story 13.3 AC1)
+# ponytail: the prefix is a naming convention, not a validated constant — a key
+# that does not match a declared title already raises here, listing the titles
+# present, so a separate prefix check would reject nothing the resolver accepts.
+
+
+def resolve_nodes(workflow: dict, keys: Iterable[str]) -> dict[str, str]:
+    """Map each manifest key (a full ``ytflow:<name>`` title) to its node ID.
+
+    Exact match only, never substring: ``comfyui_sdxl_anime_lora_layered_inspyrenet_api.json``
+    carries both ``"Negative Prompt"`` and ``"Background Inpaint Negative Prompt
+    (entity exclusion)"``, so a substring rule resolves two nodes and picks one
+    arbitrarily.
+
+    There is deliberately **no ID fallback**. An unresolved key raises
+    :class:`ValueError` naming the key *and* listing the titles actually present,
+    so an operator who renamed a node in the UI can fix it without reading code;
+    a duplicated title raises too, because ambiguity is a defect and not a coin
+    flip. Non-dict values are skipped while scanning — an API-format workflow may
+    carry top-level provenance scalars (``ytflow_verified_iclight``, ``_ytflow_note``).
+    """
+    by_title: dict[str, list[str]] = {}
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        meta = node.get("_meta")
+        title = meta.get("title") if isinstance(meta, dict) else None
+        if isinstance(title, str):
+            by_title.setdefault(title, []).append(node_id)
+
+    resolved: dict[str, str] = {}
+    for key in keys:
+        node_ids = by_title.get(key, [])
+        if not node_ids:
+            raise ValueError(
+                f"workflow node title {key!r} not found; titles present: {sorted(by_title)}"
+            )
+        if len(node_ids) > 1:
+            raise ValueError(
+                f"workflow node title {key!r} is ambiguous — nodes {sorted(node_ids)} "
+                f"share it; titles present: {sorted(by_title)}"
+            )
+        resolved[key] = node_ids[0]
+    return resolved
 
 
 class _PromptDropped(Exception):
@@ -119,6 +180,31 @@ async def check_health(base_url: str) -> None:
             resp.raise_for_status()
         except (httpx.HTTPError, ComfyUIError) as exc:
             raise ComfyUIError(f"ComfyUI unreachable at {base_url}: {exc}") from exc
+
+
+async def get_system_stats(base_url: str) -> dict | None:
+    """``GET /system_stats`` as raw JSON for render provenance, ``None`` on failure.
+
+    A separate function rather than a return value bolted onto
+    :func:`check_health`: that signature is ``-> None`` and ~15 test fakes plus
+    ``scripts/seed_location_plates.py`` monkeypatch it with that shape.
+
+    Best-effort by contract [AD-10] — every failure (down, slow, non-JSON) logs
+    and answers ``None``, which the caller records as a null provenance block.
+    Unretried, short-timeout (:data:`STATS_READ_TIMEOUT`, *not* the health gate's
+    long configurable one) and called once per run: this is observability, not a
+    health gate, and it must not delay a run that never renders anything.
+    """
+    timeout = httpx.Timeout(STATS_READ_TIMEOUT, connect=HEALTH_CONNECT_TIMEOUT)
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
+            resp = await client.get("/system_stats")
+            resp.raise_for_status()
+            stats = resp.json()
+        return stats if isinstance(stats, dict) else None
+    except Exception as exc:  # noqa: BLE001 — provenance must never fail the stage
+        logger.warning("ComfyUI /system_stats unavailable, recording null provenance: %s", exc)
+        return None
 
 
 async def submit_and_fetch(

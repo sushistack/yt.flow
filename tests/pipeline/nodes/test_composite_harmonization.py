@@ -10,8 +10,11 @@ from typing import cast
 import pytest
 
 from yt_flow.pipeline.nodes.composite_harmonization import (
-    BACKGROUND_IMAGE_NODE,
-    CARD_IMAGE_NODE,
+    BACKGROUND_IMAGE_KEY,
+    CARD_IMAGE_KEY,
+    GREY_MATTE_KEY,
+    ICLIGHT_NODE_KEYS,
+    LIGHT_SOURCE_KEY,
     RelightCache,
     MOOD_TINT_PARAMS,
     _inject_relight_inputs,
@@ -25,6 +28,12 @@ from yt_flow.pipeline.nodes.composite_harmonization import (
 )
 from yt_flow.domain.state import CastMember, SceneState, ShotData
 from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD, MOOD_VALUES
+from yt_flow.services.comfyui_client import resolve_nodes
+
+
+def _titled(class_type: str, title: str, **inputs) -> dict:
+    """A manifest-bearing node — the shape every injected node now has."""
+    return {"class_type": class_type, "_meta": {"title": title}, "inputs": inputs}
 
 
 # ── build_sprite_tint [AC:1] ─────────────────────────────────────────────────
@@ -269,6 +278,9 @@ class _FakeComfyUIClient:
         self.calls = 0
         self.uploaded: list[str] = []
 
+    # Story 13.3: the resolver rides the injected client, so the fake carries it too.
+    resolve_nodes = staticmethod(resolve_nodes)
+
     async def upload_image(self, url, image_bytes, filename):
         self.uploaded.append(filename)
         return filename
@@ -301,8 +313,10 @@ def workflow_path(tmp_path):
     path = tmp_path / "iclight.json"
     path.write_text(json.dumps({
         "ytflow_verified_iclight": True,
-        "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
-        "2": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+        "1": _titled("LoadImage", CARD_IMAGE_KEY, image="placeholder.png"),
+        "2": _titled("LoadImage", BACKGROUND_IMAGE_KEY, image="placeholder.png"),
+        "20": _titled("EmptyImage", GREY_MATTE_KEY, width=832, height=1216),
+        "22": _titled("LightSource", LIGHT_SOURCE_KEY, width=832, height=1216),
     }))
     return str(path)
 
@@ -313,8 +327,10 @@ def unverified_workflow_path(tmp_path):
 
     path = tmp_path / "placeholder-iclight.json"
     path.write_text(json.dumps({
-        "1": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
-        "2": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+        "1": _titled("LoadImage", CARD_IMAGE_KEY, image="placeholder.png"),
+        "2": _titled("LoadImage", BACKGROUND_IMAGE_KEY, image="placeholder.png"),
+        "20": _titled("EmptyImage", GREY_MATTE_KEY, width=832, height=1216),
+        "22": _titled("LightSource", LIGHT_SOURCE_KEY, width=832, height=1216),
     }))
     return str(path)
 
@@ -506,11 +522,66 @@ def shipped_workflow() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_shipped_workflow_matches_injection_contract(shipped_workflow):
+@pytest.fixture()
+def shipped_nodes(shipped_workflow) -> dict:
+    """manifest key -> node id, resolved the same way the runtime resolves it."""
+    return resolve_nodes(shipped_workflow, ICLIGHT_NODE_KEYS)
+
+
+def test_shipped_workflow_matches_injection_contract(shipped_workflow, shipped_nodes):
     """The two nodes ``_inject_relight_inputs`` writes must exist and be LoadImage."""
-    for node_id in (CARD_IMAGE_NODE, BACKGROUND_IMAGE_NODE):
-        assert shipped_workflow[node_id]["class_type"] == "LoadImage"
-        assert "image" in shipped_workflow[node_id]["inputs"]
+    for key in (CARD_IMAGE_KEY, BACKGROUND_IMAGE_KEY):
+        node = shipped_workflow[shipped_nodes[key]]
+        assert node["class_type"] == "LoadImage"
+        assert "image" in node["inputs"]
+
+
+def test_shipped_workflow_declares_every_manifest_title(shipped_workflow, shipped_nodes):
+    """Story 13.3: all four injection targets resolve by exact title, ids irrelevant.
+
+    The grey matte and light source are the point of this test — they used to be
+    reached through ``workflow.get(id)`` behind an isinstance guard, so a ComfyUI
+    re-export dropped card-size conditioning with no exception at all.
+    """
+    assert sorted(shipped_nodes) == sorted(ICLIGHT_NODE_KEYS)
+    for key in (GREY_MATTE_KEY, LIGHT_SOURCE_KEY):
+        assert {"width", "height"} <= shipped_workflow[shipped_nodes[key]]["inputs"].keys()
+
+
+def test_load_iclight_workflow_reports_a_renamed_node(tmp_path, shipped_workflow):
+    """A UI rename must name the key AND list what the file actually has."""
+    renamed = json.loads(json.dumps(shipped_workflow))
+    for node in renamed.values():
+        if isinstance(node, dict) and node.get("_meta", {}).get("title") == CARD_IMAGE_KEY:
+            node["_meta"]["title"] = "Foreground"
+    path = tmp_path / "renamed.json"
+    path.write_text(json.dumps(renamed), encoding="utf-8")
+    with pytest.raises(ValueError) as exc:
+        _load_iclight_workflow(str(path), resolve_nodes)
+    assert CARD_IMAGE_KEY in str(exc.value) and "Foreground" in str(exc.value)
+
+
+@pytest.mark.parametrize("key", [CARD_IMAGE_KEY, BACKGROUND_IMAGE_KEY, GREY_MATTE_KEY, LIGHT_SOURCE_KEY])
+@pytest.mark.parametrize("replacement", [
+    {"_meta": {"title": "PLACEHOLDER"}},                                    # no class_type
+    {"class_type": "EmptyImage", "_meta": {"title": "PLACEHOLDER"}, "inputs": "832x1216"},
+])
+def test_load_rejects_a_titled_entry_that_is_not_a_usable_node(tmp_path, shipped_workflow, key, replacement):
+    """``_inject_relight_inputs`` rebuilds the graph filtered to entries that HAVE
+    a ``class_type``, then indexes the resolved ids directly — so an entry that
+    carries the title but not the shape used to pass load and raise ``KeyError``
+    (or ``AttributeError`` on a non-dict ``inputs``) at inject, which
+    ``relight_sprite``'s blanket except turns straight back into the silent cache
+    miss this validation exists to eliminate. Fail at load, loudly and by name.
+    """
+    broken = json.loads(json.dumps(shipped_workflow))
+    node_id = resolve_nodes(broken, (key,))[key]
+    broken[node_id] = {**replacement, "_meta": {"title": key}}
+    path = tmp_path / "broken.json"
+    path.write_text(json.dumps(broken), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="class_type"):
+        _load_iclight_workflow(str(path), resolve_nodes)
 
 
 def test_shipped_workflow_is_marked_verified(shipped_workflow):
@@ -531,10 +602,10 @@ def test_unverified_workflow_is_rejected(tmp_path, shipped_workflow):
     path = tmp_path / "unverified.json"
     path.write_text(json.dumps(unverified), encoding="utf-8")
     with pytest.raises(ValueError, match="ytflow_verified_iclight"):
-        _load_iclight_workflow(str(path))
+        _load_iclight_workflow(str(path), resolve_nodes)
 
 
-def test_shipped_workflow_foreground_latent_is_grey_matted(shipped_workflow):
+def test_shipped_workflow_foreground_latent_is_grey_matted(shipped_workflow, shipped_nodes):
     """LoadImage drops alpha, so the card's transparent region is pure black.
 
     Encoding that straight into ICLightConditioning.foreground tells fbc the
@@ -545,10 +616,10 @@ def test_shipped_workflow_foreground_latent_is_grey_matted(shipped_workflow):
     assert fg_encode["class_type"] == "VAEEncode"
     matte = shipped_workflow[fg_encode["inputs"]["pixels"][0]]
     assert matte["class_type"] == "ImageCompositeMasked"
-    assert matte["inputs"]["destination"] == [CARD_IMAGE_NODE, 0]
+    assert matte["inputs"]["destination"] == [shipped_nodes[CARD_IMAGE_KEY], 0]
     # LoadImage's MASK is already 1-alpha and ImageCompositeMasked pastes source
     # where mask == 1 — an InvertMask here inverts the silhouette (correlation -1.0).
-    assert matte["inputs"]["mask"] == [CARD_IMAGE_NODE, 1]
+    assert matte["inputs"]["mask"] == [shipped_nodes[CARD_IMAGE_KEY], 1]
     grey = shipped_workflow[matte["inputs"]["source"][0]]
     assert grey["class_type"] == "EmptyImage"
     assert grey["inputs"]["color"] == 0x7F7F7F
@@ -564,12 +635,12 @@ def test_shipped_workflow_init_latent_is_a_light_shape(shipped_workflow):
     assert shipped_workflow[init_encode["inputs"]["pixels"][0]]["class_type"] == "LightSource"
 
 
-def test_shipped_workflow_alpha_is_reattached_from_loadimage_mask(shipped_workflow):
+def test_shipped_workflow_alpha_is_reattached_from_loadimage_mask(shipped_workflow, shipped_nodes):
     """The sprite contract: a relit card keeps the source silhouette."""
     join = shipped_workflow["17"]
     assert join["class_type"] == "JoinImageWithAlpha"
     # JoinImageWithAlpha applies alpha = 1.0 - mask, cancelling LoadImage's inversion.
-    assert join["inputs"]["alpha"] == [CARD_IMAGE_NODE, 1]
+    assert join["inputs"]["alpha"] == [shipped_nodes[CARD_IMAGE_KEY], 1]
 
 
 # ── pose-blind relight key (Story 10.1b regression) ──────────────────────────
@@ -663,12 +734,13 @@ def test_inject_relight_sizes_generated_canvases_to_the_card():
     template = {
         "ytflow_verified_iclight": True,
         "_ytflow_note": "not a node",
-        "1": {"class_type": "LoadImage", "inputs": {"image": "x.png"}},
-        "2": {"class_type": "LoadImage", "inputs": {"image": "y.png"}},
-        "20": {"class_type": "EmptyImage", "inputs": {"width": 832, "height": 1216, "color": 8355711}},
-        "22": {"class_type": "LightSource", "inputs": {"width": 832, "height": 1216, "multiplier": 1.0}},
+        "1": _titled("LoadImage", CARD_IMAGE_KEY, image="x.png"),
+        "2": _titled("LoadImage", BACKGROUND_IMAGE_KEY, image="y.png"),
+        "20": _titled("EmptyImage", GREY_MATTE_KEY, width=832, height=1216, color=8355711),
+        "22": _titled("LightSource", LIGHT_SOURCE_KEY, width=832, height=1216, multiplier=1.0),
     }
-    out = _inject_relight_inputs(template, "card.png", "bg.png", (1664, 928))
+    nodes = resolve_nodes(template, ICLIGHT_NODE_KEYS)
+    out = _inject_relight_inputs(template, nodes, "card.png", "bg.png", (1664, 928))
     assert (out["20"]["inputs"]["width"], out["20"]["inputs"]["height"]) == (1664, 928)
     assert (out["22"]["inputs"]["width"], out["22"]["inputs"]["height"]) == (1664, 928)
     assert out["20"]["inputs"]["color"] == 8355711  # untouched
@@ -680,11 +752,12 @@ def test_inject_relight_sizes_generated_canvases_to_the_card():
 
 def test_inject_relight_without_size_leaves_canvases_alone():
     template = {
-        "1": {"class_type": "LoadImage", "inputs": {"image": "x.png"}},
-        "2": {"class_type": "LoadImage", "inputs": {"image": "y.png"}},
-        "20": {"class_type": "EmptyImage", "inputs": {"width": 832, "height": 1216}},
+        "1": _titled("LoadImage", CARD_IMAGE_KEY, image="x.png"),
+        "2": _titled("LoadImage", BACKGROUND_IMAGE_KEY, image="y.png"),
+        "20": _titled("EmptyImage", GREY_MATTE_KEY, width=832, height=1216),
     }
-    out = _inject_relight_inputs(template, "card.png", "bg.png", None)
+    nodes = resolve_nodes(template, (CARD_IMAGE_KEY, BACKGROUND_IMAGE_KEY, GREY_MATTE_KEY))
+    out = _inject_relight_inputs(template, nodes, "card.png", "bg.png", None)
     assert (out["20"]["inputs"]["width"], out["20"]["inputs"]["height"]) == (832, 1216)
 
 

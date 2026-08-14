@@ -67,8 +67,10 @@ def load_shots(source_run: str) -> list[dict]:
     return out
 
 
-async def render(s: Settings, template: dict, shot: dict, seed: int) -> bytes:
-    workflow = img._inject_prompts(template, shot["image_prompt"], shot["negative_prompt"], seed)
+async def render(s: Settings, template: dict, nodes: dict, shot: dict, seed: int) -> bytes:
+    # Story 13.3: _load_workflow returns (workflow, resolved node map) and
+    # _inject_prompts takes the map — prompts are addressed by declared title now.
+    workflow = img._inject_prompts(template, nodes, shot["image_prompt"], shot["negative_prompt"], seed)
     return await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
 
 
@@ -97,7 +99,7 @@ async def main(args) -> int:
     if not s.character_vision_api_key:
         sys.exit("YTFLOW_CHARACTER_VISION_API_KEY is not set — the probe needs the Qwen-VL key")
     await comfyui_client.check_health(s.comfyui_url)
-    template = img._load_workflow(s.comfyui_workflow_path)
+    template, nodes = img._load_workflow(s.comfyui_workflow_path)
 
     corpus = load_shots(args.source_run)
     prefix, arm = ("confirm_", "confirm") if args.replay_hit else ("", "guard")
@@ -123,7 +125,7 @@ async def main(args) -> int:
          for sh in corpus[args.offset:][: args.limit]]
     for i, (shot, seed) in enumerate(probe_set):
         t0 = time.perf_counter()
-        image_bytes = await render(s, template, shot, seed)
+        image_bytes = await render(s, template, nodes, shot, seed)
         has_person = await vision_check.background_has_person(image_bytes, s)
         log["probes"].append({
             "index": args.offset + i, "shot_id": shot["shot_id"], "scene_num": shot["scene_num"],
@@ -159,7 +161,7 @@ async def main(args) -> int:
     for attempt, retry_seed in enumerate(
             img._seed_ladder(shot["run_id"], shot["scene_num"], shot["shot_id"])
             [1: args.attempts + 1], start=1):
-        retry_bytes = await render(s, template, shot, retry_seed)
+        retry_bytes = await render(s, template, nodes, shot, retry_seed)
         verdict = await vision_check.background_has_person(retry_bytes, s)
         log["guard"].append({"attempt": attempt, "seed": retry_seed, "has_person": verdict})
         print(f"[guard attempt {attempt}] seed={retry_seed} has_person={verdict}", flush=True)

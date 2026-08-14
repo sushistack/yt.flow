@@ -4,7 +4,7 @@
     "1": {
         "class_type": "LoadImage",
         "_meta": {
-            "title": "Foreground \u2014 the character card (RGBA sprite), uploaded per pair"
+            "title": "ytflow:card_image"
         },
         "inputs": {
             "image": "placeholder.png"
@@ -13,7 +13,7 @@
     "2": {
         "class_type": "LoadImage",
         "_meta": {
-            "title": "Background \u2014 the location plate whose light the card should take, uploaded per pair"
+            "title": "ytflow:background_image"
         },
         "inputs": {
             "image": "placeholder.png"
@@ -60,7 +60,7 @@
     "20": {
         "class_type": "EmptyImage",
         "_meta": {
-            "title": "Neutral grey #7F7F7F matte — the card canvas, filled"
+            "title": "ytflow:grey_matte"
         },
         "inputs": {
             "width": 832,
@@ -182,7 +182,7 @@
     "22": {
         "class_type": "LightSource",
         "_meta": {
-            "title": "Light-shape gradient — IC-Light's own node. This IS the light direction; the fbc example seeds the sampler with it instead of a zero latent. (The example uses CreateShapeMask + GrowMaskWithBlur, which are KJNodes and not installed here.)"
+            "title": "ytflow:light_source"
         },
         "inputs": {
             "light_position": "Top Light",

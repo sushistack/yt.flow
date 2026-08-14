@@ -53,6 +53,20 @@ async def fake_check_health(base_url) -> None:
     return None
 
 
+async def fake_get_system_stats(base_url) -> dict:
+    """Story 13.3: image_node's provenance probe is a fifth ComfyUI seam.
+
+    It is awaited unconditionally in real (non-mock) mode, so without this the
+    "offline" stub profile opened a real socket to whatever ``comfyui_url``
+    pointed at — silently, since the probe swallows every failure [AD-10]. A
+    fixed payload, so provenance assertions stay deterministic.
+    """
+    return {
+        "system": {"comfyui_version": "stub-0.0.0", "pytorch_version": "stub-torch"},
+        "devices": [{"name": "stub-device"}],
+    }
+
+
 # ── tts._synthesize ─────────────────────────────────────────────────────────
 async def fake_synthesize(text: str, s, path: Path) -> None:
     """Write a tiny valid mono WAV instead of calling Qwen + downloading audio."""

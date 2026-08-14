@@ -49,7 +49,8 @@ def stub_profile(monkeypatch, tmp_path):
 
     Patches: Langfuse Prompt Hub (`scenario.get_prompt`), DeepSeek (`scenario._call_deepseek`),
     Gemini (`scenario._call_gemini`),
-    Qwen TTS (`tts._synthesize`), ComfyUI (`comfyui_client.submit_and_fetch*`), ffmpeg
+    Qwen TTS (`tts._synthesize`), ComfyUI (`comfyui_client.submit_and_fetch*`,
+    `check_health`, `get_system_stats`), ffmpeg
     (`video._run_ffmpeg`), and the character-reference search/generation seams (Story 5.8's
     `run_service._ensure_character_reference`, which now fires from every `start_run` for a
     never-before-seen `scp_id`): DuckDuckGo search, reference download, and multi-angle
@@ -83,6 +84,11 @@ def stub_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(comfyui_client, "submit_and_fetch", fakes.fake_submit_and_fetch)
     monkeypatch.setattr(comfyui_client, "submit_and_fetch_outputs", fakes.fake_submit_and_fetch_outputs)
     monkeypatch.setattr(comfyui_client, "check_health", fakes.fake_check_health)
+    # Story 13.3's provenance probe is a seam of its own: image_node awaits it once
+    # per run in real mode, before any resume decision, so leaving it unpatched had
+    # the "offline" profile opening a real socket to comfyui_url on any box running
+    # ComfyUI — and swallowing the outcome, so nothing failed.
+    monkeypatch.setattr(comfyui_client, "get_system_stats", fakes.fake_get_system_stats)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
     fakes.patch_character_reference_seams(monkeypatch)
     # Story 8.6: _ensure_character_reference/_ensure_special_pose_cards resolve paths

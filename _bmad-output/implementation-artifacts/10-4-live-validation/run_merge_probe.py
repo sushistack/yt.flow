@@ -247,7 +247,8 @@ def m2_assemble(state, raw: dict) -> list[dict]:
 
 
 async def render(scenes: list[dict], settings) -> None:
-    template = image._load_workflow(settings.comfyui_workflow_path)
+    # Story 13.3: (workflow, resolved node map); prompts inject by declared title.
+    template, nodes = image._load_workflow(settings.comfyui_workflow_path)
     await comfyui_client.check_health(settings.comfyui_url)
     (HERE / "probe_m2").mkdir(exist_ok=True)
     for scene in scenes:
@@ -256,7 +257,7 @@ async def render(scenes: list[dict], settings) -> None:
             if out.is_file() and out.stat().st_size > image.MIN_VALID_IMAGE_BYTES:
                 continue
             workflow = image._inject_prompts(
-                template, shot["image_prompt"], shot["negative_prompt"], shot["seed"])
+                template, nodes, shot["image_prompt"], shot["negative_prompt"], shot["seed"])
             t0 = time.perf_counter()
             out.write_bytes(await comfyui_client.submit_and_fetch(
                 settings.comfyui_url, workflow, poll_interval=3.0, max_polls=600))

@@ -43,12 +43,37 @@ are non-commercial and this pipeline is monetized.
 | `"17"` | `JoinImageWithAlpha` | Re-attaches the source alpha. **The sprite contract.** |
 | `"9"` | `SaveImage` | Output. Retrieval is node-id-agnostic (first output node). |
 
-Only `"1"` and `"2"` are read or written by `composite_harmonization.py`
-(`CARD_IMAGE_NODE` / `BACKGROUND_IMAGE_NODE`). Everything else is opaque to the
-runtime — but `tests/pipeline/nodes/test_composite_harmonization.py` now loads
-this actual file and asserts the injection points, the marker, the grey matte,
-the light-shape init latent and the alpha re-attachment, so a renumbering or an
+Four nodes are read or written by `composite_harmonization.py`, and it addresses
+all four **by declared title, never by node id** (Story 13.3) — see *Manifest
+titles* below. Everything else is opaque to the runtime — but
+`tests/pipeline/nodes/test_composite_harmonization.py` now loads this actual
+file and asserts the injection points, the marker, the grey matte, the
+light-shape init latent and the alpha re-attachment, so a renumbering or an
 undone fix fails a test instead of failing silently in a live render.
+
+## Manifest titles (Story 13.3)
+
+`_meta.title` on an injection target is a **contract string**, not a label:
+`comfyui_client.resolve_nodes` matches it exactly and raises if it is missing or
+duplicated. Renaming one of these in the ComfyUI UI breaks the relight loudly at
+load, which is the point — before 13.3 the grey-matte / light-source pair was
+looked up by id through `workflow.get()` and a renumber dropped card-size
+conditioning **silently**.
+
+| Node | Manifest title | Written by |
+|---|---|---|
+| `"1"` | `ytflow:card_image` | `_inject_relight_inputs` — uploaded card filename |
+| `"2"` | `ytflow:background_image` | `_inject_relight_inputs` — uploaded plate filename |
+| `"20"` | `ytflow:grey_matte` | `_inject_relight_inputs` — `width`/`height` = card size |
+| `"22"` | `ytflow:light_source` | `_inject_relight_inputs` — `width`/`height` = card size |
+
+The descriptive titles those four carried before 13.3 are preserved here
+verbatim, because they explain *why* each node is what it is:
+
+- `"1"`: *Foreground — the character card (RGBA sprite), uploaded per pair*
+- `"2"`: *Background — the location plate whose light the card should take, uploaded per pair*
+- `"20"`: *Neutral grey #7F7F7F matte — the card canvas, filled*
+- `"22"`: *Light-shape gradient — IC-Light's own node. This IS the light direction; the fbc example seeds the sampler with it instead of a zero latent. (The example uses CreateShapeMask + GrowMaskWithBlur, which are KJNodes and not installed here.)*
 
 ## Why it was parked, and what actually fixed it
 
@@ -115,5 +140,6 @@ with a max alpha difference of 0/255.
 2. Probe one card+plate pair live and look at the sprite next to the unlit card.
 3. Only then set the marker back to `true`, as its own edit, and rewrite
    `_ytflow_note` with what the probe showed.
-4. Renumbering nodes? Check `CARD_IMAGE_NODE` / `BACKGROUND_IMAGE_NODE` and the
-   shipped-workflow tests — the injection points are hardcoded node-id strings.
+4. Renumbering nodes is now safe; **renaming** them is not. The four injection
+   points are resolved by the `ytflow:` titles in *Manifest titles* above — keep
+   those strings byte-identical, or the relight fails at load (Story 13.3).

@@ -1,0 +1,11 @@
+# Story 13.3 live-validation artifacts.
+#
+# What is committed: the adjudication image the verdict cites
+# (`title_resolution_grid.jpg`, 512px/panel), the two scripts that produce it, and
+# the numbers they derive (`metrics.json`, `provenance.json`). See README.md.
+#
+# What is ignored: the three raw 1344x768 renders the grid was built FROM. They
+# are regenerable by re-running run_probe.py against the same shipped workflow —
+# the seed is pinned in the script — and nothing in the verdict needs a reader to
+# open one directly.
+raw_*.png

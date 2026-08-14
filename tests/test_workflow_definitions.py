@@ -11,10 +11,31 @@ five workflows. The allowlist below is what keeps it from coming back.
 ponytail: pure stdlib, table-driven over a glob, no fixtures.
 """
 
+import importlib.util
 import json
 from pathlib import Path
 
 import pytest
+
+from yt_flow.pipeline.nodes import image
+from yt_flow.pipeline.nodes.composite_harmonization import ICLIGHT_NODE_KEYS
+from yt_flow.services import character_image_provider
+from yt_flow.services.comfyui_client import resolve_nodes
+
+
+def _plate_node_keys() -> tuple[str, ...]:
+    """The seed script is a script, not a package — load it by path like its own
+    test module does, so its key tuple cannot drift from this table."""
+    spec = importlib.util.spec_from_file_location(
+        "seed_location_plates", Path(__file__).resolve().parents[1] / "scripts" / "seed_location_plates.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.PLATE_NODE_KEYS
+
+
+PLATE_NODE_KEYS = _plate_node_keys()
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "data" / "workflows"
 WORKFLOWS = sorted(WORKFLOW_DIR.glob("*.json"))
@@ -33,6 +54,26 @@ ALLOWED_LORAS = {
 
 API2 = "comfyui_sdxl_anime_lora_workflow_api2.json"
 PLATE = "comfyui_location_plate_api.json"
+ICLIGHT = "comfyui_iclight_relight_api.json"
+MULTI_ANGLE = "comfyui_character_multi_angle_api.json"
+
+# Story 13.3: the manifest keys each consumer resolves at load. This table is the
+# only net that catches a ComfyUI-UI re-export — the UI rewrites `_meta.title`
+# happily, and every one of these lookups is exact-match with no id fallback, so a
+# rename fails a live render at the first shot. Sourced from the consumers, not
+# retyped: a key added in code with no title in the JSON fails here.
+CONSUMER_KEYS = {
+    API2: ("src/yt_flow/pipeline/nodes/image.py", (image.POSITIVE_KEY, image.NEGATIVE_KEY)),
+    PLATE: ("scripts/seed_location_plates.py", PLATE_NODE_KEYS),
+    ICLIGHT: ("src/yt_flow/pipeline/nodes/composite_harmonization.py", ICLIGHT_NODE_KEYS),
+    MULTI_ANGLE: (
+        "src/yt_flow/services/character_image_provider.py",
+        (
+            character_image_provider._POSITIVE_NODE_TITLE,
+            character_image_provider._NEGATIVE_NODE_TITLE,
+        ),
+    ),
+}
 
 # Any class whose name starts with this patches a LoRA into the model/clip chain
 # (`LoraLoader`, `LoraLoaderModelOnly`, ...). Matching the exact string once let
@@ -120,11 +161,28 @@ def test_only_allowlisted_loras(path: Path):
     )
 
 
+@pytest.mark.parametrize("name", sorted(CONSUMER_KEYS), ids=lambda n: n)
+def test_committed_workflow_resolves_every_key_its_consumer_needs(name: str):
+    """The data test Story 13.3 exists for.
+
+    Every unit test above works on hand-built fixtures; nothing else asserts that
+    the JSON actually shipped still declares the titles the code looks up. A
+    ComfyUI-UI round-trip that renames or drops one would otherwise surface as a
+    failed live render, hours in.
+    """
+    consumer, keys = CONSUMER_KEYS[name]
+    workflow = json.loads((WORKFLOW_DIR / name).read_text(encoding="utf-8"))
+    resolved = resolve_nodes(workflow, keys)  # raises, naming the missing key
+    assert sorted(resolved) == sorted(keys), consumer
+    assert len(set(resolved.values())) == len(resolved), f"{name}: two keys resolved to one node"
+
+
 def test_api2_satisfies_image_node_contract():
-    """image.py injects into "6"/"7" by id and seeds every KSampler by class."""
+    """image.py resolves its prompt nodes by title and seeds every KSampler by class."""
     graph = nodes(WORKFLOW_DIR / API2)
-    assert graph["6"]["class_type"] == "CLIPTextEncode"
-    assert graph["7"]["class_type"] == "CLIPTextEncode"
+    resolved = resolve_nodes(graph, (image.POSITIVE_KEY, image.NEGATIVE_KEY))
+    for node_id in resolved.values():
+        assert graph[node_id]["class_type"] == "CLIPTextEncode"
     assert any(node.get("class_type") == "KSampler" for node in graph.values())
 
 
@@ -143,7 +201,11 @@ def test_style_lora_still_reaches_the_sampler(name: str):
     )
 
 
-def test_plate_workflow_keeps_the_node_id_the_seed_script_hardcodes():
-    """scripts/seed_location_plates.py pins MODEL_NODE = "11"."""
+def test_plate_t2i_fallback_target_is_still_a_lora_loader():
+    """The seed script rewires the sampler's model input to `ytflow:model` when it
+    strips the IPAdapter. Story 13.3 replaced the hardcoded "11" with the title, but
+    the node behind it must still be the LoRA loader or the fallback loses the style.
+    """
     graph = nodes(WORKFLOW_DIR / PLATE)
-    assert str(graph["11"]["class_type"]).startswith(LORA_PREFIX)
+    model_id = resolve_nodes(graph, ("ytflow:model",))["ytflow:model"]
+    assert str(graph[model_id]["class_type"]).startswith(LORA_PREFIX)
