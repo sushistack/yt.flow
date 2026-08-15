@@ -119,7 +119,10 @@ def test_qwen_tts_clone_and_speed_defaults(monkeypatch):
     _base_env(monkeypatch)
     from yt_flow.config import Settings
     s = Settings(_env_file=None)
-    assert s.qwen_tts_clone_enabled is False
+    # 2026-08-15: Jay 판정으로 클론 음성이 프로덕션 기본값이 됐다. 음성 ID는 5.24에서
+    # 이미 등록돼 있었고 이 불리언 하나가 false라 스톡 Cherry가 출하되고 있었다 — 그
+    # 침묵이 Story 13.6의 발단이다.
+    assert s.qwen_tts_clone_enabled is True
     assert s.qwen_tts_clone_model == "qwen3-tts-vc-2026-01-22"
     assert s.qwen_tts_clone_voice_path == "data/voices/sutak.mp3"
     assert s.qwen_tts_clone_voice_id == ""

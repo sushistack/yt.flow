@@ -1329,11 +1329,23 @@ def test_char_max_box_reserves_scale_pulse_growth():
     assert max_scaled_height + 2 * (video._MAX_MOTION_Y_PX + video.CHAR_PAN_AMPLITUDE_PX) <= video.COMP_H + 1e-6
 
 
-def test_config_parallax_enabled_default_true():
-    """Settings.parallax_enabled defaults true, per AC:5."""
+def test_config_motion_defaults_are_off_by_jays_2026_08_15_verdict():
+    """All four motion systems ship OFF — a live verdict, not a code preference.
+
+    Story 7.3 (`parallax_enabled`) and 11.3 (`camera_noise_enabled`) both shipped
+    ON. Jay's 2026-08-15 review of run e5ed4b3a reversed that: after four rebuilds
+    the verdict was "떨림은 없어진 거 확인". The defaults live here rather than in
+    `.env` because a decision that only reaches one machine is the failure mode
+    Story 13.6 exists against — an approved change that never appears in the output.
+
+    Flipping any of these back is a product decision, not a refactor: the pinned
+    values are the record of what was judged.
+    """
     from yt_flow.config import Settings
 
-    assert Settings.model_fields["parallax_enabled"].default is True
+    for field in ("parallax_enabled", "camera_noise_enabled",
+                  "character_idle_motion_enabled", "background_camera_motion_enabled"):
+        assert Settings.model_fields[field].default is False, field
 
 
 def _cast_member(
@@ -3495,14 +3507,6 @@ def test_record_trace_emits_camera_path_block(monkeypatch):
     monkeypatch.setattr(video, "get_client", lambda: _Client())
     _REAL_RECORD_TRACE(run_id="r", scene_count=1, latency_ms=1, camera_noise_enabled=True)
     assert seen["camera_path"] == {"version": cp.CAMERA_PATH_VERSION, "enabled": True}
-
-
-def test_config_camera_noise_enabled_default_true():
-    """Settings.camera_noise_enabled defaults true (Story 11.3 AC:6); the fake
-    _settings_ns defaults False so pre-11.3 tests stay untouched."""
-    from yt_flow.config import Settings
-
-    assert Settings.model_fields["camera_noise_enabled"].default is True
 
 
 def test_char_max_box_reserves_the_widest_macro_pan_budget():

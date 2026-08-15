@@ -160,7 +160,7 @@ class Settings(BaseSettings):
     qwen_tts_endpoint: str = "https://dashscope-intl.aliyuncs.com"
     qwen_tts_model: str = "qwen3-tts-flash"
     qwen_tts_voice: str = "Cherry"
-    qwen_tts_clone_enabled: bool = False
+    qwen_tts_clone_enabled: bool = True  # 2026-08-15 Jay 라이브 판정으로 확정 (v4)
     qwen_tts_clone_model: str = "qwen3-tts-vc-2026-01-22"
     qwen_tts_clone_voice_path: str = "data/voices/sutak.mp3"
     qwen_tts_clone_voice_id: str = ""
@@ -235,12 +235,12 @@ class Settings(BaseSettings):
     # Character parallax (Story 7.3): couple the near-plane character's zoom/pan to
     # the background's EffectSpec, amplified by CHAR_DEPTH_FACTOR, for a real
     # multiplane depth cue. When false, character reverts to fixed-size sway/bob only.
-    parallax_enabled: bool = True
+    parallax_enabled: bool = False  # 2026-08-15 Jay 라이브 판정으로 확정 (v4)
 
     # Camera noise (Story 11.3): fBm handheld camera stage (sway/tremor/rot/
     # micro-zoom + stinger-synced trauma shake) on every composited shot.
     # When false, no stage is attached — the pre-11.3 filter chain, byte-identical.
-    camera_noise_enabled: bool = True
+    camera_noise_enabled: bool = False  # 2026-08-15 Jay 라이브 판정으로 확정 (v4)
 
     # Character idle motion (Story 1.9c/8.8): the per-card breath/sway/tremble/pulse
     # sine and the 8.9 entrance offsets. Separate system from `camera_noise_enabled`
@@ -252,7 +252,7 @@ class Settings(BaseSettings):
     # `_render_fusion_still` documents (`motion_style="hold"` + `movement_mode="anchored"`),
     # because those terms are non-zero at t=0 and a partial freeze bakes a fraction of
     # a frame's animation in.
-    character_idle_motion_enabled: bool = True
+    character_idle_motion_enabled: bool = False  # 2026-08-15 Jay 라이브 판정으로 확정 (v4)
 
     # Background camera archetype (Story 11.2/11.5): push_in / pull_back / drift are
     # what actually move the plate, through both the zoompan chain and the 11.5 depth
@@ -262,7 +262,7 @@ class Settings(BaseSettings):
     # of those off, while the one shot already on the `locked` archetype sat at 0.15.
     # When false every shot renders on `_FUSION_STILL_SPEC` with a `locked` hint, so
     # the plate holds still and 2.5D depth is kept (unlike disabling depth outright).
-    background_camera_motion_enabled: bool = True
+    background_camera_motion_enabled: bool = False  # 2026-08-15 Jay 라이브 판정으로 확정 (v4)
 
     # Content language (Story 9.1): single seam for a future language pivot. The
     # pipeline is Korean-only today — changing this to anything else makes
