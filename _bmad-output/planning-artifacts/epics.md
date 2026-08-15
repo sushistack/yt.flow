@@ -1673,6 +1673,18 @@ Jay 지적: "이상한 싸이렌 소리 좀 없애줘 (다른 걸로 대체하�
 - **지적 1(도입부 나레이션 문장이 이상함 — "손이 닿는 순간, 그는 죽었습니다")**: 대본 품질이므로 **Epic 12 소관**. 다만 이 런은 `deepseek_reasoning=low`로 렌더됐고 나레이션 총량이 2.8분(목표 8분, 베이스라인 `c6be1954` 7.87분)으로 **1/3 수준**이었다는 사실을 함께 넘긴다 — 절단 방지로 넣은 설정이 분량·문장 품질을 동시에 떨어뜨렸을 가능성을 Epic 12에서 검증해야 한다.
 - **지적 8(이미 만들어진 셋을 사용하는 게 맞는지 의심스러움)**: 이 런은 `stock_plate_substitution_enabled=false`로 **스톡 플레이트를 의도적으로 쓰지 않았다**(8.17 플레이트 치환이 배경 다양성을 155→41로 붕괴시켜 차단). 즉 "셋 재사용이 안 된 것"이 맞고, 재사용을 되살리려면 플레이트-프롬프트 화해가 선행되어야 한다 — **Epic 8의 별도 스토리**(8.19 리뷰에서 인계된 항목)로 남아 있다.
 
+### Story 10.1d: Recompose 런타임 전제 프리플라이트 (backlog, 2026-08-15 초안)
+
+10.1c 해제 조건 **(b)**. recompose 경로는 ComfyUI를 `--lowvram --disable-smart-memory` + fp8 인코더로 띄워야 하는데 그걸 감지·강제하는 코드가 없어, 기본 설치에서 ~12분 스왑 데드락에 빠지고 try/except fallback도 안 걸린다(10.1c 판정 주석). `/system_stats`의 `argv`·RAM으로 진입 시 1회 프리플라이트하고, 실패는 크게·이름 있게·조치 가능하게 낸다. 코드만이고 GPU 불필요하며 **기본값은 건드리지 않는다**. 2026-08-15 라이브 런 e5ed4b3a가 같은 부류를 실증했다 — 플래그 없이 샷당 491초(샘플링은 11초), RSS 14GB+스왑 4GB, yt.flow는 살아 있는 서버를 "죽었다"고 오판. 파일: `10-1d-recompose-runtime-preflight.md`.
+
+### Story 10.1e: Recompose on/off 페어 채점과 기본값 판정 (backlog, 2026-08-15 초안)
+
+10.1c 해제 조건 **(a)**, 10-1d 선행 필수. 같은 샷·같은 시드로 on/off 쌍을 렌더해 13-2의 재구축된 축으로 **블라인드** 채점한다. 미해결 긴장이 실재한다 — Jay의 모션 판정은 PASS였는데 10.4 사후 감사는 재창조 프레임이 판독성에서 더 나빴다고 했다(판독불가 20% vs 13%, 복도 오독 57% vs 27%). 같은 샷을 양쪽으로 잰 적이 없다. 임계값은 채점 전 사전 등록. 플립 시 오버레이 전용 기계(접지·`_GROUND_Y_MAX`·오클루전·접촉그림자·11.5 패럴랙스·1.9c 아이들모션) 폐기 주체를 명시해야 한다. 파일: `10-1e-recompose-default-verdict.md`.
+
+### Story 10.8: 캐스트 포즈·앵글 커버리지 (backlog, 2026-08-15 초안)
+
+라이브 런 e5ed4b3a에서 캐스트 배치 **40건 중 26건이 fallback**(angle 23, asset 3)이고, 실제로 화면에 쓰인 카드는 **전부 `front`** — SCP-049가 21샷 동일 그림이다. Jay 지적: "대부분의 캐릭터들이 그냥 정면 서있는 샷 밖에 없음". 두 층이며 어느 한쪽만 고치면 화면이 안 바뀐다 — ① `cast_decision` 프롬프트가 `pose`를 standing/sitting 둘로 닫고 `pose_hint`는 "대부분 생략하라"고 지시(9씬 전체에 2건) ② 라이브러리에 승인된 `standing` 카드가 어느 앵글에도 없다. 카드 해석 자체는 건강하다(40/40 path 있음) — 리졸버를 손으로 흉내내면 없는 결함이 보인다. 파일: `10-8-cast-pose-angle-coverage.md`.
+
 ## Epic 11: 시네마틱 모션 & 프레임 품질 하드닝
 
 2026-08-01 품질 우선 리서치(`_bmad-output/planning-artifacts/research/technical-yt-flow-quality-strategy-research-2026-08-01.md`, 코드베이스 정밀 탐색 + 논문/업계 표준 4개 영역 병렬 조사) 발의. Jay의 "조잡함" 지적의 원인 중 Epic 8(카드 컴포지팅 고도화)이 다루지 않는 나머지 절반 — **모션과 이미지 생성 파라미터** — 을 커버한다. 코드에서 확정된 근거: ① 배경 155장 전부 KSampler seed 0 고정(`_inject_prompts`가 노드 6/7만 주입, 워크플로 JSON에 `seed: 0` 하드코딩 — 캐릭터 쪽은 이미 랜덤화 선례 있음 `character_image_provider.py:232`), ② 배경 latent 1216×832(AR 1.462) → `_zoompan_filter`가 세로 ~18%를 크롭 후 업스케일, ③ `composite_harmonization_tier` 기본 0(틴트/컨택트섀도/라이트랩 존재하나 꺼짐), ④ `camera_movement` 하드코딩 `None`(`scenario_chain.py:1079`) → 카메라 방향이 콘텐츠와 무관한 10개 인덱스 라운드로빈, ⑤ "셰이크"가 단일 주파수 사인파("eyeball-tuned; not derived from anything" 주석), ⑥ WhisperX가 사실상 비활성(tts의 균등분할 provisional timings이 항상 존재해 `subtitle.py`의 empty-체크를 통과 못 함) → 8.11 샷 컷이 실제 발화 경계가 아닌 균등분할 위에서 동작. 근거 문헌은 리서치 문서 Area 4(AE wiggle 프랙탈 노이즈 모델, Gavant et al. IEEE 생리학적 카메라 셰이크, Niklaus et al. 3D Ken Burns, DepthFlow, Wan 2.2)에 인용. **착수 순서**: 11.1은 8-16 착수 **전**에 완료(베이스라인 오염 방지), 11.2/11.3은 8-16과 병렬 가능(단 `video.py` 동시 편집 충돌 주의 — 5-14/1-10 전례), 11.5는 8-17(depth map 저장)과 11.3(경로 생성기) 이후.
@@ -1823,3 +1835,11 @@ AD-10은 "조용한 강등 금지"를 요구하지만 실제로는 여러 경로
 2026-08-03 DEV MODE 전환(품질 게이팅 OFF, `PROMPT_POLICY.md` 배너)의 되돌림 스토리. 파이프라인이 완성되고 품질튜닝 국면에 들어갈 때: `PROMPT_POLICY.md` Rules 3/4의 SUSPENDED 해제, 6.12의 `YTFLOW_ALLOW_AB_GATE` 동결 해제, 6.10 median 게이트로 보류 후보 재평가, 13.2의 시각 축을 게이트에 포함. 6.12와 이 스토리의 관계: 6.12는 "동결한다", 13.4는 "해제한다" — 별개 스토리로 두는 이유는 해제 조건 판단(파이프라인 완성 정의)이 별도 의사결정이기 때문. **착수 조건**: Epic 8/11의 GPU 스토리가 닫히고 E2E 산출물이 Jay 기준을 통과한 뒤. (draft — 상세 스토리 파일은 create-story로 별도 생성)
 
 **Epic 12 회고 반영(2026-08-08)**: 12.2 결과는 Gemini가 한국어 문장과 Epic 4 judge를 함께 소유하므로 self-preference bias를 제거하지 않고 이동시켰다. 13.4가 promotion 권한을 복원하기 전, Gemini judge 유지 또는 DeepSeek judge 분리 중 하나를 실측 근거와 함께 명시적으로 결정해야 한다. 결정 없이 게이트 권한만 복원하는 것은 허용하지 않는다.
+
+### Story 13.5: depth 그래프 노드ID 커플링 제거 (backlog, 2026-08-15 초안)
+
+13.3이 6개 커플링 사이트 중 4개만 전환했고, 남은 하나가 가장 자주 도는 경로다. `compositing_service.py`가 depth 그래프를 `DEPTH_IMAGE_NODE="1"`/`DEPTH_MODEL_NODE="2"`로 주소하고 `depth_placement_enabled`는 기본 True라 **생성 배경마다** 실행된다. 노드 `"1"`은 LoadImage 검사로 크게 실패하지만 `"2"`는 "`inputs` dict 있음"만 봐서 재번호 시 `ckpt_name`/`resolution`이 조용히 엉뚱한 노드로 간다 — 13.3이 harmonization에서 찾은 grey_matte/light_source와 같은 형태. 놓친 이유도 기록해 둘 값어치가 있다: 13.3의 범위 조사가 `workflow["N"]` 리터럴만 grep해서 **상수 뒤에 숨은** 사이트를 못 봤고, 그 결과가 "나머지는 class_type 스캔"이라고 *검증됨*으로 기록됐다. 파일: `13-5-depth-node-id-decoupling.md`.
+
+### Story 13.6: 결정과 출하 기본값의 표류를 드러낸다 (backlog, 2026-08-15 초안)
+
+2026-08-15 Jay가 "결정했는데 적용이 안 된 것 같다"고 지목한 4건 중 3건이 전부 같은 형태였다 — 기능은 구현·리뷰·머지까지 끝났고 **아무도 안 뒤집은 기본값 뒤에 앉아 있었다**: 떨림(`camera_noise_enabled=True`), LLM 재합성(`shot_recompose_enabled=False`), 클론 음성(`.env`에 `false`인데 음성 ID는 5.24에서 이미 등록됨). 승인된 결정이 출하물에 없는 것은 게이트가 초록이고 경고가 비어 있는 채로 일어나는 **조용한 무효화**이며, 13.1이 다룬 조용한 강등의 한 층 위다. 결정 담지 설정을 운영 노브와 구분해 선언하고, 결정값과 실효값의 차이 + 값의 출처(`.env` vs 코드 기본값)를 한 커맨드로 보고한다. 게이트가 아니라 리포트다 — off인 데는 기록된 이유가 있는 것들이 있다. 플래그 플립 자체는 각 기능 스토리 소관. 파일: `13-6-shipping-defaults-match-decisions.md`.
