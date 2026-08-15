@@ -1041,6 +1041,22 @@ class TestReferenceImageInjectionAndFallback:
         assert updated["7"]["inputs"]["text"] == "bad quality, blurry"
         assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
 
+    @pytest.mark.parametrize("inputs", ["text", 7, ["12", 0], None])
+    def test_a_non_dict_inputs_is_skipped_rather_than_crashing(self, inputs):
+        """`"text" in (node.get("inputs") or {})` was True for the string `"text"`
+        and the assignment then raised TypeError — in the one function whose stated
+        reason to exist is foreign workflows, while its sibling
+        `_inject_negative_suffix` already guards the same field with isinstance."""
+        workflow = {
+            "1": {"class_type": "CLIPTextEncode", "inputs": inputs},
+            "6": {"class_type": "CLIPTextEncode", "_meta": {"title": "ytflow:positive_prompt"},
+                  "inputs": {"text": "placeholder"}},
+        }
+        updated = ComfyUICharacterProvider(Settings())._inject_prompt(workflow, "a bare-faced guard")
+
+        assert updated["1"]["inputs"] == inputs
+        assert updated["6"]["inputs"]["text"] == "a bare-faced guard"
+
     @pytest.mark.parametrize("node", [
         {"_meta": None},
         {"_meta": {"title": None}},

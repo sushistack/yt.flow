@@ -24,7 +24,7 @@
   "6": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "ytflow:positive_prompt"
     },
     "inputs": {
       "text": "character portrait placeholder",
@@ -37,7 +37,7 @@
   "7": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "Negative Prompt"
+      "title": "ytflow:negative_prompt"
     },
     "inputs": {
       "text": "lowres, bad anatomy, worst quality, extra limbs, watermark, text, logo, border, scenery, landscape, room, corridor, detailed background, environmental detail, props, furniture, multiple characters, crowd, cropped body, bust portrait, close-up, feet out of frame, drop shadow, cast shadow, harsh shadow, dramatic lighting, chiaroscuro, high contrast lighting, rim light, vignette, dark background, floor reflection, noise, grain, jpeg artifacts, banding",

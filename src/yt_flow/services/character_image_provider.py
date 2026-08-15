@@ -376,7 +376,12 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         encoders = [
             node for node in workflow.values()
             if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
-            and "text" in (node.get("inputs") or {})
+            # ``isinstance``, not ``or {}``: ``"text" in "text"`` is True for a
+            # string ``inputs``, and the assignment below then raises TypeError —
+            # in the one function whose stated reason to exist is foreign
+            # workflows. Its sibling ``_inject_negative_suffix`` already guards
+            # this field the same way.
+            and isinstance(node.get("inputs"), dict) and "text" in node["inputs"]
         ]
         target = next(
             (n for n in encoders if _node_title(n) == _POSITIVE_NODE_TITLE),
@@ -561,7 +566,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             # dropped with only a log line to show for it.
             "6": {
                 "class_type": "CLIPTextEncode",
-                "_meta": {"title": "ytflow:positive_prompt"},
+                "_meta": {"title": _POSITIVE_NODE_TITLE},
                 "inputs": {"text": "prompt placeholder", "clip": ["4", 1]},
             },
             "7": {

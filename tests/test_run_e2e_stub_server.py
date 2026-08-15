@@ -34,21 +34,51 @@ _PATCHED_SEAMS = [
     ("yt_flow.services.comfyui_client", "submit_and_fetch_outputs"),
     ("yt_flow.services.comfyui_client", "check_health"),
     ("yt_flow.services.comfyui_client", "get_system_stats"),
-    ("yt_flow.services.image_search", "DuckDuckGoImageSearch"),
-    ("yt_flow.services.character_service", "CharacterService"),
+    ("yt_flow.services.comfyui_client", "upload_image"),
+    # The five seams ``fakes.patch_character_reference_seams`` rebinds. They are
+    # *class* attributes, so registering the owning module attribute (as this list
+    # used to) restored nothing — the mutation is on the class object itself.
+    ("yt_flow.services.image_search.ScpWikiImageFetch", "fetch"),
+    ("yt_flow.services.image_search.DuckDuckGoImageSearch", "search"),
+    ("yt_flow.services.character_service.CharacterService", "_download_reference_image"),
+    ("yt_flow.services.character_service.CharacterService", "enrich_descriptor_from_references"),
+    ("yt_flow.services.character_service.CharacterService", "_get_image_provider"),
 ]
 
-# Story 13.3: the ComfyUI adapter's network surface, classified. Listing the two
-# prompt-submission calls by hand is how ``check_health`` and ``get_system_stats``
-# stayed live in a "zero real calls" process — ``get_system_stats`` for a whole
-# story, and silently, because it swallows every failure [AD-10]. The set equality
-# below turns a newly added HTTP function into a failing test instead.
+# Story 13.3: the ComfyUI adapter's network surface — every public async function
+# is stubbed, with no "unreached" escape hatch. There used to be one, holding
+# ``upload_image`` on the claim that only character generation and IC-Light relight
+# reach it; ``compositing_service.depth_map_file`` reaches it too, from an
+# ``api/main.py`` seam injected whenever ``depth_placement_enabled`` (ships True),
+# and its blanket except hid the resulting live socket. Listing the two
+# prompt-submission calls by hand is likewise how ``check_health`` and
+# ``get_system_stats`` stayed live. The set equality below turns a newly added HTTP
+# function into a failing test instead of a silent real call.
 _COMFYUI_STUBBED = {
     "submit_and_fetch", "submit_and_fetch_outputs", "check_health", "get_system_stats",
+    "upload_image",
 }
-# Reached only by character-card generation and IC-Light relight, neither of which
-# the stub server's pipeline drives; it has no fake and calling it would be the bug.
-_COMFYUI_UNREACHED = {"upload_image"}
+
+# The character-reference seams, as (owner, attribute) — the drift guard for
+# ``patch_character_reference_seams``, which the script must call rather than
+# re-list. It named two of these five, so the SCP-wiki fetch made real HTTP.
+_CHARACTER_SEAMS = [
+    ("yt_flow.services.image_search.ScpWikiImageFetch", "fetch"),
+    ("yt_flow.services.image_search.DuckDuckGoImageSearch", "search"),
+    ("yt_flow.services.character_service.CharacterService", "_download_reference_image"),
+    ("yt_flow.services.character_service.CharacterService", "enrich_descriptor_from_references"),
+    ("yt_flow.services.character_service.CharacterService", "_get_image_provider"),
+]
+
+
+def _owner(dotted: str):
+    """The module or class named by ``dotted`` — modules and classes alike, so one
+    seam table can address ``module.attr`` and ``module.Class.attr``."""
+    try:
+        return importlib.import_module(dotted)
+    except ImportError:
+        module, _, attr = dotted.rpartition(".")
+        return getattr(_owner(module), attr)
 
 
 @pytest.fixture
@@ -56,9 +86,9 @@ def stub_server(monkeypatch):
     """Import the script and apply its stub profile, with every touched seam restored
     afterwards. Importing is safe: the module top only sets dummy env keys and
     sys.path entries — uvicorn boots under ``__main__`` only."""
-    for module_name, attr in _PATCHED_SEAMS:
-        module = importlib.import_module(module_name)
-        monkeypatch.setattr(module, attr, getattr(module, attr))
+    for dotted, attr in _PATCHED_SEAMS:
+        owner = _owner(dotted)
+        monkeypatch.setattr(owner, attr, getattr(owner, attr))
     # Same trick for the env keys the script assigns at module top: registering them
     # first is what makes monkeypatch restore the suite's own dummies at teardown.
     for var in ("YTFLOW_DEEPSEEK_API_KEY", "YTFLOW_GEMINI_API_KEY"):
@@ -86,8 +116,11 @@ def test_both_provider_keys_are_non_secret_dummies(stub_server):
 
 
 def test_every_comfyui_network_function_is_classified():
-    """A new async function on the adapter must be explicitly stubbed or explicitly
-    declared unreached — the gap ``get_system_stats`` fell through."""
+    """Every async function on the adapter must be stubbed — no "unreached" bucket.
+
+    ``get_system_stats`` fell through the hand-kept list; ``upload_image`` then sat
+    in an ``_COMFYUI_UNREACHED`` set that certified a live call as intentional. A
+    test that blesses a real socket is worse than no test."""
     import inspect
 
     import yt_flow.services.comfyui_client as cc
@@ -97,7 +130,7 @@ def test_every_comfyui_network_function_is_classified():
         if not name.startswith("_") and inspect.iscoroutinefunction(obj)
         and getattr(obj, "__module__", None) == cc.__name__
     }
-    assert public_async == _COMFYUI_STUBBED | _COMFYUI_UNREACHED
+    assert public_async == _COMFYUI_STUBBED
 
 
 def test_every_stubbed_comfyui_seam_is_actually_rebound(stub_server):
@@ -117,6 +150,22 @@ def test_pytest_stub_profile_rebinds_the_same_comfyui_seams(stub_profile):
 
     for name in _COMFYUI_STUBBED:
         assert getattr(cc, name).__module__ == "tests.stubs.fakes", name
+
+
+@pytest.mark.parametrize("dotted,attr", _CHARACTER_SEAMS, ids=lambda v: v.rpartition(".")[2])
+def test_the_script_rebinds_every_character_reference_seam(stub_server, dotted, attr):
+    """The script must go through ``patch_character_reference_seams``, not re-list a
+    subset of it: with only search + download named, ``ScpWikiImageFetch.fetch`` made
+    real HTTP to the SCP wiki and an unstubbed ``_get_image_provider`` was a second
+    live route into ``upload_image``."""
+    assert getattr(_owner(dotted), attr).__module__ == "tests.stubs.fakes"
+
+
+@pytest.mark.parametrize("dotted,attr", _CHARACTER_SEAMS, ids=lambda v: v.rpartition(".")[2])
+def test_pytest_stub_profile_rebinds_the_same_character_seams(stub_profile, dotted, attr):
+    """...and the in-process fixture binds the identical five, through the identical
+    helper — the drift guard covers both callers, not just ``comfyui_client``."""
+    assert getattr(_owner(dotted), attr).__module__ == "tests.stubs.fakes"
 
 
 async def test_both_scenario_provider_seams_are_stubbed_and_stage_scoped(stub_server):

@@ -43,6 +43,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 # Story 12.2: scenario_node fails fast on a missing Gemini key before it ever
 # reaches the (fully stubbed) provider seams. A non-secret dummy satisfies that
@@ -81,17 +82,18 @@ async def _delayed_submit_and_fetch_outputs(*args, **kwargs):
 def apply_stub_profile() -> None:
     """Same seams as tests/conftest.py::stub_profile, applied without pytest.
 
-    Plus 2 more seams for the character management flow (Story 1.11/3.7):
-    DuckDuckGo image search and its download step both do real HTTP otherwise —
-    unlike the 5 pipeline seams, pytest never covers this path with non-empty
-    results (see deferred-work.md), so there's no existing fixture to mirror.
+    Including the character-management seams (Story 1.11/3.7), which are taken
+    from ``fakes.patch_character_reference_seams`` rather than hand-listed here:
+    this file used to name two of that helper's five, so the SCP-wiki fetch made
+    real HTTP and an unstubbed ``_get_image_provider`` was a second live route
+    into ``upload_image`` — in a process whose whole contract is zero real calls.
+    A subset maintained by hand is exactly the drift the classification tests in
+    ``tests/test_run_e2e_stub_server.py`` exist to forbid.
     """
     import yt_flow.pipeline.nodes.scenario as scenario
     import yt_flow.pipeline.nodes.tts as tts
     import yt_flow.pipeline.nodes.video as video
-    import yt_flow.services.character_service as character_service
     import yt_flow.services.comfyui_client as comfyui_client
-    import yt_flow.services.image_search as image_search
     import yt_flow.services.prompt_service as prompt_service
 
     # scenario.py's own one format_guide fetch uses the bare imported name;
@@ -113,9 +115,16 @@ def apply_stub_profile() -> None:
     # resume decision — an unpatched provenance probe is a real socket out of a
     # process whose entire contract is zero real calls, and it fails silently.
     comfyui_client.get_system_stats = fakes.fake_get_system_stats
+    # Story 13.3 review-2: `compositing_service.depth_map_file` defaults its client
+    # to the real module and `api/main.py` injects it into image_node whenever
+    # `depth_placement_enabled` (ships True), so this WAS a real socket per distinct
+    # background — swallowed by that function's blanket except, like the probe above.
+    comfyui_client.upload_image = fakes.fake_upload_image
     video._run_ffmpeg = fakes.fake_run_ffmpeg
-    image_search.DuckDuckGoImageSearch.search = fakes.fake_image_search
-    character_service.CharacterService._download_reference_image = fakes.fake_download_reference_image
+    # The shared helper, not a hand-kept subset of it. It only ever calls
+    # ``.setattr(obj, name, value)``, and this is a standalone process with no
+    # monkeypatch, so plain ``setattr`` is the whole adapter. [ponytail]
+    fakes.patch_character_reference_seams(SimpleNamespace(setattr=setattr))
 
 
 if __name__ == "__main__":

@@ -76,7 +76,14 @@ class ComfyUIError(RuntimeError):
 
 
 def resolve_nodes(workflow: dict, keys: Iterable[str]) -> dict[str, str]:
-    """Map each manifest key (a full ``ytflow:<name>`` title) to its node ID.
+    """Map each key to the node ID whose ``_meta.title`` equals it, exactly.
+
+    Resolution is by title, full stop — nothing here enforces the ``ytflow:``
+    prefix (``MANIFEST_PREFIX`` was deleted as scaffolding), and the repo's own
+    ``test_resolve_nodes_matches_exactly_never_by_substring`` resolves the plain
+    title ``"Negative Prompt"``. The prefix is a convention for whoever opens the
+    graph, described on the banner above; it is not a contract this function
+    checks.
 
     Exact match only, never substring: ``comfyui_sdxl_anime_lora_layered_inspyrenet_api.json``
     carries both ``"Negative Prompt"`` and ``"Background Inpaint Negative Prompt

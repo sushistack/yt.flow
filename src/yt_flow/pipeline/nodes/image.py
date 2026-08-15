@@ -253,6 +253,7 @@ def _env_snapshot_sha256() -> str | None:
 
 def _build_provenance(
     workflow_path: str, template: dict | None, nodes: dict[str, str] | None, stats: dict | None,
+    env_snapshot_sha256: str | None,
 ) -> dict:
     """What produced this run's renders (Story 13.3 AC7) — computed once per run.
 
@@ -263,6 +264,11 @@ def _build_provenance(
     Nulls are the honest answer on the paths that never load a workflow or touch
     ComfyUI (mock mode, stock plates, an unreachable ``/system_stats``). Pure and
     non-raising: provenance is observability and must never fail the stage.
+
+    ``env_snapshot_sha256`` is passed in rather than read here: this is called
+    twice per run (generation + stock-plate objects) and reading the file twice
+    logged the same "snapshot unreadable" WARNING twice, which teaches the reader
+    to ignore it.
 
     ``stats`` is read defensively down to each key. ``/system_stats``' payload
     differs across ComfyUI versions — which is the reason to record it at all —
@@ -281,14 +287,21 @@ def _build_provenance(
             json.dumps(template, sort_keys=True).encode("utf-8")
         ).hexdigest() if template is not None else None,
         "nodes": nodes,
-        "env_snapshot_sha256": _env_snapshot_sha256(),
+        "env_snapshot_sha256": env_snapshot_sha256,
+        # Which stock plate was copied, filled in by the plate branch only — the
+        # key exists (as null) on every path so "generated/mock" and "plate" are
+        # positively distinguishable rather than told apart by an absent key.
+        "stock_plate": None,
         # Whatever the server returned, read defensively — the key set differs
         # across ComfyUI versions, which is the reason to record it at all.
+        # ``is not None``, not truthiness: a server answering ``{}`` is reachable,
+        # and recording null for it makes it indistinguishable from unreachable —
+        # the same defensive posture as ``stats_map`` three lines above.
         "comfyui": {
             "comfyui_version": system.get("comfyui_version"),
             "pytorch_version": system.get("pytorch_version"),
             "device": device.get("name"),
-        } if stats else None,
+        } if stats is not None else None,
     }
 
 
@@ -485,14 +498,17 @@ async def image_node(state: PipelineState) -> dict:
             # and logs rather than failing the stage [AD-10]. Skipped entirely in
             # mock mode, which never talks to ComfyUI at all.
             stats = await comfyui_client.get_system_stats(s.comfyui_url)
-        provenance = _build_provenance(s.comfyui_workflow_path, template, prompt_nodes, stats)
+        env_sha = _env_snapshot_sha256()  # read once: two objects, one file, one warning
+        provenance = _build_provenance(s.comfyui_workflow_path, template, prompt_nodes, stats, env_sha)
         # A stock plate was rendered by the plate script weeks ago, from another
         # graph, on another machine. Stamping this run's workflow hash and today's
         # ComfyUI version onto it would be provenance that actively lies — worse
-        # than absent provenance, which is the whole premise of Epic 13. Only the
-        # env-snapshot pin survives, and only because it is a fact about the
-        # checkout that wrote the sidecar, not a claim about the render.
-        plate_provenance = _build_provenance(s.comfyui_workflow_path, None, None, None)
+        # than absent provenance, which is the whole premise of Epic 13. The
+        # env-snapshot pin survives because it is a fact about the checkout that
+        # wrote the sidecar, and the ``stock_plate`` block below says what actually
+        # produced the image — without it this object is byte-identical to mock
+        # mode's, i.e. honest but empty.
+        plate_provenance = _build_provenance(s.comfyui_workflow_path, None, None, None, env_sha)
         total_shots = sum(len(scene["shots"]) for scene in state.get("scenes", []))
 
         async def _recover() -> None:
@@ -635,8 +651,14 @@ async def image_node(state: PipelineState) -> dict:
                             plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
                             dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                             shutil.copyfile(plate["path"], dest)
-                            _write_sidecar(out_dir, scene["scene_num"], shot, seed,
-                                           plate_provenance)
+                            _write_sidecar(out_dir, scene["scene_num"], shot, seed, {
+                                **plate_provenance,
+                                "stock_plate": {
+                                    "location_key": location_key,
+                                    "variant": plate["variant"],
+                                    "path": plate["path"],
+                                },
+                            })
                             image_count += 1
                             stock_plate_count += 1
                             logger.info(

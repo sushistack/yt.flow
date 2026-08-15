@@ -8,7 +8,7 @@ baseline_commit: 71417071ba42a28a3f7e6ef2720f706176041501
 baseline_revision: c2f6b2f
 review_loop_iteration: 0
 final_revision: ea00d72
-followup_review_recommended: true
+followup_review_recommended: false
 ---
 
 # Story 13.3: ComfyUI Workflow Ops Hardening — Node-ID Decoupling + Render Provenance
@@ -220,6 +220,29 @@ claude-opus-5[1m] (Claude Opus 5, 1M context) — BMAD dev-story implementation 
   same command logs **0** `system_stats` lines, and the run against the live
   `http://127.0.0.1:8188` is green with the seam asserted directly by
   `test_pytest_stub_profile_rebinds_the_same_comfyui_seams`.
+- Second review fix pass (2026-08-15): `uv run ruff check src/ scripts/ tests/` → **All
+  checks passed**; `PYTHONPATH=$PWD/src uv run pytest tests/` → **2859 passed / 1 skipped**
+  in 343s (+21 tests over the first fix pass's 2838/1). No `--cov`.
+- Second fix pass, finding 1 proof (`upload_image` really was live). A scratch script
+  loads `scripts/run_e2e_stub_server.py`, calls its own `apply_stub_profile()`, installs a
+  sentinel on `httpx.AsyncHTTPTransport.handle_async_request` (transport level — it records
+  the request whether or not anything answers), then makes the identical call
+  `api/main.py`'s `_resolve_depth` makes: `compositing_service.depth_map_file(png, settings)`
+  with no `comfyui_client=` kwarg.
+  - **Before the fix:** `REAL HTTP REQUESTS: ['POST http://127.0.0.1:8188/upload/image']`,
+    and `depth_map_file` returned `None` after logging "ComfyUI image upload failed" —
+    swallowed, exactly as reported.
+  - **After the fix:** `REAL HTTP REQUESTS: none`, and `depth_map_file` returned a real
+    cached depth map built entirely from the fakes.
+  - Whole-suite corroboration: `tests/pipeline/test_stub_profile_smoke.py` and
+    `tests/api/test_e2e_stub_run.py` run under the same transport sentinel report
+    **0 real HTTP requests** (12 passed).
+  - Note for the record: `127.0.0.1:8188` had **no listener** during this pass
+    (`curl` → 000, `ss -ltn` → nothing), contrary to the review brief. That does not weaken
+    the proof — the sentinel is at the transport layer, so it records the outbound request
+    regardless of whether ComfyUI answers — but it does mean the "leak succeeds silently
+    against a live server" half was not directly observed this session. ComfyUI was neither
+    started nor stopped.
 
 ### Completion Notes List
 
@@ -349,6 +372,130 @@ claude-opus-5[1m] (Claude Opus 5, 1M context) — BMAD dev-story implementation 
     (`{"6": ..., "7": ...}` for A, `{"706": ..., "707": ...}` for C) plus `file_bytes`. The verdict
     is carried by committed evidence, as CLAUDE.md requires.
 
+#### Second review fix pass (2026-08-15) — 22 findings, all fixed, none rejected
+
+All 22 were real. Two of them are the *first* fix pass being wrong rather than incomplete,
+and both are recorded as such.
+
+23. **The `upload_image` "unreached" classification was false, and the test blessed it
+    (HIGH-1, first pass wrong).** `compositing_service.depth_map_file` defaults its
+    `comfyui_client` to the **real module**, and `api/main.py`'s `_resolve_depth` calls it
+    with no `comfyui_client=` kwarg, injected unconditionally whenever
+    `depth_placement_enabled` — which ships `True`. So the stub server opened a real
+    `POST /upload/image` for every distinct background, and `depth_map_file`'s blanket
+    `except` swallowed it: the identical defect the `get_system_stats` fix closed, sitting
+    behind a set named `_COMFYUI_UNREACHED` that certified it as intentional. Fixed:
+    `fakes.fake_upload_image`, bound in both `tests/conftest.py::stub_profile` and
+    `apply_stub_profile()`; `_COMFYUI_UNREACHED` **deleted** — every public async function
+    on the adapter is now stubbed, with no escape hatch to hide the next one in. Proof in
+    Debug Log References.
+24. **The stub profiles drifted outside `comfyui_client` (HIGH-2).**
+    `fakes.patch_character_reference_seams` patches five seams; `apply_stub_profile()`
+    hand-listed two, so a process promising "zero real network calls" made real HTTP to the
+    SCP wiki (`ScpWikiImageFetch.fetch`) and left `_get_image_provider` as a second live
+    route into `upload_image`. Fixed structurally, not by extending the list: the script
+    now calls the shared helper, passing `SimpleNamespace(setattr=setattr)` as the
+    monkeypatch stand-in (the helper only ever asks for `.setattr`). `_PATCHED_SEAMS` also
+    gained the five as *class*-attribute targets — it registered the owning **module**
+    attribute before, which restored nothing, since the mutation is on the class object.
+    Two parametrized drift tests now cover script and pytest fixture alike.
+25. **The rejected pose-guide finding was correct; accepted (MED, first pass wrong).**
+    `_is_guide_node` is an **exact** match on `ytflow:guide_image` with no fallback at all —
+    the first pass rejected the finding on the grounds that the path is keyword-scanned,
+    which is true of `_is_negative_node` and not of this. `comfyui_character_pose_guide_api.json`
+    is the only file declaring it and was absent from `CONSUMER_KEYS`. Row added, with all
+    three keys.
+26. **…and that committed graph's prompt nodes still read `Positive Prompt` / `Negative
+    Prompt` (MED).** Retitled to the manifest keys. The first pass's recorded residual —
+    "a graph declaring neither title with an untitled negative first still mis-injects" —
+    was justified as covering *foreign* workflows, but this graph is committed, and two
+    lines of JSON remove the residual for it entirely. The pose-guide path is now fully
+    manifest-covered: all three keys resolve in `CONSUMER_KEYS`.
+27. **Stock-plate provenance said what it was not, then said nothing (MED).** After the
+    first pass it was byte-identical to mock-mode provenance, so a reader could not tell a
+    real plate from a fixture. `provenance.stock_plate` now records `location_key`,
+    `variant` and `path` — all three already in scope at that call site. The key is present
+    as `null` on every other path, so "generated/mock" and "plate" are told apart
+    positively rather than by an absent key.
+28. **`"comfyui": {...} if stats else None` contradicted the defensive read above it (MED).**
+    A server answering `{}` is reachable; recording `null` made it indistinguishable from
+    unreachable, and a truthy non-dict recorded a fully-populated all-null block. Now
+    `stats is not None`, matching how `stats_map` is built. `{}` added to the malformed-shape
+    parametrization, plus a test pinning `None` as the only null-block input.
+29. **`assert len(calls) <= 1` defended nothing (MED)** — it passes at 0, so it would have
+    held with the probe deleted. Now asserts the actual contract: `calls == [comfyui_url]`.
+30. **`_load_iclight_workflow` gated after resolving (MED).** A genuine placeholder graph —
+    the case `ytflow_verified_iclight` exists for — failed with "workflow node title
+    'ytflow:card_image' not found", sending the reader after a renamed node. Marker checked
+    first; regression test drives a title-less placeholder.
+31. **`data/comfyui/README.md`'s "The other half of the pin" implied a census it did not
+    have (MED).** Replaced with a real one, all twelve graphs: five manifest-resolved and
+    covered by `CONSUMER_KEYS`, `comfyui_qwen_pose_edit_api.json`'s sixteen `ytflow:` titles
+    that nothing resolves, and the depth graph's still-hardcoded `"1"`/`"2"` — the last two
+    labelled deferred, with why.
+32. **`_env_snapshot_sha256()` ran twice per run (LOW)** regardless of whether stock-plate
+    substitution was even enabled, so a missing snapshot logged the identical WARNING twice.
+    Read once in `image_node` and passed into `_build_provenance` as a required positional.
+33. **`_inject_prompt`'s `"text" in (node.get("inputs") or {})` (LOW)** is True for
+    `inputs: "text"` and then raises `TypeError` on assignment — in the one function whose
+    docstring cites foreign workflows as its reason to exist, while its sibling
+    `_inject_negative_suffix` already guards the same field with `isinstance`. Guarded;
+    parametrized over four non-dict shapes.
+34. **`_default_workflow()` node `"6"` used the raw literal (LOW)** while `"7"` used
+    `_NEGATIVE_NODE_TITLE` and `_POSITIVE_NODE_TITLE` sat ten lines away. Now the constant.
+35. **`relight_sprite`'s docstring understated its client contract (LOW)** — the injected
+    client must also expose `resolve_nodes`, and a duck-typed fake lacking it raises
+    `AttributeError` into the blanket `except`, i.e. a silent per-pair cache miss. Said so.
+36. **`resolve_nodes`'s docstring overstated a namespace nothing enforces (LOW).** Deleting
+    `MANIFEST_PREFIX` was right, but the docstring still claimed keys are "a full
+    `ytflow:<name>` title" while the repo's own
+    `test_resolve_nodes_matches_exactly_never_by_substring` resolves `"Negative Prompt"`.
+    Now described as resolve-by-title, with the prefix named as the convention it is.
+37. **`data/comfyui/README.md` hardcoded `/mnt/work/projects/yt.flow/` (LOW)** in the one
+    command an operator on a different checkout copy-pastes. Now `$(git rev-parse
+    --show-toplevel)`.
+38. **`README-location-plate.md` led with a `Node` column of literal ids (LOW)** inside the
+    document that declares ids are not the contract. Column replaced with `Must be a`,
+    sourced from the new `PLATE_NODE_CLASSES`; the `20_extra_N` note (already hedged with
+    "for as long as the anchor node keeps id `20`") now states the rule instead of the
+    instance, and the displaced-prose list is keyed by manifest title.
+39. **`tests/test_workflow_definitions.py` exec'd the seed script at module import (LOW)**,
+    so any unrelated failure in a 679-line script failed collection of the whole module.
+    Now `functools.cache`d and called from inside the test; `CONSUMER_KEYS`' key tuples are
+    zero-arg callables so nothing is imported at collection time.
+40. **`test_generated_sidecar_records_provenance` never exercised the shipped join (LOW).**
+    It monkeypatched `ENV_SNAPSHOT_PATH` — a repo-relative `str` in production — with an
+    **absolute** `Path`, and passed only because `Path(root) / <absolute>` discards `root`.
+    New `_seed_env_snapshot` helper writes the snapshot where the shipped constant says it
+    lives and points `YTFLOW_PROJECT_ROOT` at a fake checkout; the constant is left alone.
+41. **`test_the_reference_never_reaches_the_ipadapter_or_the_latent` prefix-matched (LOW)**,
+    so for an anchor resolved to `"2"` it admitted node `"23"` — the IPAdapter itself, the
+    thing it exists to exclude. The derived ids are known (`f"{anchor_id}_extra_{i}"` /
+    `_batch_{i}`); they are now constructed, with the count read from the anchor dir.
+42. **`tests/pipeline/nodes/test_image.py`'s docstring still claimed `nodes/__init__.py`
+    binds a stub `image` attribute (LOW)** — Story 1.4 lore; it imports the real
+    `image_node` and `__init__.py` imports `image_node` directly. Sentence deleted.
+43. **`seed_location_plates._load_workflow` proved eleven titles resolve, never that they
+    resolved to the right KIND of node (MED, edge-case pass).** Swap two titles in the UI
+    and every lookup succeeds, the seed lands in an `EmptyLatentImage`, the sampler never
+    gets it and `--reroll` silently no-ops. New `PLATE_NODE_CLASSES` table (which
+    `PLATE_NODE_KEYS` is now derived from, so the two cannot drift) is enforced at load,
+    the way `image._load_workflow` checks its resolved nodes are `CLIPTextEncode`.
+    Families where a swap is legitimate list alternatives; everything else is exact.
+44. **`dimensions(card_bytes)` returning `None` relit at the wrong canvas (MED, edge-case
+    pass).** A truncated or non-PNG card left the graph's canvases at the shipped
+    832×1216, so `ICLightConditioning` centre-cropped the subject while
+    `JoinImageWithAlpha` re-attached the full original mask — a mis-conditioned sprite that
+    still passes `has_alpha`, gets cached and auto-approved. `relight_sprite` now raises
+    before uploading anything (still a logged, non-fatal miss). Four test fixtures were
+    writing `b"card"` as a card and had been exercising exactly this silent path; they
+    write real PNGs now.
+
+**Deferred, untouched as instructed:** `compositing_service`'s `DEPTH_IMAGE_NODE = "1"` /
+`DEPTH_MODEL_NODE = "2"` blind writes, and `comfyui_qwen_pose_edit_api.json`'s sixteen
+unresolved `ytflow:` titles. Both are now *named* in `data/comfyui/README.md`'s census
+rather than papered over by a sentence implying full coverage.
+
 ### File List
 
 **Modified — source**
@@ -411,6 +558,50 @@ claude-opus-5[1m] (Claude Opus 5, 1M context) — BMAD dev-story implementation 
 - `tests/services/test_comfyui_client.py` — behavioural `check_health` test replaces the annotation pin; `STATS_READ_TIMEOUT` test; repo-anchored workflow path.
 - `tests/test_seed_location_plates.py` — `_REPO_ROOT`/`_plate_workflow_path()` anchoring.
 - `tests/test_workflow_definitions.py` — `CONSUMER_KEYS`' multi-angle positive row sourced from `character_image_provider._POSITIVE_NODE_TITLE`.
+
+**Second review fix pass (2026-08-15) — additionally modified**
+
+*Source*
+- `src/yt_flow/pipeline/nodes/image.py` — `_build_provenance` takes `env_snapshot_sha256`
+  (read once per run) and emits a `stock_plate` block; `comfyui` gated on `stats is not None`.
+- `src/yt_flow/pipeline/nodes/composite_harmonization.py` — `ytflow_verified_iclight` gate
+  moved before title resolution; `relight_sprite` fails on an unreadable card instead of
+  relighting at the default canvas; client-contract docstring.
+- `src/yt_flow/services/character_image_provider.py` — `_inject_prompt` guards non-dict
+  `inputs`; `_default_workflow` uses `_POSITIVE_NODE_TITLE`.
+- `src/yt_flow/services/comfyui_client.py` — `resolve_nodes` docstring (resolve-by-title,
+  not a namespace it enforces).
+- `scripts/seed_location_plates.py` — `PLATE_NODE_CLASSES` (11 keys → expected class_types),
+  `PLATE_NODE_KEYS` derived from it, enforced in `_load_workflow`.
+- `scripts/run_e2e_stub_server.py` — stubs `upload_image`; calls
+  `fakes.patch_character_reference_seams` instead of hand-listing two of its five seams.
+
+*Data + docs*
+- `data/workflows/comfyui_character_pose_guide_api.json` — nodes 6/7 retitled to the
+  manifest keys.
+- `data/comfyui/README.md` — repo-relative refresh command; "The other half of the pin"
+  replaced with an honest twelve-graph census naming the two deferred gaps.
+- `data/workflows/README-location-plate.md` — `Node` id column → `Must be a` class column;
+  displaced-prose list keyed by manifest title.
+- `data/workflows/README-character-multi-angle.md` — the pose-guide variant's three keys,
+  and why `ytflow:guide_image` has no fallback.
+
+*Tests*
+- `tests/stubs/fakes.py` — `fake_upload_image`; `patch_character_reference_seams` documented
+  as the single source for both callers.
+- `tests/conftest.py` — `stub_profile` patches `upload_image`.
+- `tests/test_run_e2e_stub_server.py` — `_COMFYUI_UNREACHED` deleted; `_CHARACTER_SEAMS` +
+  `_owner()`; `_PATCHED_SEAMS` registers class attributes; two parametrized drift tests.
+- `tests/test_workflow_definitions.py` — pose-guide `CONSUMER_KEYS` row; lazy
+  `functools.cache`d seed-script load; key tuples as callables.
+- `tests/pipeline/nodes/test_image.py` — `_seed_env_snapshot` (real `YTFLOW_PROJECT_ROOT`
+  join); exact stats-call assertion; `stock_plate` assertion; `{}`-stats and null-block tests;
+  stale docstring removed.
+- `tests/pipeline/nodes/test_composite_harmonization.py` — placeholder-graph gate-order test;
+  unreadable-card test; fixtures write real PNGs.
+- `tests/test_seed_location_plates.py` — swapped-titles and class-table tests; constructed
+  (not prefix-matched) derived anchor ids.
+- `tests/services/test_character_service_generation.py` — non-dict `inputs` parametrization.
 
 ## Review Triage Log
 
@@ -481,3 +672,39 @@ ComfyUI parameter injection no longer addresses nodes by JSON ID. `comfyui_clien
 - Env-snapshot drift is undetected and provenance is duplicated per shot — both deferred with evidence.
 - `data/comfyui/` is a second data directory beside `data/workflows/`. Judged correct: `data/workflows/` is pipeline input pointed at by six `Settings` fields, and `test_workflow_definitions.py` globs `*.json` there asserting graph structure, so a snapshot dropped in would be parsed as a node graph.
 - AC1's stated rationale ("every caller already imports `comfyui_client`") was wrong about `composite_harmonization.py`, which does not — and `tests/domain/test_state_imports.py` enforces pipeline↛services with an allowlist marked "must not grow". The resolver reaches it through the duck-typed client already injected (`_load_iclight_workflow(path, resolve_nodes)`). No new file, no allowlist growth.
+
+### 2026-08-14 — Follow-up review pass (recommended by the first pass)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 22: (high 2, medium 9, low 11)
+- defer: 2: (high 0, medium 1, low 1)
+- reject: 1: (high 0, medium 1, low 0)
+- addressed_findings:
+  - `[high]` `[patch]` **The first pass's own HIGH-2 fix did not close the hole, and the test it added certified the remainder as intentional.** `_COMFYUI_UNREACHED = {"upload_image"}` was false: `compositing_service.depth_map_file` calls the *real* `comfyui_client.upload_image` (the `comfyui_client=` kwarg defaults `None` and `api/main.py` calls it without one), and `api/main.py` injects `_resolve_depth` unconditionally when `depth_placement_enabled` — default True. The stub server boots that app, so it opened a real `POST /upload/image` per distinct background, swallowed by `depth_map_file`'s blanket `except`. `_COMFYUI_UNREACHED` is **deleted** — no escape hatch; every public async function on the adapter is stubbed. Proven at the transport layer with a sentinel on `httpx.AsyncHTTPTransport.handle_async_request`: before, `['POST http://127.0.0.1:8188/upload/image']`; after, none, with `depth_map_file` returning a real depth map built entirely from fakes.
+  - `[high]` `[patch]` The "must not drift apart" guards the first pass added only policed `comfyui_client`, and the profiles demonstrably drifted elsewhere: `apply_stub_profile` hand-listed two of the five seams `fakes.patch_character_reference_seams` patches, leaving real HTTP to the SCP wiki and a second live route into `upload_image` in a process whose docstring promises zero network calls. Fixed structurally — the script now calls the shared helper, so drift is impossible. Also found `_PATCHED_SEAMS` registering *module* attributes for seams that are *class* attributes, restoring nothing on teardown.
+  - `[medium]` `[patch]` **A finding the first pass rejected was refuted with evidence and accepted here.** The rejection ("pose-guide is keyword-scanned, degrades gracefully") described `_is_negative_node`; the function that matters is `_is_guide_node`, an exact match on `ytflow:guide_image` with **no fallback**. A rename leaves `_inject_guide_image` returning the workflow unconditioned, after which `_drop_reference_only_nodes` / `_remove_i2i_input` delete the guide `LoadImage` out from under a live `ControlNetApplyAdvanced` link — silent loss of Story 10.5 conditioning. `CONSUMER_KEYS` row added.
+  - `[medium]` `[patch]` The same committed pose-guide graph's prompt nodes still read `Positive Prompt`/`Negative Prompt`. The first pass logged the mis-injection residual as acceptable "for foreign workflows" — but this one is committed, and two lines of JSON remove it. Retitled; that path is now fully manifest-covered.
+  - `[medium]` `[patch]` Stock-plate provenance had become byte-identical to mock-mode provenance — the first pass stopped the sidecar lying and overshot into empty, so a reader could not tell a real plate from a mock fixture. Now carries `provenance.stock_plate` (`location_key`/`variant`/`path`), null on every other path.
+  - `[medium]` `[patch]` `"comfyui": {...} if stats else None` contradicted the defensive read three lines above: a server legitimately answering `{}` recorded `null` (indistinguishable from unreachable) and a truthy non-dict recorded a fully-populated all-null block. Now `stats is not None`.
+  - `[medium]` `[patch]` `test_a_fully_resumed_run_pays_for_stats_at_most_once` asserted `len(calls) <= 1`, which passes at 0 and at 1 and defends nothing. Now asserts the actual contract.
+  - `[medium]` `[patch]` `_load_iclight_workflow` resolved titles *before* the `ytflow_verified_iclight` marker, so a genuine placeholder graph — the case the marker exists for — failed with a resolver error instead of the marker's explanatory message. Gate checked first.
+  - `[medium]` `[patch]` `data/comfyui/README.md` implied a complete pin census. Replaced with the real twelve-graph accounting, naming both deferred gaps (the depth graph's hardcoded `"1"`/`"2"`, and `comfyui_qwen_pose_edit_api.json`'s sixteen unresolved `ytflow:` titles) instead of a sentence implying full coverage.
+  - `[medium]` `[patch]` `seed_location_plates._load_workflow` proved all eleven titles resolved but never that they resolved to the right *kind* of node — swap two titles and the seed never reaches the sampler while `--reroll` silently no-ops, exactly the structurally-valid-but-wrong graph this story exists to remove. `PLATE_NODE_CLASSES` (key → expected `class_type`) enforced at load, with `PLATE_NODE_KEYS` derived from it so the two cannot drift.
+  - `[medium]` `[patch]` `dimensions(card_bytes)` returning `None` for a truncated or non-PNG card left the IC-Light canvases at default size, so a mis-conditioned sprite still passed `has_alpha`, was cached and auto-approved. Now fails loudly — **and the new guard immediately caught four existing tests writing `b"card"` as a card image, i.e. they had been exercising that silent path all along.** They write real PNGs now.
+  - `[low]` `[patch]` `_env_snapshot_sha256()` ran twice per run (provenance + plate provenance) regardless of whether stock-plate substitution was enabled, emitting the identical WARNING twice on a missing snapshot.
+  - `[low]` `[patch]` `_inject_prompt`'s `"text" in (node.get("inputs") or {})` was True for `inputs: "text"` and then raised `TypeError` on assignment — in the function whose docstring cites foreign workflows as its reason to exist, while its sibling guards the same field with `isinstance`.
+  - `[low]` `[patch]` `_default_workflow()` used a raw `"ytflow:positive_prompt"` literal ten lines from the `_POSITIVE_NODE_TITLE` the first pass created.
+  - `[low]` `[patch]` `relight_sprite`'s duck-type contract docstring omitted `resolve_nodes`, which the injected client must now expose — a fake lacking it raises `AttributeError` into the blanket `except`, i.e. a silent per-pair cache miss.
+  - `[low]` `[patch]` `resolve_nodes`' docstring claimed keys are "a full `ytflow:<name>` title" while the repo's own substring-trap test resolves `"Negative Prompt"`; described as resolve-by-title now that `MANIFEST_PREFIX` is gone.
+  - `[low]` `[patch]` `data/comfyui/README.md` hardcoded `/mnt/work/projects/yt.flow/` in the one command an operator on another checkout copy-pastes.
+  - `[low]` `[patch]` `README-location-plate.md` led with a literal node-ID column inside the document declaring IDs are not the contract — the first thing to go stale after the renumber it was written about.
+  - `[low]` `[patch]` `tests/test_workflow_definitions.py` exec'd `seed_location_plates.py` at module import, so an unrelated import failure there failed collection of the whole module, and the script ran twice per session re-running its top-level `sys.path.insert`.
+  - `[low]` `[patch]` `test_generated_sidecar_records_provenance` monkeypatched a repo-relative `str` with an absolute `Path`, passing only because `Path(root) / <absolute>` discards `root` — it never exercised the shipped join. Replaced with a helper that writes to the real relative location under a fake `YTFLOW_PROJECT_ROOT`.
+  - `[low]` `[patch]` `test_the_reference_never_reaches_the_ipadapter_or_the_latent` prefix-matched with `startswith`, so an anchor resolved to `"2"` admitted node `"23"` — the IPAdapter itself. The derived IDs are constructed now.
+  - `[low]` `[patch]` `tests/pipeline/nodes/test_image.py`'s module docstring still claimed `nodes/__init__.py` binds a Story 1.4 stub; it imports the real `image_node`.
+
+**Rejected:** the claim that `shot_recompose.py` is a surviving ID-coupling site. Its constants are semantic node names (`"plate"`, `"card_a"`), not renumber-prone integers; `_load_workflow` validates them as `LoadImage` and raises by name; and the committed graph lacks `ytflow_verified_recompose_qwen`, so the path is gated off.
+
+**Verification after this pass:** `ruff check src/ scripts/ tests/` → All checks passed. `pytest tests/` → **2859 passed, 1 skipped** (+21). Re-run independently.
+
+**Correction to a claim in the first pass's record:** the live-render gate was real and its numbers stand, but ComfyUI was **not** listening on `127.0.0.1:8188` by the time this pass ran (`curl` → 000, no listener, and neither pass started or stopped it). The finding-1 proof is unaffected — the sentinel records the outbound request at the transport layer whether or not anything answers — but "the leak reaches a live server" was demonstrated as an outbound request, not as a completed round trip.

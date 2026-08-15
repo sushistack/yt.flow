@@ -11,6 +11,7 @@ five workflows. The allowlist below is what keeps it from coming back.
 ponytail: pure stdlib, table-driven over a glob, no fixtures.
 """
 
+import functools
 import importlib.util
 import json
 from pathlib import Path
@@ -23,9 +24,16 @@ from yt_flow.services import character_image_provider
 from yt_flow.services.comfyui_client import resolve_nodes
 
 
+@functools.cache
 def _plate_node_keys() -> tuple[str, ...]:
     """The seed script is a script, not a package — load it by path like its own
-    test module does, so its key tuple cannot drift from this table."""
+    test module does, so its key tuple cannot drift from this table.
+
+    Called from inside the test, never at module import: executing a 679-line
+    script during collection makes any unrelated failure in it fail *every* test
+    in this file, and that script re-runs its own top-level ``sys.path.insert``
+    on each exec. ``functools.cache`` keeps it to one exec per session here.
+    """
     spec = importlib.util.spec_from_file_location(
         "seed_location_plates", Path(__file__).resolve().parents[1] / "scripts" / "seed_location_plates.py",
     )
@@ -34,8 +42,6 @@ def _plate_node_keys() -> tuple[str, ...]:
     spec.loader.exec_module(module)
     return module.PLATE_NODE_KEYS
 
-
-PLATE_NODE_KEYS = _plate_node_keys()
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "data" / "workflows"
 WORKFLOWS = sorted(WORKFLOW_DIR.glob("*.json"))
@@ -56,21 +62,39 @@ API2 = "comfyui_sdxl_anime_lora_workflow_api2.json"
 PLATE = "comfyui_location_plate_api.json"
 ICLIGHT = "comfyui_iclight_relight_api.json"
 MULTI_ANGLE = "comfyui_character_multi_angle_api.json"
+POSE_GUIDE = Path(character_image_provider._POSE_GUIDE_WORKFLOW_PATH).name
 
 # Story 13.3: the manifest keys each consumer resolves at load. This table is the
 # only net that catches a ComfyUI-UI re-export — the UI rewrites `_meta.title`
 # happily, and every one of these lookups is exact-match with no id fallback, so a
 # rename fails a live render at the first shot. Sourced from the consumers, not
-# retyped: a key added in code with no title in the JSON fails here.
+# retyped: a key added in code with no title in the JSON fails here. Each value's
+# key tuple is a zero-arg callable so nothing is imported at collection time.
 CONSUMER_KEYS = {
-    API2: ("src/yt_flow/pipeline/nodes/image.py", (image.POSITIVE_KEY, image.NEGATIVE_KEY)),
-    PLATE: ("scripts/seed_location_plates.py", PLATE_NODE_KEYS),
-    ICLIGHT: ("src/yt_flow/pipeline/nodes/composite_harmonization.py", ICLIGHT_NODE_KEYS),
+    API2: ("src/yt_flow/pipeline/nodes/image.py", lambda: (image.POSITIVE_KEY, image.NEGATIVE_KEY)),
+    PLATE: ("scripts/seed_location_plates.py", _plate_node_keys),
+    ICLIGHT: ("src/yt_flow/pipeline/nodes/composite_harmonization.py", lambda: ICLIGHT_NODE_KEYS),
     MULTI_ANGLE: (
         "src/yt_flow/services/character_image_provider.py",
-        (
+        lambda: (
             character_image_provider._POSITIVE_NODE_TITLE,
             character_image_provider._NEGATIVE_NODE_TITLE,
+        ),
+    ),
+    # ``_is_guide_node`` is an EXACT match on ``ytflow:guide_image`` with no
+    # fallback of any kind, and this is the only committed file declaring it.
+    # Rename it in the UI and ``_inject_guide_image`` logs a warning and returns
+    # the graph unconditioned — after which ``_drop_reference_only_nodes`` /
+    # ``_remove_i2i_input`` delete the guide LoadImage out from under a live
+    # ControlNetApplyAdvanced link, the hazard ``_is_guide_node``'s own docstring
+    # documents. Story 13.3's first review pass rejected this row as "keyword-
+    # scanned, degrades gracefully"; it is neither.
+    POSE_GUIDE: (
+        "src/yt_flow/services/character_image_provider.py",
+        lambda: (
+            character_image_provider._POSITIVE_NODE_TITLE,
+            character_image_provider._NEGATIVE_NODE_TITLE,
+            character_image_provider._GUIDE_NODE_TITLE,
         ),
     ),
 }
@@ -170,7 +194,8 @@ def test_committed_workflow_resolves_every_key_its_consumer_needs(name: str):
     ComfyUI-UI round-trip that renames or drops one would otherwise surface as a
     failed live render, hours in.
     """
-    consumer, keys = CONSUMER_KEYS[name]
+    consumer, read_keys = CONSUMER_KEYS[name]
+    keys = read_keys()
     workflow = json.loads((WORKFLOW_DIR / name).read_text(encoding="utf-8"))
     resolved = resolve_nodes(workflow, keys)  # raises, naming the missing key
     assert sorted(resolved) == sorted(keys), consumer

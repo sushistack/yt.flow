@@ -16,9 +16,10 @@ Run it from ComfyUI's own directory, with ComfyUI's own interpreter (the CLI
 imports `typer` from that venv, not from yt.flow's):
 
 ```bash
+YTFLOW_REPO=$(git -C /path/to/yt.flow rev-parse --show-toplevel)   # or just cd into it first
 cd "$HOME/workspaces/ComfyUI"
 ./venv/bin/python custom_nodes/ComfyUI-Manager/cm-cli.py save-snapshot \
-  --output /mnt/work/projects/yt.flow/data/comfyui/env-snapshot.json \
+  --output "$YTFLOW_REPO/data/comfyui/env-snapshot.json" \
   --full-snapshot
 ```
 
@@ -68,10 +69,31 @@ Environment is only half of "what produced this render". The other half is the
 graph, and that lives in the same sidecar: `provenance.workflow_path`,
 `provenance.workflow_sha256` (the canonical hash of the loaded template *before*
 per-shot injection) and `provenance.nodes` (the resolved manifest-title → node-id
-map). `data/workflows/comfyui_sdxl_anime_lora_workflow_api2.json` is the base
-background workflow and has no README of its own; its manifest keys are
-`ytflow:positive_prompt` and `ytflow:negative_prompt`, resolved in
-`image._load_workflow`. The other three manifest-bearing graphs document theirs
-in `data/workflows/README-location-plate.md`,
+map). That pair only covers the **background** graph, though — the one
+`image_node` loads. Twelve graphs live in `data/workflows/`, and this is what is
+actually pinned:
+
+| Graph | Manifest-resolved by code? | Covered by `test_workflow_definitions.CONSUMER_KEYS`? |
+|---|---|---|
+| `comfyui_sdxl_anime_lora_workflow_api2.json` | yes — `image._load_workflow` | yes |
+| `comfyui_location_plate_api.json` | yes — `scripts/seed_location_plates.py` | yes |
+| `comfyui_iclight_relight_api.json` | yes — `composite_harmonization._load_iclight_workflow` | yes |
+| `comfyui_character_multi_angle_api.json` | yes — `character_image_provider` | yes |
+| `comfyui_character_pose_guide_api.json` | yes — `character_image_provider` (`ytflow:guide_image` is an exact match with **no** fallback) | yes |
+| `comfyui_qwen_pose_edit_api.json` | **no** — carries sixteen `ytflow:` titles that no code resolves | **no** (deferred) |
+| `comfyui_depth_anything_v2_api.json` | **no** — `compositing_service` still addresses nodes `"1"`/`"2"` by hardcoded id | no (deferred) |
+| `comfyui_fusion_img2img_api.json`, `comfyui_shot_recompose_api.json`, `comfyui_shot_recompose_qwen_api.json` | no — `class_type`-scanned by design | n/a |
+| `comfyui_sdxl_anime_lora_layered{,_inspyrenet}_api.json` | dead since Story 8.3; the inspyrenet file is the resolver's substring-trap fixture | n/a |
+
+The two "deferred" rows are filed as deferred work, not oversights: the depth
+graph's `DEPTH_IMAGE_NODE = "1"` / `DEPTH_MODEL_NODE = "2"` are blind-written on
+every generated background (`depth_placement_enabled` ships `True`), and the Qwen
+pose-edit graph's `ytflow:` titles are aspirational — nothing reads them, so
+renaming one breaks nothing today and would break silently the day it does.
+
+The manifest-bearing graphs document their own keys in
+`data/workflows/README-location-plate.md`,
 `data/workflows/README-iclight-relight.md` and
-`data/workflows/README-character-multi-angle.md`.
+`data/workflows/README-character-multi-angle.md` (which covers the pose-guide
+variant too); `comfyui_sdxl_anime_lora_workflow_api2.json` has no README of its
+own and its two keys are `ytflow:positive_prompt` / `ytflow:negative_prompt`.

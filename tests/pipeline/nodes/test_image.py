@@ -7,10 +7,6 @@ PipelineState contract (image_path set on every shot, error handling, purity),
 prompt injection into the nodes resolved from their ``ytflow:`` manifest titles
 (including the AC2 negative-prompt suffix), the mock/real branch behaviour, and
 shot-level resume/health-check.
-
-Import the submodule explicitly: nodes/__init__.py still binds a stub `image`
-attribute (Story 1.4), so `import a.b.image as img` is what resolves to this
-module rather than the stub. [mirrors test_scenario.py]
 """
 
 import hashlib
@@ -1811,14 +1807,27 @@ def _provenance(tmp_path, base="scene_001_S001", run_id="run-img-1"):
     return json.loads((d / f"{base}_done.json").read_text())["provenance"]
 
 
+def _seed_env_snapshot(root, monkeypatch, payload: bytes):
+    """Write the snapshot where the SHIPPED repo-relative constant says it lives.
+
+    Monkeypatching ``ENV_SNAPSHOT_PATH`` to an *absolute* Path used to pass only
+    because ``Path(root) / <absolute>`` discards ``root`` — so the join production
+    actually performs was never exercised. Point ``YTFLOW_PROJECT_ROOT`` at a fake
+    checkout instead and leave the constant alone.
+    """
+    snapshot = root / img.ENV_SNAPSHOT_PATH
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_bytes(payload)
+    monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(root))
+    return snapshot
+
+
 async def test_generated_sidecar_records_provenance(monkeypatch, tmp_path):
     """AC7: workflow hash, resolved node map, env snapshot and ComfyUI versions."""
     monkeypatch.chdir(tmp_path)
     path = _wf_file(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=path))
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_bytes(b'{"comfyui": "deadbeef"}')
-    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", snapshot)
+    snapshot = _seed_env_snapshot(tmp_path, monkeypatch, b'{"comfyui": "deadbeef"}')
 
     async def fake_fetch(url, workflow):
         return RGB_PNG + b"\x00" * 1200
@@ -1846,7 +1855,9 @@ async def test_generated_sidecar_records_provenance(monkeypatch, tmp_path):
 async def test_provenance_records_null_snapshot_when_absent(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
-    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", tmp_path / "not-there.json")
+    # A checkout with no snapshot committed: the shipped repo-relative path simply
+    # is not there under this root.
+    monkeypatch.setenv("YTFLOW_PROJECT_ROOT", str(tmp_path / "no-snapshot-here"))
 
     async def fake_fetch(url, workflow):
         return RGB_PNG + b"\x00" * 1200
@@ -1959,15 +1970,16 @@ async def test_stock_plate_provenance_does_not_claim_this_run_s_graph(monkeypatc
 
     Stamping this run's ``workflow_path``/``workflow_sha256`` and today's ComfyUI
     version onto its sidecar is provenance that actively lies — worse than absent
-    provenance, which is the premise of Epic 13. Only the env-snapshot pin stays:
-    that is a fact about the checkout that wrote the sidecar.
+    provenance, which is the premise of Epic 13. The env-snapshot pin stays (a fact
+    about the checkout that wrote the sidecar), and the ``stock_plate`` block says
+    what actually produced the image: nulling everything else and stopping there
+    made this object byte-identical to a mock-mode sidecar's, so a reader could not
+    tell a real plate from a fixture.
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
         mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_bytes(b'{"comfyui": "deadbeef"}')
-    monkeypatch.setattr(img, "ENV_SNAPSHOT_PATH", snapshot)
+    snapshot = _seed_env_snapshot(tmp_path, monkeypatch, b'{"comfyui": "deadbeef"}')
     plate_src = tmp_path / "plate.png"
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
@@ -1983,6 +1995,9 @@ async def test_stock_plate_provenance_does_not_claim_this_run_s_graph(monkeypatc
     assert prov["nodes"] is None
     assert prov["comfyui"] is None
     assert prov["env_snapshot_sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    assert prov["stock_plate"] == {
+        "location_key": "corridor", "variant": "a", "path": str(plate_src),
+    }
 
 
 async def test_a_fully_resumed_run_pays_for_stats_at_most_once(monkeypatch, tmp_path):
@@ -2015,7 +2030,9 @@ async def test_a_fully_resumed_run_pays_for_stats_at_most_once(monkeypatch, tmp_
 
     out = await img.image_node(_state())
     assert out.get("error") is None
-    assert len(calls) <= 1
+    # Exactly one, not "at most one": `<= 1` also passes at zero, so it would have
+    # held just as well if the probe were deleted — defending nothing.
+    assert calls == [_resume_settings(tmp_path).comfyui_url]
 
 
 async def test_env_snapshot_resolves_against_the_project_root_not_the_cwd(monkeypatch, tmp_path, caplog):
@@ -2042,11 +2059,22 @@ async def test_env_snapshot_resolves_against_the_project_root_not_the_cwd(monkey
     {"system": None, "devices": None},
     {"devices": ["a bare string, not a device dict"]},
     ["the whole payload is a list"],
+    # A server that answers `{}` is REACHABLE. Recording null for it made it
+    # indistinguishable from unreachable, contradicting the defensive read two
+    # lines up in `_build_provenance` — the reason the guard is `is not None`.
+    {},
 ])
 def test_build_provenance_survives_any_system_stats_shape(stats):
     """The key set differs across ComfyUI versions — which is the reason to record
     it at all. An unexpected shape must produce nulls, never an AttributeError that
     kills the image stage [AD-10]."""
-    prov = img._build_provenance("wf.json", GOOD_WF, GOOD_NODES, stats)
+    prov = img._build_provenance("wf.json", GOOD_WF, GOOD_NODES, stats, "sha")
     assert prov["comfyui"] == {"comfyui_version": None, "pytorch_version": None, "device": None}
     assert prov["workflow_sha256"] is not None
+
+
+def test_an_unreachable_comfyui_is_the_only_null_comfyui_block():
+    """The counterpart of the `{}` case above: only ``None`` — the value
+    ``get_system_stats`` returns when it could not read the server at all — records
+    a null block."""
+    assert img._build_provenance("wf.json", GOOD_WF, GOOD_NODES, None, "sha")["comfyui"] is None

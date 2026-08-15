@@ -48,6 +48,20 @@ async def fake_submit_and_fetch_outputs(base_url, workflow, output_node_ids, **k
     return {node_id: TINY_PNG for node_id in output_node_ids}
 
 
+async def fake_upload_image(base_url, image_bytes: bytes, filename: str) -> str:
+    """Story 13.3 review-2: the ComfyUI seam the "offline" profile really was using.
+
+    ``compositing_service.depth_map_file`` defaults ``comfyui_client`` to the real
+    module, and ``api/main.py`` injects it into ``image_node`` unconditionally
+    whenever ``depth_placement_enabled`` (which ships True) — so every distinct
+    background opened a real ``POST /upload/image``. ``depth_map_file``'s blanket
+    ``except`` then swallowed the outcome, exactly like ``get_system_stats``.
+
+    Returns what ComfyUI returns: the name to set as ``LoadImage.inputs.image``.
+    """
+    return filename
+
+
 async def fake_check_health(base_url) -> None:
     """Story 5.14: stub-profile ComfyUI is always "reachable" — no real HTTP."""
     return None
@@ -165,11 +179,20 @@ async def fake_enrich_descriptor(self, scp_id: str, ref_image_paths, timeout: fl
 
 
 def patch_character_reference_seams(monkeypatch) -> None:
-    """Wire DuckDuckGo search + download + enrichment + generation to the offline fakes.
+    """Wire SCP-wiki fetch + DuckDuckGo search + download + enrichment + generation
+    to the offline fakes.
 
     Shared by every fixture that needs ``run_service._ensure_character_reference``
     (Story 5.8) to stay offline: ``conftest.stub_profile`` plus the gate/resume test
-    files, which stub LangGraph nodes directly instead of going through it.
+    files, which stub LangGraph nodes directly instead of going through it —
+    **and** ``scripts/run_e2e_stub_server.py``, which used to hand-list a two-seam
+    subset of the five below and therefore made real HTTP to the SCP wiki (and had
+    a live ``_get_image_provider`` route into ``upload_image``) from a process whose
+    docstring promises zero real network calls.
+
+    ``monkeypatch`` is only ever asked for ``.setattr(obj, name, value)``, so the
+    standalone script passes ``SimpleNamespace(setattr=setattr)`` rather than
+    growing a second copy of this list. ponytail: duck typing, no adapter class.
     """
     import yt_flow.services.character_service as character_service
     import yt_flow.services.image_search as image_search

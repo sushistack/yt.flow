@@ -89,6 +89,13 @@ def stub_profile(monkeypatch, tmp_path):
     # the "offline" profile opening a real socket to comfyui_url on any box running
     # ComfyUI — and swallowing the outcome, so nothing failed.
     monkeypatch.setattr(comfyui_client, "get_system_stats", fakes.fake_get_system_stats)
+    # Story 13.3 review-2: the fifth ComfyUI seam, and the one that really was
+    # reaching the network. `compositing_service.depth_map_file` defaults its client
+    # to the real module, and `api/main.py` injects `_resolve_depth` into image_node
+    # unconditionally whenever `depth_placement_enabled` (which ships True), so every
+    # distinct background opened a real POST /upload/image — swallowed by that
+    # function's blanket except, exactly like `get_system_stats` was.
+    monkeypatch.setattr(comfyui_client, "upload_image", fakes.fake_upload_image)
     monkeypatch.setattr(video, "_run_ffmpeg", fakes.fake_run_ffmpeg)
     fakes.patch_character_reference_seams(monkeypatch)
     # Story 8.6: _ensure_character_reference/_ensure_special_pose_cards resolve paths

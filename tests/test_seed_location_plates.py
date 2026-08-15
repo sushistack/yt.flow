@@ -427,7 +427,7 @@ def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monke
     This asserts on the workflow that is actually submitted, not on intent."""
     seed = _load_script()
     nodes = _nodes(seed)
-    _env(tmp_path, monkeypatch)
+    _, anchor_dir = _env(tmp_path, monkeypatch)
     calls = _fake_comfy(monkeypatch, seed)
     _write_ref(tmp_path, "cafeteria", "b")
 
@@ -440,7 +440,16 @@ def test_the_reference_never_reaches_the_ipadapter_or_the_latent(tmp_path, monke
     upstream = _reachable(workflow, nodes[seed.IPADAPTER_KEY], "image")
     assert nodes[seed.BLOCKOUT_KEY] not in upstream
     assert nodes[seed.SCRIBBLE_KEY] not in upstream
-    assert upstream <= {node for node in workflow if node.startswith(nodes[seed.ANCHOR_KEY])}
+    # Constructed, never prefix-matched: `_inject_anchors` derives its ids as
+    # f"{anchor_id}_extra_{i}" / f"{anchor_id}_batch_{i}", and `startswith("2")`
+    # for an anchor resolved to "2" would admit node "23" — the IPAdapter itself,
+    # which is what this assertion is supposed to be excluding.
+    anchor_id = nodes[seed.ANCHOR_KEY]
+    anchor_count = len(list(anchor_dir.glob("*.png")))
+    derived = {anchor_id} | {
+        f"{anchor_id}_{kind}_{i}" for kind in ("extra", "batch") for i in range(1, anchor_count)
+    }
+    assert upstream <= derived
 
     # The sampler starts from noise: an EmptyLatentImage, with nothing upstream of it.
     assert workflow[nodes[seed.SAMPLER_KEY]]["inputs"]["latent_image"] == [nodes[seed.LATENT_KEY], 0]
@@ -573,3 +582,33 @@ def test_load_workflow_reports_a_renamed_node(tmp_path):
         seed._load_workflow(str(path))
     assert seed.SAMPLER_KEY in str(exc.value)
     assert seed.POSITIVE_KEY in str(exc.value)  # ...among the titles present
+
+
+def test_two_swapped_titles_are_rejected_at_load(tmp_path):
+    """Resolving eleven titles proves they are DECLARED, not that they sit on the
+    right nodes. Swap two in the UI and every lookup still succeeds, the seed is
+    written into an EmptyLatentImage, the sampler never gets it and `--reroll`
+    silently no-ops — the structurally-valid-but-wrong graph this story removes.
+    """
+    seed = _load_script()
+    original = json.loads(Path(_plate_workflow_path()).read_text(encoding="utf-8"))
+    swap = {seed.SAMPLER_KEY: seed.LATENT_KEY, seed.LATENT_KEY: seed.SAMPLER_KEY}
+    for node in original.values():
+        title = node.get("_meta", {}).get("title")
+        if title in swap:
+            node["_meta"]["title"] = swap[title]
+    path = tmp_path / "swapped.json"
+    path.write_text(json.dumps(original), encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc:
+        seed._load_workflow(str(path))
+    assert "KSampler" in str(exc.value) or "EmptyLatentImage" in str(exc.value)
+
+
+def test_every_manifest_key_declares_the_class_it_must_be(tmp_path):
+    """...and the expectation table covers all eleven, so no key is unguarded."""
+    seed = _load_script()
+    assert tuple(seed.PLATE_NODE_CLASSES) == seed.PLATE_NODE_KEYS
+    workflow, nodes = seed._load_workflow(_plate_workflow_path())
+    for key, expected in seed.PLATE_NODE_CLASSES.items():
+        assert workflow[nodes[key]]["class_type"] in expected

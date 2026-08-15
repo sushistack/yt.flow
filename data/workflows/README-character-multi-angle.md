@@ -55,6 +55,19 @@ because this provider also has to cope with foreign workflows and
 `_default_workflow()`, neither of which is manifest-bearing. Everything else in
 this provider is `class_type`-scanned and unaffected.
 
+`comfyui_character_pose_guide_api.json` — the Story 10.5 structural-conditioning
+variant this provider loads when a pose guide is supplied — carries the same two
+titles (retitled in the 13.3 review pass; they were still reading `Positive
+Prompt` / `Negative Prompt`) **plus a third**: node `"33"` is
+`ytflow:guide_image`. That third one is load-bearing in a way the other two are
+not. `_is_guide_node` matches it **exactly, with no fallback of any kind**, and
+it is what separates the guide `LoadImage` from the identity-reference
+`LoadImage`. Rename it in the UI and `_inject_guide_image` logs a warning and
+returns the graph unconditioned, after which `_drop_reference_only_nodes` /
+`_remove_i2i_input` delete the guide node out from under a live
+`ControlNetApplyAdvanced` link. All three keys are covered by
+`tests/test_workflow_definitions.py::CONSUMER_KEYS`.
+
 ## Reference image injection — upload, not base64
 
 `ComfyUICharacterProvider._inject_reference_image` (Story 1.12) used to set

@@ -66,10 +66,27 @@ BLOCKOUT_STRENGTH = 0.5
 SCRIBBLE_KEY, CONTROLNET_APPLY_KEY = "ytflow:scribble", "ytflow:controlnet_apply"
 CONTROLNET_LOADER_KEY = "ytflow:controlnet_loader"
 LATENT_KEY, MODEL_KEY = "ytflow:latent", "ytflow:model"
-PLATE_NODE_KEYS = (
-    POSITIVE_KEY, NEGATIVE_KEY, SAMPLER_KEY, LATENT_KEY, MODEL_KEY, ANCHOR_KEY,
-    IPADAPTER_KEY, BLOCKOUT_KEY, SCRIBBLE_KEY, CONTROLNET_APPLY_KEY, CONTROLNET_LOADER_KEY,
-)
+# ...and what each one has to BE. Resolving all eleven titles proves the graph
+# declares them, not that they were declared on the right nodes: swap two titles
+# in the ComfyUI UI and every lookup still succeeds, the seed never reaches the
+# sampler, and `--reroll` silently no-ops — precisely the structurally-valid-but-
+# wrong graph this story exists to remove. Same check `image._load_workflow`
+# makes on its two resolved nodes. Families where a swap is legitimate are listed
+# as alternatives; everything else is exact.
+PLATE_NODE_CLASSES = {
+    POSITIVE_KEY: ("CLIPTextEncode",),
+    NEGATIVE_KEY: ("CLIPTextEncode",),
+    SAMPLER_KEY: ("KSampler",),
+    LATENT_KEY: ("EmptyLatentImage",),
+    MODEL_KEY: ("LoraLoader", "LoraLoaderModelOnly"),
+    ANCHOR_KEY: ("LoadImage",),
+    IPADAPTER_KEY: ("IPAdapter", "IPAdapterAdvanced"),
+    BLOCKOUT_KEY: ("LoadImage",),
+    SCRIBBLE_KEY: ("FakeScribblePreprocessor", "ScribblePreprocessor"),
+    CONTROLNET_APPLY_KEY: ("ControlNetApplyAdvanced",),
+    CONTROLNET_LOADER_KEY: ("ControlNetLoader",),
+}
+PLATE_NODE_KEYS = tuple(PLATE_NODE_CLASSES)
 LOCATION_PLATE_WIDTH = 1920
 LOCATION_PLATE_HEIGHT = 1080
 # Render at an SDXL-native bucket, not at the on-disk contract: a 1920x1080 latent is
@@ -287,12 +304,25 @@ def _load_workflow(path: str) -> tuple[dict, dict[str, str]]:
     duplicated title, naming what is actually in the file — the same fail-loud
     contract the old id presence-check had, minus the ability to resolve to the
     wrong node after a renumber.
+
+    Each resolved node is then checked against :data:`PLATE_NODE_CLASSES`:
+    resolving eleven titles only proves they are declared, not that they sit on
+    the right nodes, and two swapped titles produce a graph that loads, submits
+    and renders the wrong thing.
     """
     try:
         workflow = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:  # JSONDecodeError is a ValueError subclass
         sys.exit(f"cannot load ComfyUI workflow at {path!r}: {exc}")
-    return workflow, comfyui_client.resolve_nodes(workflow, PLATE_NODE_KEYS)
+    nodes = comfyui_client.resolve_nodes(workflow, PLATE_NODE_KEYS)
+    for key, expected in PLATE_NODE_CLASSES.items():
+        actual = workflow[nodes[key]].get("class_type")
+        if actual not in expected:
+            raise ValueError(
+                f"plate workflow node {nodes[key]!r} is titled {key!r} but is a "
+                f"{actual!r}; expected {' or '.join(expected)}"
+            )
+    return workflow, nodes
 
 
 def _load_anchor_paths(anchor_dir: Path) -> list[Path]:

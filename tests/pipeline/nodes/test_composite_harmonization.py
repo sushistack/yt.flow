@@ -25,6 +25,7 @@ from yt_flow.pipeline.nodes.composite_harmonization import (
     build_light_wrap,
     build_sprite_tint,
     precompute_relights,
+    relight_sprite,
 )
 from yt_flow.domain.state import CastMember, SceneState, ShotData
 from yt_flow.pipeline.nodes.sound_design import DEFAULT_MOOD, MOOD_VALUES
@@ -346,7 +347,7 @@ async def test_precompute_relights_only_stock_pairs(tmp_path, workflow_path):
         "1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}],
         "2:S002": [{"card_key": "STOCK-security", "path": str(tmp_path / "card2.png")}],
     }
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     svc = _FakeAssetService(tmp_path)
     _seed_stock_assets(svc)
     client = _FakeComfyUIClient()
@@ -367,7 +368,7 @@ async def test_precompute_relights_includes_entity_card(tmp_path, workflow_path)
     cards the finding-3 adjudication frames are built from.
     """
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "SCP-049", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
@@ -387,7 +388,7 @@ async def test_precompute_relights_includes_entity_card(tmp_path, workflow_path)
 async def test_precompute_relights_excludes_unverified_card(tmp_path, workflow_path):
     """Widening eligibility to entity cards must not widen it to unverified ones."""
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "SCP-049", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
@@ -414,7 +415,7 @@ async def test_precompute_relights_excludes_unverified_card(tmp_path, workflow_p
 async def test_precompute_relights_skips_shot_without_location_key(tmp_path, workflow_path):
     """A free-text background has no stable identity to cache against — a skip, not an error."""
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key=None, image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
@@ -433,7 +434,7 @@ async def test_precompute_relights_non_fatal_on_comfyui_failure(tmp_path, workfl
     (tmp_path / "bg.png").write_bytes(b"bg")
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     svc = _FakeAssetService(tmp_path)
     _seed_stock_assets(svc)
     client = _FakeComfyUIClient(fail=True)
@@ -452,7 +453,7 @@ async def test_precompute_relights_non_fatal_on_comfyui_failure(tmp_path, workfl
 @pytest.mark.asyncio
 async def test_precompute_relights_unverified_workflow_is_non_fatal(tmp_path, unverified_workflow_path):
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
@@ -470,7 +471,7 @@ async def test_precompute_relights_unverified_workflow_is_non_fatal(tmp_path, un
 @pytest.mark.asyncio
 async def test_precompute_relights_skips_unsafe_cache_keys(tmp_path, workflow_path):
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key="../outside", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
     svc = _FakeAssetService(tmp_path)
@@ -493,7 +494,7 @@ async def test_precompute_relights_cache_hit_skips_comfyui(tmp_path, workflow_pa
     (tmp_path / "bg.png").write_bytes(b"bg")
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {"1:S001": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     svc = _FakeAssetService(tmp_path)
     _seed_stock_assets(svc)
     RelightCache(tmp_path, svc).store("STOCK-d-class__standing__front", "corridor", 1, _make_png(6))
@@ -605,6 +606,37 @@ def test_unverified_workflow_is_rejected(tmp_path, shipped_workflow):
         _load_iclight_workflow(str(path), resolve_nodes)
 
 
+def test_a_placeholder_graph_reports_the_marker_not_a_missing_title(tmp_path):
+    """The marker gate runs BEFORE title resolution.
+
+    A genuine placeholder — no `ytflow:` titles at all, which is exactly the case
+    the marker exists for — used to fail with "workflow node title
+    'ytflow:card_image' not found", sending the reader hunting a renamed node
+    instead of telling them the graph was never verified.
+    """
+    path = tmp_path / "placeholder.json"
+    path.write_text(json.dumps({"1": {"class_type": "LoadImage", "inputs": {}}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="ytflow_verified_iclight"):
+        _load_iclight_workflow(str(path), resolve_nodes)
+
+
+async def test_an_unreadable_card_fails_instead_of_relighting_at_the_default_canvas(tmp_path, workflow_path):
+    """``dimensions()`` answering ``None`` used to leave the graph's canvases at
+    their shipped 832x1216: ICLightConditioning centre-crops the subject to that
+    aspect while JoinImageWithAlpha re-attaches the full original mask, so the
+    mis-conditioned sprite still passes ``has_alpha`` and is cached and
+    auto-approved. Fail loudly (as a logged, non-fatal miss) instead.
+    """
+    card = tmp_path / "truncated.png"
+    card.write_bytes(b"\x89PNG\r\n\x1a\n")  # signature only — not a readable PNG
+    bg = tmp_path / "bg.png"
+    bg.write_bytes(_make_png(2))
+    client = _FakeComfyUIClient()
+
+    assert await relight_sprite(card, bg, client, workflow_path, "http://fake") is None
+    assert client.calls == 0, "nothing may be submitted at the wrong canvas size"
+
+
 def test_shipped_workflow_foreground_latent_is_grey_matted(shipped_workflow, shipped_nodes):
     """LoadImage drops alpha, so the card's transparent region is pure black.
 
@@ -668,9 +700,9 @@ def test_card_variant_separates_poses_and_folds_unsafe_pose():
 async def test_precompute_relights_keys_two_poses_separately(tmp_path, workflow_path):
     """Two poses of one card in one location produce two pairs, not one."""
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")  # what _seed_stock_assets verifies against
-    (tmp_path / "standing.png").write_bytes(b"standing")
-    (tmp_path / "hinted.png").write_bytes(b"hinted")
+    (tmp_path / "card.png").write_bytes(_make_png(6))  # what _seed_stock_assets verifies against
+    (tmp_path / "standing.png").write_bytes(_make_png(6))
+    (tmp_path / "hinted.png").write_bytes(_make_png(6))
     scenes = [_scene(1, [_shot("S001", location_key="corridor", image_path=str(tmp_path / "bg.png"))])]
     cast_cards = {
         "1:S001": [
@@ -768,7 +800,7 @@ async def test_a_malformed_shot_does_not_disable_tier3_for_the_run(tmp_path, wor
     an AttributeError out of `precompute_relights` and cost the whole run its relights.
     """
     (tmp_path / "bg.png").write_bytes(b"bg")
-    (tmp_path / "card.png").write_bytes(b"card")
+    (tmp_path / "card.png").write_bytes(_make_png(6))
     good = _shot("S002", location_key="corridor", image_path=str(tmp_path / "bg.png"))
     scenes = [_scene(1, ["not a shot at all", good])]
     cast_cards = {"1:S002": [{"card_key": "STOCK-d-class", "path": str(tmp_path / "card.png")}]}

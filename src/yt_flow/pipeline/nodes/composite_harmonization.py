@@ -358,7 +358,9 @@ def _load_iclight_workflow(path: str, resolve_nodes: Any) -> tuple[dict, dict[st
 
     Returns ``(workflow, nodes)`` mapping manifest key -> node id. Only the
     interchange nodes are validated — the internal IC-Light conditioning graph is
-    opaque here (same posture as image.py's ``_load_workflow``).
+    opaque here (same posture as image.py's ``_load_workflow``). The
+    ``ytflow_verified_iclight`` gate runs *before* title resolution so a
+    placeholder graph reports being a placeholder rather than a missing title.
 
     Story 13.3: resolution is by exact ``_meta.title``, and the two canvas nodes
     are resolved *eagerly* alongside the two LoadImages, so a graph that no
@@ -372,6 +374,15 @@ def _load_iclight_workflow(path: str, resolve_nodes: Any) -> tuple[dict, dict[st
         raise ValueError(f"cannot load IC-Light workflow at {path!r}: {exc}") from exc
     if not isinstance(workflow, dict):
         raise ValueError(f"IC-Light workflow at {path!r} is not an API-format object")
+    # The marker gate FIRST. A genuine placeholder graph — the case the marker
+    # exists for — otherwise failed with "workflow node title 'ytflow:card_image'
+    # not found", which sends the reader hunting a renamed node instead of telling
+    # them the graph was never verified.
+    if workflow.get("ytflow_verified_iclight") is not True:
+        raise ValueError(
+            "IC-Light workflow is not marked ytflow_verified_iclight=true; "
+            "placeholder workflows are treated as non-fatal cache misses"
+        )
     nodes = resolve_nodes(workflow, ICLIGHT_NODE_KEYS)
     for key in ICLIGHT_NODE_KEYS:
         # ``class_type`` first, for all four: ``_inject_relight_inputs`` rebuilds
@@ -395,11 +406,6 @@ def _load_iclight_workflow(path: str, resolve_nodes: Any) -> tuple[dict, dict[st
                 f"IC-Light workflow node {nodes[key]!r} ({key}) must take width/height — "
                 "the card canvas cannot be sized to the sprite otherwise"
             )
-    if workflow.get("ytflow_verified_iclight") is not True:
-        raise ValueError(
-            "IC-Light workflow is not marked ytflow_verified_iclight=true; "
-            "placeholder workflows are treated as non-fatal cache misses"
-        )
     return workflow, nodes
 
 
@@ -468,17 +474,27 @@ async def relight_sprite(
 
     ``comfyui_client`` is the ``yt_flow.services.comfyui_client`` module (or
     anything exposing the same ``upload_image``/``submit_and_fetch`` async
-    functions) — accepted as ``Any`` to keep this module out of the services
-    layer per AD-1.
+    functions **and** the synchronous ``resolve_nodes``, Story 13.3) — accepted as
+    ``Any`` to keep this module out of the services layer per AD-1. A duck-typed
+    fake missing ``resolve_nodes`` raises ``AttributeError`` into the blanket
+    except below, i.e. a silent per-pair cache miss.
     """
     try:
         template, nodes = _load_iclight_workflow(workflow_path, comfyui_client.resolve_nodes)
         card_bytes = card_path.read_bytes()
+        card_size = dimensions(card_bytes)
+        if card_size is None:
+            # Not a readable PNG. Falling through would leave the graph's canvases
+            # at their shipped 832x1216: ICLightConditioning then centre-crops the
+            # subject to that aspect while JoinImageWithAlpha re-attaches the full
+            # original mask — a mis-conditioned sprite that still passes
+            # ``has_alpha``, gets cached and auto-approved (Story 10.1b, HIGH).
+            raise ValueError(f"card {card_path} is not a readable PNG; cannot size the relight canvas")
         card_name = await comfyui_client.upload_image(comfyui_url, card_bytes, _upload_name(card_path))
         bg_name = await comfyui_client.upload_image(
             comfyui_url, background_path.read_bytes(), _upload_name(background_path)
         )
-        workflow = _inject_relight_inputs(template, nodes, card_name, bg_name, dimensions(card_bytes))
+        workflow = _inject_relight_inputs(template, nodes, card_name, bg_name, card_size)
         return await comfyui_client.submit_and_fetch(comfyui_url, workflow)
     except Exception as exc:  # noqa: BLE001 — AC:11: IC-Light failure is always non-fatal
         logger.warning("IC-Light relight failed for %s over %s: %s", card_path, background_path, exc)
