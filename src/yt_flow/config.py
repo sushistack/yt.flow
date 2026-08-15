@@ -254,6 +254,16 @@ class Settings(BaseSettings):
     # a frame's animation in.
     character_idle_motion_enabled: bool = True
 
+    # Background camera archetype (Story 11.2/11.5): push_in / pull_back / drift are
+    # what actually move the plate, through both the zoompan chain and the 11.5 depth
+    # trajectory. `camera_noise_enabled` only removes the fBm tremor riding on top and
+    # `character_idle_motion_enabled` only freezes the cards — measured on live run
+    # e5ed4b3a, background clips still moved 2.3-3.8 mean inter-frame delta with both
+    # of those off, while the one shot already on the `locked` archetype sat at 0.15.
+    # When false every shot renders on `_FUSION_STILL_SPEC` with a `locked` hint, so
+    # the plate holds still and 2.5D depth is kept (unlike disabling depth outright).
+    background_camera_motion_enabled: bool = True
+
     # Content language (Story 9.1): single seam for a future language pivot. The
     # pipeline is Korean-only today — changing this to anything else makes
     # scenario_node fail fast rather than silently mixing languages. Touchpoints

@@ -695,6 +695,7 @@ async def build_motion_source(
     parallax_enabled: bool,
     camera_shake: str,
     renderer_counts: dict[str, int] | None = None,
+    background_camera_motion_enabled: bool = True,
 ) -> MotionSource:
     """Resolve one shot's background motion — the single seam of AC8.
 
@@ -707,7 +708,21 @@ async def build_motion_source(
     stage only fails if the legacy chain itself fails downstream in ffmpeg (AC9 —
     "only failure of every validated renderer fails the video stage").
     """
-    spec = select_effect(shot, k)
+    # Story 11.3 gave camera noise a switch and 11.5 the depth parallax a magnitude,
+    # but the *archetype* driving both — push_in / pull_back / drift — had none. Live
+    # run e5ed4b3a measured the consequence: with card motion fully frozen, background
+    # clips still moved 2.3-3.8 (mean inter-frame delta) while the one shot already on
+    # `locked` sat at 0.15. Freezing the cards alone does not read as "motion off".
+    #
+    # This is the single seam: `select_effect` is called nowhere else, and the same
+    # spec/hint pair feeds both the legacy zoompan chain and the 11.5 trajectory
+    # (`base_zoom`/`base_pan` below), so forcing them here covers both renderers
+    # without giving the pure dispatcher a settings dependency.
+    if background_camera_motion_enabled:
+        spec = select_effect(shot, k)
+    else:
+        spec = _FUSION_STILL_SPEC
+        shot = {**shot, "camera_movement": "locked"}
     counts = renderer_counts if renderer_counts is not None else {}
 
     def legacy(reason: str | None) -> MotionSource:
@@ -1967,6 +1982,7 @@ async def _compose_scene(
     camera_noise_enabled: bool = False,
     renderer_counts: dict[str, int] | None = None,
     idle_motion_enabled: bool = True,
+    background_camera_motion_enabled: bool = True,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment. [AC:1,3] [Story 7.1] [Story 7.2] [Story 8.3] [Story 8.11]
 
@@ -2044,6 +2060,7 @@ async def _compose_scene(
             parallax_enabled=parallax_enabled,
             camera_shake=_shake(shot, clip_duration, k, trauma),
             renderer_counts=renderer_counts,
+            background_camera_motion_enabled=background_camera_motion_enabled,
         )
 
     if len(plan) == 1:
@@ -2657,6 +2674,7 @@ async def video_node(state: PipelineState) -> dict:
                 min_shot_clip_sec=s.min_shot_clip_sec,
                 camera_noise_enabled=s.camera_noise_enabled,
                 idle_motion_enabled=s.character_idle_motion_enabled,
+                background_camera_motion_enabled=s.background_camera_motion_enabled,
                 renderer_counts=renderer_counts,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive

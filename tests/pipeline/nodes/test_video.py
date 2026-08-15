@@ -83,6 +83,7 @@ def _settings_ns(
         min_shot_clip_sec=min_shot_clip_sec,
         camera_noise_enabled=camera_noise_enabled,
         character_idle_motion_enabled=True,
+        background_camera_motion_enabled=True,
         # Story 11.5: the 2.5D renderer is never injected in these tests, so the
         # kill-switch value only has to exist; build_motion_source takes the
         # legacy zoompan path either way.
@@ -3724,3 +3725,36 @@ def test_idle_motion_enabled_leaves_cards_untouched():
     cards = [{"path": "a.png", "motion_style": "sway", "movement_mode": "drift", "depth": "mid"}]
     assert video._freeze_idle_motion(cards) != cards
     assert cards[0]["motion_style"] == "sway"
+
+
+async def test_background_camera_motion_off_locks_every_shot(monkeypatch, tmp_path):
+    """The archetype is what actually moves the plate — freezing cards is not enough.
+
+    Live run e5ed4b3a: with `camera_noise_enabled=False` and card motion frozen,
+    background clips still measured 2.3-3.8 mean inter-frame delta, while the one
+    shot whose archetype was already `locked` sat at 0.15. This asserts the switch
+    reaches BOTH consumers of the pair — the zoompan spec and the 11.5 trajectory
+    hint — since `build_motion_source` is the only place `select_effect` is called.
+    """
+    seen: dict = {}
+
+    async def _renderer(**kw):
+        seen.update(kw)
+        return {"path": None, "renderer": "depth_warp", "reason": "declined"}
+
+    monkeypatch.setattr(video, "_motion_renderer", _renderer)
+    monkeypatch.setattr(video, "_settings", lambda: SimpleNamespace(parallax_displacement_frac=0.02))
+    shot = {"shot_id": "S001", "image_path": "bg.png", "camera_movement": "push_in", "depth_map_path": None}
+
+    ms = await video.build_motion_source(
+        shot, 2.0, k=0, trauma=0.0, motion_dir=tmp_path, parallax_enabled=False,
+        camera_shake="", background_camera_motion_enabled=False,
+    )
+    assert ms.spec == video._FUSION_STILL_SPEC          # zoompan: no zoom, no pan
+    assert ms.spec.start_zoom == ms.spec.end_zoom == 1.0
+
+    ms_on = await video.build_motion_source(
+        shot, 2.0, k=0, trauma=0.0, motion_dir=tmp_path, parallax_enabled=False,
+        camera_shake="", background_camera_motion_enabled=True,
+    )
+    assert ms_on.spec != video._FUSION_STILL_SPEC       # push_in still moves when on
