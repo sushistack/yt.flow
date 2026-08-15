@@ -687,3 +687,36 @@ async def test_failed_scenario_retry_cannot_retain_the_previous_archetype(
     assert snap.values["error"]  # the rerun really did fail
     assert snap.values.get("story_archetype") is None
     assert not snap.values.get("story_archetype_fallback_used")
+
+
+async def test_edit_scenario_artifact_writes_both_narration_tracks(env):
+    """A hand edit must reach subtitles too, not just TTS.
+
+    ``display_narration`` is what the subtitle stage renders and ``narration`` is
+    what TTS speaks (Story 5.18). Writing only the latter left live run e5ed4b3a
+    shipping captions that still carried a stage direction the narrator no longer
+    read — audio and subtitles disagreed on *content*, not just wording. The
+    spoken track also gets SCP designations spelled, matching what
+    ``tts_normalize_step`` produces for generated scenes.
+    """
+    run_id = str(uuid.uuid4())
+    _seed(run_id)
+    reg = _FakeRegistry()
+    await run_service.start_run(run_id, "SCP-096", "t", reg)
+
+    config = run_service._configs[run_id]
+    await run_service._graph.aupdate_state(
+        config,
+        {"scenes": [{"scene_num": 1, "narration": "옛 문장.", "display_narration": "옛 문장.",
+                     "audio_path": None, "audio_duration": None, "word_timings": [],
+                     "subtitle_path": None, "shots": []}]},
+        as_node="scenario",
+    )
+
+    body = "재단이 그에게 붙인 번호는, SCP-049입니다."
+    await run_service.edit_artifact(run_id, "scenario", body, 1)
+
+    scene = (await run_service._graph.aget_state(config)).values["scenes"][0]
+    assert scene["display_narration"] == body            # subtitles: the readable form
+    assert "에스씨피 공사구" in scene["narration"]        # TTS: spelled designation
+    assert "SCP-049" not in scene["narration"]

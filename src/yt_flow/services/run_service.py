@@ -37,6 +37,7 @@ from yt_flow.domain.state import (
 from yt_flow.domain.warnings import make_warning, merge as merge_warnings
 from yt_flow.pipeline.graph import build_graph
 from yt_flow.pipeline.nodes import image as image_node
+from yt_flow.pipeline.nodes.scenario_chain import spell_scp_designations
 from yt_flow.services import comfyui_client, eval_service
 from yt_flow.services.asset_service import AssetService
 from yt_flow.services.character_service import CANONICAL_ANGLES, CharacterService, pose_hint_key
@@ -1044,7 +1045,16 @@ async def edit_artifact(run_id: str, stage: str, body: str, scene_num: int = 1) 
     if target is None:
         raise HTTPException(status_code=404, detail="Stage artifact not found (stage not yet run)")
     if stage == "scenario":
-        target["narration"] = body
+        # Two tracks, one edit. `display_narration` is what subtitles render and
+        # `narration` is what TTS speaks (Story 5.18); writing only the latter left
+        # the subtitle stage rendering the PRE-edit text, so audio and captions
+        # disagreed on content — live run e5ed4b3a shipped a frame whose caption
+        # still carried a stage direction the narrator no longer read. The operator
+        # types readable Korean, so that is `display_narration` verbatim; the spoken
+        # track is the same text with SCP designations spelled, matching what
+        # `tts_normalize_step` produces for generated scenes.
+        target["display_narration"] = body
+        target["narration"] = spell_scp_designations(body)
         path = Path(_settings().workspace_path) / run_id / "scenario" / f"scene_{scene_num:03d}.txt"
     else:  # subtitle — the SRT text lives on disk; state only holds subtitle_path
         sp = target.get("subtitle_path")

@@ -5095,3 +5095,51 @@ def test_research_prompt_documents_the_closed_catalogue_and_inventory():
         assert key in text
     assert "archetype_rationale" in text
     assert "researcher_descent" not in text  # deferred, must not be offered
+
+
+# ── SCP designation spelling (live run e5ed4b3a) ──────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("대상은 SCP-049입니다.", "대상은 에스씨피 공사구입니다."),
+        ("오싹한 SCP-049-2의 탄생입니다.", "오싹한 에스씨피 공사구 이의 탄생입니다."),
+        ("SCP-682와 SCP-096.", "에스씨피 육팔이와 에스씨피 공구육."),
+        ("scp-049 소문자도 잡는다.", "에스씨피 공사구 소문자도 잡는다."),
+        ("SCP–049 엔대시.", "에스씨피 공사구 엔대시."),
+        ("정규화할 것이 없는 문장.", "정규화할 것이 없는 문장."),
+    ],
+)
+def test_spell_scp_designations(raw, expected):
+    """One narrator must not say the subject's name four different ways.
+
+    Live run e5ed4b3a produced `에스씨피 공사구` / `에스시피-049-2` /
+    `에스시피 공사구 이` / `에스씨피 공사 구` for the same object across nine
+    scenes, because the prompt asked the LLM to spell acronyms without naming a
+    canonical form. The designation is a closed token class, so it is spelled here.
+    """
+    assert chain.spell_scp_designations(raw) == expected
+
+
+def test_spell_scp_designations_preserves_sentence_count():
+    """Applied after the sentence-count invariant check — it must not perturb it."""
+    raw = "SCP-049입니다. 키 1.9m. SCP-049-2가 일어섭니다."
+    out = chain.spell_scp_designations(raw)
+    assert len(chain.split_sentences(raw)) == len(chain.split_sentences(out))
+
+
+async def test_tts_normalize_spells_designations_even_on_sentence_mismatch(monkeypatch):
+    """The degraded single-track path is still spoken aloud, so it still gets spelled."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt()
+    )
+    writing = {"scenes": [{"scene_num": 1, "narration": "SCP-049는 의사를 자처한다. 그는 기다린다."}]}
+
+    async def call(*a, **k):  # returns a DIFFERENT sentence count -> mismatch branch
+        return "scenes:\n  - scene_num: 1\n    narration: 하나로 합쳐진 문장이다\n", {}, "stop"
+
+    out = await chain.tts_normalize_step(writing, "guide", None, call)
+    scene = out["scenes"][0]
+    assert "에스씨피 공사구" in scene["narration"]
+    assert "SCP-049" in scene["display_narration"]  # subtitles keep the readable form

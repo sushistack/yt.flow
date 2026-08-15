@@ -362,6 +362,21 @@
       },
       "status": "approved"
     },
+    "STOCK-d-class/hint:475c8a9231_front": {
+      "angle": "front",
+      "approved_at": "2026-08-15T06:34:26.580311+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-15T06:34:26.577939+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/hint_475c8a9231_front.png",
+      "pose": "hint:475c8a9231",
+      "sha256": "1341d8254baece7f719c25275abc26af21dc4fae6b2c521070330f665e10d1a7",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "pose_guide": "humanoid_lying_supine",
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
     "STOCK-d-class/hint:6525d3c087_front": {
       "angle": "front",
       "approved_at": "2026-07-08T16:18:19.796823+00:00",

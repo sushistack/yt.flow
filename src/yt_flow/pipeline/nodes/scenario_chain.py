@@ -1053,6 +1053,33 @@ def _yaml_text(raw: str) -> str:
     return match.group(1) if match else text
 
 
+# SCP designations are a closed token class, so they are spelled in code rather
+# than asked of the LLM. Live run e5ed4b3a produced FOUR readings of the same
+# object across nine scenes — `에스씨피 공사구` / `에스시피-049-2` / `에스시피 공사구 이`
+# / `에스씨피 공사 구` — because `tts_normalize.md` tells the model to spell
+# acronyms and expand numbers without naming a canonical form. One narrator
+# saying the subject's name four different ways is the defect; determinism is
+# the fix. The prompt now leaves `SCP-###` verbatim for this pass to convert.
+_SCP_DESIGNATION = re.compile(r"\bSCP[-–—]?(\d{2,4})(?:[-–—](\d+))?", re.IGNORECASE)
+_DIGIT_HANGUL = {"0": "공", "1": "일", "2": "이", "3": "삼", "4": "사",
+                 "5": "오", "6": "육", "7": "칠", "8": "팔", "9": "구"}
+
+
+def spell_scp_designations(text: str) -> str:
+    """Rewrite ``SCP-049`` / ``SCP-049-2`` into their spoken Hangul reading.
+
+    Digits are read individually (``049`` → ``공사구``), which is how Korean SCP
+    narration says them; the instance suffix becomes a trailing digit word
+    (``-2`` → ``이``). Sentence count is untouched — no punctuation is added or
+    removed — so this is safe to apply after the sentence-count invariant check.
+    """
+    def sub(m: re.Match[str]) -> str:
+        head = "".join(_DIGIT_HANGUL[d] for d in m.group(1))
+        tail = "".join(_DIGIT_HANGUL[d] for d in m.group(2)) if m.group(2) else ""
+        return f"에스씨피 {head} {tail}".rstrip()
+    return _SCP_DESIGNATION.sub(sub, text)
+
+
 def _normalize_freetext(text: str) -> str:
     """Collapse whitespace runs — including literal newlines a YAML ``|``
     block literal preserves verbatim — to single spaces.
@@ -2448,11 +2475,18 @@ async def tts_normalize_step(
                 len(split_sentences(normalized_narration)),
             )
             # Mismatch degrades to single-track: display == spoken == original (AC:2).
-            updated_scenes.append({**original_scene, "display_narration": original_narration})
+            # The designation still gets spelled — a degraded track is still spoken aloud.
+            updated_scenes.append({
+                **original_scene,
+                "narration": spell_scp_designations(original_narration),
+                "display_narration": original_narration,
+            })
             continue
-        updated_scenes.append(
-            {**original_scene, "narration": normalized_narration, "display_narration": original_narration}
-        )
+        updated_scenes.append({
+            **original_scene,
+            "narration": spell_scp_designations(normalized_narration),
+            "display_narration": original_narration,
+        })
 
     return {**writing, "scenes": updated_scenes}
 
