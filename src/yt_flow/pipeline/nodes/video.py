@@ -1445,7 +1445,7 @@ async def render_composite_still(
         trajectory=None,
         renderer="fusion-still",
     )
-    frozen = [{**c, "motion_style": "hold", "movement_mode": "anchored"} for c in cards]
+    frozen = _freeze_idle_motion(cards)
     ordered = sorted(frozen, key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
     inputs = list(motion.bg_input)
     for card in ordered:
@@ -1513,6 +1513,22 @@ async def render_card_coverage_mask(
         logger.warning("Card coverage mask failed for shot %s: %s", shot.get("shot_id"), err[-400:])
         return None
     return out_path
+
+
+# Story 11.3 gave the *camera* an off switch (`camera_noise_enabled`); the cards'
+# own idle sine never had one. Live run e5ed4b3a shipped 37 of 40 cast placements
+# with an active `motion_style` (breath 25, sway 5, pulse 5, tremble 2) — so turning
+# the handheld camera off still read as "everything is shaking", because the camera
+# was one of four motion systems and not the loudest.
+#
+# The freeze mapping is not invented here: `_render_fusion_still` already documents
+# it as the seam-respecting way to stop motion — per-card `motion_style="hold"` +
+# `movement_mode="anchored"` kills the idle sine and the 8.9 entrance offsets, and
+# those terms are non-zero at t=0, so a partial freeze bakes a fraction of a frame's
+# animation into the result.
+def _freeze_idle_motion(cards: list[dict]) -> list[dict]:
+    """Cards with their idle sine and entrance offsets removed. [YTFLOW_CHARACTER_IDLE_MOTION_ENABLED=false]"""
+    return [{**c, "motion_style": "hold", "movement_mode": "anchored"} for c in cards]
 
 
 def _build_card_chain(
@@ -1679,6 +1695,7 @@ async def _render_scene_fast(
     post_fx_enabled: bool,
     include_stinger: bool,
     composite_harmonization_tier: int,
+    idle_motion_enabled: bool = True,
 ) -> None:
     """Render a scene segment in a single ffmpeg pass: background motion +
     burned SRT, optionally with N cast cards + mood-driven sound design/post-fx.
@@ -1711,7 +1728,10 @@ async def _render_scene_fast(
 
     # Stacking order (Story 8.3 AC:6): far painted first, near painted last/on
     # top — stable sort so same-depth members keep cast order.
-    ordered_cards = sorted(cards or [], key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
+    _cards = cards or []
+    if not idle_motion_enabled:
+        _cards = _freeze_idle_motion(_cards)
+    ordered_cards = sorted(_cards, key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
     num_cards = len(ordered_cards)
 
     if num_cards:
@@ -1802,6 +1822,7 @@ async def _compose_shot_clip(
     cards: list[dict],
     mood: str | None,
     composite_harmonization_tier: int,
+    idle_motion_enabled: bool = True,
 ) -> None:
     """Render one shot's silent background+cards clip — pass 1 of Story 8.11's
     per-shot cut assembly. No audio, no subtitle burn, no post-fx: those apply
@@ -1814,7 +1835,10 @@ async def _compose_shot_clip(
     construction on this path.
     """
     camera_shake = motion.camera_shake
-    ordered_cards = sorted(cards or [], key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
+    _cards = cards or []
+    if not idle_motion_enabled:
+        _cards = _freeze_idle_motion(_cards)
+    ordered_cards = sorted(_cards, key=lambda c: _DEPTH_ORDER.get(c.get("depth", "mid"), 1))
 
     if ordered_cards:
         inputs = list(motion.bg_input)
@@ -1942,6 +1966,7 @@ async def _compose_scene(
     min_shot_clip_sec: float = 2.0,
     camera_noise_enabled: bool = False,
     renderer_counts: dict[str, int] | None = None,
+    idle_motion_enabled: bool = True,
 ) -> tuple[Path, EffectSpec, bool]:
     """Render one scene segment. [AC:1,3] [Story 7.1] [Story 7.2] [Story 8.3] [Story 8.11]
 
@@ -2031,6 +2056,7 @@ async def _compose_scene(
             sound_design_enabled=sound_design_enabled, post_fx_enabled=post_fx_enabled,
             include_stinger=include_stinger,
             composite_harmonization_tier=composite_harmonization_tier,
+            idle_motion_enabled=idle_motion_enabled,
         )
         return seg_path, motion.spec, bool(cards)
 
@@ -2064,6 +2090,7 @@ async def _compose_scene(
             clip.shot, motion, clip.duration, clip_path,
             cards=cards, mood=mood,
             composite_harmonization_tier=composite_harmonization_tier,
+            idle_motion_enabled=idle_motion_enabled,
         )
         clip_paths.append(clip_path)
 
@@ -2629,6 +2656,7 @@ async def video_node(state: PipelineState) -> dict:
                 include_stinger=not (chapter_cards_enabled and i > 0),
                 min_shot_clip_sec=s.min_shot_clip_sec,
                 camera_noise_enabled=s.camera_noise_enabled,
+                idle_motion_enabled=s.character_idle_motion_enabled,
                 renderer_counts=renderer_counts,
             )
             duration: float = scene["audio_duration"]  # type: ignore[assignment]  # validated positive

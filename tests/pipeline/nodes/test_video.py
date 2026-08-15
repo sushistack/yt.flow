@@ -82,6 +82,7 @@ def _settings_ns(
         composite_harmonization_tier=composite_harmonization_tier,
         min_shot_clip_sec=min_shot_clip_sec,
         camera_noise_enabled=camera_noise_enabled,
+        character_idle_motion_enabled=True,
         # Story 11.5: the 2.5D renderer is never injected in these tests, so the
         # kill-switch value only has to exist; build_motion_source takes the
         # legacy zoompan path either way.
@@ -3691,3 +3692,35 @@ def test_cast_warnings_are_bounded_by_the_shared_sample_cap():
     named = [w for w in warnings if "shot_id" in w["context"]]
     assert len(named) == MAX_SAMPLE_RECORDS
     assert warnings[-1]["context"] == {"total_count": n}
+
+
+# ── Character idle motion switch (live run e5ed4b3a) ─────────────────────────
+
+
+def test_freeze_idle_motion_kills_sine_and_entrance_offsets():
+    """Story 11.3 gave the camera an off switch; the cards' own sine had none.
+
+    Live run e5ed4b3a shipped 37 of 40 cast placements with an active
+    `motion_style` (breath 25, sway 5, pulse 5, tremble 2), so turning the
+    handheld camera off still read as "everything is shaking". The freeze reuses
+    the mapping `_render_fusion_still` documents — both terms must be set,
+    because each is non-zero at t=0 and a partial freeze bakes a fraction of a
+    frame's animation in.
+    """
+    cards = [
+        {"path": "a.png", "motion_style": "tremble", "movement_mode": "drift", "depth": "near"},
+        {"path": "b.png", "motion_style": "breath", "movement_mode": "anchored", "depth": "far"},
+    ]
+    frozen = video._freeze_idle_motion(cards)
+    assert [c["motion_style"] for c in frozen] == ["hold", "hold"]
+    assert [c["movement_mode"] for c in frozen] == ["anchored", "anchored"]
+    # everything else survives, and the input is not mutated
+    assert [c["path"] for c in frozen] == ["a.png", "b.png"]
+    assert [c["depth"] for c in frozen] == ["near", "far"]
+    assert cards[0]["motion_style"] == "tremble"
+
+
+def test_idle_motion_enabled_leaves_cards_untouched():
+    cards = [{"path": "a.png", "motion_style": "sway", "movement_mode": "drift", "depth": "mid"}]
+    assert video._freeze_idle_motion(cards) != cards
+    assert cards[0]["motion_style"] == "sway"

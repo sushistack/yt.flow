@@ -242,6 +242,18 @@ class Settings(BaseSettings):
     # When false, no stage is attached — the pre-11.3 filter chain, byte-identical.
     camera_noise_enabled: bool = True
 
+    # Character idle motion (Story 1.9c/8.8): the per-card breath/sway/tremble/pulse
+    # sine and the 8.9 entrance offsets. Separate system from `camera_noise_enabled`
+    # — that one moves the *camera*, this one moves the *cards* — and until now only
+    # the camera had a switch. Live run e5ed4b3a made the gap visible: with the
+    # handheld camera off, 37 of 40 cast placements still carried an active
+    # `motion_style` (breath 25, sway 5, pulse 5, tremble 2) and the render still read
+    # as shaking. When false, every card is frozen through the same seam
+    # `_render_fusion_still` documents (`motion_style="hold"` + `movement_mode="anchored"`),
+    # because those terms are non-zero at t=0 and a partial freeze bakes a fraction of
+    # a frame's animation in.
+    character_idle_motion_enabled: bool = True
+
     # Content language (Story 9.1): single seam for a future language pivot. The
     # pipeline is Korean-only today — changing this to anything else makes
     # scenario_node fail fast rather than silently mixing languages. Touchpoints

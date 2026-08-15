@@ -62,7 +62,8 @@ def _shot(assets, movement="push_in", *, depth=True):
 
 
 def _settings_ns(tmp_path, **kw):
-    base = dict(parallax_25d_enabled=True, parallax_displacement_frac=0.02)
+    base = dict(parallax_25d_enabled=True, parallax_displacement_frac=0.02,
+                character_idle_motion_enabled=True)
     base.update(kw)
     return SimpleNamespace(**base)
 
