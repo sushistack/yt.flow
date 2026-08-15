@@ -29,6 +29,8 @@ import yaml
 from yt_flow.domain.pose import canonical_guide_key
 from yt_flow.domain.state import (
     CAMERA_ARCHETYPES,
+    CRITIC_ISSUE_TYPE_FALLBACK,
+    CRITIC_ISSUE_TYPES,
     CastDepth,
     CastMember,
     CastPose,
@@ -54,6 +56,7 @@ from yt_flow.domain.state import (
     ShotData,
     SlopPhraseHit,
     missing_archetype_evidence,
+    normalize_critic_issue_type,
 )
 from yt_flow.pipeline.nodes.sound_design import MOOD_VALUES, resolve_mood
 from yt_flow.services import prompt_service
@@ -93,9 +96,12 @@ _DEFAULT_ATMOSPHERE = "tense silence"
 _REQUIRED_WRITING_VISUAL_FIELDS = ("location", "color_palette", "atmosphere")
 
 # --- Story 12.1 retention contract -------------------------------------------
-# Hand-set starting constants for TARGET_DURATION_MINUTES = 3, kept beside the
-# validator so live tuning is one edit in one place. Calibrating them against
-# measured reference scripts is a separate task, deliberately not this story.
+# Kept beside the validator so live tuning is one edit in one place. The budget
+# constants that used to live here were hand-set literals and are gone: Story 12.6
+# calibrated them against the two measured reference runs (e5ed4b3a, c6be1954) and
+# replaced them with the derivation below this block. What remains here is the
+# narrative ledger — hook library, interrupt cadence, loop counts — which is a
+# structural contract, not a length one, and has no measured calibration.
 HOOK_TYPES = ("question", "shock", "mystery", "contrast")  # format_guide §A, verbatim
 _VALID_PATTERN_INTERRUPTS = {"none", "tone_shift", "pov_shift", "direct_address", "format_change"}
 # fullmatch, not `^...$`: `$` also matches just before a trailing newline, so a
@@ -103,8 +109,46 @@ _VALID_PATTERN_INTERRUPTS = {"none", "tone_shift", "pov_shift", "direct_address"
 _LOOP_ID_RE = re.compile(r"loop_[a-z0-9_]+")
 MAX_SCENES_WITHOUT_PATTERN_INTERRUPT = 2
 MIN_PLANTED_LOOPS, MAX_PLANTED_LOOPS = 2, 3
-MIN_SCENE_WORD_BUDGET, MAX_SCENE_WORD_BUDGET = 20, 90
-MIN_TOTAL_WORD_BUDGET, MAX_TOTAL_WORD_BUDGET = 180, 360
+
+# --- Story 12.6: length is ONE decision, density is a SEPARATE one -----------
+# The 12.1 constants above this line were hand-set literals (씬당 20~90, 총합
+# 180~360) and they disagreed with `TARGET_DURATION_MINUTES = 3`: measured against
+# baseline run e5ed4b3a, 298 어절 over 2.01 min is 148 어절/min, so a 3-minute
+# script needs ~435 어절 — 75 above the ceiling the validator enforced. Nothing was
+# disobeyed; the two numbers simply never met, and the band the model actually
+# follows targeted ~2 minutes. Everything below is now DERIVED, so editing
+# `TARGET_DURATION_MINUTES` moves the whole contract and the prompt together
+# (they reach `scenario/structure` as template variables — see `structure_step`).
+#
+# TARGET_WPM is the density knob, deliberately separate from duration: "make it
+# longer" must never be reachable by "speak faster". 145 is the peak-retention band
+# reported for video essays (>165 costs retention after 8 minutes); baseline
+# e5ed4b3a measured 148.2 and iteration 2 c6be1954 measured 110.4, so 145 sits
+# between the two runs we have rather than above both.
+#
+# MEASURED AT `qwen_tts_speed = 1.2` (config.py) — both reference figures and the
+# 12.6 after-run's 148.1 were spoken at that rate. This constant does not control
+# speech; it only converts minutes to 어절. Changing `qwen_tts_speed` moves the
+# REALISED WPM without moving anything here, and the derived band would then be
+# targeting a duration the pipeline no longer speaks. Re-measure with
+# `scripts/measure_script.py` if that setting changes.
+TARGET_WPM = 145
+WORD_BUDGET_TOLERANCE = 0.15  # ± band around the target the outline may land in
+MIN_SCENE_WORD_SHARE, MAX_SCENE_WORD_SHARE = 0.05, 0.30
+_TARGET_TOTAL_WORDS = round(TARGET_DURATION_MINUTES * TARGET_WPM)
+MIN_TOTAL_WORD_BUDGET = round(_TARGET_TOTAL_WORDS * (1 - WORD_BUDGET_TOLERANCE))
+MAX_TOTAL_WORD_BUDGET = round(_TARGET_TOTAL_WORDS * (1 + WORD_BUDGET_TOLERANCE))
+MIN_SCENE_WORD_BUDGET = round(_TARGET_TOTAL_WORDS * MIN_SCENE_WORD_SHARE)
+MAX_SCENE_WORD_BUDGET = round(_TARGET_TOTAL_WORDS * MAX_SCENE_WORD_SHARE)
+
+# Distribution, enforced rather than requested. `format_guide.md` has stated
+# "오프닝 ~15% / 중심 최대 / 마지막 ~15%" since Epic 5 and no code ever read it —
+# baseline measurement: e5ed4b3a spread 1.54, c6be1954 spread 1.48, both effectively
+# uniform, biggest scene 13% of the script in each. A ~15% rule with a 20% ceiling
+# leaves the writer room without letting an outline front-load; 1.6 is the smallest
+# spread that neither run reached, so it fails exactly the shape Jay called 밋밋함.
+MAX_OPENING_WORD_SHARE = MAX_CLOSING_WORD_SHARE = 0.20
+MIN_BUDGET_SPREAD = 1.6
 
 # Story 8.18 R2: a single repeat stays legal — the prompt allows a continuous
 # beat; only the 3rd identical (position, depth) shot in a row is repaired.
@@ -713,6 +757,16 @@ def compute_rule_metrics(writing: object) -> RuleMetrics:
         "repeated_ngrams": repeated,
         "slop_phrase_hits": slop_hits,
         "slop_vocabulary_version": SLOP_VOCABULARY_VERSION,
+        # Story 12.6: the only place the WRITTEN length is ever measured. The
+        # retention contract binds the DECLARED outline (`word_budget`), and
+        # `writing.md` grants each scene ±20% against its own budget — a wider
+        # band than the ±15% the total is held to — so a legal 370-어절 outline
+        # can be spoken as 296 with every gate green. Same unit as `word_budget`
+        # ("목표 어절 수(공백 기준)") and as `scripts/measure_script.py`'s
+        # `total_words`, so the three numbers are directly comparable.
+        # Reported, never enforced: this is computed after every writing call has
+        # been paid for, and failing here would burn the whole run.
+        "total_words": sum(len(tokens) for tokens in all_token_runs),
     }
 
 
@@ -957,6 +1011,57 @@ def _validate_retention_outline(scenes: list) -> None:
             "budget_total",
             f"outline word_budget total {total_budget} outside "
             f"{MIN_TOTAL_WORD_BUDGET}-{MAX_TOTAL_WORD_BUDGET}",
+        )
+
+    # Story 12.6: distribution, not just volume. The three checks below are the
+    # first code ever to read `format_guide.md`'s 분량 배분 rule; until now it was a
+    # request, and both measured runs ignored it (spread 1.54 / 1.48). The total
+    # check above runs first so `budgets` is guaranteed non-empty here.
+    budgets = [scene["word_budget"] for scene in scenes]
+    # Below four scenes the three checks below have NO common solution: the opening
+    # and closing beats are capped at 20% each, which leaves a single middle scene
+    # holding 60% — past the 30% per-scene ceiling MAX_SCENE_WORD_SHARE sets. Named
+    # here rather than letting the outline die on `budget_opening_share`, which
+    # reports a symptom of the scene count as if the first budget were the problem.
+    # Deliberately NOT the prompt's 8-12 ceiling: that number has never been
+    # validated against a run, and rejecting a legal 6-scene outline on it would be
+    # a new failure, not a fixed one.
+    if len(budgets) < 4:
+        raise RetentionError(
+            "scene_count",
+            f"outline has {len(budgets)} scenes; the distribution contract "
+            f"(opening ≤ {MAX_OPENING_WORD_SHARE:.0%}, closing ≤ {MAX_CLOSING_WORD_SHARE:.0%}, "
+            f"per scene ≤ {MAX_SCENE_WORD_SHARE:.0%}) has no solution below 4",
+        )
+    opening_share = budgets[0] / total_budget
+    if opening_share > MAX_OPENING_WORD_SHARE:
+        raise RetentionError(
+            "budget_opening_share",
+            f"scene 1 word_budget {budgets[0]} is {opening_share:.1%} of the outline's "
+            f"{total_budget}; the opening beat may take at most {MAX_OPENING_WORD_SHARE:.0%}",
+        )
+    closing_share = budgets[-1] / total_budget
+    if closing_share > MAX_CLOSING_WORD_SHARE:
+        raise RetentionError(
+            "budget_closing_share",
+            f"the final scene's word_budget {budgets[-1]} is {closing_share:.1%} of the outline's "
+            f"{total_budget}; the closing beat may take at most {MAX_CLOSING_WORD_SHARE:.0%}",
+        )
+    # Multiplied, not divided: the ratio is the thing being bounded and this keeps
+    # it exact for the integers involved. `min(budgets)` is >= MIN_SCENE_WORD_BUDGET
+    # by the per-scene check, so it is never zero.
+    #
+    # The message states exactly what is checked and no more. It used to promise
+    # "give the central beats the largest budgets", which this check cannot see:
+    # [74, 42 x 8] has spread 1.76 and an 18% opening, so it passes while being
+    # maximally front-loaded. A peak-POSITION rule is a separate, unvalidated
+    # change — the live-validated 12.6 outline peaks on scene 1.
+    if max(budgets) < min(budgets) * MIN_BUDGET_SPREAD:
+        raise RetentionError(
+            "budget_uniform",
+            f"outline word_budget spread {max(budgets) / min(budgets):.2f} "
+            f"(max {max(budgets)} / min {min(budgets)}) is below the required {MIN_BUDGET_SPREAD} — "
+            f"the largest scene budget must be at least {MIN_BUDGET_SPREAD}x the smallest",
         )
 
 
@@ -1497,6 +1602,53 @@ def archetype_guide(story_archetype: str, *, label: str | None = None) -> str:
     return prompt.compile()
 
 
+# The variables `structure.md` must actually read for the derived band to reach the
+# model. Names only — the values are built in `structure_step` below.
+_STRUCTURE_BUDGET_VARIABLES = (
+    "total_word_budget_min", "total_word_budget_max",
+    "scene_word_budget_min", "scene_word_budget_max",
+)
+
+
+def _require_seeded_budget_variables(label: str | None = None) -> None:
+    """Fail loudly if the SEEDED `scenario/structure` predates Story 12.6.
+
+    The runtime prompt body comes from Langfuse, not from `prompts/structure.md`,
+    and `prompt.compile()` silently ignores variables the template does not
+    mention. So a `production` version rolled back to the pre-12.6 text would tell
+    the model "총합 180~360" while `_validate_retention_outline` enforces 370-500:
+    every outline fails `budget_total`, the one re-roll fails identically, and
+    nothing in the failure names the prompt version. That is exactly the
+    `gotcha_a-decision-that-only-reaches-env-never-ships` shape — a decision that
+    reached the repo but not the thing that runs.
+
+    `.prompt` is the raw template text off the Langfuse TextPromptClient (the same
+    string `.compile()` renders); `.variables` is the SDK's own extraction from it.
+    Reads `.prompt` and falls back to `.variables` so a client shape without the
+    raw text still gets checked rather than silently skipped.
+    """
+    prompt = (
+        prompt_service.get_prompt_with_fallback("scenario/structure", label=label)
+        if label
+        else prompt_service.get_prompt("scenario/structure")
+    )
+    template = getattr(prompt, "prompt", None)
+    if isinstance(template, str):
+        missing = [name for name in _STRUCTURE_BUDGET_VARIABLES if "{{" + name + "}}" not in template]
+    elif isinstance(getattr(prompt, "variables", None), list):
+        missing = [name for name in _STRUCTURE_BUDGET_VARIABLES if name not in prompt.variables]
+    else:
+        return  # a test double with neither: nothing to check, nothing to claim
+    if missing:
+        raise RuntimeError(
+            f"scenario/structure (label={label or 'production'}, version="
+            f"{getattr(prompt, 'version', '?')}) does not read {missing} — it predates Story 12.6 and "
+            f"still states its own word-budget band, which now disagrees with the "
+            f"{MIN_TOTAL_WORD_BUDGET}-{MAX_TOTAL_WORD_BUDGET} this code enforces. Re-seed it: "
+            "uv run python scripts/migrate_prompts.py --label production --source prompts"
+        )
+
+
 async def structure_step(
     scp_id: str,
     research: dict,
@@ -1508,6 +1660,8 @@ async def structure_step(
     label: str | None = None,
     usage_sink: list[dict] | None = None,
 ) -> list[dict]:
+    _require_seeded_budget_variables(label)
+
     def parse(raw: str) -> list[dict]:
         data = _parse_yaml(raw)
         scenes = data.get("scenes") if isinstance(data, dict) else None
@@ -1530,6 +1684,19 @@ async def structure_step(
             "research_packet": json.dumps(research, ensure_ascii=False),
             "scp_visual_reference": research["frozen_descriptor"],
             "target_duration": TARGET_DURATION_MINUTES,
+            # Story 12.6: the prompt no longer re-types the budget band it must obey.
+            # `structure.md` used to carry "씬당 20~90 / 총합 180~360 (현재 3분 파이프
+            # 라인 기준)" as prose, which is how the code and the prompt came to
+            # disagree about what 3 minutes means. These are the validator's own
+            # constants, so a band the model reads and a band it is judged against
+            # cannot drift apart again.
+            "total_word_budget_min": MIN_TOTAL_WORD_BUDGET,
+            "total_word_budget_max": MAX_TOTAL_WORD_BUDGET,
+            "scene_word_budget_min": MIN_SCENE_WORD_BUDGET,
+            "scene_word_budget_max": MAX_SCENE_WORD_BUDGET,
+            "max_opening_word_pct": round(MAX_OPENING_WORD_SHARE * 100),
+            "max_closing_word_pct": round(MAX_CLOSING_WORD_SHARE * 100),
+            "min_budget_spread": MIN_BUDGET_SPREAD,
             "format_guide": format_guide,
             # Passed explicitly rather than read out of `research_packet`: the choice
             # was already made and this stage's job is to OBEY it, so the value it
@@ -2356,6 +2523,31 @@ async def critic_step(
                     for field in ("issue", "suggestion"):
                         if isinstance(note.get(field), str):
                             note[field] = _normalize_freetext(note[field])
+                    # Story 12.6: closed vocabulary, coerced here so the gate never
+                    # sees a category the UI cannot mean anything by. An unknown or
+                    # absent value is model variance, not a run failure — it becomes
+                    # "other" and is logged with the value it rejected, exactly as
+                    # `_parse_pose_guide_key` treats an out-of-catalog key.
+                    raw_type = note.get("issue_type")
+                    note["issue_type"] = normalize_critic_issue_type(raw_type)
+                    # Silent on an absent field (a pre-12.6 prompt version emits
+                    # none) — loud only when the model DID name a category and the
+                    # vocabulary REJECTED it, which is the case worth reading in a
+                    # log. `!= raw_type` was the wrong test: the normalizer also
+                    # strips and lowercases, so `issue_type: "PACING"` recorded
+                    # `pacing` correctly and still logged "is not in [...] —
+                    # recorded as 'other'", which is the opposite of what happened.
+                    # A rejection is exactly "the result is the fallback and the
+                    # model was not naming the fallback".
+                    if (
+                        raw_type is not None
+                        and note["issue_type"] == CRITIC_ISSUE_TYPE_FALLBACK
+                        and str(raw_type).strip().lower() != CRITIC_ISSUE_TYPE_FALLBACK
+                    ):
+                        logger.warning(
+                            "critic_agent: scene note issue_type %r is not in %s — recorded as %r",
+                            raw_type, list(CRITIC_ISSUE_TYPES), CRITIC_ISSUE_TYPE_FALLBACK,
+                        )
         if not isinstance(data, dict) or data.get("verdict") not in _VALID_VERDICTS:
             raise ValueError(f"critic_agent: payload has invalid 'verdict' (must be one of {_VALID_VERDICTS})")
         return data

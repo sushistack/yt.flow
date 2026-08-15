@@ -47,7 +47,12 @@ from yt_flow.pipeline.nodes.scenario_chain import (
     writing_scene_repair_step,
     writing_step,
 )
-from yt_flow.domain.state import STORY_ARCHETYPE_FALLBACK, PipelineState
+from yt_flow.domain.state import (
+    REVIEW_ISSUE_TYPES,
+    STORY_ARCHETYPE_FALLBACK,
+    PipelineState,
+    normalize_critic_issue_type,
+)
 from yt_flow.services.prompt_service import get_prompt, get_prompt_with_fallback
 
 logger = logging.getLogger(__name__)
@@ -302,6 +307,9 @@ _MAX_FEEDBACK_CHARS = 2000
 _MAX_QUALITY_TEXT = 600
 _MAX_QUALITY_ITEMS = 20
 _ISSUE_KEYS = ("type", "severity", "description", "correction")
+# Story 12.6: `issue_type` first — it is the whitelisted key that makes a critic note
+# actionable, and `critic_step.parse` has already coerced it into CRITIC_ISSUE_TYPES.
+_CRITIC_NOTE_KEYS = ("issue_type", "issue", "suggestion")
 _CONTRADICTION_KEYS = (
     "narration_quote", "grounding_source", "grounding_quote", "explanation", "correction",
 )
@@ -332,6 +340,14 @@ def _bounded(items: object, keys: tuple[str, ...], what: str) -> list[dict]:
     contract and would ride along into the checkpoint unbounded. A cap that drops
     entries is LOGGED — a silently truncated list reads as "that was everything".
     """
+    if items is not None and not isinstance(items, list):
+        # A mapping or scalar here yields [] and every typed finding vanishes from
+        # the gate with no trace — the same silent-degradation shape AD-10 forbids.
+        # Warn rather than raise: the evidence list is not what the run turns on.
+        logger.warning(
+            "scenario: %s arrived as %s, not a list — no entries reach the gate payload",
+            what, type(items).__name__,
+        )
     entries = [item for item in (items if isinstance(items, list) else []) if isinstance(item, dict)]
     if len(entries) > _MAX_QUALITY_ITEMS:
         logger.warning(
@@ -373,9 +389,47 @@ def _build_quality(
             review.get("grounded_contradictions"), _CONTRADICTION_KEYS, "grounded contradictions",
         ),
         "review_issues": _bounded(review.get("issues"), _ISSUE_KEYS, "review issues"),
+        "critic_scene_notes": _bounded(critic.get("scene_notes"), _CRITIC_NOTE_KEYS, "critic scene notes"),
     }
     if pass_index == 2 and (verdict == "retry" or not overall_pass):
-        quality["warning"] = {"code": "unresolved_pass2", "message": _UNRESOLVED_PASS2_MESSAGE}
+        # Story 12.6: same `code` (the UI and its tests key on it), plus the distinct
+        # categories behind it. Both judges contribute — the critic's typed
+        # `issue_type` and the review's own `issues[].type` enum — because a fact
+        # violation and a craft violation call for different operator actions and
+        # one warning string could not tell them apart. Sorted + distinct so the
+        # line is stable across runs.
+        #
+        # The critic side reads the RAW `scene_notes`, not the `_MAX_QUALITY_ITEMS`-
+        # capped copy: `_aggregate_critic` concatenates every scene's notes, so a
+        # 12-scene run with 20 `pacing` notes ahead of one `ungrounded_claim` in
+        # scene 11 would drop the fact violation out of `categories` entirely —
+        # defeating the whole point of typing the field. Safe to read unbounded
+        # because this is a SET over a 7-value closed vocabulary; it cannot grow
+        # past 7 entries however many notes arrive.
+        #
+        # The review side is a membership filter, not a normalization: `issues[].type`
+        # is unvalidated model text clipped to 600 chars, so without REVIEW_ISSUE_TYPES
+        # a 600-character sentence renders at the gate as a "category". It reads the
+        # RAW `issues` for the same reason the critic side does — a fact-typed issue
+        # sitting past entry 20 must not be capped out of the summary line.
+        raw_notes = critic.get("scene_notes")
+        raw_issues = review.get("issues")
+        categories = sorted(
+            {
+                normalize_critic_issue_type(note.get("issue_type"))
+                for note in (raw_notes if isinstance(raw_notes, list) else [])
+                if isinstance(note, dict)
+            }
+            | {
+                issue["type"]
+                for issue in (raw_issues if isinstance(raw_issues, list) else [])
+                if isinstance(issue, dict) and issue.get("type") in REVIEW_ISSUE_TYPES
+            }
+        )
+        warning: dict = {"code": "unresolved_pass2", "message": _UNRESOLVED_PASS2_MESSAGE}
+        if categories:
+            warning["categories"] = categories
+        quality["warning"] = warning
     return quality
 
 

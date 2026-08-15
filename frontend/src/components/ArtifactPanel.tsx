@@ -214,7 +214,12 @@ function identifierText(context: RunWarning["context"]): string {
 // see it to make the decision, which is why this is not a toast and not a
 // separate page. Signalled by icon + heading text as well as colour.
 function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
-  const { rule_metrics: metrics, grounded_contradictions: contradictions, review_issues: issues } = quality
+  const {
+    rule_metrics: metrics,
+    grounded_contradictions: contradictions,
+    review_issues: issues,
+    critic_scene_notes: criticNotes = [],
+  } = quality
   return (
     <section
       role="alert"
@@ -226,6 +231,14 @@ function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
         2차 검토 경고
       </h2>
       <p className="mb-2 leading-[1.6]">{quality.warning?.message}</p>
+      {/* Story 12.6: a fabricated-fact finding and a pacing complaint used to reach
+          this gate as the same undifferentiated warning. Its own line, not folded
+          into the message, because the two call for different operator actions. */}
+      {quality.warning?.categories?.length ? (
+        <p className="mb-2 font-mono text-[11px] text-subtle-foreground">
+          유형: {quality.warning.categories.join(" · ")}
+        </p>
+      ) : null}
       {/* AC8: an inline narration edit does not re-run review, so the evidence stays
           on screen and is labelled as of its generation time rather than silently
           re-read as a verdict on the edited text. */}
@@ -276,6 +289,27 @@ function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
                   씬 {issue.scene_num} · {issue.type}
                 </span>{" "}
                 {issue.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Story 12.6: the critic's per-scene findings. Up to 20 of these ride every
+          checkpoint, interrupt value and SSE frame — rendering them is what makes
+          that payload worth carrying, and the `issue_type` leads each row because
+          it is the field that says which of the two operator actions applies. */}
+      {criticNotes.length > 0 && (
+        <div className="mb-3">
+          <h3 className="mb-1 font-semibold">비평 지적 {criticNotes.length}건</h3>
+          <ul className="flex flex-col gap-1">
+            {criticNotes.map((note, i) => (
+              <li key={`${note.scene_num}-${i}`} className="leading-[1.6]">
+                <span className="font-mono text-[11px] text-subtle-foreground">
+                  씬 {note.scene_num} · {note.issue_type}
+                </span>{" "}
+                {note.issue}
+                {note.suggestion && <span className="text-muted-foreground"> → {note.suggestion}</span>}
               </li>
             ))}
           </ul>

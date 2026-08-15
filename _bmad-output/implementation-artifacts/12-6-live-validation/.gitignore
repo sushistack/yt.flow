@@ -1,0 +1,20 @@
+# Story 12.6 live-validation artifacts.
+#
+# What is committed: everything a reader needs to re-derive a number — the drivers
+# (`run_after.py` for the scenario chain, `run_after_tts.py` for the speech), the two
+# JSON dumps they produce (`after_scenes.json`, `after_durations.json`), the reports
+# measured off them (`after.json`, `baseline.json`) and the prose that reads them
+# (`after.md`, `baseline.md`, `seeding.md`). All of it is text; the whole committed
+# payload is well under a megabyte.
+#
+# What is ignored: `tts_audio/` — the eight WAVs `run_after_tts.py` synthesizes to get
+# AC8's WPM (~8 MB). No claim in this story rests on anyone listening to one: the only
+# thing read off them is duration, and that duration is already in
+# `after_durations.json`. They are regenerable by re-running `run_after_tts.py` against
+# the same `after_scenes.json` — expect the seconds to move by ~0.2 % between runs (two
+# measured samples: 169.23 s / 168.93 s), which is the TTS's own variance and is
+# recorded in `after.md`.
+#
+# Nothing here is the only surviving copy of anything.
+
+tts_audio/

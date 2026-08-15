@@ -319,6 +319,45 @@ describe("ArtifactPanel", () => {
     expect(alert.textContent).toContain("critic retry")
   })
 
+  // Story 12.6: a fabricated-fact finding and a pacing complaint are different
+  // operator actions, so the gate shows the categories on their own line.
+  it("renders the issue categories beneath the message when present", () => {
+    const typed = { ...QUALITY, warning: { ...QUALITY.warning, categories: ["pacing", "ungrounded_claim"] } }
+    renderPanel({ data: scenarioData(typed) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("유형: pacing · ungrounded_claim")
+    // Its own line, not folded into the message.
+    expect(alert.textContent).toContain("재검토 후에도 품질 문제가 남아 있습니다.")
+  })
+
+  it("omits the category line when the warning carries none (pre-12.6 checkpoint)", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("alert").textContent).not.toContain("유형:")
+  })
+
+  // Story 12.6: up to 20 critic notes x 3 clipped fields ride every checkpoint,
+  // interrupt value and SSE frame. Rendering them is what makes that payload worth
+  // carrying — and the issue_type leads each row because it says which of the two
+  // operator actions applies.
+  it("renders the critic's scene notes led by their issue_type", () => {
+    const withNotes = {
+      ...QUALITY,
+      critic_scene_notes: [
+        { scene_num: 7, issue_type: "ungrounded_claim", issue: "융합을 단언합니다", suggestion: "인용대로" },
+      ],
+    }
+    renderPanel({ data: scenarioData(withNotes) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("비평 지적 1건")
+    expect(alert.textContent).toContain("씬 7 · ungrounded_claim")
+    expect(alert.textContent).toContain("융합을 단언합니다")
+  })
+
+  it("omits the critic-note block when the checkpoint carries none", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("alert").textContent).not.toContain("비평 지적")
+  })
+
   it("labels the warning as generation-time review evidence (AC8)", () => {
     renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
     expect(screen.getByRole("alert").textContent).toContain("이후 직접 수정한 내용은 재검토되지 않았습니다")

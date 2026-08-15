@@ -13,6 +13,7 @@ import pytest
 
 import yt_flow.pipeline.nodes.scenario as sc
 import yt_flow.pipeline.nodes.scenario_chain as chain
+from tests.stubs.fakes import retention_budgets
 
 # Captured before the autouse `_isolate` fixture below monkeypatches
 # `sc._record_trace` to a no-op — tests that exercise the real function call
@@ -54,21 +55,46 @@ STRUCTURE = [{
 WRITING = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "문장.", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
 VISUAL = [{"image_prompt": "shot", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
 REVIEW_PASS = {"overall_pass": True, "coverage_pct": 90.0, "issues": [], "corrections": [], "storytelling_score": 80, "storytelling_issues": []}
-REVIEW_FAIL = {**REVIEW_PASS, "overall_pass": False, "issues": [{"scene_num": 1, "description": "bad", "correction": "fix it"}]}
+# `type` is a REVIEW_ISSUE_TYPES member on purpose: without it `_bounded` fills ""
+# and the merge filter drops the issue, so every "both judges contribute" assertion
+# below would pass while the review contributed nothing at all.
+REVIEW_FAIL = {**REVIEW_PASS, "overall_pass": False,
+               "issues": [{"scene_num": 1, "type": "missing_fact", "description": "bad", "correction": "fix it"}]}
 CRITIC_PASS = {"verdict": "pass", "feedback": "good", "scene_notes": []}
 CRITIC_RETRY = {"verdict": "retry", "feedback": "다시 써주세요", "scene_notes": []}
 
 
 def _retention_outline(total: int) -> list[dict]:
-    """A contract-valid outline (word_budget 45 x 4 = the 180 floor at total=4)."""
+    """A contract-valid outline: short ends, fat middle.
+
+    Story 12.6 made a uniform split a rejection (`budget_uniform`), so the budgets
+    are solved from the chain's derived constants instead of being the same integer
+    on every scene. Four scenes is the shortest outline the distribution rules admit.
+
+    The solve is `fakes.retention_budgets`, not a local copy: this helper used to
+    carry its own, without the `total < 4` guard its sibling in
+    `test_scenario_chain.py` has, so calling it with 2 raised ZeroDivisionError and
+    with 3 silently returned a contract-violating outline.
+    """
+    budgets = retention_budgets(total)
     return [{
         **STRUCTURE[0], "scene_num": pos,
         "hook_type": "shock" if pos == 1 else "none",
         "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
         "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
         "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
-        "word_budget": 45,
+        "word_budget": budgets[pos - 1],
     } for pos in range(1, total + 1)]
+
+
+@pytest.mark.parametrize("total", [2, 3])
+def test_retention_outline_helper_is_total_below_four_scenes(total):
+    """It used to carry its own copy of the budget solve, without the `total < 4`
+    guard its sibling in `test_scenario_chain.py` has: calling it with 2 raised
+    ZeroDivisionError (`inner` is 0) and with 3 silently returned an outline that
+    violates the distribution contract it exists to satisfy."""
+    outline = _retention_outline(total)
+    assert [scene["word_budget"] for scene in outline] == [chain.MIN_SCENE_WORD_BUDGET] * total
 
 
 def _state(**over):
@@ -1480,6 +1506,140 @@ async def test_unresolved_pass2_critic_retry_warns_but_run_succeeds(monkeypatch)
     assert quality["warning"]["message"]
     assert quality["critic_verdict"] == "retry"
     assert quality["critic_feedback"] == "다시 써주세요"
+
+
+# ── Story 12.6: the warning's categories separate fact from craft ────────────
+
+
+CRITIC_TYPED = {
+    "verdict": "retry",
+    "feedback": "다시 써주세요",
+    "scene_notes": [
+        {"scene_num": 1, "issue_type": "pacing", "issue": "늘어집니다", "suggestion": "줄이세요"},
+        {"scene_num": 4, "issue_type": "ungrounded_claim", "issue": "융합 단언", "suggestion": "인용대로"},
+        {"scene_num": 7, "issue_type": "ungrounded_claim", "issue": "지능이 높다", "suggestion": "삭제"},
+    ],
+}
+
+
+async def test_unresolved_pass2_warning_lists_the_distinct_issue_categories(monkeypatch):
+    """The defect this closes: three correct findings — two fabricated facts and one
+    report-tone gripe — reached the gate as one undifferentiated warning."""
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=CRITIC_TYPED)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+
+    assert quality["warning"]["code"] == "unresolved_pass2"   # unchanged: the UI keys on it
+    # Sorted, distinct, and both judges contribute: `missing_fact` is the review's
+    # own issue type from REVIEW_FAIL's issues[], the other two are the critic's.
+    assert quality["warning"]["categories"] == ["missing_fact", "pacing", "ungrounded_claim"]
+
+
+async def test_warning_categories_merge_both_judges(monkeypatch):
+    review = {**REVIEW_FAIL, "issues": [{"scene_num": 1, "type": "invented_content", "description": "bad"}]}
+    _stub_chain(monkeypatch, review=review, critic=CRITIC_TYPED)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert quality["warning"]["categories"] == ["invented_content", "pacing", "ungrounded_claim"]
+
+
+async def test_a_fact_category_survives_past_the_gate_payload_cap(monkeypatch):
+    """AC7's whole point, at the size a real run reaches. `_aggregate_critic`
+    concatenates every scene's notes, so a 12-scene script easily exceeds
+    _MAX_QUALITY_ITEMS — and `categories` used to be read off the CAPPED copy, which
+    dropped the one `ungrounded_claim` behind 20 `pacing` notes. A fact violation
+    that falls off the end of a list is a fact violation the operator never sees."""
+    notes = [{"scene_num": 1, "issue_type": "pacing", "issue": "늘어짐", "suggestion": "x"}
+             for _ in range(sc._MAX_QUALITY_ITEMS + 1)]
+    notes.append({"scene_num": 11, "issue_type": "ungrounded_claim", "issue": "융합", "suggestion": "y"})
+    _stub_chain(monkeypatch, review={**REVIEW_FAIL, "issues": []},
+                critic={**CRITIC_TYPED, "scene_notes": notes})
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+
+    assert len(quality["critic_scene_notes"]) == sc._MAX_QUALITY_ITEMS  # the list is still capped
+    assert "ungrounded_claim" not in [n["issue_type"] for n in quality["critic_scene_notes"]]
+    # ...but the category is not, because it is a set over a 7-value vocabulary.
+    assert quality["warning"]["categories"] == ["pacing", "ungrounded_claim"]
+
+
+async def test_a_junk_review_issue_type_is_not_rendered_as_a_category(monkeypatch):
+    """`issues[].type` is unvalidated model text clipped to 600 chars, so without a
+    membership filter a whole Korean sentence becomes a "category" at the gate."""
+    junk = "이 장면은 원문에 없는 내용을 사실처럼 단언하고 있어 수정이 필요합니다" * 8
+    review = {**REVIEW_FAIL, "issues": [
+        {"scene_num": 1, "type": junk, "description": "bad"},
+        {"scene_num": 2, "type": "invented_content", "description": "bad"},
+    ]}
+    _stub_chain(monkeypatch, review=review, critic=CRITIC_RETRY)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert quality["warning"]["categories"] == ["invented_content"]
+    # Dropped from the category line only — the issue itself still reaches the gate,
+    # where it is rendered as text rather than as a label.
+    assert len(quality["review_issues"]) == 2
+
+
+async def test_a_review_fact_category_survives_past_the_gate_payload_cap(monkeypatch):
+    """The critic's twin, on the review side. `review_issues` is capped at
+    _MAX_QUALITY_ITEMS too, so a `fact_error` sitting behind 20 `pacing`-class
+    issues would fall out of `categories` for exactly the same reason — and the
+    same argument applies: this is a set over a 7-value closed vocabulary, so
+    reading the raw list cannot grow the payload."""
+    issues = [{"scene_num": 1, "type": "ending_monotony", "description": "밋밋"}
+              for _ in range(sc._MAX_QUALITY_ITEMS + 1)]
+    issues.append({"scene_num": 11, "type": "fact_error", "description": "융합"})
+    _stub_chain(monkeypatch, review={**REVIEW_FAIL, "issues": issues},
+                critic={**CRITIC_RETRY, "scene_notes": []})
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+
+    assert len(quality["review_issues"]) == sc._MAX_QUALITY_ITEMS  # the list is still capped
+    assert "fact_error" not in [i["type"] for i in quality["review_issues"]]
+    assert quality["warning"]["categories"] == ["ending_monotony", "fact_error"]
+
+
+async def test_critic_scene_notes_as_a_mapping_are_reported_not_swallowed(monkeypatch, caplog):
+    """`_bounded` yields [] for a non-list, so all typed critic evidence would vanish
+    from the gate with no trace — the silent degradation AD-10 forbids. Warn and
+    carry on: the evidence list is not what the run turns on."""
+    _stub_chain(monkeypatch, review=REVIEW_FAIL,
+                critic={**CRITIC_TYPED, "scene_notes": {"scene_num": 1, "issue_type": "pacing"}})
+    with caplog.at_level("WARNING"):
+        quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert quality["critic_scene_notes"] == []
+    assert "critic scene notes arrived as dict" in caplog.text
+
+
+async def test_critic_scene_notes_reach_the_gate_bounded(monkeypatch):
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=CRITIC_TYPED)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    notes = quality["critic_scene_notes"]
+    assert [n["issue_type"] for n in notes] == ["pacing", "ungrounded_claim", "ungrounded_claim"]
+    # Whitelisted keys only — nothing the prompt happened to emit rides along.
+    assert set(notes[0]) == {"scene_num", "issue_type", "issue", "suggestion"}
+
+
+async def test_critic_scene_notes_are_capped_and_clipped(monkeypatch):
+    flood = {**CRITIC_TYPED, "scene_notes": [
+        {"scene_num": i, "issue_type": "pacing", "issue": "가" * 900, "suggestion": "x"}
+        for i in range(sc._MAX_QUALITY_ITEMS + 5)
+    ]}
+    _stub_chain(monkeypatch, review=REVIEW_FAIL, critic=flood)
+    notes = (await sc.scenario_node(_state()))["scenario_quality"]["critic_scene_notes"]
+    assert len(notes) == sc._MAX_QUALITY_ITEMS
+    assert len(notes[0]["issue"]) == sc._MAX_QUALITY_TEXT
+
+
+async def test_clean_pass_has_no_warning_and_therefore_no_categories(monkeypatch):
+    _stub_chain(monkeypatch)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert "warning" not in quality
+    assert quality["critic_scene_notes"] == []
+
+
+async def test_warning_without_any_typed_evidence_omits_categories(monkeypatch):
+    """`categories` is absent, not `[]`: an empty list would render as an empty
+    "유형:" line at the gate, which reads as "no category" rather than "none reported"."""
+    review = {**REVIEW_FAIL, "issues": []}
+    _stub_chain(monkeypatch, review=review, critic=CRITIC_RETRY)
+    warning = (await sc.scenario_node(_state()))["scenario_quality"]["warning"]
+    assert "categories" not in warning
 
 
 async def test_critic_feedback_keeps_its_per_scene_lines(monkeypatch):

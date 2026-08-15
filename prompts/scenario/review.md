@@ -92,6 +92,17 @@ If you cannot quote both sides, **omit the contradiction** — an unquotable cla
 by the parser and costs the whole review a retry. Absence of evidence is not a contradiction:
 a detail the narration adds that no source mentions is `invented_content`, not this.
 
+**`invented_content`는 새 *사실*에만 붙입니다.** 어떤 사실도 새로 주장하지 않는 감각·분위기
+묘사는 `invented_content`가 아닙니다 — 각색은 이 파이프라인이 요구하는 것이고, 크리틱도
+같은 기준을 씁니다(`critic_agent.md`의 "허용되는 각색"). 세 범주는 감각적 묘사 / 시점·장면화 /
+원문의 빈칸을 답 없는 질문으로 열기입니다.
+
+- ✅ 보고 대상 아님: "소독약 냄새가 목을 찌릅니다." (새 사실 0개, 분위기만)
+- ✅ 보고 대상 아님: "가면이 왜 벗겨지지 않는지, 기록은 말하지 않습니다." (빈칸을 빈칸이라고 말함)
+- ❌ `invented_content`: "가면은 두개골에 완전히 융합되어 있습니다." — 원문이 "융합된 것처럼
+  보인다"까지만 말했다면 확실성을 올린 **새 단언**입니다.
+- ❌ `invented_content`: 원문에 없는 숫자·등급·날짜·사건·능력.
+
 Any grounded contradiction fails the review. Do not report `overall_pass: true` alongside one.
 
 ## Task

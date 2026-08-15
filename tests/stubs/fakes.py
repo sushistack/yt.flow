@@ -13,8 +13,11 @@ image fakes write tiny real files so downstream file-existence checks pass.
 """
 
 import json
+import math
 import wave
 from pathlib import Path
+
+import yaml
 
 from yt_flow.domain.state import SearchResult
 
@@ -28,8 +31,71 @@ TINY_PNG = bytes.fromhex(
 
 
 def load_cassette(name: str) -> dict:
-    """Load a recorded response-shape cassette by filename (e.g. 'deepseek_scenario.json')."""
-    return json.loads((CASSETTE_DIR / name).read_text(encoding="utf-8"))
+    """Load a recorded response-shape cassette by filename (e.g. 'deepseek_scenario.json').
+
+    ``deepseek_structure.json`` is the one cassette carrying numbers the code
+    CONTRACTUALLY checks, so its ``word_budget`` values are re-solved here instead of
+    being frozen in the JSON — see ``retention_budgets``.
+    """
+    data = json.loads((CASSETTE_DIR / name).read_text(encoding="utf-8"))
+    if name == "deepseek_structure.json":
+        _apply_retention_budgets(data)
+    return data
+
+
+def retention_budgets(total: int) -> list[int]:
+    """Contract-valid, deliberately UNEVEN word budgets: short ends, fat middle.
+
+    Solved from ``scenario_chain``'s DERIVED constants rather than tabulated, so it
+    follows ``TARGET_DURATION_MINUTES`` wherever that goes. Story 12.6 made a uniform
+    split a rejection (``budget_uniform``), which is exactly what a flat split
+    produces.
+
+    Shape: both ends at the per-scene floor, every middle scene at whatever it takes
+    to clear the total band AND the spread ratio; if the middles hit the per-scene
+    ceiling first, the ends absorb the remainder instead.
+
+    Below 4 scenes there IS no legal distribution — the opening/closing 20% caps
+    force the single middle scene past the 30% per-scene ceiling, which
+    ``_validate_retention_outline`` now names as ``scene_count`` — so those callers
+    get the floor everywhere. They are the ledger tests, which are rejected by an
+    earlier check and never reach the budget block.
+
+    Lives here rather than in one test module because three test modules and the
+    structure cassette all need the same solve, and a fourth hand-typed copy is how
+    "one line, no second edit anywhere" quietly stops being true.
+    """
+    from yt_flow.pipeline.nodes import scenario_chain as chain
+
+    if total < 4:
+        return [chain.MIN_SCENE_WORD_BUDGET] * total
+    inner = total - 2
+    end = chain.MIN_SCENE_WORD_BUDGET
+    middle = min(
+        chain.MAX_SCENE_WORD_BUDGET,
+        max(
+            math.ceil(end * chain.MIN_BUDGET_SPREAD),
+            math.ceil((chain.MIN_TOTAL_WORD_BUDGET - 2 * end) / inner),
+        ),
+    )
+    end = max(end, math.ceil((chain.MIN_TOTAL_WORD_BUDGET - middle * inner) / 2))
+    return [end] + [middle] * inner + [end]
+
+
+def _apply_retention_budgets(data: dict) -> None:
+    """Re-solve the structure cassette's ``word_budget`` values in place.
+
+    As recorded they summed to exactly ``MIN_TOTAL_WORD_BUDGET``, so setting
+    ``TARGET_DURATION_MINUTES = 4`` made the cassette violate ``budget_total`` and
+    broke every test that replays it — including the offline stub-profile E2E. That
+    is a second edit the story's headline promise says does not exist, hiding in a
+    fixture.
+    """
+    message = data["choices"][0]["message"]
+    scenes = yaml.safe_load(message["content"])["scenes"]
+    for scene, budget in zip(scenes, retention_budgets(len(scenes)), strict=True):
+        scene["word_budget"] = budget
+    message["content"] = yaml.safe_dump({"scenes": scenes}, allow_unicode=True, sort_keys=False)
 
 
 # ── video._run_ffmpeg ───────────────────────────────────────────────────────

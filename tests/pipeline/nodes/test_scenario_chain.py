@@ -2,20 +2,24 @@ import asyncio
 import copy
 import json
 import logging
+import math
 import re
 from pathlib import Path
 
 import pytest
 import yaml
 
+import yt_flow.domain.state as state
 import yt_flow.pipeline.nodes.scenario_chain as chain
 import yt_flow.pipeline.nodes.sound_design as sound_design
+from tests.stubs import fakes
 
 CASSETTE_DIR = Path(__file__).parent.parent.parent / "fixtures" / "cassettes"
 
-
-def _load_cassette(name):
-    return json.loads((CASSETTE_DIR / name).read_text(encoding="utf-8"))
+# One loader, so the structure cassette's contract-bound `word_budget` values are
+# re-solved from the derived constants on EVERY replay path — this module's and the
+# offline stub profile's alike (Story 12.6).
+_load_cassette = fakes.load_cassette
 
 
 def _deepseek_from_cassette(name):
@@ -51,18 +55,19 @@ _ARCHETYPE_FIELDS = {
 _ONE_SCENE = {"scenes": [{"scene_num": 1, "narration": "문장 하나."}]}
 
 
+# The one solve, shared with the structure cassette and the sibling test modules.
+_budgets = fakes.retention_budgets
+
+
 def _retention_scene(pos: int, total: int, **overrides) -> dict:
     """One contract-valid structure scene at 1-based ``pos`` of ``total``.
 
-    Budget is spread so the total always lands inside 180-360 for any scene count
-    the contract allows (2 scenes -> 90 each = 180 exactly, the tightest legal
-    outline). Loops are planted in scene 1 and settled in the last scene; a
-    pattern interrupt lands every 3rd scene so no `none` run ever reaches 3.
+    Budget comes from ``_budgets`` so the outline satisfies the total band AND the
+    Story 12.6 distribution checks. Loops are planted in scene 1 and settled in the
+    last scene; a pattern interrupt lands every 3rd scene so no `none` run ever
+    reaches 3.
     """
-    budget = max(
-        chain.MIN_SCENE_WORD_BUDGET,
-        min(chain.MAX_SCENE_WORD_BUDGET, -(-chain.MIN_TOTAL_WORD_BUDGET // total)),
-    )
+    budget = _budgets(total)[pos - 1]
     scene = {
         "scene_num": pos,
         "act": "hook" if pos == 1 else "mystery_expansion",
@@ -94,7 +99,7 @@ def _retention_yaml(total: int = 8) -> str:
 
 def _repair_structure(originals: list[dict]) -> list[dict]:
     """Positionally-paired structure subset for a `writing_scene_repair_step` call."""
-    return [_retention_scene(idx + 1, max(2, len(originals))) for idx in range(len(originals))]
+    return [_retention_scene(idx + 1, max(4, len(originals))) for idx in range(len(originals))]
 
 
 def test_split_sentences_basic():
@@ -259,7 +264,9 @@ async def test_structure_step_returns_scene_list(monkeypatch):
     call = _deepseek_from_cassette("deepseek_structure.json")
     research = {"frozen_descriptor": "desc"}
     scenes = await chain.structure_step("SCP-173", research, "guide", None, call)
-    assert len(scenes) == 2
+    # 4, not 2: Story 12.6's distribution contract (opening/closing <= 20% each,
+    # max/min >= 1.6) has no solution below four scenes, so the cassette grew.
+    assert len(scenes) == 4
     assert scenes[0]["scene_num"] == 1
     assert scenes[0]["emotional_beat"] == "tension"
 
@@ -299,7 +306,7 @@ async def test_structure_step_label_none_tolerates_missing_title(monkeypatch):
     )
 
     async def call(rendered, s):
-        scenes = _retention_outline(2)
+        scenes = _retention_outline(4)
         for scene in scenes:
             scene.pop("title")
         return json.dumps({"scenes": scenes}), {}, "stop"
@@ -337,7 +344,7 @@ def test_retention_valid_outline_passes():
 
 @pytest.mark.parametrize("hook", chain.HOOK_TYPES)
 def test_retention_scene1_accepts_every_library_hook(hook):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[0]["hook_type"] = hook
     chain._validate_retention_outline(outline)
 
@@ -348,26 +355,26 @@ def test_retention_hook_library_is_exactly_the_format_guide_vocabulary():
 
 @pytest.mark.parametrize("hook", ["none", "cliffhanger", "question!", "", None, 3, ["shock"]])
 def test_retention_scene1_rejects_anything_outside_the_library(hook):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[0]["hook_type"] = hook
     assert _raises(outline) == "hook_invalid"
 
 
 @pytest.mark.parametrize("hook", chain.HOOK_TYPES + ("tone_shift",))
 def test_retention_later_scene_must_be_none(hook):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[1]["hook_type"] = hook
     assert _raises(outline) == "hook_misplaced"
 
 
 def test_retention_scene1_missing_hook_key_is_invalid():
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     del outline[0]["hook_type"]
     assert _raises(outline) == "hook_invalid"
 
 
 def test_retention_hook_and_interrupt_are_case_and_whitespace_canonicalized():
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[0]["hook_type"] = "  SHOCK  "
     outline[0]["pattern_interrupt"] = "Tone_Shift"
     chain._validate_retention_outline(outline)
@@ -381,27 +388,27 @@ def test_retention_hook_and_interrupt_are_case_and_whitespace_canonicalized():
 @pytest.mark.parametrize("field", ["who", "what", "consequence"])
 @pytest.mark.parametrize("bad", ["", "   ", None, 5, ["누군가"], {"who": "x"}])
 def test_retention_event_field_must_be_a_non_empty_string(field, bad):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[0]["event"][field] = bad
     assert _raises(outline) == "event_field_empty"
 
 
 @pytest.mark.parametrize("field", ["who", "what", "consequence"])
 def test_retention_event_field_may_not_be_absent(field):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     del outline[0]["event"][field]
     assert _raises(outline) == "event_field_empty"
 
 
 @pytest.mark.parametrize("bad", [None, "연구원이 격리실에 들어갔다", ["who"], 3])
 def test_retention_event_must_be_a_mapping(bad):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[1]["event"] = bad
     assert _raises(outline) == "event_missing"
 
 
 def test_retention_event_missing_entirely_is_rejected():
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     del outline[2]["event"]
     assert _raises(outline) == "event_missing"
 
@@ -411,7 +418,7 @@ def test_retention_event_missing_entirely_is_rejected():
 
 @pytest.mark.parametrize("bad", [[], None, "사실 하나", ["", "  "], ["사실", 7], {"a": "b"}])
 def test_retention_fact_references_must_be_non_empty_statements(bad):
-    outline = _retention_outline(3)
+    outline = _retention_outline(4)
     outline[1]["fact_references"] = bad
     assert _raises(outline) == "fact_references_invalid"
 
@@ -580,8 +587,13 @@ def test_retention_interrupt_key_may_not_be_absent():
 
 
 def test_retention_per_scene_budget_boundaries_are_inclusive():
-    chain._validate_retention_outline(_budget_outline(9, chain.MIN_SCENE_WORD_BUDGET))  # 20 x 9 = 180
-    chain._validate_retention_outline(_budget_outline(4, chain.MAX_SCENE_WORD_BUDGET))  # 90 x 4 = 360
+    # Both ends of the per-scene band, in ONE outline that is otherwise legal — a
+    # uniform outline at either bound is now rejected by `budget_uniform` instead,
+    # so the boundary can only be probed on an uneven shape (Story 12.6).
+    outline = _retention_outline(9)
+    outline[0]["word_budget"] = chain.MIN_SCENE_WORD_BUDGET
+    outline[4]["word_budget"] = chain.MAX_SCENE_WORD_BUDGET
+    chain._validate_retention_outline(outline)
 
 
 @pytest.mark.parametrize("budget", [chain.MIN_SCENE_WORD_BUDGET - 1, chain.MAX_SCENE_WORD_BUDGET + 1])
@@ -590,18 +602,26 @@ def test_retention_per_scene_budget_outside_the_range_is_rejected(budget):
 
 
 def test_retention_total_budget_boundaries_are_inclusive():
-    assert sum(s["word_budget"] for s in _budget_outline(9, 20)) == chain.MIN_TOTAL_WORD_BUDGET
-    assert sum(s["word_budget"] for s in _budget_outline(4, 90)) == chain.MAX_TOTAL_WORD_BUDGET
+    for total in (chain.MIN_TOTAL_WORD_BUDGET, chain.MAX_TOTAL_WORD_BUDGET):
+        outline = _retention_outline(9)
+        # Spread the difference over the middle scenes only: they are the ones with
+        # headroom under the per-scene ceiling, and moving the ends would change the
+        # opening/closing shares the same outline is meant to keep legal.
+        for offset in range(abs(total - sum(s["word_budget"] for s in outline))):
+            outline[1 + offset % 7]["word_budget"] += 1 if total > chain.MIN_TOTAL_WORD_BUDGET else -1
+        assert sum(s["word_budget"] for s in outline) == total
+        chain._validate_retention_outline(outline)
 
 
 def test_retention_total_below_the_floor_is_rejected():
-    outline = _budget_outline(8, 20)  # every scene legal, 160 total
+    outline = _budget_outline(8, chain.MIN_SCENE_WORD_BUDGET)  # every scene legal, total short
     assert sum(s["word_budget"] for s in outline) < chain.MIN_TOTAL_WORD_BUDGET
     assert _raises(outline) == "budget_total"
 
 
 def test_retention_total_above_the_ceiling_is_rejected():
-    outline = _budget_outline(5, 90)  # every scene legal, 450 total
+    outline = _budget_outline(6, chain.MAX_SCENE_WORD_BUDGET)  # every scene legal, total over
+    assert sum(s["word_budget"] for s in outline) > chain.MAX_TOTAL_WORD_BUDGET
     assert _raises(outline) == "budget_total"
 
 
@@ -838,10 +858,42 @@ async def test_writing_scene_repair_step_sends_the_paired_structure_subset(monke
     assert json.loads(captured["scene_structure"]) == subset
 
 
+def _derived_at(minutes: int) -> dict[str, int]:
+    """The module's own budget derivation evaluated at another duration.
+
+    The constants are computed at import, so a test that has to run the contract at
+    a duration the module was never imported at monkeypatches these four onto it.
+    """
+    target = minutes * chain.TARGET_WPM
+    return {
+        "MIN_TOTAL_WORD_BUDGET": round(target * (1 - chain.WORD_BUDGET_TOLERANCE)),
+        "MAX_TOTAL_WORD_BUDGET": round(target * (1 + chain.WORD_BUDGET_TOLERANCE)),
+        "MIN_SCENE_WORD_BUDGET": round(target * chain.MIN_SCENE_WORD_SHARE),
+        "MAX_SCENE_WORD_BUDGET": round(target * chain.MAX_SCENE_WORD_SHARE),
+    }
+
+
 def test_structure_cassette_satisfies_the_retention_contract():
     """The cassette is replayed by other stage tests as a *valid* DeepSeek reply.
     If it ever drifts out of contract, those tests fail with a RetentionError far
     from the edit that caused it — pin the contract at the fixture instead."""
+    content = _load_cassette("deepseek_structure.json")["choices"][0]["message"]["content"]
+    scenes = yaml.safe_load(content)["scenes"]
+    chain._validate_retention_outline(scenes)
+    # Solved on load, not frozen in the JSON — see `fakes._apply_retention_budgets`.
+    assert [scene["word_budget"] for scene in scenes] == _budgets(len(scenes))
+
+
+def test_structure_cassette_follows_the_target_duration(monkeypatch):
+    """AC3's "one line, no second edit anywhere", asserted where it was false.
+
+    As recorded, the cassette's four budgets summed to exactly
+    MIN_TOTAL_WORD_BUDGET (370) — so `TARGET_DURATION_MINUTES = 4` made the FIXTURE
+    violate `budget_total`, and the story's headline promise needed a second edit
+    hiding in a JSON file.
+    """
+    for name, value in _derived_at(4).items():
+        monkeypatch.setattr(chain, name, value)
     content = _load_cassette("deepseek_structure.json")["choices"][0]["message"]["content"]
     chain._validate_retention_outline(yaml.safe_load(content)["scenes"])
 
@@ -906,6 +958,373 @@ def test_critic_prompt_judges_substance_against_the_fact_sheet():
     content = _prompt_text("critic_agent.md")
     assert "{{scp_fact_sheet}}" in content
     assert "Substance" in content and "Fidelity" in content
+
+
+# --- Story 12.6: length as ONE decision -------------------------------------
+# Before this story the band lived in three disagreeing places (the constant, the
+# validator's literals, and `structure.md`'s prose). These tests exist so a fourth
+# copy cannot be added without a red test naming it.
+
+
+def test_word_budget_band_is_derived_from_duration_and_wpm():
+    target = chain.TARGET_DURATION_MINUTES * chain.TARGET_WPM
+    assert chain._TARGET_TOTAL_WORDS == round(target)
+    assert chain.MIN_TOTAL_WORD_BUDGET == round(target * (1 - chain.WORD_BUDGET_TOLERANCE))
+    assert chain.MAX_TOTAL_WORD_BUDGET == round(target * (1 + chain.WORD_BUDGET_TOLERANCE))
+    assert chain.MIN_SCENE_WORD_BUDGET == round(target * chain.MIN_SCENE_WORD_SHARE)
+    assert chain.MAX_SCENE_WORD_BUDGET == round(target * chain.MAX_SCENE_WORD_SHARE)
+    # The band must actually contain the target it was derived from — a tolerance
+    # sign slip would still satisfy every equality above.
+    assert chain.MIN_TOTAL_WORD_BUDGET < target < chain.MAX_TOTAL_WORD_BUDGET
+
+
+@pytest.mark.parametrize(
+    "bound, formula",
+    [
+        ("MIN_TOTAL_WORD_BUDGET", lambda t, c: round(t * (1 - c.WORD_BUDGET_TOLERANCE))),
+        ("MAX_TOTAL_WORD_BUDGET", lambda t, c: round(t * (1 + c.WORD_BUDGET_TOLERANCE))),
+        ("MIN_SCENE_WORD_BUDGET", lambda t, c: round(t * c.MIN_SCENE_WORD_SHARE)),
+        ("MAX_SCENE_WORD_BUDGET", lambda t, c: round(t * c.MAX_SCENE_WORD_SHARE)),
+    ],
+)
+def test_each_bound_is_its_formula_over_duration_and_wpm(bound, formula):
+    """AC3 as an identity, per bound: the SHIPPED constant equals its derivation from
+    `TARGET_DURATION_MINUTES x TARGET_WPM` and the share/tolerance knobs, so editing
+    the duration moves it with no second edit anywhere.
+
+    This replaces a test that recomputed `round(minutes * TARGET_WPM * k)` in its own
+    body at durations the module was never imported at and asserted the answer
+    DIFFERED from the shipped constant. That is arithmetic ("3 != 8"), not a
+    property of this module: it passed identically against a hardcoded literal,
+    which is precisely the failure AC3 exists to catch.
+    """
+    target = chain.TARGET_DURATION_MINUTES * chain.TARGET_WPM
+    assert getattr(chain, bound) == formula(target, chain)
+
+
+@pytest.mark.parametrize("literal", ["180~360", "20~90", "3분 파이프라인"])
+def test_structure_prompt_no_longer_hardcodes_a_budget_band(literal):
+    assert literal not in _prompt_text("structure.md"), (
+        f"structure.md re-typed the budget band as the literal {literal!r} — "
+        "it must read the derived value through a template variable instead"
+    )
+
+
+def test_structure_prompt_reads_the_derived_budget_variables():
+    content = _prompt_text("structure.md")
+    for variable in ("total_word_budget_min", "total_word_budget_max", "scene_word_budget_min",
+                     "scene_word_budget_max", "max_opening_word_pct", "max_closing_word_pct",
+                     "min_budget_spread"):
+        assert "{{" + variable + "}}" in content, f"structure.md does not read {{{{{variable}}}}}"
+    # The instruction that produced run e5ed4b3a's flat 9-scene outline.
+    assert "씬 수로 나눠" not in content
+    for code in ("budget_opening_share", "budget_closing_share", "budget_uniform"):
+        assert code in content, f"structure.md does not name the {code} rejection"
+
+
+async def test_structure_step_passes_the_derived_budget_band(monkeypatch):
+    captured = {}
+
+    class CapturingPrompt:
+        def compile(self, **variables):
+            captured.update(variables)
+            return "rendered"
+
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: CapturingPrompt())
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
+
+    await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    assert captured["target_duration"] == chain.TARGET_DURATION_MINUTES
+    assert captured["total_word_budget_min"] == chain.MIN_TOTAL_WORD_BUDGET
+    assert captured["total_word_budget_max"] == chain.MAX_TOTAL_WORD_BUDGET
+    assert captured["scene_word_budget_min"] == chain.MIN_SCENE_WORD_BUDGET
+    assert captured["scene_word_budget_max"] == chain.MAX_SCENE_WORD_BUDGET
+    assert captured["max_opening_word_pct"] == round(chain.MAX_OPENING_WORD_SHARE * 100)
+    assert captured["max_closing_word_pct"] == round(chain.MAX_CLOSING_WORD_SHARE * 100)
+    assert captured["min_budget_spread"] == chain.MIN_BUDGET_SPREAD
+
+
+class _SeededPrompt:
+    """A Langfuse TextPromptClient stand-in: `.prompt` is the raw template text, which
+    is what `.compile()` renders and what a stale `production` version would differ in."""
+
+    def __init__(self, template: str, version: int = 7):
+        self.prompt = template
+        self.version = version
+
+    def compile(self, **variables):
+        return "rendered"
+
+
+_SEEDED_12_6 = " ".join("{{" + name + "}}" for name in chain._STRUCTURE_BUDGET_VARIABLES)
+_SEEDED_PRE_12_6 = "씬당 20~90 어절, 총합 180~360 (현재 3분 파이프라인 기준)"
+
+
+async def test_structure_step_rejects_a_prompt_version_that_predates_the_derived_band(monkeypatch):
+    """The runtime prompt body comes from Langfuse, not from the repo file, and
+    `compile()` silently ignores variables the template never mentions. A rolled-back
+    `production` would tell the model "총합 180~360" while the validator enforces
+    370-500: every outline fails `budget_total`, the one re-roll fails identically,
+    and nothing in the failure names the prompt version. Fail at the fetch instead.
+    """
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: _SeededPrompt(_SEEDED_PRE_12_6)
+    )
+
+    async def call(rendered, s):
+        raise AssertionError("the provider must not be called on a stale prompt")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    message = str(excinfo.value)
+    assert "total_word_budget_min" in message
+    assert "version=7" in message
+    assert "migrate_prompts.py" in message  # the operator's next command, spelled out
+
+
+async def test_structure_step_accepts_a_prompt_that_reads_the_derived_band(monkeypatch):
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: _SeededPrompt(_SEEDED_12_6)
+    )
+
+    async def call(rendered, s):
+        return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
+
+    assert len(await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)) == 6
+
+
+def test_the_repo_prompt_would_pass_the_seeding_check():
+    """The check is only useful if the file `migrate_prompts.py` seeds satisfies it —
+    otherwise re-seeding as instructed leaves the run failing the same way."""
+    content = _prompt_text("structure.md")
+    assert all("{{" + name + "}}" in content for name in chain._STRUCTURE_BUDGET_VARIABLES)
+
+
+# --- Story 12.6: distribution is enforced, not requested ---------------------
+
+
+def test_retention_uneven_outline_passes():
+    # The helper's own shape: short ends, fat middle. If this ever fails, every
+    # other retention test is being judged on an outline that is already illegal.
+    chain._validate_retention_outline(_retention_outline(9))
+
+
+def test_retention_uniform_distribution_is_rejected():
+    # Exactly the run e5ed4b3a shape: every scene the same budget, total in band.
+    budget = round(chain._TARGET_TOTAL_WORDS / 9)
+    outline = _budget_outline(9, budget)
+    assert chain.MIN_TOTAL_WORD_BUDGET <= budget * 9 <= chain.MAX_TOTAL_WORD_BUDGET
+    assert _raises(outline) == "budget_uniform"
+
+
+def _outline_with_budgets(budgets: list[int]) -> list[dict]:
+    """An outline whose word_budgets are EXACTLY ``budgets``.
+
+    Ledger fields come from the standard helper; the numbers do not. A boundary test
+    has to place the outline ON the bound, and ``_budgets``' solver lands wherever it
+    lands — the previous spread-boundary test believed it was probing 1.6 and was
+    actually validating an outline at spread 5.0.
+    """
+    return [_retention_scene(pos, len(budgets), word_budget=b) for pos, b in enumerate(budgets, start=1)]
+
+
+def test_retention_spread_boundary_is_inclusive():
+    # 80/50 is EXACTLY MIN_BUDGET_SPREAD (and 50 * 1.6 == 80.0 with no float slack),
+    # so this outline sits on the bound: the check is `max < min * spread`, not `<=`.
+    outline = _outline_with_budgets([50, 80, 80, 80, 80, 50])
+    assert max(b["word_budget"] for b in outline) / min(b["word_budget"] for b in outline) == (
+        chain.MIN_BUDGET_SPREAD
+    )
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_one_word_under_the_spread_boundary_is_rejected():
+    # The half the old test never asserted. Same shape, largest scene one 어절 lower:
+    # 79/50 = 1.58. Total (416) and both end shares stay legal, so `budget_uniform`
+    # is the only rule that can fire.
+    outline = _outline_with_budgets([50, 79, 79, 79, 79, 50])
+    assert chain.MIN_TOTAL_WORD_BUDGET <= sum(b["word_budget"] for b in outline) <= chain.MAX_TOTAL_WORD_BUDGET
+    assert _raises(outline) == "budget_uniform"
+
+
+def _over_share(outline: list[dict], index: int, share: float) -> None:
+    """Push one scene just past ``share`` of the outline's total — computed against
+    the OTHER scenes, because raising this scene also raises the denominator."""
+    rest = sum(scene["word_budget"] for scene in outline) - outline[index]["word_budget"]
+    outline[index]["word_budget"] = math.floor(rest * share / (1 - share)) + 1
+
+
+def test_retention_front_loaded_opening_is_rejected():
+    outline = _retention_outline(9)
+    _over_share(outline, 0, chain.MAX_OPENING_WORD_SHARE)
+    assert _raises(outline) == "budget_opening_share"
+
+
+def test_budget_uniform_message_states_only_what_it_checks():
+    """The message used to promise "give the central beats the largest budgets",
+    which this check cannot see: [74] + [42] * 8 has spread 1.76 and an 18% opening,
+    so it passes while being maximally front-loaded. An error that describes a rule
+    nobody enforces sends the next reader looking for the enforcement."""
+    outline = _outline_with_budgets([74] + [42] * 8)
+    chain._validate_retention_outline(outline)  # front-loaded, and legal today
+
+    with pytest.raises(chain.RetentionError) as excinfo:
+        chain._validate_retention_outline(_outline_with_budgets([50, 79, 79, 79, 79, 50]))
+    message = str(excinfo.value)
+    assert "largest scene budget must be at least" in message
+    assert "central beats" not in message
+
+
+def test_retention_outline_shorter_than_four_scenes_names_the_scene_count():
+    """Below 4 scenes the distribution rules have NO common solution (≤20% opening
+    + ≤20% closing leaves the lone middle past the 30% per-scene ceiling), so a
+    3-scene outline used to die on `budget_opening_share` — reporting the first
+    budget as the problem when the problem is that there are three scenes."""
+    outline = _outline_with_budgets([130, 130, 130])
+    assert chain.MIN_TOTAL_WORD_BUDGET <= 390 <= chain.MAX_TOTAL_WORD_BUDGET  # volume is legal
+    assert _raises(outline) == "scene_count"
+
+
+def test_retention_four_scenes_is_still_admitted():
+    # The bound is "fewer than 4", not "fewer than 8": `structure.md`'s 8-12 ceiling
+    # has never been validated against a run, and rejecting a legal 4- or 6-scene
+    # outline on it would be a new failure rather than a fixed one.
+    chain._validate_retention_outline(_retention_outline(4))
+
+
+def test_retention_back_loaded_closing_is_rejected():
+    outline = _retention_outline(9)
+    _over_share(outline, -1, chain.MAX_CLOSING_WORD_SHARE)
+    assert _raises(outline) == "budget_closing_share"
+
+
+def test_retention_opening_share_boundary_is_inclusive():
+    # 80 of 400 is EXACTLY MAX_OPENING_WORD_SHARE, so this probes `>` vs `>=` for
+    # real. `_over_share` could only ever land NEAR the cap (19.86% on the previous
+    # fixture), which cannot tell the two operators apart.
+    outline = _outline_with_budgets([80, 70, 70, 70, 60, 50])
+    assert outline[0]["word_budget"] / sum(b["word_budget"] for b in outline) == chain.MAX_OPENING_WORD_SHARE
+    chain._validate_retention_outline(outline)
+
+
+def test_retention_one_word_over_the_opening_share_boundary_is_rejected():
+    # The same outline with one 어절 more on the opening: 81/401 = 20.2%.
+    outline = _outline_with_budgets([81, 70, 70, 70, 60, 50])
+    assert outline[0]["word_budget"] / sum(b["word_budget"] for b in outline) > chain.MAX_OPENING_WORD_SHARE
+    assert _raises(outline) == "budget_opening_share"
+
+
+# --- Story 12.6: the critic's closed issue vocabulary ------------------------
+
+
+def test_critic_prompt_names_every_issue_type():
+    content = _prompt_text("critic_agent.md")
+    assert "issue_type" in content
+    for issue_type in state.CRITIC_ISSUE_TYPES:
+        assert issue_type in content, f"critic_agent.md does not describe issue_type {issue_type!r}"
+
+
+def test_critic_prompt_declares_the_three_permitted_adaptations():
+    content = _prompt_text("critic_agent.md")
+    assert "허용되는 각색" in content
+    # Each prohibition ships with its replacement in the same block.
+    assert "✅" in content and "❌" in content
+
+
+def test_writing_prompt_declares_the_three_permitted_adaptations():
+    content = _prompt_text("writing.md")
+    assert "허용되는 각색" in content
+    # The exact regression the story cites, with a positive counter-example.
+    assert "재단 공식 기록을 낭독합니다" in content
+    assert "✅" in content
+
+
+def test_review_prompt_exempts_sensory_addition_from_invented_content():
+    content = _prompt_text("review.md")
+    assert "invented_content" in content
+    assert "허용되는 각색" in content
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("ungrounded_claim", "ungrounded_claim"), ("  PACING ", "pacing"), ("report_tone", "report_tone"),
+     ("Fact Problem!!", "other"), ("", "other"), (None, "other"), (7, "other")],
+)
+def test_critic_parse_coerces_issue_type_to_the_closed_vocabulary(monkeypatch, raw, expected):
+    payload = {"verdict": "retry", "scene_notes": [{"scene_num": 1, "issue": "문제", "suggestion": "고쳐"}]}
+    if raw is not None:
+        payload["scene_notes"][0]["issue_type"] = raw
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+
+    async def call(rendered, s):
+        return yaml.safe_dump(payload, allow_unicode=True), {}, "stop"
+
+    report = asyncio.run(chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call))
+    assert report["scene_notes"][0]["issue_type"] == expected
+
+
+def test_critic_parse_logs_a_rejected_issue_type(monkeypatch, caplog):
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = {"verdict": "retry",
+               "scene_notes": [{"scene_num": 1, "issue_type": "Fact Problem!!", "issue": "x", "suggestion": "y"}]}
+
+    async def call(rendered, s):
+        return yaml.safe_dump(payload, allow_unicode=True), {}, "stop"
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call))
+    assert "Fact Problem!!" in caplog.text
+
+
+@pytest.mark.parametrize("raw, recorded", [("PACING", "pacing"), ("  report_tone\n", "report_tone")])
+def test_critic_parse_is_silent_when_it_only_normalized_the_case(monkeypatch, caplog, raw, recorded):
+    """`issue_type: "PACING"` is recorded as `pacing` — correctly. The log used to
+    fire on `!= raw_type`, so it also fired here and announced "is not in [...] —
+    recorded as 'other'" about a value that WAS in the vocabulary and was NOT
+    recorded as other. A rejection log that cries wolf on legal input is worse than
+    none: it trains the reader to skip the line that matters."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = {"verdict": "retry",
+               "scene_notes": [{"scene_num": 1, "issue_type": raw, "issue": "x", "suggestion": "y"}]}
+
+    async def call(rendered, s):
+        return yaml.safe_dump(payload, allow_unicode=True), {}, "stop"
+
+    with caplog.at_level(logging.WARNING):
+        report = asyncio.run(chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call))
+    assert report["scene_notes"][0]["issue_type"] == recorded
+    assert caplog.text == ""
+
+
+def test_critic_parse_is_silent_when_the_model_names_the_fallback_itself(monkeypatch, caplog):
+    """`issue_type: "other"` is a legal member, not a rejection."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = {"verdict": "retry",
+               "scene_notes": [{"scene_num": 1, "issue_type": "Other", "issue": "x", "suggestion": "y"}]}
+
+    async def call(rendered, s):
+        return yaml.safe_dump(payload, allow_unicode=True), {}, "stop"
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call))
+    assert caplog.text == ""
+
+
+def test_critic_parse_is_silent_when_the_field_is_simply_absent(monkeypatch, caplog):
+    """A pre-12.6 prompt version emits no `issue_type` at all. Coerce, do not shout —
+    otherwise every note of every legacy run logs a warning that names nothing."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    payload = {"verdict": "retry", "scene_notes": [{"scene_num": 1, "issue": "x", "suggestion": "y"}]}
+
+    async def call(rendered, s):
+        return yaml.safe_dump(payload, allow_unicode=True), {}, "stop"
+
+    with caplog.at_level(logging.WARNING):
+        report = asyncio.run(chain.critic_step("원문", _ONE_SCENE, {}, "guide", None, call))
+    assert report["scene_notes"][0]["issue_type"] == state.CRITIC_ISSUE_TYPE_FALLBACK
+    assert "issue_type" not in caplog.text
 
 
 async def test_writing_step_returns_scenes(monkeypatch):
@@ -1234,7 +1653,7 @@ def _truncatable_stages():
          lambda call: chain.research_step("SCP-173", "text", "guide", None, call)),
         # the re-rolled structure payload must satisfy the retention contract, or
         # the stage fails after the successful re-roll for an unrelated reason
-        ("structure", _retention_yaml(2),
+        ("structure", _retention_yaml(4),
          lambda call: chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)),
         ("cast_decision", "shots:\n  - sentence: 1\n    cast: []\n",
          lambda call: chain.cast_decision_step("SCP-173", scene, ["문장 하나."], None, call)),
@@ -4301,6 +4720,29 @@ def test_rule_metrics_counts_non_whitespace_chars_and_sentences():
     }]
 
 
+def test_rule_metrics_report_the_written_total_eojeol():
+    """Story 12.6: the contract is enforced on the DECLARED outline only, and
+    `writing.md` grants each scene ±20% — wider than the ±15% the total is held to —
+    so an outline declaring a legal 370 can ship 296 with every gate green. This is
+    the only place the written length is measured. Whitespace split, the same unit
+    `word_budget` and `measure_script.py` use, so the three are comparable."""
+    writing = {"scenes": [{"narration": "가 나 다."}, {"narration": "라  마."}]}
+    assert chain.compute_rule_metrics(writing)["total_words"] == 5
+
+
+def test_rule_metrics_total_words_is_a_measurement_not_a_gate():
+    """Deliberately no failure and no warning code: this is computed AFTER every
+    writing call has been paid for, so failing on it would burn a whole run."""
+    starved = {"scenes": [{"narration": "짧다."}]}
+    metrics = chain.compute_rule_metrics(starved)
+    assert metrics["total_words"] == 1 < chain.MIN_TOTAL_WORD_BUDGET
+    assert "warning" not in metrics and "code" not in metrics
+
+
+def test_rule_metrics_total_words_survives_a_malformed_scene():
+    assert chain.compute_rule_metrics({"scenes": [{"narration": None}, "x", {}]})["total_words"] == 0
+
+
 def test_rule_metrics_scene_num_is_positional_not_model_supplied():
     writing = {"scenes": [{"scene_num": 7, "narration": "가."}, {"scene_num": 7, "narration": "나."}]}
     m = chain.compute_rule_metrics(writing)
@@ -4680,6 +5122,41 @@ def test_archetype_vocabulary_is_the_four_closed_values():
     assert domain_state.STORY_ARCHETYPE_FALLBACK in domain_state.STORY_ARCHETYPES
 
 
+def test_critic_issue_vocabulary_is_closed_with_a_reachable_fallback():
+    assert domain_state.CRITIC_ISSUE_TYPES == (
+        "ungrounded_claim", "substance_gap", "report_tone", "pacing", "hook", "ending", "other",
+    )
+    assert domain_state.CRITIC_ISSUE_TYPE_FALLBACK in domain_state.CRITIC_ISSUE_TYPES
+
+
+def test_review_issue_vocabulary_matches_the_prompt_enum():
+    """The two must not drift. `issues[].type` is model free text clipped to 600
+    chars — the tuple is the ONLY thing standing between a 600-character Korean
+    sentence and a rendered "category" at the gate — so it is pinned against the
+    prompt line the model is actually reading, not against a second hand-typed copy.
+    """
+    line = next(
+        line for line in _prompt_text("review.md").splitlines()
+        if line.lstrip().startswith("type:") and "fact_error" in line
+    )
+    from_prompt = tuple(line.split('"')[1].split("|"))
+    assert domain_state.REVIEW_ISSUE_TYPES == from_prompt
+    # No overlap with the critic's vocabulary is asserted on purpose: `categories`
+    # is a merged namespace and the two judges name the same defect differently
+    # (`invented_content` / `ungrounded_claim`). Both reach the gate; neither is
+    # translated into the other.
+    assert "other" not in domain_state.REVIEW_ISSUE_TYPES  # no reviewer fallback exists
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("ungrounded_claim", "ungrounded_claim"), ("Pacing", "pacing"), ("  report_tone\n", "report_tone"),
+     ("fact_reference", "other"), ("", "other"), (None, "other"), ({"a": 1}, "other"), (3, "other")],
+)
+def test_normalize_critic_issue_type_is_total(raw, expected):
+    assert domain_state.normalize_critic_issue_type(raw) == expected
+
+
 def test_required_evidence_table_is_lockstep_with_the_vocabulary():
     assert set(domain_state.ARCHETYPE_REQUIRED_EVIDENCE) == set(domain_state.STORY_ARCHETYPES)
     for archetype, required in domain_state.ARCHETYPE_REQUIRED_EVIDENCE.items():
@@ -4992,7 +5469,7 @@ def _recording_prompt_service(monkeypatch):
 @pytest.mark.parametrize("archetype", domain_state.STORY_ARCHETYPES)
 async def test_structure_step_injects_only_the_selected_guide(monkeypatch, archetype):
     fetched, captured = _recording_prompt_service(monkeypatch)
-    call, _ = _scripted(_retention_yaml(2))
+    call, _ = _scripted(_retention_yaml(4))
     await chain.structure_step(
         "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype=archetype,
     )
@@ -5006,7 +5483,7 @@ async def test_structure_step_injects_only_the_selected_guide(monkeypatch, arche
 async def test_structure_step_defaults_to_the_production_template(monkeypatch):
     """A caller that predates this story keeps producing incident-first outlines."""
     _, captured = _recording_prompt_service(monkeypatch)
-    call, _ = _scripted(_retention_yaml(2))
+    call, _ = _scripted(_retention_yaml(4))
     await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
     assert captured["story_archetype"] == "incident_first"
 
@@ -5015,7 +5492,7 @@ async def test_structure_step_never_infers_the_choice_from_the_research_packet(m
     """AC3: the explicit argument wins. The packet still travels whole (it carries
     every other research field), but it is not where the decision is read from."""
     _, captured = _recording_prompt_service(monkeypatch)
-    call, _ = _scripted(_retention_yaml(2))
+    call, _ = _scripted(_retention_yaml(4))
     await chain.structure_step(
         "SCP-173", {"frozen_descriptor": "d", "story_archetype": "discovery_log"}, "guide", None, call,
         story_archetype="interview_testimony",
@@ -5026,7 +5503,7 @@ async def test_structure_step_never_infers_the_choice_from_the_research_packet(m
 
 async def test_unknown_archetype_reaching_structure_uses_the_default_guide(monkeypatch, caplog):
     _, captured = _recording_prompt_service(monkeypatch)
-    call, _ = _scripted(_retention_yaml(2))
+    call, _ = _scripted(_retention_yaml(4))
     with caplog.at_level(logging.WARNING):
         await chain.structure_step(
             "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype="nonsense",

@@ -87,7 +87,12 @@ export type ScenarioQuality = {
   }
   grounded_contradictions: GroundedContradiction[]
   review_issues: { scene_num: number; type: string; severity: string; description: string; correction: string }[]
-  warning?: { code: string; message: string }
+  // Story 12.6: the critic's own per-scene findings, each led by its closed-vocabulary
+  // `issue_type`. Optional — a pre-12.6 checkpoint carries none.
+  critic_scene_notes?: { scene_num: number; issue_type: string; issue: string; suggestion: string }[]
+  // Story 12.6: `categories` is the distinct `issue_type`s (critic) + `issues[].type`
+  // (review) behind this one warning. Optional — a pre-12.6 checkpoint has none.
+  warning?: { code: string; message: string; categories?: string[] }
 }
 // Story 13.1: one non-fatal degradation recorded during the run. `code` is the stable
 // identifier (backend `RunWarningCode`), `message` the short Korean copy to render, and

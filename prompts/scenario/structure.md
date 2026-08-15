@@ -111,13 +111,19 @@ Hook Type Library와 동일한 어휘. 새 유형을 만들지 마세요).
 - **Scene 1의 훅 이후, `none`이 3개 연속되면 안 됩니다.** 최대 2연속까지만 허용됩니다.
 
 **`word_budget`** — 그 씬 나레이션의 목표 어절 수(공백 기준). **정수만** 씁니다 (`true`/`45.0`/`"45"` 모두 무효).
-- 씬당 **20~90**, 아웃라인 **총합 180~360** (현재 3분 파이프라인 기준).
-- **총합을 먼저 잡고 씬 수로 나눠 배분하세요** — 8씬이면 씬당 평균 약 30, 12씬이면 평균 약 25가
-  됩니다. 씬 사이의 *상대적* 크기만 완급을 따르게 하세요(분위기 씬은 평균보다 크게, 짧은 사건
-  씬은 작게).
+- 씬당 **{{scene_word_budget_min}}~{{scene_word_budget_max}}**, 아웃라인
+  **총합 {{total_word_budget_min}}~{{total_word_budget_max}}**. (이 숫자들은 파이프라인이
+  목표 길이에서 계산해 여기 주입한 값입니다 — 다른 곳에서 본 밴드가 아니라 이 값을 쓰세요.)
+- **균등 배분은 기각 사유입니다.** 총합을 씬 수로 나누지 마세요. 분량은 이야기의 무게를 따라
+  갑니다:
+  - 오프닝(첫 씬)은 총합의 **{{max_opening_word_pct}}% 이하** — 넘으면 `budget_opening_share`로 기각됩니다.
+  - 마지막 씬도 총합의 **{{max_closing_word_pct}}% 이하** — 넘으면 `budget_closing_share`로 기각됩니다.
+  - **중심 비트에 가장 큰 분량**을 주세요. 가장 큰 씬은 가장 작은 씬의
+    **{{min_budget_spread}}배 이상**이어야 합니다 — 못 미치면 `budget_uniform`으로 기각됩니다.
 - ⚠️ `estimated_duration_sec`를 초당 어절 수로 환산해 예산을 계산하지 마세요. 그 값은 연출
-  페이싱 힌트일 뿐이고, 어절 예산의 근거는 위 총합뿐입니다. 총합이 360을 넘거나 180에 못
-  미치면 아웃라인이 거부되고 런이 실패합니다.
+  페이싱 힌트일 뿐이고, 어절 예산의 근거는 위 총합뿐입니다. 총합이
+  {{total_word_budget_max}}를 넘거나 {{total_word_budget_min}}에 못 미치면 아웃라인이
+  거부되고 런이 실패합니다.
 
 ### `fact_references` — 라벨이 아니라 사실 문장
 
@@ -162,7 +168,8 @@ viewer after a scene jump, not a wiki label:
 - [ ] 심은 루프 ID가 총 2~3개이고, 그중 최소 1개가 Scene 1에서 심어졌는가
 - [ ] 심은 모든 ID가 **더 뒤의** 씬에서 정확히 한 번씩 닫혔고, 마지막 씬 이후 열린 루프가 0개인가
 - [ ] `pattern_interrupt: "none"`이 3연속으로 나오는 구간이 없는가
-- [ ] 모든 `word_budget`이 20~90 정수이고 총합이 180~360인가
+- [ ] 모든 `word_budget`이 {{scene_word_budget_min}}~{{scene_word_budget_max}} 정수이고 총합이 {{total_word_budget_min}}~{{total_word_budget_max}}인가
+- [ ] 첫 씬과 마지막 씬이 각각 총합의 {{max_opening_word_pct}}%/{{max_closing_word_pct}}% 이하이고, 가장 큰 씬이 가장 작은 씬의 {{min_budget_spread}}배 이상인가 (균등 배분이면 기각)
 - [ ] 모든 `fact_references` 항목이 라벨이 아니라 읽히는 사실 문장인가
 - [ ] 씬 순서가 `{{story_archetype}}` 가이드의 비트 문법 순서를 따르고, 마지막 씬이 그 가이드의
       결말 계약을 지키는가 (다른 아키타입의 순서를 섞지 않았는가)

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import eval_prompts as ep  # noqa: E402
 
+from tests.stubs.fakes import retention_budgets  # noqa: E402
 from yt_flow.services.eval_service import AxisScores  # noqa: E402
 
 
@@ -390,13 +391,21 @@ class FakeSettings:
     content_language = "ko"
 
 
-def _valid_structure_scenes(total: int = 2) -> list[dict]:
-    """An outline that satisfies the Story 12.1 retention contract at ANY legal
-    scene count. `structure_step` rejects anything less, so the scripted chain
-    below has to script a real outline. Budget is spread to land inside 180-360
-    and an interrupt lands every 3rd scene, because a flat `90` / interrupt-only-
-    on-scene-1 shape is valid at total=2 by luck and breaks silently past 4."""
-    budget = max(20, min(90, -(-180 // total)))
+def _valid_structure_scenes(total: int = 4) -> list[dict]:
+    """An outline that satisfies the retention contract at ANY legal scene count.
+    `structure_step` rejects anything less, so the scripted chain below has to
+    script a real outline.
+
+    Story 12.6: budgets are no longer flat — a uniform split is now rejected as
+    `budget_uniform` — so they are solved from the chain's derived constants as
+    short ends around a fat middle. Four scenes is the shortest outline the
+    opening/closing share caps admit.
+
+    The solve is `fakes.retention_budgets`, not a local copy: this helper used to
+    carry its own, without the `total < 4` guard, so calling it with 2 raised
+    ZeroDivisionError and with 3 silently returned a contract-violating outline.
+    """
+    budgets = retention_budgets(total)
     return [{
         "scene_num": pos,
         "act": "hook" if pos == 1 else "mystery_expansion",
@@ -407,13 +416,24 @@ def _valid_structure_scenes(total: int = 2) -> list[dict]:
         "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
         "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
         "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
-        "word_budget": budget,
+        "word_budget": budgets[pos - 1],
         "fact_references": [f"재단 기록에 사건 {pos}이 남아 있다"],
         "mood": "dread",
     } for pos in range(1, total + 1)]
 
 
-@pytest.mark.parametrize("total", [2, 3, 8])
+@pytest.mark.parametrize("total", [2, 3])
+def test_structure_fixture_helper_is_total_below_four_scenes(total):
+    """It used to carry its own copy of the budget solve, without the `total < 4`
+    guard: calling it with 2 raised ZeroDivisionError (`inner` is 0) and with 3
+    silently returned an outline violating the contract it exists to satisfy."""
+    from yt_flow.pipeline.nodes.scenario_chain import MIN_SCENE_WORD_BUDGET
+
+    scenes = _valid_structure_scenes(total)
+    assert [scene["word_budget"] for scene in scenes] == [MIN_SCENE_WORD_BUDGET] * total
+
+
+@pytest.mark.parametrize("total", [4, 5, 8])
 def test_scripted_structure_fixture_satisfies_the_retention_contract(total):
     """These scenes are scripted as *valid* DeepSeek replies for the chain below.
     If the contract or the helper drifts apart, the chain tests fail with an
@@ -1692,8 +1712,10 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
     responses = [
         (jsonlib.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (jsonlib.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
-        writing_reply,  # writing is one call per structure scene (Gemini's seam)
-        writing_reply,
+        # writing is one call per structure scene (Gemini's seam), and
+        # `_valid_structure_scenes()` is four scenes since Story 12.6 made the
+        # distribution contract unsatisfiable below four.
+        *[writing_reply] * 4,
     ]
 
     async def scripted_call(rendered, s):
@@ -1710,7 +1732,7 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
 
     assert failed is False
     assert actual_stage == "writing"
-    assert responses == []  # all 4 canned responses consumed fresh — none served from cache
+    assert responses == []  # every canned response consumed fresh — none served from cache
 
 
 def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(monkeypatch):
@@ -1733,8 +1755,7 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
     responses = [
         (json.dumps({"frozen_descriptor": "d", **_ARCHETYPE_FIELDS}), {}, "stop"),
         (json.dumps({"scenes": _valid_structure_scenes()}), {}, "stop"),
-        writing_reply,  # writing is one call per structure scene
-        writing_reply,
+        *[writing_reply] * 4,  # writing is one call per structure scene
     ]
     calls = {"n": 0}
 
@@ -1754,8 +1775,8 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
         assert failed is False
         assert actual_stage == "writing"
 
-    assert responses == []  # all 4 canned responses consumed exactly once
-    assert calls["n"] == 4  # the second run's 4 stage calls were all served from cache
+    assert responses == []  # all 6 canned responses consumed exactly once
+    assert calls["n"] == 6  # the second run's 6 stage calls were all served from cache
 
 
 def test_run_scenario_cache_enabled_hits_cache_on_second_call(monkeypatch):
@@ -1892,7 +1913,7 @@ def test_run_stage_chain_routes_the_writing_call_to_gemini(monkeypatch):
     )
 
     assert (failed, actual_stage, error) == (False, "writing", None)
-    assert seen == {"deepseek": 2, "gemini": 2}  # research + structure vs one writing call per scene
+    assert seen == {"deepseek": 2, "gemini": 4}  # research + structure vs one writing call per scene
 
 
 def test_gemini_cache_wrapper_keys_on_the_gemini_pins():

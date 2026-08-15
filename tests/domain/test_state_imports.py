@@ -65,16 +65,20 @@ EXPECTED_FIELDS = {
     "SlopPhraseHit": {"scene_num", "phrase", "count"},
     "RuleMetrics": {
         "aggregate", "scenes", "repeated_ngrams", "slop_phrase_hits", "slop_vocabulary_version",
+        "total_words",  # Story 12.6 — written 어절, measured beside the declared budget
     },
     "GroundedContradiction": {
         "scene_num", "narration_quote", "grounding_source", "grounding_quote",
         "explanation", "correction",
     },
     "ReviewIssue": {"scene_num", "type", "severity", "description", "correction"},
-    "ScenarioWarning": {"code", "message"},
+    # Story 12.6 — `categories` is NotRequired, so a pre-12.6 checkpoint still loads.
+    "ScenarioWarning": {"code", "message", "categories"},
+    "CriticSceneNote": {"scene_num", "issue_type", "issue", "suggestion"},
     "ScenarioQuality": {
         "final_pass_index", "retry_scope", "review_overall_pass", "critic_verdict",
         "critic_feedback", "rule_metrics", "grounded_contradictions", "review_issues",
+        "critic_scene_notes",  # Story 12.6 — NotRequired, same compatibility reason
         "warning",
     },
 }

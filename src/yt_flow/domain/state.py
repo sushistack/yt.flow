@@ -96,6 +96,60 @@ def missing_archetype_evidence(archetype: str, evidence: dict[str, bool] | None)
     return required
 
 
+# Story 12.6: closed vocabulary for what the critic is complaining ABOUT. Same
+# pattern as StoryArchetype above, and for the same reason — but the defect it fixes
+# is a gate defect, not a lookup defect. Run e5ed4b3a's critic was right three times
+# (두 건은 Fact Sheet에 없는 단언, 한 건은 보고서 낭독 톤) and all three arrived at
+# the human gate as one undifferentiated `unresolved_pass2` warning, because
+# `scene_notes[].issue` is free text. A fabricated fact and a flat-pacing gripe need
+# different actions, so they must be different categories at the gate.
+# NOT a loosening of the critic: the judgment is unchanged, only its label is typed.
+CriticIssueType = Literal[
+    "ungrounded_claim",  # asserts a number/grade/date/event/capability the fact sheet lacks
+    "substance_gap",     # technique applied correctly over nothing — criterion 6
+    "report_tone",       # reads as a wiki/Foundation report rather than a story
+    "pacing",            # flat or misallocated within/between scenes
+    "hook",              # scene 1 opening fails to hold
+    "ending",            # closing beat lands weak
+    "other",             # deliberate escape hatch + the coercion target below
+]
+CRITIC_ISSUE_TYPES = get_args(CriticIssueType)
+CRITIC_ISSUE_TYPE_FALLBACK: CriticIssueType = "other"
+
+# Story 12.6: the OTHER judge's closed vocabulary — `issues[].type` from
+# `scenario/review`. Verbatim from the enum on `prompts/scenario/review.md`'s
+# `type:` line, and pinned against it by a test so the two cannot drift.
+#
+# Unlike the critic's, this one is never normalized on the way in: `review_step`
+# does not schema-validate `issues[]`, so `type` reaches `_build_quality` as model
+# free text clipped to 600 characters. Without a membership filter a 600-character
+# Korean sentence renders at the gate as a "category". Membership only — a
+# non-member is DROPPED, never coerced to a fallback, because there is no reviewer
+# equivalent of `other` and inventing one would put an unread label on the gate.
+ReviewIssueType = Literal[
+    "fact_error", "missing_fact", "descriptor_violation", "invented_content",
+    "ending_monotony", "designation_violation", "grounded_contradiction",
+]
+REVIEW_ISSUE_TYPES = get_args(ReviewIssueType)
+
+
+def normalize_critic_issue_type(value: object) -> str:
+    """Model-authored ``issue_type`` → a member of ``CRITIC_ISSUE_TYPES``.
+
+    Total over any input, including ``None`` and a missing field: an unrecognised
+    category must never fail a run that the critic itself judged fine, and it must
+    never reach the gate raw. Pure function — the caller does the logging, because
+    only it knows which scene the rejected value came from. [AD-2]
+
+    Annotated ``object``, not ``str``, for the same reason ``missing_archetype_evidence``
+    takes a bare ``str`` archetype: the totality is the contract. The one call site
+    passes ``note.get("issue_type")`` straight off parsed YAML, so ``None``, an int
+    and a mapping all arrive here by design.
+    """
+    candidate = " ".join(str(value or "").split()).lower()
+    return candidate if candidate in CRITIC_ISSUE_TYPES else CRITIC_ISSUE_TYPE_FALLBACK
+
+
 STOCK_CAST_KEYS = ("STOCK-d-class", "STOCK-researcher", "STOCK-security")  # single source of truth
 
 # Story 8.19 — controlled role descriptions for the stock cast. Diagnosed cause:
@@ -369,6 +423,13 @@ class RuleMetrics(TypedDict):
     slop_phrase_hits: list[SlopPhraseHit]
     slop_vocabulary_version: int   # bump when the phrase tuple changes, so an old
                                    # checkpoint's hits stay interpretable
+    # Story 12.6: the WRITTEN total 어절 (whitespace split, the same unit
+    # `word_budget` is denominated in). The retention contract is enforced on the
+    # declared outline only, and `writing.md` allows each scene ±20% — wider than
+    # the ±15% band the total is held to — so an outline declaring a legal 370 can
+    # ship 296. Measurement, not a gate: failing here would burn a whole run after
+    # every writing call has already been paid for.
+    total_words: int
 
 
 class GroundedContradiction(TypedDict):
@@ -390,9 +451,21 @@ class ReviewIssue(TypedDict):
     correction: str
 
 
+class CriticSceneNote(TypedDict):
+    scene_num: int
+    issue_type: str  # a CRITIC_ISSUE_TYPES member — normalized in critic_step.parse
+    issue: str
+    suggestion: str
+
+
 class ScenarioWarning(TypedDict):
     code: str      # "unresolved_pass2" — the stable identifier the UI keys on
     message: str   # Korean operator copy
+    # Story 12.6: the distinct `issue_type`s behind this one warning, sorted. The
+    # code stays `unresolved_pass2` (the UI and its tests key on it); the categories
+    # are what tell the operator whether they are looking at a fact violation or a
+    # craft one. Absent on a pre-12.6 checkpoint.
+    categories: NotRequired[list[str]]
 
 
 class ScenarioQuality(TypedDict):
@@ -409,6 +482,10 @@ class ScenarioQuality(TypedDict):
     rule_metrics: RuleMetrics
     grounded_contradictions: list[GroundedContradiction]
     review_issues: list[ReviewIssue]
+    # Story 12.6: the critic's own typed evidence, beside the review's. Until now the
+    # gate carried `critic_feedback` (a joined prose blob) and nothing else from the
+    # critic, so a typed note had nowhere to land. Absent on a pre-12.6 checkpoint.
+    critic_scene_notes: NotRequired[list[CriticSceneNote]]
     warning: NotRequired[ScenarioWarning]
 
 
