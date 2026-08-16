@@ -264,9 +264,12 @@ Sized on live data: run `e5ed4b3a` emitted **2** `pose_hint`s across 40 placemen
 2. **The library fill (story AC3/AC7).** ComfyUI verified down on 2026-08-16 — no listener on 8188, `curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8188/system_stats` → `000`. Not started, and no card generated or approved: writing a card row *is* publishing (`gotcha_standing-cards-have-no-approval-gate`). Sized input for the follow-up: the 36-slot `MISSING` summary above. AC7 (epoch match) applies — SCP-049's approved cards are epoch 1, STOCK-d-class epoch 2, and the run already mixes them on screen.
 3. **The figure-count guard is unvalidated against a real render.** It is unit-tested on synthetic zero-, one- and two-blob PNGs and its `0.15` area floor is reasoned from measured numbers (a flanking duplicate is 30–70% of the subject, dither speckle under 2%), but no live sprite has passed through it — same ComfyUI outage. The review pass widened it from "reject ≥ 2" to "reject anything that is not exactly 1", because the zero case (post-opening emptiness — a speckle-only render) was passing the guard, passing `has_alpha`'s IHDR read, and reaching disk, manifest and an approved `CharacterCard`. Its stated ceiling (overlapping figures are one component and pass) and one behaviour change it introduces (the separated case used to be silently repaired by `_clean_alpha_noise`'s keep-largest and shipped; it is now refused) are recorded in `deferred-work.md`.
 
-### Final status — 2026-08-16
+### Unattended-run halt — 2026-08-16 (superseded — see *Closing state* at the end)
 
-Status: **blocked** — blocking condition: **Jay viewing verdict required**.
+Status at the moment this unattended run stopped: **blocked** — blocking condition:
+**Jay viewing verdict required**. The verdict arrived later the same day and the story
+closed `done`; this section is kept as the record of where the unattended legs ended,
+not as the story's outcome. Frontmatter `status` and *Closing state* are authoritative.
 
 Committed as `23ebd2b`. Everything reachable without a GPU or a human eye is done and measured:
 the two code defects that account for 39 of the 40 placements are fixed and re-measured against a
