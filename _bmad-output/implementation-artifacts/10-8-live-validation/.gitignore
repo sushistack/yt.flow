@@ -1,0 +1,38 @@
+# Story 10.8 live-validation artifacts.
+#
+# What is committed: everything that re-derives or adjudicates a number — the driver
+# (`measure_fallbacks.py`), the pre-registration (`README.md`) and the raw measurement
+# ledger (`measurements.jsonl`). All of it is text and all of it is small; a reader can
+# check every claim in the spec's `## Auto Run Result` from this directory alone,
+# without a GPU and without re-running the pipeline.
+#
+# What is ignored: rendered frames and clips. NONE EXIST YET — the before/after render
+# (story AC9) is blocked on ComfyUI being up and on Jay watching it, so this directory
+# currently holds no image at all. The rules are written now so the follow-up run drops
+# its output into an already-decided split instead of inventing one:
+#
+#   - commit the adjudication images the verdict cites, downscaled to ~512 px on the
+#     long edge — "which way is the figure facing" survives that easily. Name them
+#     `before_after.*`, `*_pair.*` or `grid_*.*`: those three are what the rules below
+#     un-ignore, in any image format;
+#   - ignore the raw per-shot renders and full videos they were built from, which are
+#     regenerable from the committed driver against the same run.
+#
+# `git status --porcelain` on this directory proves nothing (it is ignored by design).
+# Assert file state with `find _bmad-output/implementation-artifacts/10-8-live-validation
+# -type f` plus dates. Never blanket-delete an ignored payload here: video.py unlinks
+# shot clips on re-render, so a rendered leg can be the only surviving copy.
+
+# Ignore the raw payload by extension, then un-ignore the adjudication sheets by NAME.
+# The names, not the format: the sibling 10-1b rules negated `*_pair.jpg` / `grid_*.jpg`
+# against a `*.png` ignore, so every negation there was a no-op and nothing said the
+# sheets had to be JPEG. Copied here, they would have silently swallowed the
+# `before_after.png` this story's follow-up is specified to drop in — in a directory
+# whose own header warns that `git status` proves nothing.
+*.mp4
+*.png
+*.jpg
+
+!before_after.*
+!*_pair.*
+!grid_*.*

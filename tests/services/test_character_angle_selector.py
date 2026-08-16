@@ -135,6 +135,22 @@ def _mock_llm_error() -> dict:
     return _FakeResponse()
 
 
+def _patch_front_picks(*shots: tuple[int, str]):
+    """Answer the angle selector with a clean `front` pick for the given shots.
+
+    Story 10.8: EVERY distinct card_key now goes through the selector, not just the
+    run's entity — so a test whose subject is pose/motion/movement resolution has to
+    answer the call or it reaches the network. `front` keeps those tests' existing
+    path assertions valid while stating that the pick is now an LLM decision.
+    """
+    return patch(
+        "httpx.AsyncClient.post", new_callable=AsyncMock,
+        return_value=_mock_llm_response(
+            [{"scene_num": n, "shot_id": sid, "angle": "front"} for n, sid in shots]
+        ),
+    )
+
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 
@@ -149,9 +165,15 @@ class TestResolveCastCardsNoCharacter:
 
     @pytest.mark.asyncio
     async def test_character_exists_no_angle_paths_returns_empty(self, service):
+        """Story 10.8: a key with no angle columns still spends no LLM call — the
+        selector returns {} before the request. Asserted because every cast key now
+        gets a catalogue, so the early-out is the only thing keeping the empty rows
+        (`SCP-999` on the live DB) from costing a call each."""
         service.create_character("SCP-096", "Shy Guy")  # all angle_*_path None
         scenes = [_scene(1)]
-        result = await service.resolve_cast_cards("SCP-096", scenes)
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+            mock_post.assert_not_called()
         assert result == {}
 
     @pytest.mark.asyncio
@@ -187,7 +209,8 @@ class TestResolveCastCardsNoCharacter:
             ]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         assert len(result["1:S001"]) == 1
         assert result["1:S001"][0]["card_key"] == "STOCK-d-class"
@@ -283,23 +306,90 @@ class TestResolveCastCardsHappyPath:
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_stock_member_resolves_to_front_without_llm_call(self, service):
-        """AC5: stock/derived cast members never trigger an LLM call — deterministic front."""
+    async def test_stock_member_angle_comes_from_the_selector(self, service):
+        """Story 10.8 defect 2: a stock/derived member used to short-circuit to a
+        hardcoded `front` with `angle_fallback=False` — 16 of run e5ed4b3a's 40
+        placements, permanently front-facing AND invisible to the fallback metric.
+        It now goes through the same per-key selector the entity does."""
         _seed_character(service, "STOCK-d-class")
         scenes = [_scene(1, "Scene", [
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class", position="right", depth="mid")]),
         ])]
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = _mock_llm_response([
+                {"scene_num": 1, "shot_id": "S001", "angle": "side"},
+            ])
             result = await service.resolve_cast_cards("SCP-999", scenes)  # not the run entity
-            mock_post.assert_not_called()
+            assert mock_post.call_count == 1
 
         card = result["1:S001"][0]
         assert card["card_key"] == "STOCK-d-class"
-        assert card["angle"] == "front"
+        assert card["angle"] == "side"          # NOT the old hardcoded "front"
+        assert card["path"] == "/tmp/side.png"
         assert card["fallback"] is False
+        assert card["angle_fallback"] is False
         assert card["position"] == "right"
         assert card["depth"] == "mid"
+
+    @pytest.mark.asyncio
+    async def test_one_llm_call_per_distinct_card_key(self, service):
+        """One call per key, not per shot and not per member — the catalogue is built
+        per key.
+
+        Says nothing about concurrency: `call_count == 2` is identical for a sequential
+        loop, and asserting overlap would need the stub to block, which buys less than
+        it costs. The count is the contract that matters (a per-shot or per-member
+        catalogue would be 4)."""
+        _seed_character(service, "SCP-096")
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("SCP-096"), _cast_member("STOCK-d-class")]),
+            _shot("S002", 1, cast=[_cast_member("SCP-096"), _cast_member("STOCK-d-class")]),
+        ])]
+
+        with _patch_front_picks((1, "S001"), (1, "S002")) as mock_post:
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+
+        assert mock_post.call_count == 2  # two keys, four placements
+        assert len(result["1:S001"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_one_key_raising_does_not_lose_the_other_keys_picks(self, service, caplog):
+        """An unexpected exception on ONE key must cost that key only.
+
+        `_select_entity_angles` catches httpx/KeyError/IndexError/ValueError; anything
+        else (a provider returning `content: null` gives AttributeError —
+        `gotcha_provider-swap-inherits-json-mode-assumption`) reaches the gather. Without
+        `return_exceptions=True` it aborts every other key's call, propagates out of
+        `resolve_cast_cards` into video_node's blanket `except Exception`, and the video
+        renders with NO characters at all. Going from one call to N multiplied that
+        exposure, so the containment is asserted, not assumed."""
+        _seed_character(service, "SCP-096")
+        _seed_character(service, "STOCK-d-class")
+        scenes = [_scene(1, "Scene", [
+            _shot("S001", 1, cast=[_cast_member("SCP-096"), _cast_member("STOCK-d-class")]),
+        ])]
+
+        original = service._select_entity_angles
+
+        async def _one_key_explodes(key, catalogue):
+            if key == "SCP-096":
+                raise AttributeError("'NoneType' object has no attribute 'strip'")
+            return await original(key, catalogue)
+
+        with caplog.at_level("WARNING"), patch.object(
+            service, "_select_entity_angles", side_effect=_one_key_explodes,
+        ), patch(
+            "httpx.AsyncClient.post", new_callable=AsyncMock,
+            return_value=_mock_llm_response([{"scene_num": 1, "shot_id": "S001", "angle": "side"}]),
+        ):
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+
+        by_key = {card["card_key"]: card for card in result["1:S001"]}
+        assert by_key["STOCK-d-class"]["angle"] == "side"   # survivor keeps its real pick
+        assert by_key["SCP-096"]["angle"] == "front"        # casualty degrades, alone
+        assert "SCP-096" in caplog.text and "AttributeError" in caplog.text
 
     @pytest.mark.asyncio
     async def test_derived_entity_key_resolves_once_character_row_exists(self, service):
@@ -312,9 +402,8 @@ class TestResolveCastCardsHappyPath:
             _shot("S001", 1, cast=[_cast_member("SCP-049-2", position="left", depth="far")]),
         ])]
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        with _patch_front_picks((1, "S001")):
             result = await service.resolve_cast_cards("SCP-049", scenes)  # not the run entity itself
-            mock_post.assert_not_called()
 
         card = result["1:S001"][0]
         assert card["card_key"] == "SCP-049-2"
@@ -329,7 +418,8 @@ class TestResolveCastCardsHappyPath:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["motion_style"] == "breath"
@@ -345,7 +435,8 @@ class TestResolveCastCardsHappyPath:
             )]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["motion_style"] == "tremble"
@@ -359,7 +450,8 @@ class TestResolveCastCardsHappyPath:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["movement_mode"] == "anchored"
@@ -380,7 +472,8 @@ class TestResolveCastCardsHappyPath:
             )]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["movement_mode"] == "enter"
@@ -389,8 +482,11 @@ class TestResolveCastCardsHappyPath:
 
     @pytest.mark.asyncio
     async def test_stock_member_uses_available_angle_when_front_missing(self, service):
-        """A partial stock row should still resolve instead of being skipped just
-        because the deterministic front preference is unavailable."""
+        """A partial stock row still resolves instead of being skipped. What changed
+        in Story 10.8 is WHERE that happens and what it reports: the selector is told
+        which angles exist, so a `front` pick against a row with no front is corrected
+        to an available one and flagged — the old hardcoded branch corrected silently
+        with `angle_fallback=False`, which is why 16 frozen placements were invisible."""
         _seed_character(
             service, "STOCK-d-class",
             angle_front_path=None,
@@ -402,12 +498,15 @@ class TestResolveCastCardsHappyPath:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["angle"] == "three_quarter"
         assert card["path"] == "/tmp/three_quarter.png"
-        assert card["fallback"] is False
+        assert card["fallback"] is True
+        assert card["angle_fallback"] is True
+        assert card["fallback_reason"] == "angle"
 
 
 class TestResolveCastCardsFallback:
@@ -482,6 +581,74 @@ class TestResolveCastCardsFallback:
         assert card["angle"] == "front"
         assert card["path"] == "/tmp/front.png"
         assert card["fallback"] is True
+
+    @pytest.mark.asyncio
+    async def test_truncated_empty_content_degrades_to_fallback_map(self, service, caplog):
+        """Story 10.8's root cause, kept reachable after the fix.
+
+        `deepseek-v4-flash` is a reasoner: when the budget is spent inside
+        `reasoning_content` the API answers `finish_reason=length` with
+        `content: ""`, and `json.loads("")` raises. Every catalogued shot must land
+        on the fallback angle with `fallback=True` and the branch must be named —
+        this is the degradation path that hid the defect through a whole live run,
+        so removing the cause must not remove the net."""
+        _seed_character(service, "SCP-096")
+        scenes = [_scene(1, "Scene", [_shot("S001", 1), _shot("S002", 1)])]
+
+        class _Truncated:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {"choices": [{
+                    "finish_reason": "length",
+                    "message": {"content": "", "reasoning_content": "thinking" * 200},
+                }]}
+
+        with caplog.at_level("WARNING"), patch(
+            "httpx.AsyncClient.post", new_callable=AsyncMock, return_value=_Truncated(),
+        ):
+            result = await service.resolve_cast_cards("SCP-096", scenes)
+
+        assert [result[k][0]["angle"] for k in ("1:S001", "1:S002")] == ["front", "front"]
+        assert all(result[k][0]["fallback"] is True for k in ("1:S001", "1:S002"))
+        assert all(result[k][0]["angle_fallback"] is True for k in ("1:S001", "1:S002"))
+        # Labelled as the truncation it is, not as `invalid_json` with an empty preview.
+        # The old label was the reason the defect survived a whole live run: the
+        # Langfuse status message read literally "invalid_json: " and named neither the
+        # cause nor the lever.
+        assert "response truncated" in caplog.text
+        assert "finish_reason=length" in caplog.text
+        assert "invalid JSON" not in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reasoning", ["low", "medium", "high", "disabled", "default"])
+    async def test_request_carries_configured_budget_and_reasoning_field(self, service, reasoning):
+        """Story 10.8 defect 1: the request used a hardcoded `max_tokens: 1024` and
+        sent no reasoning field, bypassing both levers `config.py` documents. Budget
+        alone is not enough — 8192 with `reasoning_effort: low` still truncated live —
+        so both must be on the wire.
+
+        Parametrised over the literal `REASONING_BODY` values with the setting pinned
+        per case, not read from the ambient one. Reading `settings.deepseek_reasoning`
+        made this test env-dependent twice over: `.env` beats the code default
+        (`gotcha_env-file-beats-code-default`), and on the `"default"` value the
+        mapping is an EMPTY dict — the assertion loop never ran and the test asserted
+        nothing about the field it is named for. `"default"` is now the case that
+        pins the empty mapping explicitly: no reasoning field on the wire at all."""
+        from yt_flow.config import REASONING_BODY, Settings as _Settings
+
+        service._settings = _Settings(deepseek_max_tokens=4242, deepseek_reasoning=reasoning)
+        _seed_character(service, "SCP-096")
+        scenes = [_scene(1, "Scene", [_shot("S001", 1)])]
+
+        with _patch_front_picks((1, "S001")) as mock_post:
+            await service.resolve_cast_cards("SCP-096", scenes)
+
+        body = mock_post.call_args[1]["json"]
+        assert body["max_tokens"] == 4242
+        expected = REASONING_BODY[reasoning]
+        assert {k: body[k] for k in expected} == expected
+        assert not ({"reasoning_effort", "thinking"} - set(expected)) & set(body)
 
     @pytest.mark.asyncio
     async def test_missing_shots_filled_with_front_fallback(self, service):
@@ -561,7 +728,8 @@ class TestResolveCastCardsPose:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class", pose="sitting")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)  # not the entity
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)  # not the entity
 
         card = result["1:S001"][0]
         assert card["pose"] == "sitting"
@@ -578,7 +746,8 @@ class TestResolveCastCardsPose:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class", pose="sitting")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["pose"] == "standing"
@@ -595,7 +764,8 @@ class TestResolveCastCardsPose:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class", pose="crouching")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["pose"] == "standing"
@@ -654,7 +824,7 @@ class TestResolveCastCardsSpecialPose:
             _shot("S001", 1, cast=[_cast_member("STOCK-d-class", pose_hint="reaching toward camera")]),
         ])]
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level("WARNING"), _patch_front_picks((1, "S001")):
             result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
@@ -679,7 +849,8 @@ class TestResolveCastCardsSpecialPose:
                 "STOCK-d-class", pose="sitting", pose_hint="reaching toward camera")]),
         ])]
 
-        result = await service.resolve_cast_cards("SCP-999", scenes)
+        with _patch_front_picks((1, "S001")):
+            result = await service.resolve_cast_cards("SCP-999", scenes)
 
         card = result["1:S001"][0]
         assert card["fallback"] is True

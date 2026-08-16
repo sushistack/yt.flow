@@ -13,6 +13,7 @@ import logging
 import mimetypes
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -20,7 +21,7 @@ import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from yt_flow.config import Settings
+from yt_flow.config import REASONING_BODY, Settings
 from yt_flow.db.models import Character as CharacterModel
 from yt_flow.db.models import CharacterCard as CharacterCardModel
 from yt_flow.db.models import CharacterCandidate as CandidateModel
@@ -213,6 +214,51 @@ def _pose_guide_workflow_path() -> Path:
     from yt_flow.services.character_image_provider import _POSE_GUIDE_WORKFLOW_PATH
 
     return Path(os.environ.get("YTFLOW_PROJECT_ROOT", os.getcwd())) / _POSE_GUIDE_WORKFLOW_PATH
+
+
+def _reject_multi_figure(
+    provider: object, subject: str, on_reject: Callable[[int], None] | None = None,
+) -> None:
+    """Story 10.8 AC8 — refuse to write a card whose RAW render held anything but one figure.
+
+    Reads the count the provider recorded for its last ``generate()`` rather than
+    re-measuring the returned bytes, because the bytes cannot answer the question:
+    ``_clean_alpha_noise`` keeps only the largest component, so by the time they get
+    here the second figure has already been erased (a count taken on them is always
+    1, and a guard built on it would be dead code).
+
+    Raising is what "reject, do not save" costs: both call sites already treat a
+    ``ValueError`` as a recoverable per-card miss, so the card is skipped, named in a
+    warning with its count, and nothing is written to disk, the manifest or the DB.
+    Note what this changes for the SEPARATED case: it used to be silently repaired
+    by keep-largest and shipped. It is now visible and refused — a sprite that needed
+    the repair was drawn wrong (Story 10.5's caveat, `config.pose_guide_conditioning_enabled`).
+
+    Rejects anything that is not exactly ONE figure, zero included. A count of 0 means
+    the 7x7 opening erased every component, i.e. the render carried nothing but dither
+    speckle — and ``has_alpha`` is an IHDR read (``domain/png.py:21``), so a
+    speckle-only PNG otherwise passes every check on the way to the manifest and an
+    approved ``CharacterCard``. A guard whose contract is "refuse a card that was drawn
+    wrong" cannot accept the most-wrong case.
+
+    A provider that reports nothing is treated as single-figure — Qwen never reaches
+    a card path (``produces_alpha`` is False), and a mock's auto-attribute is not a
+    count. ``type(...) is int`` rather than a bare truth test, same posture as
+    ``scenario._usage_totals``: only a real integer is a real report.
+
+    ``on_reject`` is called with the count just before the raise, so a call site can
+    file a structured warning off the SAME predicate instead of re-deriving it — two
+    hand-copied copies of this condition is the drift this story exists to remove.
+    """
+    figures = getattr(provider, "last_figure_count", 1)
+    if type(figures) is int and figures != 1:
+        if on_reject is not None:
+            on_reject(figures)
+        raise ValueError(
+            f"generated card for {subject} holds no figure at all (the render was empty "
+            "or nothing survived the alpha cleanup)" if figures == 0
+            else f"generated card for {subject} holds {figures} separated figures"
+        )
 
 
 def _first_available_angle(character: CharacterModel) -> str | None:
@@ -830,6 +876,18 @@ class CharacterService:
                     self._warn("character_card_i2i_fallback", card_key=scp_id, pose=pose, angle=angle)
                 if not has_alpha(img_bytes):
                     raise ValueError(f"generated card for {scp_id} angle={angle} has no alpha channel")
+                # The rejection is a per-card degradation like the i2i fallback above,
+                # so it files the same kind of structured warning instead of living only
+                # in the `except`'s `logger.warning` — the special-pose write site
+                # already surfaces it (`special_pose_generation_failed`), and the two
+                # write sites must agree about what the operator gets told.
+                _reject_multi_figure(
+                    provider, f"{scp_id} pose={pose} angle={angle}",
+                    lambda n: self._warn(
+                        "character_card_multi_figure",
+                        card_key=scp_id, pose=pose, angle=angle, figure_count=n,
+                    ),
+                )
                 out_path.write_bytes(img_bytes)
                 rel_path = str(out_path.relative_to(assets_root))
                 if not stage:
@@ -1104,6 +1162,7 @@ class CharacterService:
                 self._warn("character_card_i2i_fallback", card_key=card_key, pose=hint_key, angle="front")
             if not has_alpha(img_bytes):
                 raise ValueError(f"generated special-pose card for {card_key} has no alpha channel")
+            _reject_multi_figure(provider, f"{card_key} pose={hint_key}")
             out_path.write_bytes(img_bytes)
             rel_path = str(out_path.relative_to(assets_root))
             # Manifest write before the DB row (see generate_candidates_from_reference).
@@ -1378,11 +1437,16 @@ class CharacterService:
 
         Replaces the 1.13 all-shots angle override (D13): overlay membership
         now comes from ``ShotData.cast`` (Story 8.1), not "does this shot have
-        a character_path". LLM angle selection is spent only on shots whose
-        cast contains the run's own entity (``scp_id``); every other cast
-        member (stock/derived extras) resolves deterministically to the
-        "front" angle — no LLM call for extras until variety is actually
-        wanted (Saved Question 3).
+        a character_path".
+
+        Story 10.8: angle selection runs for EVERY distinct ``card_key`` a shot
+        places, one concurrent call per key, not just the run's own entity.
+        Extras used to short-circuit to "front" with ``angle_fallback=False``
+        hardcoded — 16 of run e5ed4b3a's 40 placements, permanently frozen
+        front-facing AND invisible to the fallback metric, because the flag
+        said the deterministic pick had succeeded. Variety is now wanted
+        (Saved Question 3 answered), and the selector needs no prompt change to
+        serve a stock key: it takes a key and a catalogue.
 
         Returns ``{shot_key: [card, ...]}`` in cast order for every shot whose
         cast is non-empty; a shot with an empty cast or zero resolvable cards
@@ -1398,29 +1462,53 @@ class CharacterService:
         them after members are filtered out would just duplicate this method's
         skip logic.
         """
-        entity_catalogue: list[dict] = []
+        # {card_key: {shot_key: catalogue_entry}} — the inner dict dedupes a shot
+        # that places the same key twice, which the old per-shot `any(...)` did
+        # implicitly. A member whose pose_hint already has an approved card is
+        # excluded: it short-circuits below and never needs an angle.
+        catalogues: dict[str, dict[str, dict]] = {}
         for scene in sorted(scenes, key=lambda s: s["scene_num"]):
             for shot in scene.get("shots", []):
-                if any(
-                    isinstance(m, dict)
-                    and m.get("card_key") == scp_id
-                    and not (
-                        isinstance(m.get("pose_hint"), str)
-                        and self.get_card(scp_id, pose_hint_key(m["pose_hint"]), "front") is not None
-                    )
-                    for m in (shot.get("cast") or [])
-                ):
-                    entity_catalogue.append({
+                for member in (shot.get("cast") or []):
+                    if not isinstance(member, dict) or not member.get("card_key"):
+                        continue
+                    key = member["card_key"]
+                    hint = self._approved_hint_card(key, member)
+                    if hint is not None and hint[1] is not None:
+                        continue
+                    catalogues.setdefault(key, {})[f"{scene['scene_num']}:{shot['shot_id']}"] = {
                         "scene_num": scene["scene_num"],
                         "shot_id": shot["shot_id"],
                         "narration": scene.get("narration", ""),
                         "camera_angle": shot.get("camera_angle") or "",
                         "camera_movement": shot.get("camera_movement") or "",
-                    })
+                    }
 
-        entity_angles = (
-            await self._select_entity_angles(scp_id, entity_catalogue) if entity_catalogue else {}
+        # One call per key, concurrently — 3-5 per run on live data. A key with no
+        # Character row or no angle paths returns {} from inside the selector without
+        # spending a call, so unseeded keys cost nothing here.
+        #
+        # `return_exceptions=True` is load-bearing now that there are N calls instead of
+        # one: the selector only catches httpx/KeyError/IndexError/ValueError, so
+        # anything else (a provider answering `content: null` raises AttributeError —
+        # `gotcha_provider-swap-inherits-json-mode-assumption`) used to abort the whole
+        # gather, throw away the other keys' good picks, propagate out of this method
+        # into video_node's blanket `except Exception` and render the video with NO
+        # characters at all. One key losing its picks is the already-handled "no pick"
+        # path; all of them is a new outage this change would have introduced.
+        keys = list(catalogues)
+        settled = await asyncio.gather(
+            *(self._select_entity_angles(k, list(catalogues[k].values())) for k in keys),
+            return_exceptions=True,
         )
+        picks: dict[str, dict[str, dict]] = {}
+        for key, outcome in zip(keys, settled):
+            if not isinstance(outcome, dict):
+                logger.warning(
+                    "resolve_cast_cards: angle selection failed for %s, falling back per shot: %r",
+                    key, outcome,
+                )
+            picks[key] = outcome if isinstance(outcome, dict) else {}
 
         result: dict[str, list[dict]] = {}
         missed_hints: set[tuple[str, str]] = set()
@@ -1439,11 +1527,10 @@ class CharacterService:
                         )
                         continue
                     card_key = member["card_key"]
-                    raw_hint = member.get("pose_hint")
+                    hint = self._approved_hint_card(card_key, member)
                     hint_fallback = False
-                    if isinstance(raw_hint, str) and raw_hint.strip():
-                        hint_pose = pose_hint_key(raw_hint)
-                        hint_card = self.get_card(card_key, hint_pose, "front")
+                    if hint is not None:
+                        hint_pose, hint_card = hint
                         if hint_card is not None:
                             cards.append({
                                 "card_key": card_key,
@@ -1481,15 +1568,15 @@ class CharacterService:
                             "resolve_cast_cards: no character row for cast member %s, skipping", card_key,
                         )
                         continue
-                    if card_key == scp_id:
-                        pick = entity_angles.get(shot_key, {})
-                        angle = pick.get("angle", "front")
-                        angle_fallback = pick.get("fallback", False)
-                    else:
-                        angle = "front" if getattr(character, _ANGLE_FIELD_NAMES["front"]) else (
-                            _first_available_angle(character) or "front"
-                        )
-                        angle_fallback = False
+                    # No pick at all (selector returned {} — no character row, no angle
+                    # paths, or it raised above) keeps the pre-10.8 default: "front", not
+                    # flagged. `_first_available_angle` is the deleted `else` branch's
+                    # insurance, kept: a row whose `angle_front_path` is empty but which
+                    # has another angle set would otherwise be dropped by
+                    # `_resolve_card_path` for want of a pick.
+                    pick = picks.get(card_key, {}).get(shot_key, {})
+                    angle = pick.get("angle") or _first_available_angle(character) or "front"
+                    angle_fallback = pick.get("fallback", False)
                     pose = _normalize_pose(member.get("pose"))
                     resolved = self._resolve_card_path(character, pose, angle)
                     if resolved is None:
@@ -1535,6 +1622,25 @@ class CharacterService:
         )
         return result
 
+    def _approved_hint_card(
+        self, card_key: str, member: dict,
+    ) -> tuple[str, CharacterCardModel | None] | None:
+        """``(hint_pose, card_or_None)`` for a member carrying a usable ``pose_hint``.
+
+        ``None`` when the member has no hint worth looking up. One predicate for both
+        loops of :meth:`resolve_cast_cards` — the catalogue loop (which must not spend
+        an angle call on a shot that short-circuits) and the resolution loop (which
+        must resolve the same shots the same way). They were hand-copied and had
+        already drifted: a whitespace-only ``pose_hint`` was hashed and looked up by
+        one and skipped by the other, so the two disagreed about which shots reach the
+        selector. That drift is the class of bug this story is fixing.
+        """
+        hint = member.get("pose_hint")
+        if not isinstance(hint, str) or not hint.strip():
+            return None
+        hint_pose = pose_hint_key(hint)
+        return hint_pose, self.get_card(card_key, hint_pose, "front")
+
     def _resolve_card_path(
         self, character: CharacterModel, pose: str, angle: str,
     ) -> tuple[str, str, bool] | None:
@@ -1564,10 +1670,15 @@ class CharacterService:
     async def _select_entity_angles(
         self, scp_id: str, shot_catalogue: list[dict],
     ) -> dict[str, dict]:
-        """LLM angle pick per entity shot. Returns ``{shot_key: {"angle", "fallback"}}``.
+        """LLM angle pick per shot for ONE ``card_key``. ``{shot_key: {"angle", "fallback"}}``.
 
         Card-path resolution (including pose) happens separately in
         ``_resolve_card_path`` — this only ever needs to pick an angle name.
+
+        Story 10.8: ``scp_id`` is now any cast ``card_key``, not only the run's
+        entity — the body never depended on it being the entity, it just reads the
+        key's own ``angle_*_path`` columns. Method and ``@observe`` span keep their
+        names so the Langfuse trace stays continuous across the change.
         """
         character = self.check_existing_character(scp_id)
         if character is None:
@@ -1602,28 +1713,53 @@ class CharacterService:
                     json={
                         "model": s.deepseek_model,
                         "messages": [{"role": "user", "content": prompt_text}],
-                        "max_tokens": 1024,
+                        # Story 10.8 defect 1. This was a hardcoded `max_tokens: 1024`
+                        # with no reasoning field, so it bypassed both levers the rest of
+                        # the codebase routes through — and `deepseek-v4-flash` is a
+                        # reasoner. Measured against the real prompt and run e5ed4b3a's
+                        # real 24-shot catalogue: 1024/no-field -> finish_reason=length,
+                        # reasoning_tokens 1024/1024, content "" -> json.loads("") raises
+                        # -> `_angle_fallback_map` pins EVERY entity shot to front. That
+                        # is the whole of the run's 23 `angle` fallbacks. Budget alone is
+                        # not the lever: 8192 with reasoning_effort=low still truncated;
+                        # reasoning expands to fill whatever it is given.
+                        "max_tokens": s.deepseek_max_tokens,
                         "temperature": 0.3,
+                        **REASONING_BODY[s.deepseek_reasoning],
                     },
                 )
             resp.raise_for_status()
             data = resp.json()
-            raw = data["choices"][0]["message"]["content"].strip()
+            choice = data["choices"][0]
+            raw = choice["message"]["content"].strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             logger.warning("resolve_cast_cards: LLM call failed for %s: %s", scp_id, exc)
-            self._mark_angle_fallback("llm_call_failed", str(exc))
+            self._mark_angle_fallback(scp_id, "llm_call_failed", str(exc))
+            return self._angle_fallback_map(shot_catalogue, fallback_angle)
+
+        # Truncation is checked BEFORE the parse, because it does not look like one.
+        # A reasoner that spent the budget inside `reasoning_content` answers
+        # `finish_reason=length` with `content: ""`, and the `json.loads` below then
+        # reports `invalid_json` with an empty preview — a Langfuse status message
+        # reading literally "invalid_json: ". That mislabel is why this defect survived
+        # a full live run undiagnosed. Named the way `scenario_chain.py:1395` already
+        # names it, with the budget that ran out, so the log says what to raise.
+        if choice.get("finish_reason") == "length":
+            detail = f"finish_reason=length, max_tokens={s.deepseek_max_tokens}; raise max_tokens"
+            logger.warning("resolve_cast_cards: response truncated for %s (%s)", scp_id, detail)
+            self._mark_angle_fallback(scp_id, "truncated", detail)
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("resolve_cast_cards: invalid JSON from LLM: %r", raw[:200])
-            self._mark_angle_fallback("invalid_json", raw[:200])
+            self._mark_angle_fallback(scp_id, "invalid_json", raw[:200])
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         if not isinstance(parsed, list):
             logger.warning("resolve_cast_cards: expected JSON array, got %s", type(parsed).__name__)
-            self._mark_angle_fallback("non_array_response", type(parsed).__name__)
+            self._mark_angle_fallback(scp_id, "non_array_response", type(parsed).__name__)
             return self._angle_fallback_map(shot_catalogue, fallback_angle)
 
         # Only catalogue shots are honored — hallucinated or malformed-id LLM
@@ -1657,11 +1793,17 @@ class CharacterService:
                 for s in shot_catalogue}
 
     @staticmethod
-    def _mark_angle_fallback(reason: str, detail: str) -> None:
-        """Best-effort span WARNING naming which fallback branch fired — today only
-        a ``logger.warning``, with nothing distinguishing the branch in Langfuse."""
+    def _mark_angle_fallback(card_key: str, reason: str, detail: str) -> None:
+        """Best-effort span WARNING naming which fallback branch fired, for which key.
+
+        ``card_key`` is in the message because Story 10.8 turned one span per run into
+        3-5 spans per run all named ``select-entity-angles``: without it a Langfuse
+        reader sees N identical WARNING spans and cannot tell which cast key degraded.
+        """
         try:
-            get_client().update_current_span(level="WARNING", status_message=f"{reason}: {detail}")
+            get_client().update_current_span(
+                level="WARNING", status_message=f"{card_key} {reason}: {detail}",
+            )
         except Exception:  # noqa: BLE001 — tracing must never break the pipeline
             pass
 

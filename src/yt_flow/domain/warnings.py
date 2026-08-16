@@ -45,6 +45,8 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "scenario", "승인된 외형이 없는 파생 개체라 카드를 만들지 않았습니다 — 해당 배역은 화면에서 빠집니다"),
     "character_card_i2i_fallback": (
         "scenario", "레퍼런스 조건화에 실패해 t2i로 생성했습니다 — 동일 인물 보장이 약해집니다"),
+    "character_card_multi_figure": (
+        "scenario", "렌더에 인물이 하나가 아니라 카드를 폐기했습니다 — 해당 앵글은 만들어지지 않았습니다"),
     "stock_plate_resolver_unavailable": (
         "image", "스톡 배경 조회기를 쓸 수 없어 배경을 생성했습니다"),
     "stock_plate_missing": (

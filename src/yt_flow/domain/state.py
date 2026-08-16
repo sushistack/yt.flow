@@ -562,6 +562,7 @@ RunWarningCode = Literal[
     "derived_entity_generation_failed",
     "derived_entity_look_unauthored",   # Story 10.6 — no authored look, key skipped
     "character_card_i2i_fallback",      # provider i2i failed -> t2i, identity anchor lost
+    "character_card_multi_figure",      # Story 10.8 — render held 0 or >=2 figures, card refused
     # image_node
     "stock_plate_resolver_unavailable",
     "stock_plate_missing",

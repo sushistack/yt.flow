@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     #   "reasoning_effort": "low"       -> 16
     #   "thinking": {"type":"disabled"} -> 0
     # So reasoning depth is the real lever. Mapped to a request field in
-    # scenario._REASONING_BODY: low/medium/high -> reasoning_effort,
+    # REASONING_BODY (below): low/medium/high -> reasoning_effort,
     # "disabled" -> thinking (the only mechanism that reached 0), "default" ->
     # send neither field. Literal so an unknown value fails at config load.
     deepseek_reasoning: Literal["low", "medium", "high", "disabled", "default"] = "low"
@@ -390,3 +390,21 @@ class Settings(BaseSettings):
     # merges into the previous shot's clip (first shot merges forward). 0.0
     # disables merging entirely.
     min_shot_clip_sec: float = Field(2.0, ge=0.0)
+
+
+# One mechanism per value, never both fields: reasoning_effort for a depth,
+# `thinking` only for off (the only form that probed reasoning_tokens=0), and
+# nothing at all for "default" so that value keeps the pre-2026-08-06 request
+# byte-identical. See `deepseek_reasoning` above for the probe numbers.
+#
+# Lives here rather than in pipeline/nodes/scenario.py (Story 10.8): services
+# must not import from pipeline/, and character_service needs the same mapping —
+# `_select_entity_angles` was the one call site that never got the 2026-08-05
+# fix and truncated on every run because of it.
+REASONING_BODY: dict[str, dict] = {
+    "low": {"reasoning_effort": "low"},
+    "medium": {"reasoning_effort": "medium"},
+    "high": {"reasoning_effort": "high"},
+    "disabled": {"thinking": {"type": "disabled"}},
+    "default": {},
+}

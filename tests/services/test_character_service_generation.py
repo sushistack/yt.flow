@@ -1300,6 +1300,93 @@ class TestReferenceImageInjectionAndFallback:
         assert cleaned[100, 100, 3] == 255  # subject survives
         assert cleaned[100, 30, 3] == 0  # ghost removed despite being 57% of the subject
 
+    # The gap between the two blobs, and the reason it is this wide. `_alpha_blobs`
+    # runs a 25x25 binary closing, which dilates each blob by ~12 px per side before
+    # eroding back — so any gap at or under ~24 px BRIDGES and the fixture silently
+    # becomes a one-figure card while still passing under its name. 30 px leaves 6 px
+    # of margin; the assertion below states the relationship so raising the kernel
+    # fails loudly here instead of inverting this test's meaning.
+    _BLOB_GAP_PX = 30
+
+    def _two_blob_png(self):
+        """Subject 140x50 = 7000px, plus a fully separated ghost of 4000px (57%)."""
+        arr = np.zeros((200, 200, 4), dtype=np.uint8)
+        arr[40:180, 80:130, :3] = 255
+        arr[40:180, 80:130, 3] = 255
+        arr[50:150, 10:50, :3] = 255
+        arr[50:150, 10:50, 3] = 255
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_the_two_blob_fixture_clears_the_closing_kernel(self):
+        """The fixture's separation is a property of the kernel, so it is asserted.
+
+        Columns 50..79 are empty between the ghost (10:50) and the subject (80:130) —
+        30 px — against a 25x25 closing that bridges ~24. Without this, growing the
+        kernel turns `_two_blob_png` into one blob and every two-figure test below
+        keeps passing while measuring nothing."""
+        from yt_flow.services.character_image_provider import _CLOSING_KERNEL_PX
+
+        assert self._BLOB_GAP_PX == 80 - 50
+        assert self._BLOB_GAP_PX > _CLOSING_KERNEL_PX
+
+    def test_figure_count_sees_two_separated_figures(self):
+        """Story 10.8 AC8 — the count the guard rejects on."""
+        from yt_flow.services.character_image_provider import _figure_count
+
+        assert _figure_count(self._two_blob_png()) == 2
+
+    def test_figure_count_is_zero_when_nothing_survives_the_opening(self):
+        """Speckle only: the 7x7 opening erases every component and the count is 0.
+
+        The state `_reject_multi_figure` must refuse — `has_alpha` is an IHDR read, so
+        a dither-only PNG otherwise reaches the disk, the manifest and an approved
+        `CharacterCard` as if it were a card."""
+        from yt_flow.services.character_image_provider import _figure_count
+
+        arr = np.zeros((200, 200, 4), dtype=np.uint8)
+        arr[5:9, 5:9, 3] = 200     # 4x4 specks, all under the 7x7 opening kernel
+        arr[60:64, 90:94, 3] = 200
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        assert _figure_count(buf.getvalue()) == 0
+
+    def test_figure_count_ignores_dither_speckle(self):
+        """A one-figure card with InSPyReNet speckle is still one figure: the speck is
+        far under the 15% area floor, which is what separates it from a real ghost."""
+        from yt_flow.services.character_image_provider import _figure_count
+
+        arr = np.zeros((200, 200, 4), dtype=np.uint8)
+        arr[40:180, 80:130, :3] = 255
+        arr[40:180, 80:130, 3] = 255  # subject 7000px
+        arr[5:15, 5:15, 3] = 200  # 100px speck = 1.4%
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        assert _figure_count(buf.getvalue()) == 1
+
+    def test_figure_count_must_run_before_the_keep_largest_cleanup(self):
+        """The ordering constraint the guard's design rests on, asserted rather than
+        commented: `_clean_alpha_noise` zeroes every component but the largest, so a
+        count taken on ITS output can never be anything but 1 — which is why the guard
+        reads a provider attribute instead of re-measuring the card the service gets."""
+        from yt_flow.services.character_image_provider import _clean_alpha_noise, _figure_count
+
+        raw = self._two_blob_png()
+        assert _figure_count(raw) == 2
+        assert _figure_count(_clean_alpha_noise(raw)) == 1
+
+    def test_provider_reports_the_raw_figure_count_it_then_erases(self):
+        """`_clean` is the one seam where the count is still knowable."""
+        provider = ComfyUICharacterProvider(Settings())
+        assert provider.last_figure_count == 1  # nothing generated yet
+
+        provider._clean(self._two_blob_png())
+
+        assert provider.last_figure_count == 2
+
     def test_clean_alpha_noise_preserves_antialiased_edge_band(self):
         """Story 11.1 AC5: the component interior still snaps to 255 (dither-band
         removal lives there), but the 2px edge band keeps the original alpha so
@@ -1592,6 +1679,75 @@ class TestProviderDegradationWarnings:
             asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
 
         assert sink == []
+
+    def test_a_two_figure_render_is_refused_and_never_written(self, collected, temp_ref_image, tmp_path, caplog):
+        """Story 10.8 AC8. The count rides the provider attribute because the bytes
+        cannot carry it (`_clean_alpha_noise` has already deleted the second figure),
+        and a rejected card must leave nothing behind — no file, no manifest, no row."""
+        service, sink = collected
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+        provider = self._provider()
+        provider.last_figure_count = 2
+
+        with caplog.at_level("WARNING"), patch.object(service, "_get_image_provider", return_value=provider):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert paths == []
+        assert "holds 2 separated figures" in caplog.text
+        assert list((tmp_path / "characters").rglob("*.png")) == []
+        # The rejection is a structured warning too, not only a log line — the i2i
+        # degradation one line above it files one, and the special-pose write site
+        # surfaces its own; the operator must not learn about this one from stderr.
+        assert [w["code"] for w in sink] == ["character_card_multi_figure"] * 4
+        assert sink[0]["context"]["figure_count"] == 2
+
+    def test_a_zero_figure_render_is_refused_and_never_written(self, collected, temp_ref_image, tmp_path, caplog):
+        """The most-wrong render must not be the one the guard accepts.
+
+        `_figure_count` returns 0 when the 7x7 opening erases every component — a PNG
+        whose only content is dither speckle. A `>= 2` guard passes it, `has_alpha`
+        passes it (IHDR only), and it lands on disk, in the manifest and in an approved
+        `CharacterCard` as a card."""
+        service, sink = collected
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+        provider = self._provider()
+        provider.last_figure_count = 0
+
+        with caplog.at_level("WARNING"), patch.object(service, "_get_image_provider", return_value=provider):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert paths == []
+        assert "holds no figure at all" in caplog.text
+        assert list((tmp_path / "characters").rglob("*.png")) == []
+        assert [w["context"]["figure_count"] for w in sink] == [0] * 4
+
+    def test_a_single_figure_render_is_written_as_before(self, collected, temp_ref_image, tmp_path):
+        """The guard's control leg: an honest count of 1 changes nothing."""
+        service, _ = collected
+        service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
+        service.create_character("SCP-096", "Shy Guy")
+        provider = self._provider()
+        provider.last_figure_count = 1
+
+        with patch.object(service, "_get_image_provider", return_value=provider):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert len(paths) == 4
+
+    def test_a_two_figure_special_pose_card_is_refused_with_its_count(self, collected, tmp_path):
+        """The other write site — `generate_special_pose_card`, which is where Story
+        10.5's two-figure caveat was actually observed."""
+        service, sink = collected
+        provider = self._provider()
+        provider.last_figure_count = 2
+
+        assert self._pose_card(service, tmp_path, provider, resolved=None) is None
+        codes = [w["code"] for w in sink]
+        assert "special_pose_generation_failed" in codes
+        failure = sink[codes.index("special_pose_generation_failed")]
+        assert "holds 2 separated figures" in failure["context"]["detail"]
 
     def _pose_card(self, service, tmp_path, provider, *, enabled=True, resolved=None):
         from yt_flow.services.asset_service import AssetService

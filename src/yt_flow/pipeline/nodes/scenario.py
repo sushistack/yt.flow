@@ -30,7 +30,7 @@ import time
 import httpx
 from yt_flow.observability import get_client, observe
 
-from yt_flow.config import Settings
+from yt_flow.config import REASONING_BODY, Settings
 from yt_flow.pipeline.nodes.scenario_chain import (
     SceneCoverageError,
     TruncationError,
@@ -91,19 +91,6 @@ def _usage_totals(usage_list: list[dict]) -> dict[str, int]:
     return totals
 
 
-# One mechanism per value, never both fields: reasoning_effort for a depth,
-# `thinking` only for off (the only form that probed reasoning_tokens=0), and
-# nothing at all for "default" so that value keeps the pre-2026-08-06 request
-# byte-identical. See config.deepseek_reasoning for the probe numbers.
-_REASONING_BODY: dict[str, dict] = {
-    "low": {"reasoning_effort": "low"},
-    "medium": {"reasoning_effort": "medium"},
-    "high": {"reasoning_effort": "high"},
-    "disabled": {"thinking": {"type": "disabled"}},
-    "default": {},
-}
-
-
 async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | None]:
     """Return (content, usage, finish_reason) from a JSON-mode chat completion."""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
@@ -114,7 +101,7 @@ async def _call_deepseek(rendered: str, s: Settings) -> tuple[str, dict, str | N
                 "model": s.deepseek_model,
                 "messages": [{"role": "user", "content": rendered}],
                 "max_tokens": s.deepseek_max_tokens,
-                **_REASONING_BODY[s.deepseek_reasoning],
+                **REASONING_BODY[s.deepseek_reasoning],
             },
         )
     resp.raise_for_status()

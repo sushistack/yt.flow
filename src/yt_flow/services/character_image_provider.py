@@ -138,13 +138,29 @@ def _normalize_subject_scale(png_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _clean_alpha_noise(png_bytes: bytes) -> bytes:
-    """Remove InSPyReNet's ordered-dither cutout artifacts from a generated sprite.
+# Named because the closing kernel decides what "two figures" even means: it dilates
+# ~12 px per side before eroding back, so any gap under ~24 px is bridged into one
+# component. Tests that build a two-blob fixture assert their gap against this number
+# rather than hardcoding a margin that a kernel bump would silently invalidate.
+_CLOSING_KERNEL_PX = 25
+_OPENING_KERNEL_PX = 7
 
-    InSPyReNet's pyramid decoder leaves faint checkerboard-dither bands across flat,
-    low-contrast garment regions (most visible as a horizontal noise stripe on plain
-    fabric). Threshold + morphological close/open + keep-largest-component removes
-    it without any model-level change (Story 8.2 follow-up, 2026-07-08).
+
+def _alpha_blobs(png_bytes: bytes) -> tuple:
+    """``(rgba, alpha, labeled, sizes)`` — the sprite's cleaned connected components.
+
+    Shared by :func:`_clean_alpha_noise` (which keeps the largest) and
+    :func:`_count_figures` (which counts them), so the two can never disagree about
+    what one blob is, and so the pipeline pays for the morphology ONCE per card —
+    it is the expensive half (0.616 s of a 1.098 s alpha pass on a real 1216x832
+    sprite), which is why :meth:`ComfyUICharacterProvider._clean` threads the result
+    through instead of calling both entry points.
+
+    An all-transparent mask RAISES here (``not np.any(binary)``) rather than
+    returning empty ``sizes``. The only way ``sizes`` comes back empty is
+    post-morphology: the 7x7 opening erased every blob, i.e. the render held nothing
+    but sub-kernel speckle. That branch is reachable and is exactly the zero-figure
+    card ``_reject_multi_figure`` refuses — do not read it as dead.
     # ponytail: fixed kernel sizes tuned against live 832x1216 sprite renders.
     """
     import io
@@ -162,12 +178,69 @@ def _clean_alpha_noise(png_bytes: bytes) -> bytes:
     binary = alpha > 100
     if not np.any(binary):
         raise ValueError("generated character sprite has an empty alpha mask")
-    binary = ndimage.binary_closing(binary, structure=np.ones((25, 25)))
-    binary = ndimage.binary_opening(binary, structure=np.ones((7, 7)))
+    binary = ndimage.binary_closing(binary, structure=np.ones((_CLOSING_KERNEL_PX, _CLOSING_KERNEL_PX)))
+    binary = ndimage.binary_opening(binary, structure=np.ones((_OPENING_KERNEL_PX, _OPENING_KERNEL_PX)))
     labeled, num_components = ndimage.label(binary)
-    if num_components == 0:
-        return png_bytes
     sizes = ndimage.sum(binary, labeled, range(1, num_components + 1))
+    return arr, alpha, labeled, np.asarray(sizes)
+
+
+# Story 10.8 AC8. A flanking duplicate figure measures 30-70% of the subject (the
+# case `_clean_alpha_noise` below was re-tuned for); dither speckle is under 2%.
+# 0.15 sits in that gap, above the noise and well below the smallest real figure.
+# ponytail: a module constant, not a config knob — nothing has needed to move it,
+# and a knob would invite tuning it per-run instead of looking at the sprite.
+_SECOND_FIGURE_AREA_FRACTION = 0.15
+
+
+def _count_figures(sizes) -> int:
+    """Blobs at least 15% of the largest — ``0`` when the opening erased them all.
+
+    Takes the already-computed component sizes so a caller holding them (``_clean``)
+    does not pay for a second :func:`_alpha_blobs` pass.
+    """
+    if not sizes.size:
+        return 0
+    return int((sizes >= sizes.max() * _SECOND_FIGURE_AREA_FRACTION).sum())
+
+
+def _figure_count(png_bytes: bytes) -> int:
+    """Separated figures in a RAW sprite: blobs at least 15% of the largest one.
+
+    Must run BEFORE ``_clean_alpha_noise``. That function keeps only the largest
+    component and zeroes everything else, so counting afterwards always returns 1 —
+    the second figure has already been deleted from the bytes. This is why the guard
+    reads a provider attribute instead of re-measuring the card the service receives.
+
+    CEILING: overlapping figures form ONE component and count as 1. That is the
+    known two-figure case — `gotcha_sprite-scale-and-two-figure-detection` measured
+    a two-figure sprite at 0.359 wide-to-tall against a good card's 0.358 — and it
+    is a bbox/vision problem, not a connectivity one. Recorded in deferred-work.md.
+    """
+    return _count_figures(_alpha_blobs(png_bytes)[3])
+
+
+def _clean_alpha_noise(png_bytes: bytes, blobs: tuple | None = None) -> bytes:
+    """Remove InSPyReNet's ordered-dither cutout artifacts from a generated sprite.
+
+    InSPyReNet's pyramid decoder leaves faint checkerboard-dither bands across flat,
+    low-contrast garment regions (most visible as a horizontal noise stripe on plain
+    fabric). Threshold + morphological close/open + keep-largest-component removes
+    it without any model-level change (Story 8.2 follow-up, 2026-07-08).
+
+    ``blobs`` accepts an :func:`_alpha_blobs` result the caller already holds. The
+    ``arr`` it carries is written to in place below, so a caller must not reuse the
+    tuple afterwards — ``_clean`` is the only one, and it does not.
+    """
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from scipy import ndimage
+
+    arr, alpha, labeled, sizes = blobs if blobs is not None else _alpha_blobs(png_bytes)
+    if not sizes.size:
+        return png_bytes
     # Largest component only. The old rule kept anything >= 2% of the largest, which
     # is right for dither speckle but let whole secondary figures through: the
     # checkpoint likes to compose a character reference sheet, and the flanking
@@ -265,6 +338,24 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         # warning; a plain attribute keeps this provider free of any run/state import.
         self.last_i2i_fallback = False
         self.last_pose_guide_applied = False
+        # Story 10.8 AC8, same "state what you did" contract: how many separated
+        # figures the RAW render held. It has to be reported rather than measured by
+        # the caller, because `_clean_alpha_noise` deletes every figure but the
+        # largest before the bytes leave this class.
+        self.last_figure_count = 1
+
+    def _clean(self, raw: bytes) -> bytes:
+        """Count the figures, then run the keep-largest cleanup that erases them.
+
+        ONE :func:`_alpha_blobs` pass feeds both. Calling `_figure_count` and then
+        `_clean_alpha_noise` re-ran the threshold + 25x25 closing + 7x7 opening +
+        label a second time — +0.616 s on top of 0.482 s measured on a real 1216x832
+        sprite, i.e. a 128% alpha-pipeline cost per angle per card, for a number the
+        first pass already held. The helper was extracted to share the work.
+        """
+        blobs = _alpha_blobs(raw)
+        self.last_figure_count = _count_figures(blobs[3])
+        return _clean_alpha_noise(raw, blobs)
 
     @property
     @override
@@ -289,7 +380,10 @@ class ComfyUICharacterProvider(CharacterImageProvider):
         # the unconditioned graph instead of raising out of generate(). Raising here
         # would cost the whole card, where the identical failure on the identity
         # reference below merely falls back to t2i.
-        self.last_i2i_fallback = False
+        # Both "state what you did" attributes reset together: the caller reads them
+        # unconditionally after generate(), so an early return that skipped the reset
+        # would hand back the PREVIOUS card's figure count as this one's.
+        self.last_i2i_fallback, self.last_figure_count = False, 1
         guide_name: str | None = None
         if pose_guide_path is not None:
             try:
@@ -315,7 +409,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i generation succeeded (%dx%d)", width, height)
-            return _normalize_subject_scale(_clean_alpha_noise(result))
+            return _normalize_subject_scale(self._clean(result))
 
         # Try i2i with reference image
         try:
@@ -324,7 +418,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._inject_reference_image(workflow, uploaded_name)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI i2i generation succeeded (%dx%d)", width, height)
-            cleaned = _clean_alpha_noise(result)
+            cleaned = self._clean(result)
         except Exception as exc:
             logger.warning("ComfyUI i2i failed: %s; falling back to t2i", exc)
             self.last_i2i_fallback = True
@@ -332,7 +426,7 @@ class ComfyUICharacterProvider(CharacterImageProvider):
             workflow = self._remove_i2i_input(workflow)
             result = await submit_and_fetch(self._base_url, workflow)
             logger.info("ComfyUI t2i fallback succeeded (%dx%d)", width, height)
-            cleaned = _clean_alpha_noise(result)
+            cleaned = self._clean(result)
         # Outside the except. Normalising inside the i2i `try` meant a raise from it was
         # caught by the t2i fallback, which then re-rendered the angle *without the front
         # card as reference* and returned it as valid — a different person in the same
