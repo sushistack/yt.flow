@@ -18,3 +18,10 @@
 # Nothing here is the only surviving copy of anything.
 
 tts_audio/
+
+# Listening copies, made on request for a human ear rather than for a number:
+# the eight scenes concatenated into one track, and the same script as plain text.
+# Both are regenerable — the mp3 by `ffmpeg -f concat` over `tts_audio/`, the text
+# straight out of `after_scenes.json`. No measurement rests on either.
+12-6-after-narration.mp3
+12-6-after-narration.txt
