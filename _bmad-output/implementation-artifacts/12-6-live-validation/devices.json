@@ -1,0 +1,380 @@
+{
+  "arms": [
+    {
+      "arm": "control",
+      "source": "after_scenes.json",
+      "scenes": [
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 3,
+          "가정": 0,
+          "리액션_hits": [
+            "기괴",
+            "진짜",
+            "소름"
+          ],
+          "sentences": 8,
+          "chars": 269,
+          "words": 67,
+          "scene_num": 1,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 1,
+          "가정": 1,
+          "리액션_hits": [
+            "놀랍게"
+          ],
+          "sentences": 6,
+          "chars": 248,
+          "words": 63,
+          "scene_num": 2,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 2,
+          "질문": 1,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "끔찍"
+          ],
+          "sentences": 6,
+          "chars": 262,
+          "words": 63,
+          "scene_num": 3,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 0,
+          "가정": 1,
+          "리액션_hits": [],
+          "sentences": 9,
+          "chars": 217,
+          "words": 51,
+          "scene_num": 4,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "소름"
+          ],
+          "sentences": 6,
+          "chars": 227,
+          "words": 56,
+          "scene_num": 5,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 0,
+          "질문": 1,
+          "리액션": 2,
+          "가정": 2,
+          "리액션_hits": [
+            "놀랍게",
+            "기괴"
+          ],
+          "sentences": 6,
+          "chars": 187,
+          "words": 45,
+          "scene_num": 6,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 0,
+          "질문": 1,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 6,
+          "chars": 150,
+          "words": 33,
+          "scene_num": 7,
+          "assigned_devices": null
+        },
+        {
+          "2인칭": 1,
+          "질문": 2,
+          "리액션": 1,
+          "가정": 1,
+          "리액션_hits": [
+            "진짜"
+          ],
+          "sentences": 5,
+          "chars": 162,
+          "words": 39,
+          "scene_num": 8,
+          "assigned_devices": null
+        }
+      ]
+    },
+    {
+      "arm": "A",
+      "source": "armA_scenes.json",
+      "scenes": [
+        {
+          "2인칭": 0,
+          "질문": 1,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "기괴"
+          ],
+          "sentences": 5,
+          "chars": 209,
+          "words": 53,
+          "scene_num": 1,
+          "assigned_devices": [
+            "dramatic_question"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "섬뜩"
+          ],
+          "sentences": 7,
+          "chars": 233,
+          "words": 54,
+          "scene_num": 2,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "놀랍게"
+          ],
+          "sentences": 6,
+          "chars": 161,
+          "words": 35,
+          "scene_num": 3,
+          "assigned_devices": [
+            "narrator_reaction"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 9,
+          "chars": 279,
+          "words": 66,
+          "scene_num": 4,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 2,
+          "가정": 0,
+          "리액션_hits": [
+            "끔찍",
+            "섬뜩"
+          ],
+          "sentences": 6,
+          "chars": 248,
+          "words": 55,
+          "scene_num": 5,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 6,
+          "chars": 166,
+          "words": 37,
+          "scene_num": 6,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "기괴"
+          ],
+          "sentences": 7,
+          "chars": 269,
+          "words": 62,
+          "scene_num": 7,
+          "assigned_devices": [
+            "dramatic_question",
+            "second_person"
+          ]
+        },
+        {
+          "2인칭": 1,
+          "질문": 0,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 4,
+          "chars": 142,
+          "words": 32,
+          "scene_num": 8,
+          "assigned_devices": [
+            "second_person"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 5,
+          "chars": 157,
+          "words": 38,
+          "scene_num": 9,
+          "assigned_devices": []
+        }
+      ]
+    },
+    {
+      "arm": "B",
+      "source": "armB_scenes.json",
+      "scenes": [
+        {
+          "2인칭": 1,
+          "질문": 1,
+          "리액션": 0,
+          "가정": 1,
+          "리액션_hits": [],
+          "sentences": 4,
+          "chars": 208,
+          "words": 55,
+          "scene_num": 1,
+          "assigned_devices": [
+            "dramatic_question",
+            "second_person"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 2,
+          "가정": 0,
+          "리액션_hits": [
+            "솔직히",
+            "소름"
+          ],
+          "sentences": 7,
+          "chars": 306,
+          "words": 75,
+          "scene_num": 2,
+          "assigned_devices": [
+            "narrator_reaction"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "기괴"
+          ],
+          "sentences": 5,
+          "chars": 272,
+          "words": 66,
+          "scene_num": 3,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "기괴"
+          ],
+          "sentences": 8,
+          "chars": 327,
+          "words": 81,
+          "scene_num": 4,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 1,
+          "질문": 0,
+          "리액션": 0,
+          "가정": 1,
+          "리액션_hits": [],
+          "sentences": 5,
+          "chars": 184,
+          "words": 48,
+          "scene_num": 5,
+          "assigned_devices": [
+            "second_person"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 2,
+          "가정": 0,
+          "리액션_hits": [
+            "솔직히",
+            "오싹"
+          ],
+          "sentences": 6,
+          "chars": 257,
+          "words": 62,
+          "scene_num": 6,
+          "assigned_devices": [
+            "narrator_reaction"
+          ]
+        },
+        {
+          "2인칭": 0,
+          "질문": 0,
+          "리액션": 1,
+          "가정": 0,
+          "리액션_hits": [
+            "오싹"
+          ],
+          "sentences": 5,
+          "chars": 181,
+          "words": 42,
+          "scene_num": 7,
+          "assigned_devices": []
+        },
+        {
+          "2인칭": 0,
+          "질문": 1,
+          "리액션": 0,
+          "가정": 0,
+          "리액션_hits": [],
+          "sentences": 7,
+          "chars": 264,
+          "words": 65,
+          "scene_num": 8,
+          "assigned_devices": [
+            "dramatic_question"
+          ]
+        }
+      ]
+    }
+  ]
+}

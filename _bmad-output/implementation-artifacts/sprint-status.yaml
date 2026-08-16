@@ -241,6 +241,7 @@ development_status:
   10-1e-recompose-default-verdict: backlog  # 2026-08-15 스토리 초안(draft) — 10.1c 해제조건 (a). 13-2 축으로 recompose on/off 페어를 블라인드 채점해 기본값 판정. 10-1d 선행 필수(프리플라이트 없이 렌더하면 표본이 오염된다). 인접 쟁점: 플립 시 오버레이 전용 기계(접지·오클루전·11.5 패럴랙스·1.9c 아이들모션) 폐기 주체.
   10-8-cast-pose-angle-coverage: backlog  # 2026-08-15 스토리 초안(draft) — 라이브 런 e5ed4b3a에서 캐스트 배치 40건 중 26건 fallback(angle 23/asset 3), 실제 사용 카드는 전부 front. SCP-049가 21샷 동일 그림. 두 층: cast_decision 프롬프트가 pose_hint를 '대부분 생략하라'로 지시(9씬에 2건) + 라이브러리에 standing 승인 카드 없음. 어느 한쪽만 고치면 화면이 안 바뀐다.
   12-6-source-grounded-story-expansion: backlog  # 2026-08-15 스토리 초안(draft) — Jay 지적 "대본이 너무 짧고 스토리텔링 전개가 부족". 뿌리 둘 다 규정이다: ① structure.md:114가 분량을 "현재 3분 파이프라인 기준 180~360어절"로 못 박고 scenario_chain.py:65에 TARGET_DURATION_MINUTES=3 상수 — 이번 런 304어절은 규정 한가운데(iteration2는 8:10이었으니 회귀). ② 크리틱이 각색을 사실 위반과 같은 범주로 기각해, 모델의 안전지대가 "원문 요약을 낭독조로 읽기"가 된다(씬4 "재단 공식 기록을 낭독합니다"가 실제 산출). 불변 원칙: 원문이 뼈대, 살은 허용 범주를 선언해서 붙인다. 웹 리서치 근거 포함(faithfulness vs factuality 환각 구분, 145WPM 리텐션대, 훅 3유형).
+  12-7-prose-harness-device-allocation: backlog  # 2026-08-16 스토리 초안(draft) — 12.6 출하 후 Jay 지적 "맥락 없이 주저리주저리". 실측: 8씬 전부 극적 질문 1개씩(총 9), 2인칭 6/8씬. 원인은 제약의 양이 아니라 실행 층 — writing.md의 할당량은 대본 전체 기준인데 writing_step은 씬당 1콜이고 각 호출이 자기 씬만 봐서, 전체 3회짜리 요구가 8번 실행된다. hook_type이 씬1에만 배정되는 모양을 몰입 기법에 적용(배정은 아웃라인 전체를 보는 Python이). 라이브 ablation 확인: 질문 8/8씬→2/9씬, 배정 준수 4/4 정확, 문장 33.1자→42.5자, 앞 씬 연결 0/7→7/7, Jay 청취 판정 둘 다 개선. 함정 둘 — 질문 요구가 기법 블록+종결어미 규칙 두 곳(하나만 고치면 무변화), 접지 위반은 전부 structure 유래(12.8 소관, 회귀 아님).
   epic-13-retrospective: optional
 
 action_items:

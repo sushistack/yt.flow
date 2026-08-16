@@ -1,0 +1,183 @@
+# Scene-Scoped Writing Repair
+
+You are repairing a validated subset of a Korean SCP narration. Preserve the input order and return exactly one output scene for every input scene. Keep every `scene_num` unchanged. Do not add, remove, duplicate, or reorder scenes. Change only narration and scene metadata needed to resolve the supplied feedback. Output YAML only.
+
+Use Korean narration, retain factual fidelity, and follow the storytelling guide. Narration must be a single flowing paragraph even when represented with YAML block syntax.
+
+## 사실 접지 규칙 (Fact Grounding) — 최우선
+
+수리 대상 씬마다 Stage 2 구조 항목이 함께 제공됩니다. 그 항목의 `fact_references`가 이 씬에서
+당신이 가진 사실의 전부입니다 (원문도 리서치 패킷도 제공되지 않습니다).
+
+- 수리된 나레이션도 그 씬의 `fact_references` 문장들을 재료로 삼아야 합니다. **수리하면서 원래
+  들어 있던 구체적 사실을 빼고 분위기 문장으로 대체하지 마세요.**
+- `fact_references`에 없는 사실(숫자·등급·날짜·사건·능력)을 새로 단언하지 마세요.
+- 몰입 기법은 사실을 꾸미는 도구이지 사실을 대체하는 도구가 아닙니다. 다른 SCP 영상에 그대로
+  붙여넣어도 말이 되는 문장이면 접지에 실패한 것입니다.
+
+## 리텐션 계약 준수
+
+수리는 그 씬의 구조 계약을 깨뜨릴 수 없습니다:
+
+- `event.consequence`를 다른 결과로 바꾸지 마세요.
+- `loops_planted`에 있는 질문은 여전히 열어둔 채로, `loops_closed`에 있는 질문은 여전히 이 씬에서
+  답해야 합니다. 약속된 회수를 누락하면 안 됩니다.
+- `pattern_interrupt`가 `none`이 아니면 그 기법을 계속 사용하세요.
+- 구조 항목의 `assigned_devices`가 이 씬에 배정된 몰입 기법의 전부입니다. 배정되지 않은 기법(2인칭·극적 질문·리액션)을 수리하면서 새로 추가하지 마세요.
+- `hook_type`이 `none`이 아니면 (Scene 1) 첫 문장은 계속 그 훅 유형이어야 합니다.
+- `word_budget`(공백 기준 어절 수)을 ±20% 안에서 유지하세요.
+
+## Storytelling Format Guide
+
+## Format Reference Guide: SCP YouTube Storytelling Principles
+
+> Evidence-based storytelling principles for audience retention. Derived from channel format analysis and first-principles audience psychology.
+
+---
+
+### A. Hook Type Library
+
+Every SCP video must open with a hook within the first 15 seconds. Choose one:
+
+| Hook Type | Pattern | SCP Example |
+|-----------|---------|-------------|
+| **Question** | Pose an unanswerable question about the anomaly | "What happens when you blink near SCP-173?" |
+| **Shock** | Lead with the most extreme consequence | "This sculpture has killed 14 Foundation personnel." |
+| **Mystery** | Present a redacted or unexplained detail | "There are 7 pages of containment procedures. Six of them are [REDACTED]." |
+| **Contrast** | Juxtapose the mundane with the anomalous | "It looks like an ordinary concrete statue in a storage room. It moves when you look away." |
+
+**Rules:**
+- The hook must relate directly to the SCP's core anomaly
+- Never start with classification or background lore
+- The first sentence of Scene 1 narration IS the hook
+
+---
+
+### B. Progressive Disclosure Pattern
+
+Never reveal everything at once. Information arrives in 3 waves. This is a **retention
+principle, not a fixed act order** — each archetype guide realizes it differently (which
+wave opens the episode, and what counts as "the surface", is the archetype's call):
+
+| Wave | Content | Placement |
+|------|---------|-----------|
+| **Wave 1: The Surface** | What it seems to be — appearance, the first record, the mundane framing | opening beat, kept short |
+| **Wave 2: The Depth** | True anomalous properties, containment details, the incident/log/testimony body | the middle, the bulk of the runtime |
+| **Wave 3: The Abyss** | Unresolved mysteries, [REDACTED] implications, what the Foundation doesn't know | closing beat, kept short |
+
+**SCP-specific techniques:**
+- Use [REDACTED] and [DATA EXPUNGED] as narrative tension tools — mention them early, explore implications later
+- Clearance level escalation: start with public-facing info, end with O5-level secrets
+- "What the document doesn't say" is often more compelling than what it does
+
+---
+
+### C. Emotional Curve Design
+
+Adjacent scenes MUST differ in emotional tone. Monotone pacing kills retention.
+
+**Mood transition rules:**
+- Never place two scenes with identical mood back-to-back
+- Minimum 2-3 major tone shifts per scenario (e.g., mystery -> horror -> awe -> lingering unease)
+- After a high-tension scene, allow a brief decompression before the next escalation
+- The final scene should leave emotional residue — unease, wonder, or dread that lingers after the video ends
+
+**Emotional arc template:**
+```
+Scene 1: Intrigue/curiosity (hook)
+Scene 2-3: Building tension (properties, early incidents)
+Scene 4-5: Peak horror/shock (worst incidents, true nature revealed)
+Scene 6-7: Shift to awe or empathy (recontextualization, human cost)
+Final scene: Lingering unease (unresolved mystery, open questions)
+```
+
+---
+
+### D. Viewer Immersion Devices
+
+Transform passive viewers into participants. Use at minimum 3 of these per scenario:
+
+| Device | Technique | Example |
+|--------|-----------|---------|
+| **2nd Person Address** | Place the viewer inside the scenario | "Imagine you're the D-class personnel sent into the chamber." |
+| **Sensory Description** | Engage senses beyond sight | "The air smells of wet concrete and copper. The only sound is your own breathing." |
+| **Situation Hypothetical** | Pose "what would you do" moments | "You hear it move behind you. Do you turn around?" |
+| **Foundation Employee POV** | Narrate as if briefing the viewer | "Your assignment: maintain visual contact at all times. Do not blink." |
+| **Scale Comparison** | Make abstract threats concrete | "Its containment cell costs more per day than an aircraft carrier." |
+
+---
+
+### E. Scene Count & Pacing Guide
+
+Match scene count to target video duration:
+
+| Target Duration | Scene Count | Avg Scene Length | Pacing Notes |
+|----------------|-------------|-----------------|--------------|
+| ~5 minutes | 5-6 scenes | 50-60 sec | Tight, every scene advances plot |
+| ~10 minutes | 8-10 scenes | 60-75 sec | Room for atmosphere and detail |
+| ~15 minutes | 12-15 scenes | 60-75 sec | Can include sub-incidents and deeper lore |
+
+**Pacing principles:**
+- Vary scene durations — not every scene should be the same length
+- Action/incident scenes: shorter (30-45 sec), rapid information delivery
+- Atmosphere/buildup scenes: longer (60-90 sec), sensory detail, slower pacing
+- The hook scene should be under 45 seconds — get to the point fast
+
+---
+
+### F. Act Structure — 공통 원칙 (구체적 순서는 아키타입 가이드가 정함)
+
+> ⚠️ 이 가이드는 **어떤 아키타입에도 공통인 원칙**만 정의합니다. 이 에피소드의 실제 비트 순서,
+> 시점, 정체 공개 타이밍, 결말 계약은 Stage 2에 주입되는 **선택된 아키타입 가이드**
+> (`scenario/archetypes/<story_archetype>`)가 유일한 권위입니다. 아래 원칙과 그 가이드가 충돌하는
+> 것처럼 보이면 **가이드를 따르세요.**
+
+모든 아키타입이 지키는 것:
+
+| 원칙 | 내용 |
+|------|------|
+| **위키 순서 금지** | 분류 → 설명 → 격리 → 사건 순서로 열지 않습니다. 등급/분류 낭독으로 시작하지 않습니다. |
+| **단계적 공개** | 정보를 한 번에 쏟지 않습니다. 무엇을 언제 공개할지는 아키타입 가이드가 정합니다. |
+| **정체는 자원** | 개체가 무엇인지는 소비할 자원입니다 — 첫 씬에 다 쓰지 말고 계획된 지점에서 씁니다. |
+| **격리 절차는 장치** | 설명 대상이 아니라 "이렇게까지 해야 하는 이유"를 암시하는 도구입니다. |
+| **열린 결말** | 마지막 비트는 여운을 남깁니다. *무엇을* 열어둘지는 아키타입의 결말 계약을 따릅니다. |
+| **분량 배분** | 오프닝 비트는 짧게(~15%), 중심 비트에 가장 큰 분량을, 마지막 비트는 짧게(~15%). |
+
+- 시청자는 "이게 뭔지"보다 "무슨 일이 일어났는지"에 먼저 반응하지만, 그 "일"은 사건일 수도 기록일
+  수도 증언일 수도 있습니다 — 원문이 무엇을 갖고 있는지에 달렸습니다.
+
+
+
+## Task
+
+
+
+Repair these scenes for SCP-049 using the feedback below.
+
+## Scene Feedback
+
+Review scene 2: When entity_visible is true, the SCP frozen descriptor from the Visual Identity Profile ("a tall, gaunt humanoid figure roughly 1.9 meters in height, wearing a floor-length hooded black robe that conceals its entire silhouette, head covered by a ceramic plague-doctor mask with a long curved beak fused directly to the face") must be present in image_prompts where SCP-049 appears. Currently, all visual prompts omit SCP-049's physical description entirely, and negative_prompts include terms like "person, human figure, character" which conflict with characters/entities listed in the cast. -> Include the exact visual frozen descriptor for SCP-049 in image_prompts where SCP-049 is present, and remove character-suppressing terms ("person, human figure, character, silhouette of a person") from negative_prompt when characters/entities are in the cast.
+Review scene 2: Forbidden generic terms ("eerie", "dark", "darkness") are used in multiple image_prompts (e.g. Shot 1 uses "eerie clinical composure" and "darker moisture band", Shot 7 uses "darkness"). -> Replace forbidden terms with concrete visual details (e.g. replace "eerie" with "unsettling clinical composure", replace "dark/darkness" with "shadowed", "dimly-lit", or "deep shadow").
+Review scene 3: Scene 3 has entity_visible set to true in the metadata, but none of the visual description prompts include the mandatory SCP-049 Frozen Descriptor from the Visual Identity Profile. Furthermore, the negative prompts explicitly disallow human figures and characters, preventing SCP-049 from being rendered. -> Include the frozen descriptor for SCP-049 in the image prompt where entity_visible is true and adjust the negative prompt to allow the anomaly's appearance: "A tall, gaunt humanoid figure roughly 1.9 meters in height, wearing a floor-length hooded black robe that conceals its entire silhouette. The head is covered by a ceramic plague-doctor mask with a long curved beak and dark oval eye sockets; the mask appears fused directly to the being's face with no visible seam or attachment point. Its hands are bare, pale-skinned human hands."
+Review scene 4: The image prompt for Shot 5 contains the forbidden generic descriptor word "dark" ("as a dark reflective panel"). -> Replace "dark reflective panel" with "dimly reflective panel".
+Review scene 5: The forbidden generic term "dark" is used in image_prompts for shots 1, 4, and 5 ("dark rubber floor drain grate", "dark damp stain"). Image prompts must avoid forbidden generic terms including "dark", "scary", "horror", "creepy", "mysterious", and "eerie". -> Replace "dark" with specific, non-forbidden descriptors such as "charcoal-gray", "blackened", or "shadowed".
+Review scene 7: Entity is marked as visible (`entity_visible: true`), but the image prompts for Scene 7 do not explicitly include SCP-049's frozen descriptor from the Visual Identity Profile. -> Append the frozen descriptor ("A tall, gaunt humanoid figure roughly 1.9 meters in height wearing a floor-length hooded black robe and a ceramic plague doctor mask with a long curved beak fused directly to its head") into image prompts depicting SCP-049.
+Review scene 8: In Shot 3 and Shot 7, entity_visible is true and SCP-049 is included in the cast list, but the image prompts omit the canonical Frozen Descriptor for SCP-049 specified in the Visual Identity Profile. Additionally, generic prohibited term 'dark' appears in the image prompts for Shot 1 ('dark rectangle') and Shot 3 ('dark residue'). -> Incorporate the Frozen Descriptor ('a tall gaunt humanoid figure roughly 1.9 meters in height wearing a floor-length hooded black robe concealable silhouette and a ceramic plague doctor mask with a long curved beak fused directly to its face') into image prompts where SCP-049 is present, and replace forbidden generic term 'dark' with descriptive material details (e.g., 'shadowed rectangle', 'deep-pigmented residue').
+Critic scene 3: 
+Critic scene 4: 
+
+## Original Scene Objects
+
+[{"scene_num": 2, "narration": "단 한 번의 손길로 목숨을 빼앗은 직후, 이 가운 차림의 존재는 뜻밖에도 아주 정중하게 입을 열었습니다. 긴 새 부리가 달린 도자기 가면 너머로, 자신을 대역병을 치료하러 온 의사라 소개한 겁니다. 그는 손가락으로 공기를 가리키며 지독한 병마가 사람 위에 떠돌고 있다고 나직하게 설명했습니다. 솔직히 그 차분한 태도에 조금 소름이 돋았습니다. 그가 환자라며 가리킨 공기 중에는 아무것도 없었기 때문입니다. 연구진이 그 어떤 첨단 장비를 동원해도, 그 질병의 실체는 감지되지 않았습니다. 재단에겐 보이지 않는, 오직 그에게만 보이는 병.", "fact_tags": [{"key": "pestilence_doctor", "content": "그 존재는 스스로를 '대역병'을 치료하는 의사라고 믿는다."}, {"key": "undetectable_disease", "content": "재단은 그가 말하는 질병의 존재를 확인하지 못했다."}], "mood": "clinical", "entity_visible": true, "location": "Foundation observation chamber behind reinforced glass", "characters_present": ["SCP-049", "연구원"], "color_palette": "sterile clinical white, dim fluorescent lighting, dark black robe contrast", "atmosphere": "eerie clinical composure, quiet incomprehension, subtle psychological dread"}, {"scene_num": 3, "narration": "아무 병도 없다는 이 기이한 존재를, 재단은 표준 안전 인간형 격리 셀에 곧바로 수용했습니다. 바닥까지 끌리는 검은 후드 가운 속, 창백하게 드러난 맨손만이 이 거대한 형체의 유일한 피부였습니다. 녀석은 겉보기에 정중하고 협조적이었으나, 지휘부는 연구 자료에 대한 접근을 철저히 제한했지요. 하지만 통제가 이어질수록 개체가 집요하게 요구한 것은 더 많은 수술 도구였습니다. 그리고 얼마 뒤, 그 도구로 진행된 수술 끝에 죽었던 시체가 다시 움직였다는 기괴한 보고가 올라옵니다.", "fact_tags": [{"key": "containment_cell", "content": "대상은 표준 안전 인간형 격리 셀에 수용되어 있다."}, {"key": "research_access_controlled", "content": "대상의 연구 자료 접근은 사이트 지휘부의 재량에 따라 통제된다."}, {"key": "bare_hands_only_flesh", "content": "대상의 손은 맨살이고, 유일하게 노출된 피부다."}], "mood": "dread", "entity_visible": true, "location": "Standard Humanoid Containment Cell at Foundation Site", "characters_present": ["SCP-049", "연구원"], "color_palette": "sterile gray, muted black, cold dim fluorescent white", "atmosphere": "dread, quiet tension, unsettling sterile containment"}, {"scene_num": 4, "narration": "이처럼 삼엄하게 접근을 통제하던 이유가 마침내 공식 기록으로 확인됩니다. 연구팀이 열람한 격리 보고서 속 대상의 식별 번호, SCP-049. 보고서에 기록된 등급은 유클리드, 언제 돌발 행동을 일으킬지 모르는 인간형 개체. 키 1.9미터에 달하는 가느다란 체구 위로 바닥까지 늘어진 검은 로브가 온몸을 감쌉니다. 전형적인 중세 유럽의 흑사병 의사 모습. 더욱 기괴한 사실은 그 얼굴을 덮고 있는 하얀 부리 가면에서 밝혀졌습니다. 고정하는 끈이나 이음매는커녕, 개체의 피부 및 두개골과 완벽하게 융합되어 있었던 겁니다. 단 한 번도 벗겨진 적이 없는, 살아있는 신체의 일부.", "fact_tags": [{"key": "classification", "content": "SCP-049는 유클리드 등급의 인간형 개체이며, 키 약 1.9미터의 중세 흑사병 의사 모습을 하고 있다."}, {"key": "mask_fused", "content": "가면은 별도의 착용물이 아니라 얼굴에 융합되어 있다."}], "mood": "revelation", "entity_visible": true, "location": "Foundation archives terminal room facing containment observation window", "characters_present": ["SCP-049", "연구팀"], "color_palette": "cold clinical green, sterile white terminal glow, dark slate grays", "atmosphere": "chilling revelation, clinical horror, silent dread"}, {"scene_num": 5, "narration": "가면 뒤의 기묘한 침묵 속에서, D계급 인원이 조심스럽게 손을 내밀었습니다. 만약 당신이 그 자리에 서서 그 하얀 맨손과 마주했다고 상상해 보는 겁니다. 손끝이 살짝 닿았을 뿐인데, 단 수 초 만에 숨이 끊어지고 맙니다. 정작 그는 실망했다는 듯 고개를 저을 뿐. 그 지독한 죽음이야말로, 그가 말하는 '치료'의 시작이었습니다.", "fact_tags": [{"key": "touch_lethality", "content": "SCP-049의 맨손 피부는 살아있는 인간을 수 초 내에 죽음에 이르게 한다."}, {"key": "cure_concept", "content": "그는 자신의 행동이 '치료'라고 말한다."}], "mood": "dread", "entity_visible": true, "location": "Foundation humanoid containment cell", "characters_present": ["SCP-049", "D계급 인원"], "color_palette": "cold sterile white lighting, deep shadows, sickly pale skin", "atmosphere": "chilling dread, sudden unexpected lethality"}, {"scene_num": 7, "narration": "광기 어린 수술을 마친 존재는 너무나 담담하게 도구를 거두었습니다. 그리고 무장한 격리팀의 경계 속에서 스스로 격리 셀로 들어갔죠. 관찰창 뒤의 연구원들을 향해, 그는 자신이 대역병을 고치는 의사라 정중히 주장했습니다. 심지어 치료를 계속하겠다며 추가 연구 자료를 요청하기까지 한 겁니다. 그 오싹할 정도의 정중함.", "fact_tags": [{"key": "cooperative_behavior", "content": "SCP-049는 자발적으로 격리 셀로 돌아가는 등 협조적이며, 연구 자료 접근을 요청한다."}, {"key": "self_proclaimed_physician", "content": "그는 스스로를 '대역병'을 치료하는 의사라 주장한다."}], "mood": "clinical", "entity_visible": true, "location": "Site-19 humanoid containment cell and observation chamber", "characters_present": ["SCP-049", "격리팀 인원", "재단 연구원"], "color_palette": "sterile white, cold fluorescent green, muted steel grays", "atmosphere": "unsettling clinical calmness, tense observation behind reinforced glass"}, {"scene_num": 8, "narration": "그 차가운 손을 피해 셀이 닫힌 뒤, 기록 보관팀은 과거 파일들을 열었습니다. 파일 속엔 수많은 실패와 불완전한 재활성화 기록뿐. SCP-049가 신체 접촉으로 인간을 죽이고 수술로 다시 일으킨 것은 확인된 사실입니다. 하지만 그가 말하는 '대역병'은 재단의 어떤 장비로도 끝내 감지되지 않았습니다. 재단은 여전히 그 병을 설명하지 못합니다. 문서 끝에는 더 많은 환자를 요구하는 메모만 끊임없이 남아 있습니다. 과연 그가 고치려는 병은 정말 그에게만 보이는 걸까요?", "fact_tags": [{"key": "fact_reanimation_confirmed", "content": "SCP-049가 신체 접촉으로 죽인 인간을 수술로 재활성화하는 것은 확인됐다."}, {"key": "fact_pestilence_invisible", "content": "그러나 그가 말하는 '대역병'은 오직 그에게만 보인다."}, {"key": "fact_foundation_unexplained", "content": "재단은 그 병을 설명할 수 없다."}], "mood": "dread", "entity_visible": true, "location": "Foundation site archive room and containment wing", "characters_present": ["기록 보관팀", "SCP-049"], "color_palette": "amber monochrome, dim archive fluorescent lighting, dusty shadows", "atmosphere": "lingering unease, eerie quiet, unresolved dread"}]
+
+## Scene Structure (from Stage 2)
+
+같은 순서로 짝지어진 구조 항목입니다 — 첫 번째 구조 항목은 첫 번째 원본 씬의 계획입니다.
+
+[{"scene_num": 2, "act": "build", "synopsis": "격리 셀 너머, 존재가 정중한 목소리로 자신이 의사라고 말한다. 연구진은 아무 병도 찾지 못한다.", "event": {"who": "가운 차림의 존재", "what": "정중한 목소리로 자신의 임무를 설명하며 공기를 가리켰다", "consequence": "연구진은 그가 말하는 병을 어떤 장비로도 감지하지 못했다"}, "key_points": ["The head is covered by a ceramic plague-doctor mask with a long curved beak and dark oval eye sockets.", "대상은 협조적이며 말할 수 있다.", "그는 '대역병'이라는 질병이 사람 위에 있다고 손짓했다."], "emotional_beat": "mystery", "estimated_duration_sec": 70, "hook_type": "none", "loops_planted": ["loop_pestilence_invisible"], "loops_closed": [], "pattern_interrupt": "tone_shift", "word_budget": 65, "fact_references": ["그 존재는 스스로를 '대역병'을 치료하는 의사라고 믿는다.", "재단은 그가 말하는 질병의 존재를 확인하지 못했다."], "mood": "clinical", "title": "의사의 주장", "kicker": "그에게는 환자가 보인다", "assigned_devices": ["narrator_reaction"]}, {"scene_num": 3, "act": "build", "synopsis": "재단은 이 존재를 인간형 격리 셀에 가두고 접근을 통제한다. 위험도는 절차에 그대로 드러난다.", "event": {"who": "격리 담당 부서", "what": "인간형 격리 셀을 유지하며 대상의 연구 자료 접근을 통제했다", "consequence": "대상은 여전히 협조적이지만, 그가 요구하는 것은 더 많은 수술 도구다"}, "key_points": ["A tall, gaunt humanoid figure roughly 1.9 meters in height, wearing a floor-length hooded black robe that conceals its entire silhouette.", "표준 인간형 격리 셀 안에서 대상은 하루를 보낸다.", "그의 수술에는 죽은 자를 다시 움직이게 하는 결과가 따른다는 기록이 남기 시작했다."], "emotional_beat": "tension", "estimated_duration_sec": 60, "hook_type": "none", "loops_planted": ["loop_surgery_result"], "loops_closed": [], "pattern_interrupt": "none", "word_budget": 75, "fact_references": ["대상은 표준 안전 인간형 격리 셀에 수용되어 있다.", "대상의 연구 자료 접근은 사이트 지휘부의 재량에 따라 통제된다.", "대상의 손은 맨살이고, 유일하게 노출된 피부다."], "mood": "dread", "title": "격리된 존재", "kicker": "그의 요구는 도구와 시체였다", "assigned_devices": []}, {"scene_num": 4, "act": "reveal", "synopsis": "그 존재의 정체가 처음으로 밝혀진다. SCP-049, 유클리드 등급 인간형. 가면은 얼굴에 융합되어 있다.", "event": {"who": "연구팀", "what": "격리 문서를 열람하여 대상을 SCP-049로 식별했다", "consequence": "유클리드 등급 인간형이라는 추가 정보가 확보됐다"}, "key_points": ["SCP-049는 유클리드 등급의 인간형 개체다.", "A tall, gaunt humanoid figure roughly 1.9 meters in height, wearing a floor-length hooded black robe that conceals its entire silhouette.", "The mask appears fused directly to the being's face with no visible seam or attachment point."], "emotional_beat": "revelation", "estimated_duration_sec": 70, "hook_type": "none", "loops_planted": [], "loops_closed": ["loop_mask_fused"], "pattern_interrupt": "format_change", "word_budget": 70, "fact_references": ["SCP-049는 유클리드 등급의 인간형 개체이며, 키 약 1.9미터의 중세 흑사병 의사 모습을 하고 있다.", "가면은 별도의 착용물이 아니라 얼굴에 융합되어 있다."], "mood": "revelation", "title": "그 정체", "kicker": "가면은 벗겨진 적이 없다", "assigned_devices": []}, {"scene_num": 5, "act": "escalation", "synopsis": "D계급 대상이 손을 내밀었다. 짧은 접촉, 죽음. 그리고 의사는 실망한 듯하다.", "event": {"who": "D계급 인원 1명", "what": "SCP-049에게 손을 내밀어 인사했다", "consequence": "수 초 만에 사망했고, SCP-049는 실망한 기색을 보였다"}, "key_points": ["The head is covered by a ceramic plague-doctor mask with a long curved beak and dark oval eye sockets.", "SCP-049의 맨손 피부 접촉은 살아있는 인간을 수 초 내에 죽음에 이르게 한다.", "만약 당신이 그 자리에 서 있었다고 상상해보라. 그의 손은 이미 당신을 향해 있다."], "emotional_beat": "horror", "estimated_duration_sec": 40, "hook_type": "none", "loops_planted": [], "loops_closed": [], "pattern_interrupt": "direct_address", "word_budget": 45, "fact_references": ["SCP-049의 맨손 피부는 살아있는 인간을 수 초 내에 죽음에 이르게 한다.", "그는 자신의 행동이 '치료'라고 말한다."], "mood": "dread", "title": "악수의 대가", "kicker": "닿는 순간, 모든 것이 끝난다", "assigned_devices": ["second_person"]}, {"scene_num": 7, "act": "fallout", "synopsis": "수술 후, 존재는 스스로 격리 셀로 돌아간다. 협조적이고 정중하다. 그러나 모두가 그 손을 피하려 한다.", "event": {"who": "SCP-049", "what": "수술을 마친 뒤 자발적으로 격리 셀로 돌아갔다", "consequence": "격리팀은 긴장한 채로 대응했고, 그는 추가 연구 자료를 요청했다"}, "key_points": ["SCP-049는 협조적이고 말할 수 있으며, 스스로를 의사라고 부른다.", "재단 인원들은 관찰창 뒤로 물러섰다.", "그는 자신이 인류를 돕는 의사라고 정중하게 주장한다."], "emotional_beat": "tension", "estimated_duration_sec": 50, "hook_type": "none", "loops_planted": [], "loops_closed": [], "pattern_interrupt": "tone_shift", "word_budget": 50, "fact_references": ["SCP-049는 협조적이며, 연구 자료 접근을 요청한다.", "그는 스스로를 '대역병'을 치료하는 의사라 부른다."], "mood": "clinical", "title": "돌아온 의사", "kicker": "살해 후 그는 자료를 청구했다", "assigned_devices": []}, {"scene_num": 8, "act": "resolution", "synopsis": "기록에는 실패한 재활성화와 미해결 의문만 남는다. '대역병'은 여전히 재단의 장비에 잡히지 않는다.", "event": {"who": "기록 보관팀", "what": "과거의 실패한 재활성화 기록을 열람했다", "consequence": "파일 끝에 대상이 계속 더 많은 환자를 요청한다는 메모만 남아 있다"}, "key_points": ["Archives show past incidents — partial reanimations, failed procedures, bodies that didn't rise.", "SCP-049는 계속해서 더 많은 환자를 요청하고 있다.", "그가 보는 '대역병'은 재단의 어떤 장비로도 감지되지 않는다."], "emotional_beat": "lingering_unease", "estimated_duration_sec": 55, "hook_type": "none", "loops_planted": [], "loops_closed": ["loop_pestilence_invisible"], "pattern_interrupt": "none", "word_budget": 55, "fact_references": ["SCP-049가 신체 접촉으로 죽인 인간을 수술로 재활성화하는 것은 확인됐다.", "그러나 그가 말하는 '대역병'은 오직 그에게만 보인다.", "재단은 그 병을 설명할 수 없다."], "mood": "dread", "title": "보이지 않는 병", "kicker": "그의 병은 아직 아무도 모른다", "assigned_devices": ["dramatic_question"]}]
+
+## Visual Identity Profile
+
+A tall, gaunt humanoid figure roughly 1.9 meters in height, wearing a floor-length hooded black robe that conceals its entire silhouette. The head is covered by a ceramic plague-doctor mask with a long curved beak and dark oval eye sockets; the mask appears fused directly to the being's face with no visible seam or attachment point. Its hands are bare, pale-skinned human hands — the only exposed flesh on the figure. The robe hangs heavy and formless, with no carried items visible, but the posture and presence suggest a physician. The ceramic mask is not a separate worn object; it is integrated into the head, immovable, as though grown there.
+
+Return one YAML object with a single `scenes` list. Each scene must retain its original `scene_num` and contain non-empty `narration`.

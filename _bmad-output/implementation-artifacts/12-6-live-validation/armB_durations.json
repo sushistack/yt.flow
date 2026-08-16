@@ -1,0 +1,19 @@
+{
+  "run_id": "12-6-armB",
+  "source_scenes": "armB_scenes.json",
+  "voice_mode": "clone",
+  "model": "qwen3-tts-vc-2026-01-22",
+  "voice": "qwen-tts-vc-sutak-voice-20260710174246336-dce4",
+  "speed": 1.2,
+  "audio_dir": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/12-6-live-validation/tts_audio/12-6-armB/audio",
+  "audio_duration_sec": {
+    "1": 19.742375,
+    "2": 26.537666666666667,
+    "3": 24.464708333333334,
+    "4": 30.338291666666667,
+    "5": 19.337208333333333,
+    "6": 25.276583333333335,
+    "7": 16.874333333333333,
+    "8": 24.944416666666665
+  }
+}

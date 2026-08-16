@@ -25,3 +25,16 @@ tts_audio/
 # straight out of `after_scenes.json`. No measurement rests on either.
 12-6-after-narration.mp3
 12-6-after-narration.txt
+
+# The prompt ablation (`ablation.md`) adds two more arms on the same SCP, and the same
+# split applies to them: the scenes dumps, the durations, the measurement reports, the
+# rendered-prompt receipts and the drivers (`run_ablation.py`, `count_devices.py`,
+# `make_listening_copy.py`) are committed — every number in `ablation.md` is re-derivable
+# from them — while the listening copies are not. Each arm's eight WAVs land under the
+# already-ignored `tts_audio/12-6-arm{A,B}/`, and the concatenated track plus its
+# read-along script are rebuilt by `make_listening_copy.py` from those WAVs. Only Jay's
+# ear reads them; no claim in `ablation.md` does.
+12-6-armA-narration.mp3
+12-6-armA-narration.txt
+12-6-armB-narration.mp3
+12-6-armB-narration.txt

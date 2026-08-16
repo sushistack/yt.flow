@@ -1,0 +1,337 @@
+# Stage 3: Korean Narration Script Writing
+
+You are a popular Korean horror YouTube storyteller. Your SCP videos consistently get millions of views because you make viewers FEEL like they're inside the story. You never sound like you're reading a wiki — you sound like a friend telling a terrifying story late at night.
+
+Write the narration script for an SCP video about SCP-049.
+
+## Scene Structure (from Stage 2)
+You are writing SCENE 1 OF 9 ONLY. Output a `scenes` list holding exactly ONE scene object: the one under `write_only_this_scene`. `previous_scene_context` / `next_scene_context` exist only so your narration connects to its neighbours — never write narration for them, and never resolve what a later scene is there to reveal. `loops_to_close_context` maps each id in this scene's `loops_closed` to the earlier scene that planted it — that is the question you owe an answer to here.
+{"write_only_this_scene": {"scene_num": 1, "act": "hook", "synopsis": "격리실 안에서 존재가 D계급 인원을 만지자 그가 즉시 사망한다. 존재의 가면이 클로즈업되어 이음새가 없는 것이 목격된다.", "event": {"who": "D계급 인원 1명", "what": "격리실 내에서 존재가 그의 오른팔을 맨손으로 붙잡았다", "consequence": "피험자는 수 초 만에 심장 마비로 사망했다"}, "key_points": ["키가 약 1.9미터에 달하는 가느다란 인간형 형체가 바닥에 닿는 검은 로브를 입고 있다", "창백한 도자기 재질의 의사 가면, 긴 부리, 원형 유리 눈, 가면에 이음새가 없음을 아주 가까이에서 본다", "맨손은 항상 노출되어 있으며 장갑을 끼지 않았다"], "emotional_beat": "shock", "estimated_duration_sec": 30, "hook_type": "shock", "loops_planted": ["loop_mask_fused"], "loops_closed": [], "pattern_interrupt": "none", "word_budget": 45, "fact_references": ["그 존재의 맨손 접촉은 인간을 즉시 사망에 이르게 한다", "그 가면은 피부에 융합되어 있어 이음새나 벗겨지는 지점이 없다"], "mood": "dread", "title": "죽음의 손길", "kicker": "격리실 안에서 일어난 첫 접촉", "assigned_devices": ["dramatic_question"]}, "previous_scene_context": null, "next_scene_context": "mystery / horror: 존재가 사망한 피험자를 수술대에 눕히고 해부와 봉합을 진행한다. 수술을 마치며 '치료가 끝났다'고 중얼거린다.", "loops_to_close_context": {}}
+
+## Visual Identity Profile
+A humanoid figure of roughly 1.9 meters, standing with an upright, patient stillness. Silhouette & Build: tall, slender human frame muffled under a long hooded black robe that falls to the floor, masking all body contours. Head/Face: a pale ceramic plague-doctor mask — long bird-like beak, round glass eye openings — with no visible seam between mask and skin. Body Covering: full-length medieval plague-doctor garment, dark fabric, hood pulled forward so the face is shadowed beneath it. Hands & Limbs: bare, pale human hands that are always exposed and ungloved — they are the instrument of its lethal touch. Carried Items: none visible. Organic Integration Note: the ceramic mask appears fused to the being's head — no removal point, no strap, no gap, as if the porcelain grew into the skull.
+
+
+
+## Storytelling Format Guide
+
+## Format Reference Guide: SCP YouTube Storytelling Principles
+
+> Evidence-based storytelling principles for audience retention. Derived from channel format analysis and first-principles audience psychology.
+
+---
+
+### A. Hook Type Library
+
+Every SCP video must open with a hook within the first 15 seconds. Choose one:
+
+| Hook Type | Pattern | SCP Example |
+|-----------|---------|-------------|
+| **Question** | Pose an unanswerable question about the anomaly | "What happens when you blink near SCP-173?" |
+| **Shock** | Lead with the most extreme consequence | "This sculpture has killed 14 Foundation personnel." |
+| **Mystery** | Present a redacted or unexplained detail | "There are 7 pages of containment procedures. Six of them are [REDACTED]." |
+| **Contrast** | Juxtapose the mundane with the anomalous | "It looks like an ordinary concrete statue in a storage room. It moves when you look away." |
+
+**Rules:**
+- The hook must relate directly to the SCP's core anomaly
+- Never start with classification or background lore
+- The first sentence of Scene 1 narration IS the hook
+
+---
+
+### B. Progressive Disclosure Pattern
+
+Never reveal everything at once. Information arrives in 3 waves. This is a **retention
+principle, not a fixed act order** — each archetype guide realizes it differently (which
+wave opens the episode, and what counts as "the surface", is the archetype's call):
+
+| Wave | Content | Placement |
+|------|---------|-----------|
+| **Wave 1: The Surface** | What it seems to be — appearance, the first record, the mundane framing | opening beat, kept short |
+| **Wave 2: The Depth** | True anomalous properties, containment details, the incident/log/testimony body | the middle, the bulk of the runtime |
+| **Wave 3: The Abyss** | Unresolved mysteries, [REDACTED] implications, what the Foundation doesn't know | closing beat, kept short |
+
+**SCP-specific techniques:**
+- Use [REDACTED] and [DATA EXPUNGED] as narrative tension tools — mention them early, explore implications later
+- Clearance level escalation: start with public-facing info, end with O5-level secrets
+- "What the document doesn't say" is often more compelling than what it does
+
+---
+
+### C. Emotional Curve Design
+
+Adjacent scenes MUST differ in emotional tone. Monotone pacing kills retention.
+
+**Mood transition rules:**
+- Never place two scenes with identical mood back-to-back
+- Minimum 2-3 major tone shifts per scenario (e.g., mystery -> horror -> awe -> lingering unease)
+- After a high-tension scene, allow a brief decompression before the next escalation
+- The final scene should leave emotional residue — unease, wonder, or dread that lingers after the video ends
+
+**Emotional arc template:**
+```
+Scene 1: Intrigue/curiosity (hook)
+Scene 2-3: Building tension (properties, early incidents)
+Scene 4-5: Peak horror/shock (worst incidents, true nature revealed)
+Scene 6-7: Shift to awe or empathy (recontextualization, human cost)
+Final scene: Lingering unease (unresolved mystery, open questions)
+```
+
+---
+
+### D. Viewer Immersion Devices
+
+Transform passive viewers into participants. Use at minimum 3 of these per scenario:
+
+| Device | Technique | Example |
+|--------|-----------|---------|
+| **2nd Person Address** | Place the viewer inside the scenario | "Imagine you're the D-class personnel sent into the chamber." |
+| **Sensory Description** | Engage senses beyond sight | "The air smells of wet concrete and copper. The only sound is your own breathing." |
+| **Situation Hypothetical** | Pose "what would you do" moments | "You hear it move behind you. Do you turn around?" |
+| **Foundation Employee POV** | Narrate as if briefing the viewer | "Your assignment: maintain visual contact at all times. Do not blink." |
+| **Scale Comparison** | Make abstract threats concrete | "Its containment cell costs more per day than an aircraft carrier." |
+
+---
+
+### E. Scene Count & Pacing Guide
+
+Match scene count to target video duration:
+
+| Target Duration | Scene Count | Avg Scene Length | Pacing Notes |
+|----------------|-------------|-----------------|--------------|
+| ~5 minutes | 5-6 scenes | 50-60 sec | Tight, every scene advances plot |
+| ~10 minutes | 8-10 scenes | 60-75 sec | Room for atmosphere and detail |
+| ~15 minutes | 12-15 scenes | 60-75 sec | Can include sub-incidents and deeper lore |
+
+**Pacing principles:**
+- Vary scene durations — not every scene should be the same length
+- Action/incident scenes: shorter (30-45 sec), rapid information delivery
+- Atmosphere/buildup scenes: longer (60-90 sec), sensory detail, slower pacing
+- The hook scene should be under 45 seconds — get to the point fast
+
+---
+
+### F. Act Structure — 공통 원칙 (구체적 순서는 아키타입 가이드가 정함)
+
+> ⚠️ 이 가이드는 **어떤 아키타입에도 공통인 원칙**만 정의합니다. 이 에피소드의 실제 비트 순서,
+> 시점, 정체 공개 타이밍, 결말 계약은 Stage 2에 주입되는 **선택된 아키타입 가이드**
+> (`scenario/archetypes/<story_archetype>`)가 유일한 권위입니다. 아래 원칙과 그 가이드가 충돌하는
+> 것처럼 보이면 **가이드를 따르세요.**
+
+모든 아키타입이 지키는 것:
+
+| 원칙 | 내용 |
+|------|------|
+| **위키 순서 금지** | 분류 → 설명 → 격리 → 사건 순서로 열지 않습니다. 등급/분류 낭독으로 시작하지 않습니다. |
+| **단계적 공개** | 정보를 한 번에 쏟지 않습니다. 무엇을 언제 공개할지는 아키타입 가이드가 정합니다. |
+| **정체는 자원** | 개체가 무엇인지는 소비할 자원입니다 — 첫 씬에 다 쓰지 말고 계획된 지점에서 씁니다. |
+| **격리 절차는 장치** | 설명 대상이 아니라 "이렇게까지 해야 하는 이유"를 암시하는 도구입니다. |
+| **열린 결말** | 마지막 비트는 여운을 남깁니다. *무엇을* 열어둘지는 아키타입의 결말 계약을 따릅니다. |
+| **분량 배분** | 오프닝 비트는 짧게(~15%), 중심 비트에 가장 큰 분량을, 마지막 비트는 짧게(~15%). |
+
+- 시청자는 "이게 뭔지"보다 "무슨 일이 일어났는지"에 먼저 반응하지만, 그 "일"은 사건일 수도 기록일
+  수도 증언일 수도 있습니다 — 원문이 무엇을 갖고 있는지에 달렸습니다.
+
+## Writing Guidelines
+
+### Tone & Voice: 공포 유튜버 (Horror YouTuber)
+- Write in Korean (한국어)
+- **말투**: ~합니다/~입니다 기본 + 구어체 혼합. 자연스러운 유튜브 나레이션 톤.
+  - 딱딱한 문어체 금지. 시청자에게 말하듯이 쓰세요.
+  - OK: "이게 진짜 무서운 건요, 이 개체가 움직인다는 겁니다."
+  - OK: "자, 여기서 소름 돋는 부분입니다."
+  - OK: "솔직히 말해서, 이건 재단도 감당 못합니다."
+  - BAD: "해당 개체는 유클리드 등급으로 분류되어 있으며, 격리 절차는 다음과 같습니다."
+  - ❌ "재단 공식 기록을 낭독합니다. 대상의 지정 번호, SCP-049." — 실제 회귀(run e5ed4b3a
+    씬4)입니다. "지어내지 마라"와 "보고서처럼 읽지 마라"를 동시에 들은 모델이 물러선
+    안전지대가 정확히 여기이고, 이 자리는 안전하지 않습니다. **금지입니다.**
+  - ✅ 같은 사실을 장면으로: "기록에는 이름이 없습니다. 지정 번호 하나, SCP-049. 그게
+    재단이 이 존재에 대해 부를 수 있는 전부입니다." — 새 사실 0개, 낭독 톤 0개.
+- **채널 레퍼런스**: 살리의 방의 깊이 + TheVolgun의 몰입감 + TheRubber의 대중성
+- 모든 문장은 반드시 다음 중 하나의 역할을 해야 합니다: 긴장감 구축, 반전 전달, 분위기 조성, 감정 유발
+- **위키피디아에 나올 법한 문장이면 전부 다시 쓰세요.** 감각적 디테일이나 감정적 무게를 더하세요.
+
+### 몰입 기법 — 이 씬에 배정된 것만 사용
+
+이 기법들의 목표량은 **시나리오 전체** 기준입니다. 그런데 당신은 씬 하나만 씁니다 — 그래서
+어느 씬이 어느 기법을 맡을지는 아웃라인 전체를 본 파이프라인이 이미 배정해 두었고, 그 배정은
+이 씬 객체의 `assigned_devices` 필드에 들어 있습니다.
+
+**아래 배정된 기법만 쓰고, 배정되지 않은 기법은 쓰지 마세요.** 빠뜨렸을까 봐 하나 더 넣으면
+같은 기법이 대본 전체에서 씬 수만큼 반복되고, 그건 몰입이 아니라 버릇으로 들립니다.
+
+1. **2인칭 (당신) / 상황 가정** — `assigned_devices`에 `second_person`이 있을 때만.
+   시청자를 이야기 안에 집어넣거나 "만약 당신이 이 SCP를 만난다면" 상황을 제시하세요.
+   - ✅ "당신이 그 문을 열었다고 생각해보세요. 안에서 뭔가 기다리고 있습니다."
+   - 배정되지 않았다면 이 씬에서는 "당신"을 부르지 말고 관찰자 서술로 쓰세요.
+2. **감각 묘사** — 배정과 무관하게 어느 씬에서나 자유롭게 쓰세요. 이건 기법이 아니라 질감입니다.
+   - "축축한 콘크리트 냄새가 코를 찌릅니다. 어둠 속에서 무언가 긁히는 소리가 들립니다."
+3. **극적 질문** — `assigned_devices`에 `dramatic_question`이 있을 때만. 시청자가 멈추고
+   생각하게 만드는 질문을 **이 씬에 하나만** 던지세요.
+   - "만약 세 명 모두가 동시에 눈을 깜빡인다면... 어떻게 될까요?"
+   - 배정되지 않았다면 이 씬은 질문문 없이, 서술로 닫으세요.
+4. **리액션 삽입** — `assigned_devices`에 `narrator_reaction`이 있을 때만. 나레이터의 감정적
+   반응을 한 번 넣으세요.
+   - "솔직히 이 부분 자료 읽으면서 소름 돋았습니다."
+
+### 문장 & 페이싱 규칙
+- 문장 길이: 15~25자 (TTS 최적화용 — 짧고 펀치있게)
+- 자연스러운 연결어 사용: 그때, 이후, 하지만, 게다가, 근데, 그런데 말이죠
+- 호러 비트에서는 문장을 끊어서 드라마틱 포즈를 만드세요:
+  - "격리실이 조용해졌습니다." (정적) "아닙니다. 당신이 소리를 듣지 못하는 겁니다."
+
+### 종결어미 리듬 규칙 (체크 가능한 제약)
+- **동일 종결형 3연속 금지**: 같은 문장 끝 형태가 3문장 연속 반복되면 안 됩니다 (2개까지만 허용). `-했습니다`, `-입니다`, `-습니다`는 서로 다른 형태로 계산합니다.
+- 씬 전체에서 최소 다음 형태를 섞어 쓰세요:
+  1. 평서형 (-했습니다/-입니다/-습니다)
+  2. 의문형 (-까요?/-을까요?) — **이 씬에 `dramatic_question`이 배정된 경우에만**. 배정되지 않았다면 의문형을 쓰지 말고 1·3·4 로 리듬을 만드세요.
+  3. 명사형/단문 종결 (예: "겨우 0.1초.", "정적.") — 임팩트 비트에 사용
+  4. 도치 구조 (어순을 바꿔 여운을 남기는 기법, 예: "아무도 몰랐습니다, 그날 밤까지는.") — 드물게만 사용. **주의**: 도치는 어순 변화이지 종결형 자체를 바꾸지 않습니다 (위 예시도 결국 "-았습니다"). 3연속 금지 규칙은 위 1~3의 종결형만 세고, 도치는 그중 하나로 계산하세요.
+- **비트별 리듬**: 클라이맥스 비트는 짧은 단문·명사형 종결 위주로. 여파(aftermath) 비트는 긴 문장도 허용.
+- **존댓말 기조 유지 (Register Guard)**: 종결어미는 다양화하되 항상 합니다/입니다체(존댓말) 기반을 유지하세요. 위 "말투" 항목의 구어체 혼합은 어휘·뉘앙스에 한정되며, 문장 종결을 반말이나 전면적 구어체(예: "~거든", "~잖아")로 바꾸는 것은 금지 — 바꾸는 건 리듬이지 격식이 아닙니다.
+
+### 인물 지칭 규칙 (Designation Rules)
+- **주연이 아닌 인물은 역할로 지칭하세요**: "D계급 인원", "연구원", "경비원", "요원" 등. D-9341, Dr. ███ 같은 개별 일련번호로 반복 지칭하지 마세요 — TTS가 "디 구삼사일"처럼 어색하게 읽습니다.
+- **예외**: 그 인물의 정체성 자체가 서사의 핵심 반전인 경우에만 특정 designation을 허용합니다 (예: 특정 연구원의 운명이 이야기의 핵심인 SCP 문서). 기본값은 역할 지칭입니다.
+- **SCP 개체 자체의 designation(SCP-173, SCP-096 등)은 그대로 유지**하세요 — 개체는 이야기의 주체이므로 예외입니다.
+
+### Hook Scene (Scene 1) — 가장 중요
+- 첫 문장이 곧 Hook. 5초 안에 시청자를 잡아야 합니다.
+- 그 씬의 `hook_type`이 지정한 유형을 실제로 구현하세요: 질문 / 충격 / 미스터리 / 대비.
+- **무엇으로 여는지는 이 씬의 `synopsis`와 `event`가 정합니다.** 사건일 수도, 기록의 첫 항목일
+  수도, 증언 한 줄일 수도 있습니다 — 아웃라인이 준 것으로 여세요.
+- "SCP-XXX는..." 또는 등급 분류로 절대 시작하지 마세요.
+- ❌ "SCP-173은 유클리드 등급의 변칙 개체입니다."
+- ❌ "SCP-173은 1993년에 발견된 콘크리트 조각상입니다."
+- ✅ "눈을 감는 순간, 당신은 죽습니다."
+- ✅ "14명. 단 하룻밤에 목이 꺾인 채 발견된 재단 인원 수입니다."
+- ✅ "첫 회수 기록에는 위험하다는 표현이 한 줄도 없었습니다."
+
+### 전체 서사 구조 — 아웃라인이 정한 순서를 따르세요
+
+이 에피소드의 비트 순서·시점·공개 타이밍은 Stage 2가 **선택된 서사 아키타입**에 따라 이미
+결정했습니다. 당신의 일은 그 계획을 실행하는 것입니다.
+
+- `scene_structure`의 씬 순서가 곧 서사 순서입니다. **재배열하지 말고, 뒤 씬의 내용을 앞 씬에서
+  미리 밝히지 마세요.**
+- 각 씬의 `act` / `synopsis` / `emotional_beat`가 그 씬이 서사에서 맡은 역할입니다. 그 역할대로
+  쓰세요 — 모든 에피소드를 같은 틀(사건 → 미스터리 → 정체 공개 → 미해결)로 되돌리지 마세요.
+- 개체의 정체·능력을 언제 밝힐지도 아웃라인이 정합니다. 아웃라인이 아직 밝히지 않은 씬에서
+  앞질러 설명하지 마세요.
+- ❌ 위키 순서로 쓰지 마세요: "이건 SCP-173입니다 → 발견 → 격리 → 사건". 이것만은 어떤
+  아키타입에서도 금지입니다.
+
+### 콘텐츠 규칙
+1. 각 씬의 나레이션은 synopsis와 key_points에 맞춰 작성
+2. 팩트를 정확히 전달하되, **딱딱한 설명이 아닌 이야기로 전달**
+3. 원문에 없는 사실을 지어내지 마세요 — 단, 아래 "허용되는 각색" 세 범주(감각 묘사 / 시점·장면화 / 빈칸을 질문으로 열기)는 자유롭게 쓰세요
+4. 개체 묘사 시 Visual Identity Profile을 그대로 사용
+
+### 사실 접지 규칙 (Fact Grounding) — 최우선
+
+당신은 SCP 원문도 리서치 패킷도 받지 못합니다. **그 씬의 `fact_references`가 당신이 가진
+사실의 전부**이고, 그것들은 조회용 키가 아니라 그대로 읽히는 사실 문장입니다.
+
+- 각 씬의 나레이션은 그 씬의 `fact_references` 문장들을 **재료로 삼아** `event`를 이야기로
+  풀어낸 것이어야 합니다. 사실 문장 하나하나가 나레이션 어딘가에 실제로 전달되어야 합니다.
+- **`fact_references`에 없는 것을 사실처럼 단언하지 마세요.** 숫자, 등급, 날짜, 사건, 능력을
+  새로 만들어내는 것은 금지입니다. (감각 묘사·분위기 서술은 사실 주장이 아니므로 자유입니다.)
+- **구체적 사실이 있는데 분위기로 때우는 것은 결함입니다.** "여기서부터 진짜 미쳐돌아갑니다"
+  같은 문장은 그 자체로는 아무 내용이 없습니다. 아래 몰입 기법은 사실을 **꾸미는** 도구이지
+  사실을 **대체하는** 도구가 아닙니다 — 배정된 기법은 여전히 필수지만, 전달할 사실이 있는 자리에서
+  기법만 쓰고 사실을 빼면 그 씬은 실패입니다.
+- 판단 기준: 이 씬의 나레이션을 다른 SCP 영상에 그대로 붙여넣어도 말이 된다면, 접지에 실패한
+  것입니다. 그 씬에서만 나올 수 있는 문장을 쓰세요.
+
+#### 허용되는 각색 — 이 세 가지는 마음껏 하세요
+
+원문은 **각색할 재료**입니다. 위 금지가 무서워 요약을 낭독조로 읽는 것이 가장 흔한 실패이고,
+그건 금지를 지킨 게 아니라 다른 방식으로 실패한 것입니다. 아래 세 범주는 **접지 위반이
+아니며**, 크리틱도 같은 어휘로 판정합니다.
+
+1. **감각적 묘사** — `fact_references`의 사실을 보이게·들리게·느껴지게 만들기.
+   - ✅ "수술대 위 금속이 형광등을 되쏩니다. 소독약 냄새가 목을 찌릅니다." (새 사실 0개)
+2. **시점·장면화** — 같은 사실을 관찰자의 자리에서 장면으로 보여주기.
+   - ✅ "당신이 그 유리 앞에 서 있다고 해봅시다. 개체가 천천히 고개를 돌립니다."
+3. **원문의 빈칸을 답 없는 질문으로 열기** — 재단 문서의 은폐는 채우라고 있는 자리입니다.
+   **질문으로만** 열고 답은 지어내지 마세요.
+   - ✅ "가면이 왜 벗겨지지 않는지, 기록은 말하지 않습니다."
+   - ❌ "가면은 두개골에 완전히 융합되어 있습니다." — `fact_references`가 "융합된 **것처럼
+     보인다**"까지만 말했다면 이건 새 단언입니다. 확실성을 올리는 것도 지어내는 것입니다.
+
+**경계선은 하나입니다: 새 사실을 단언했는가.** 숫자·등급·날짜·사건·능력을 새로 말하면 위반,
+가진 사실을 감각·시점·질문으로 다루면 각색입니다.
+
+### Stage 2 리텐션 계약 준수
+
+`scene_structure`의 각 씬에는 아래 필드가 함께 옵니다. 나레이션은 이 계획을 **실행**해야 합니다.
+
+- **`event: {who, what, consequence}`** — 이 씬에서 실제로 일어나는 일입니다. 나레이션은 이
+  행위자·사건·결과를 반드시 전달해야 합니다. 결과(`consequence`)를 다른 것으로 바꾸지 마세요.
+- **`hook_type`** (Scene 1에만 `none`이 아닌 값) — **첫 문장이 그 유형을 실제로 구현해야
+  합니다.** `question`이면 첫 문장이 질문, `shock`이면 가장 극단적인 결과를 먼저, `mystery`면
+  설명되지 않은/삭제된 디테일, `contrast`면 평범함과 이상함의 병치. 유형과 첫 문장이 어긋나면
+  훅이 아닙니다.
+- **`loops_planted`** — 이 씬에서 **던지고 답하지 않아야 할 질문**입니다. ID당 하나씩, 시청자가
+  "저건 뭐지?"라고 궁금해할 형태로 심되 여기서 답하지 마세요.
+- **`loops_closed`** — 앞 씬에서 심어둔 그 질문에 **이 씬에서 답을 주세요.** 닫으라고 지정된
+  루프를 열어둔 채 넘어가면 안 됩니다. 어떤 질문이었는지는 `loops_to_close_context`에 루프
+  ID별로 "그 루프를 심은 씬"이 함께 옵니다 — 그 씬이 남긴 질문에 답하세요. ID만 보고 질문을
+  지어내지 마세요.
+- **`pattern_interrupt`** — `none`이 아니면 그 기법을 이 씬에서 실제로 쓰세요.
+  `tone_shift`(톤 전환) / `pov_shift`(시점 전환) / `direct_address`(2인칭 직접 호명·상황 가정) /
+  `format_change`(인터뷰 로그·실험 기록·무전 등 형식 전환).
+- **`word_budget`** — 이 씬 나레이션의 목표 어절 수(공백 기준)입니다. ±20% 안에서 맞추세요.
+  예산이 작은 씬을 길게 늘이거나, 큰 씬을 한두 문장으로 끝내지 마세요.
+
+
+
+## Task
+
+
+
+For each scene, produce:
+
+```yaml
+scene_num: 1
+narration: |
+  Korean narration text here, composed of short sentences (split by
+  punctuation, not by physical line breaks) — write it as ONE continuous
+  line/paragraph inside this block, e.g. "첫 문장. 둘째 문장. 셋째 문장." never
+  one sentence per line.
+fact_tags:
+  - key: "fact_key"
+    content: "relevant fact text"
+mood: "tense"
+entity_visible: true
+location: "underground containment chamber"
+characters_present:
+  - "SCP-173"
+  - "D계급 인원"
+color_palette: "desaturated blues and grays, cold fluorescent white"
+atmosphere: "claustrophobic, sterile, oppressive silence"
+```
+
+**NOTE:** Do NOT include `visual_descriptions` in the output. Image prompts are generated in a separate stage.
+
+### Scene Metadata Rules:
+- `location`: **REQUIRED** — Brief English description of where this scene takes place (e.g., "underground containment chamber", "Site-19 hallway B-7"). NEVER leave empty.
+- `characters_present`: **REQUIRED** — Array of character/entity names visible or referenced in this scene, using the SAME reference the narration uses (role label per 인물 지칭 규칙 above, e.g. "D계급 인원" — NOT a serial designation like "D-9341"). If multiple non-protagonists of the same role appear in one scene, disambiguate with a suffix (e.g. "D계급 인원 A", "D계급 인원 B"). NEVER leave as null or empty array.
+- `color_palette`: **REQUIRED** — Dominant colors and visual tone for this scene's imagery (e.g., "cold gray, fluorescent white, blood-red accents"). NEVER leave empty.
+- `atmosphere`: **REQUIRED** — One-line mood/atmosphere description for image generation context (e.g., "claustrophobic dread, oppressive silence"). NEVER leave empty.
+
+**`entity_visible` (scene level) rules:**
+- `true`: SCP 개체가 이 씬에서 언급되거나 등장하는 경우
+- `false`: 배경, 환경, 인물만 나오는 씬 (격리실 전경, 재단 로고, 문서 클로즈업 등)
+
+Output as a YAML object with fields: scp_id, title, scenes (a list of scene objects), metadata.
+
+### Pre-Output Self-Check (MANDATORY before outputting YAML)
+
+- [ ] `characters_present` array lists ALL characters/entities visible or referenced in this scene (NOT empty)
+- [ ] `location` is filled with a specific English description (NOT empty string)
+- [ ] `color_palette` describes dominant colors for this scene (NOT empty string)
+- [ ] `atmosphere` describes the mood in one line (NOT empty string)
+- [ ] Re-read this scene's `narration` sentence by sentence: no same final-ending form (-했습니다/-입니다/-습니다/-니다/-까요? 등, 각각 다른 형태로 계산) repeats 3 times in a row. If it does, rewrite one of the 3 sentences to break the run before outputting.
+
+If ANY check fails, fix the offending field before outputting.

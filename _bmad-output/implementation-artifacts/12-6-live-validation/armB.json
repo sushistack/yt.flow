@@ -1,0 +1,176 @@
+{
+  "runs": [
+    {
+      "run_id": "12-6-armB-SCP-049",
+      "scp_id": "SCP-049",
+      "scene_count": 8,
+      "total_words": 494,
+      "total_display_words": 482,
+      "audio_duration_sec": 187.52,
+      "audio_duration_min": 3.13,
+      "audio_scene_coverage": "8/8",
+      "wpm": 158.1,
+      "spread": 1.93,
+      "max_scene_share_pct": 16.4,
+      "opening_share_pct": 11.13,
+      "closing_share_pct": 13.16,
+      "declared_budgets_present": true,
+      "declared_total_word_budget": 480,
+      "declared_budget_spread": 1.67,
+      "scenes": [
+        {
+          "scene_num": 1,
+          "words": 55,
+          "display_words": 52,
+          "audio_duration_sec": 19.742375,
+          "word_budget": 55,
+          "budget_delta": 0,
+          "share_pct": 11.13
+        },
+        {
+          "scene_num": 2,
+          "words": 75,
+          "display_words": 75,
+          "audio_duration_sec": 26.537666666666667,
+          "word_budget": 65,
+          "budget_delta": 10,
+          "share_pct": 15.18
+        },
+        {
+          "scene_num": 3,
+          "words": 66,
+          "display_words": 65,
+          "audio_duration_sec": 24.464708333333334,
+          "word_budget": 75,
+          "budget_delta": -9,
+          "share_pct": 13.36
+        },
+        {
+          "scene_num": 4,
+          "words": 81,
+          "display_words": 78,
+          "audio_duration_sec": 30.338291666666667,
+          "word_budget": 70,
+          "budget_delta": 11,
+          "share_pct": 16.4
+        },
+        {
+          "scene_num": 5,
+          "words": 48,
+          "display_words": 47,
+          "audio_duration_sec": 19.337208333333333,
+          "word_budget": 45,
+          "budget_delta": 3,
+          "share_pct": 9.72
+        },
+        {
+          "scene_num": 6,
+          "words": 62,
+          "display_words": 59,
+          "audio_duration_sec": 25.276583333333335,
+          "word_budget": 65,
+          "budget_delta": -3,
+          "share_pct": 12.55
+        },
+        {
+          "scene_num": 7,
+          "words": 42,
+          "display_words": 42,
+          "audio_duration_sec": 16.874333333333333,
+          "word_budget": 50,
+          "budget_delta": -8,
+          "share_pct": 8.5
+        },
+        {
+          "scene_num": 8,
+          "words": 65,
+          "display_words": 64,
+          "audio_duration_sec": 24.944416666666665,
+          "word_budget": 55,
+          "budget_delta": 10,
+          "share_pct": 13.16
+        }
+      ],
+      "scp_text_chars": 739,
+      "coverage": {
+        "fact_count": 14,
+        "used_count": 14,
+        "dropped_count": 0,
+        "used_pct": 100.0,
+        "dropped": [],
+        "facts": [
+          {
+            "fact": "SCP-049는 인간형 개체이다.",
+            "status": "used",
+            "where": "씬 4"
+          },
+          {
+            "fact": "SCP-049는 키가 약 1.9미터이다.",
+            "status": "used",
+            "where": "씬 1"
+          },
+          {
+            "fact": "SCP-049는 중세 흑사병 의사의 모습을 하고 있다.",
+            "status": "used",
+            "where": "씬 4"
+          },
+          {
+            "fact": "SCP-049는 후드가 달린 검은 로브를 입고 있다.",
+            "status": "used",
+            "where": "씬 3"
+          },
+          {
+            "fact": "SCP-049는 머리/두개골에 융합되어 있는 것으로 보이는 도자기 가면을 쓰고 있다.",
+            "status": "used",
+            "where": "씬 4"
+          },
+          {
+            "fact": "SCP-049는 대체로 협조적이다.",
+            "status": "used",
+            "where": "씬 3"
+          },
+          {
+            "fact": "SCP-049는 언어 구사가 가능하다.",
+            "status": "used",
+            "where": "씬 2"
+          },
+          {
+            "fact": "SCP-049는 자신이 '대역병'의 치료법을 찾는 의사라는 신념을 표현한다.",
+            "status": "used",
+            "where": "씬 2"
+          },
+          {
+            "fact": "오직 SCP-049만이 '대역병'을 감지할 수 있다.",
+            "status": "used",
+            "where": "씬 2"
+          },
+          {
+            "fact": "SCP-049의 맨손에 접촉하면 살아있는 인간은 수 초 만에 사망한다.",
+            "status": "used",
+            "where": "씬 1"
+          },
+          {
+            "fact": "대상이 사망한 후, SCP-049는 자주 시체에 수술 과정을 수행한다.",
+            "status": "used",
+            "where": "씬 6"
+          },
+          {
+            "fact": "SCP-049의 수술 과정을 통해 시체는 SCP-049-2 개체로 재활성화된다.",
+            "status": "used",
+            "where": "씬 6"
+          },
+          {
+            "fact": "SCP-049는 표준 안전 인간형 격리 셀에 격리되어야 한다.",
+            "status": "used",
+            "where": "씬 3"
+          },
+          {
+            "fact": "SCP-049는 기지 지휘부의 재량에 따라 연구 자료에 대한 통제된 접근이 허용된다.",
+            "status": "used",
+            "where": "씬 3"
+          }
+        ]
+      }
+    }
+  ]
+}
