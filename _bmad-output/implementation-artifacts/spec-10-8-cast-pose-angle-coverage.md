@@ -374,3 +374,64 @@ grade, motion or stacking, and the alpha-bbox crop deliberately erases scale and
 New work this round surfaced, recorded in `deferred-work.md`: per-key angle identity drift (10.6-class,
 now visible), `SCP-1471`/`SCP-682` tier-A cards are not sprites, and the sitting fill needs structural
 conditioning rather than a text pose token.
+
+## Auto Run Result — Round 3 (2026-08-16): chasing the broken cards found a seeding defect
+
+Round 2 recorded `SCP-1471`/`SCP-682`'s approved cards as "not sprites" and parked them on a
+human-authored descriptor. **That was the wrong call and it is retracted** — the descriptor does not
+need a human, the repo has a pipeline path for it, and following that path found the real defects.
+
+**What actually produced those cards.** Both keys have `visual_descriptor` NULL, yet both carry four
+approved generated cards. Re-running the pipeline's own recovery path
+(`search_references` → `enrich_descriptor_from_references`) reproduced the cause in text, with no GPU:
+
+- SCP-682's descriptor came back containing *"set against a backdrop of barren grassland and distant
+  snow-capped mountains"* — which is precisely what its four cards show.
+- SCP-1471's contained *"A grid-like pattern overlays the image"* — the reference's watermark grid.
+
+`prompts/character/vision_enrichment.md` asked for six dimensions, **two of which describe the
+photograph rather than the subject** ("Lighting & Mood", "Style Notes"), and nothing told it to exclude
+the setting. A revised prompt was screened as text against the same reference images before any GPU
+spend (`gotcha_screen-a-prompt-change-before-you-render-it`): mechanically-counted contamination went
+**4 → 0** (SCP-1471) and **5 → 0** (SCP-682). Seeded to `character-vision-enrichment` v3 `production`.
+
+**SCP-682 is still blocked, for a different reason than Round 2 recorded.** Its single search result is
+a photograph of a **beached whale**, and with the corrected prompt the vision model faithfully describes
+a dead marine mammal. No prompt fix reaches that. Meanwhile `data/scps.json` already ships the canonical
+line — *"a large, vaguely reptilian creature of unknown origin"* — so the enrichment path consults
+web-search images and never consults the article text the run already holds. SCP-1471 is not in
+`data/scps.json` at all, so the two keys need different remedies (article text vs. a curated anchor via
+the existing `--anchor-search` path).
+
+### The seeding defect this uncovered
+
+`migrate_prompts.py` — **the command CLAUDE.md's DEV MODE section tells you to run** — derives the
+Langfuse name as `character/vision_enrichment` (slash, underscore). The runtime fetches
+`character-vision-enrichment` (hyphens, `character_service.py:769`). A REST listing shows **both
+families live**, 32 prompts including `character-generation` *and* `character/generation`. So the
+documented seeding command silently no-ops for every character prompt: it writes a new version under a
+name nothing reads while the runtime keeps serving the stale one. Proven, not inferred — seeding the
+slash name reported "created" and the hyphen name still returned version 1 with the old text.
+
+This also explains an observation the story's Dev Notes recorded as unexplained drift: `character-generation`
+reads as diverged from its repo file because seeds have been landing on the other name.
+
+The fix here was scoped to one prompt on purpose — seeded via a single-file source directory, then via a
+direct `create_prompt` on the runtime name — specifically so `character-generation`'s pre-existing drift
+was **not** collaterally promoted, which is the trap the story's Dev Notes warned about.
+
+### Also corrected this round
+
+`report_card_coverage.py` compared against `Settings.style_epoch` (`config.py:154`, default **1**) while
+cards are stamped from `assets/manifest.json` via `AssetService.style_epoch` (currently **2**). Two
+fields spelled the same, disagreeing live. Round 2's deferred note blamed "per-key epochs" and was wrong;
+both the note and the code are corrected. `Settings.style_epoch` has **no other reader in the repo**.
+With the right source the report reads **OFF-EPOCH 6**, not 1 — all of them SCP-049's cards at epoch 1
+against a current epoch of 2, which is exactly the mixed-epoch state the story's AC7 describes.
+
+### State
+
+ComfyUI was brought up for Round 2 and has been stopped again (verified `000`). No cards were generated
+this round — the descriptor gate is upstream of the GPU and SCP-682 does not clear it. Status remains
+**blocked** on `Jay viewing verdict required`; the two SCP keys above are a separate defect from Story
+10.8's subject and are recorded in `deferred-work.md` rather than absorbed into this spec's scope.

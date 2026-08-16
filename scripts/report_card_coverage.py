@@ -98,7 +98,15 @@ async def main() -> None:
         # current one. Deliberately NOT folded into `present`: that would silently move
         # the headline number. The fill is blocked on epoch matching (AC7), so its real
         # size is only visible when this count is printed next to MISSING.
+        #
+        # The current epoch is the MANIFEST's, read through AssetService — not
+        # `Settings.style_epoch`. There are two fields spelled the same and they
+        # disagree live (config default 1, manifest 2); `save_card` stamps the manifest
+        # one, so comparing against the config field flagged every correctly-stamped
+        # card as off-epoch and cleared the genuinely stale ones. `Settings.style_epoch`
+        # has no other reader in the repo — see deferred-work.md.
         off_epoch: list[tuple[str, str, str, int]] = []
+        current_epoch = service._asset_service.style_epoch
         print(f"{'card_key':<18} {'pose':<9} {'angle':<14} {'tier':<6} {'present':<8} {'status':<9} epoch")
         print("-" * 78)
         for character in characters:
@@ -124,7 +132,7 @@ async def main() -> None:
                         if present and not Path(service._abs_asset_path(card.image_path)).exists():
                             present = False
                             dangling.append((character.scp_id, pose, angle))
-                        elif present and card.style_epoch != settings.style_epoch:
+                        elif present and card.style_epoch != current_epoch:
                             off_epoch.append((character.scp_id, pose, angle, card.style_epoch))
                     if not present:
                         missing.append((character.scp_id, pose, angle))
@@ -151,7 +159,7 @@ async def main() -> None:
         # reports 0 and reads as "no epoch problem", which is not what the fill faces.
         off_epoch.extend(
             (c.scp_id, c.pose, c.angle, c.style_epoch) for c in hint_rows
-            if c.status == "approved" and c.style_epoch != settings.style_epoch
+            if c.status == "approved" and c.style_epoch != current_epoch
         )
 
         total = len(characters) * len(BASE_POSES) * len(CANONICAL_ANGLES)
@@ -173,7 +181,7 @@ async def main() -> None:
             print(f"  {key:<18} {pose}/{angle}")
 
         print(f"\nOFF-EPOCH {len(off_epoch)} (approved and present, but not style_epoch "
-              f"{settings.style_epoch} — the fill has to match, AC7):")
+              f"{current_epoch} — the fill has to match, AC7):")
         for key, pose, angle, epoch in off_epoch:
             print(f"  {key:<18} {pose}/{angle} at epoch {epoch}")
 
