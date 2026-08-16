@@ -2,8 +2,9 @@
 title: 'Story 12.7 — Prose harness: script-wide device quotas become per-scene assignments'
 type: 'feature'
 created: '2026-08-16'
-status: 'in-review'
+status: 'done'
 baseline_revision: '29d5903'
+final_revision: 'fb5347e'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
