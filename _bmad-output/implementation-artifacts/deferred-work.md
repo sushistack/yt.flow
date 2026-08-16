@@ -637,3 +637,15 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-12-6-source-grounded-story-expansion.md`
   summary: `warning.categories` merges two vocabularies that name the same defect twice — the critic's `ungrounded_claim` and the review's `invented_content`/`fact_error` — as one flat list, so an operator cannot tell three problems from one sentence caught by two judges.
   evidence: The live gate payload reads `["descriptor_violation", "report_tone", "ungrounded_claim"]`, and `critic_agent.md` / `review.md` use the identical 가면/융합 example for their respective fact categories. AC7's purpose is met (a fact violation is visibly distinct from a craft one), so this is a refinement rather than a defect: grouping the union into fact/craft buckets, or namespacing by judge, would say more with the same data.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-7-prose-harness-device-allocation.md`
+  summary: Scene 4's `report_tone` critic note recurs on every run of this outline, control included — the containment-procedure beat resists storytelling regardless of device allocation.
+  evidence: 12.6 control, and 12.7 passes 1/2/3, all four flag the same scene with the same wiki-recitation sentences ("격리는 표준 인간형 격리 셀에서 이루어집니다"). Device allocation neither caused nor fixed it, so it needs its own look — probably at the outline beat, not the writing prompt.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-7-prose-harness-device-allocation.md`
+  summary: The narrator-stance adverb "놀랍게도" leaks into scenes that were not assigned `narrator_reaction`, surviving the pre-output self-check.
+  evidence: Present in 12.7 pass 1 (scene 6) and pass 3 (scene 2) at one occurrence each, both times as a sentence-opening adverb rather than the first-person "솔직히 … 소름이 돋았습니다" shape the self-check names. Everything else in the reaction lexicon obeyed the assignment in both passes.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-7-prose-harness-device-allocation.md`
+  summary: Longer sentences push more narration past `subtitle.py`'s `_CUE_CHAR_SOFT_CAP = 44`, changing on-screen cue rhythm, and nothing measured the result.
+  evidence: `subtitle.py:182` splits any sentence over 44 chars into multiple cues. Control's max sentence was 53 chars; 12.7 pass 3's is 75, with 4 over-40 sentences in each of scenes 1 and 2. The split path is designed behaviour, but the subtitle rhythm it produces was never looked at.

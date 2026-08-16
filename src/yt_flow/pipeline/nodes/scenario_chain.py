@@ -110,6 +110,15 @@ _LOOP_ID_RE = re.compile(r"loop_[a-z0-9_]+")
 MAX_SCENES_WITHOUT_PATTERN_INTERRUPT = 2
 MIN_PLANTED_LOOPS, MAX_PLANTED_LOOPS = 2, 3
 
+# Story 12.7: the immersion devices `scenario/writing` may use, and the exact
+# vocabulary `_allocate_devices` writes into each scene's `assigned_devices`.
+# 감각 묘사 is deliberately NOT here: it is texture rather than a device that reads
+# as a tic, so the prompt leaves it free in every scene. Everything else was a
+# script-wide quota ("시나리오 전체에서 최소 3회") executed by a writer that sees one
+# scene, i.e. N times the intended density — measured 8/8 scenes carrying a
+# question on the 12.6 output.
+WRITING_DEVICES = ("dramatic_question", "second_person", "narrator_reaction", "hypothetical")
+
 # --- Story 12.6: length is ONE decision, density is a SEPARATE one -----------
 # The 12.1 constants above this line were hand-set literals (씬당 20~90, 총합
 # 180~360) and they disagreed with `TARGET_DURATION_MINUTES = 3`: measured against
@@ -1716,6 +1725,13 @@ async def structure_step(
     # A broken ledger is a planning failure, not a formatting slip — it fails the
     # run loudly rather than being re-rolled or silently repaired.
     _validate_retention_outline(scenes)
+    # Story 12.7: the same seam `hook_type` uses — a whole-outline decision made
+    # here, delivered to each scene as its own share. `_writing_scene_brief` builds
+    # its payload as `{**scene, ...}` and `writing_scene_repair_step` json.dumps the
+    # same dicts, so this one write reaches both prompts and no other call site
+    # changes. Not persisted into `SceneState`: the writing prompt is its only reader.
+    for scene, devices in zip(scenes, _allocate_devices(scenes), strict=True):
+        scene["assigned_devices"] = devices
     return scenes
 
 
@@ -1743,6 +1759,77 @@ def _loops_to_close_context(structure: list[dict], idx: int) -> dict[str, str]:
     return context
 
 
+def _allocate_devices(structure: list[dict]) -> list[list[str]]:
+    """Which scenes own which immersion device — one deterministic pass over the outline.
+
+    Story 12.7. ``writing.md``'s device quotas are stated for the WHOLE script, but
+    ``writing_step`` is one LLM call per scene and a call cannot know the quota is
+    already met — so it meets it alone, and a "전체에서 최소 3회" rule executed 8 times
+    is 8 times the intended density. The fix is the shape ``hook_type`` already uses:
+    decide over the whole outline in Python, hand each scene only its own share.
+
+    Every rule reads a field ``_validate_retention_outline`` already constrains to a
+    closed vocabulary (``pattern_interrupt``, ``word_budget``) plus position, so the
+    allocation survives a different archetype choosing different ``act`` names.
+
+    - **극적 질문 → the hook scene and the FINAL scene.** The ablation
+      (``12-6-live-validation/ablation.md``) gave the second question to the scene
+      that closes the last loop; that loop closed in scene 7 of 9 and the closing
+      scene drew no device at all. The last-loop-closer is not consulted anymore.
+    - **2인칭 → the ``direct_address`` scenes.** ``structure.md`` already plans where
+      the viewer gets addressed; the old prompt overrode that plan in every scene.
+    - **리액션 → the ``tone_shift`` / ``pov_shift`` scenes** — the two interrupts that
+      are about the narrator's own stance moving, which is what a reaction is.
+    - **상황 가정 → the lowest-indexed 2인칭 scene.** It gets its own slot: the ablation
+      folded it into ``second_person`` and it vanished from the script entirely (5 → 0).
+
+    Total by construction for n ≥ 1: 질문 owns the last scene, and the other three fall
+    back to the largest-budget middle scenes (widened to every scene when that band is
+    empty), so every device has an owner and the final scene is never empty. Never
+    raises — a missing ``pattern_interrupt`` reads as ``"none"`` and a non-numeric
+    ``word_budget`` sorts as 0, because a run must not die on the ornament budget.
+    """
+    if not structure:  # `writing_step` and the validator both reject this; say so calmly
+        return []
+    n = len(structure)
+    interrupts = [str(scene.get("pattern_interrupt") or "none") for scene in structure]
+
+    def budget(idx: int) -> float:
+        value = structure[idx].get("word_budget")
+        # bool is an int subclass and `word_budget: true` is a real YAML slip.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return 0.0
+        return float(value)
+
+    # Middle band only, so a fallback never turns the hook or the closer into a
+    # second device carrier; widened when there is no middle (n ≤ 2).
+    pool = sorted(range(1, n - 1), key=lambda i: (-budget(i), i)) or sorted(
+        range(n), key=lambda i: (-budget(i), i)
+    )
+
+    question = {0, n - 1}  # n == 1 collapses both onto the single scene, still total
+    # EVERY `direct_address` scene, not the first two: `writing.md`'s `pattern_interrupt`
+    # bullet already orders that scene to address the viewer, so capping the list here
+    # would hand a third such scene "do it" and "do not do it" in the same prompt.
+    second_person = [i for i, kind in enumerate(interrupts) if kind == "direct_address"]
+    second_person += [i for i in pool if i not in second_person][: max(0, 2 - len(second_person))]
+    reaction = [i for i, kind in enumerate(interrupts) if kind in ("tone_shift", "pov_shift")][:2]
+    # Fallback lands on a scene 2인칭 did not already take when the pool allows it —
+    # otherwise an outline with no interrupts at all stacks three of the four devices
+    # onto one scene, which is the clustering this whole function exists to undo.
+    reaction = reaction or [next((i for i in pool if i not in second_person), pool[0])]
+    hypothetical = {min(second_person)}
+
+    owners = dict(
+        zip(
+            WRITING_DEVICES,
+            (question, second_person, reaction, hypothetical),
+            strict=True,  # a device added to the vocabulary without a rule fails here
+        )
+    )
+    return [[name for name, scenes in owners.items() if idx in scenes] for idx in range(n)]
+
+
 def _writing_scene_brief(structure: list[dict], idx: int) -> str:
     """The ``scene_structure`` variable for ONE scene's writing call.
 
@@ -1755,7 +1842,8 @@ def _writing_scene_brief(structure: list[dict], idx: int) -> str:
 
     The steering sentence lives in this variable rather than in the prompt
     template because ``scene_structure`` is free text: no Langfuse prompt version
-    has to move for the batching to take effect.
+    has to move for the batching to take effect — which is also why the sentence
+    repeats what ``assigned_devices`` (written by ``_allocate_devices``) means.
     """
     total = len(structure)
     scene = structure[idx] if isinstance(structure[idx], dict) else {}
@@ -1772,9 +1860,41 @@ def _writing_scene_brief(structure: list[dict], idx: int) -> str:
         "connects to its neighbours — never write narration for them, and never resolve "
         "what a later scene is there to reveal. `loops_to_close_context` maps each id in "
         "this scene's `loops_closed` to the earlier scene that planted it — that is the "
-        "question you owe an answer to here.\n"
+        "question you owe an answer to here. `assigned_devices` is the COMPLETE list of "
+        "immersion devices this scene owns: use those and no others (an empty list means "
+        "none — the other scenes carry them).\n"
         + json.dumps(payload, ensure_ascii=False)
     )
+
+
+def _require_seeded_device_allocation(label: str | None = None) -> None:
+    """Fail loudly if the SEEDED `scenario/writing` predates Story 12.7.
+
+    Same shape and same reason as `_require_seeded_budget_variables` above, one
+    stage later. The allocation rides inside the free-text `scene_structure`
+    variable rather than a new `{{placeholder}}`, so an unseeded prompt does not
+    fail to render — it renders the OLD script-wide quotas, ignores the annotation
+    it was never told about, and puts a dramatic question back in every scene. The
+    prompt-text tests all read `prompts/scenario/writing.md` off disk, so they stay
+    green through exactly that regression. Checking the runtime text is the only
+    place the two can be compared.
+    """
+    prompt = (
+        prompt_service.get_prompt_with_fallback("scenario/writing", label=label)
+        if label
+        else prompt_service.get_prompt("scenario/writing")
+    )
+    template = getattr(prompt, "prompt", None)
+    if not isinstance(template, str):
+        return  # a test double with no raw text: nothing to check, nothing to claim
+    if "assigned_devices" not in template:
+        raise RuntimeError(
+            f"scenario/writing (label={label or 'production'}, version="
+            f"{getattr(prompt, 'version', '?')}) never mentions `assigned_devices` — it predates "
+            "Story 12.7 and still states its immersion-device quotas for the whole script, which "
+            "one-call-per-scene writing executes once per scene. Re-seed it: "
+            "uv run python scripts/migrate_prompts.py --label production --source prompts"
+        )
 
 
 async def writing_step(
@@ -1812,6 +1932,7 @@ async def writing_step(
     """
     if not structure:
         raise ValueError("writing: structure has no scenes")
+    _require_seeded_device_allocation(label)
 
     async def _write_one(idx: int) -> dict:
         def parse(raw: str) -> dict:

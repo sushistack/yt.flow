@@ -1,0 +1,98 @@
+{
+  "runs": [
+    {
+      "run_id": "12-7-after",
+      "scp_id": "SCP-049",
+      "scene_count": 8,
+      "total_words": 445,
+      "total_display_words": 438,
+      "audio_duration_sec": 181.75,
+      "audio_duration_min": 3.03,
+      "audio_scene_coverage": "8/8",
+      "wpm": 146.9,
+      "spread": 1.32,
+      "max_scene_share_pct": 13.93,
+      "opening_share_pct": 13.93,
+      "closing_share_pct": 11.24,
+      "declared_budgets_present": true,
+      "declared_total_word_budget": 430,
+      "declared_budget_spread": 1.62,
+      "scenes": [
+        {
+          "scene_num": 1,
+          "words": 62,
+          "display_words": 62,
+          "audio_duration_sec": 24.128458333333334,
+          "word_budget": 65,
+          "budget_delta": -3,
+          "share_pct": 13.93
+        },
+        {
+          "scene_num": 2,
+          "words": 60,
+          "display_words": 58,
+          "audio_duration_sec": 22.204416666666667,
+          "word_budget": 55,
+          "budget_delta": 5,
+          "share_pct": 13.48
+        },
+        {
+          "scene_num": 3,
+          "words": 55,
+          "display_words": 55,
+          "audio_duration_sec": 20.74170833333333,
+          "word_budget": 65,
+          "budget_delta": -10,
+          "share_pct": 12.36
+        },
+        {
+          "scene_num": 4,
+          "words": 61,
+          "display_words": 60,
+          "audio_duration_sec": 28.135625,
+          "word_budget": 60,
+          "budget_delta": 1,
+          "share_pct": 13.71
+        },
+        {
+          "scene_num": 5,
+          "words": 62,
+          "display_words": 60,
+          "audio_duration_sec": 29.205041666666666,
+          "word_budget": 55,
+          "budget_delta": 7,
+          "share_pct": 13.93
+        },
+        {
+          "scene_num": 6,
+          "words": 48,
+          "display_words": 47,
+          "audio_duration_sec": 18.667541666666665,
+          "word_budget": 45,
+          "budget_delta": 3,
+          "share_pct": 10.79
+        },
+        {
+          "scene_num": 7,
+          "words": 47,
+          "display_words": 47,
+          "audio_duration_sec": 19.533083333333334,
+          "word_budget": 40,
+          "budget_delta": 7,
+          "share_pct": 10.56
+        },
+        {
+          "scene_num": 8,
+          "words": 50,
+          "display_words": 49,
+          "audio_duration_sec": 19.136125,
+          "word_budget": 45,
+          "budget_delta": 5,
+          "share_pct": 11.24
+        }
+      ],
+      "scp_text_chars": 739,
+      "coverage": null
+    }
+  ]
+}

@@ -1,0 +1,1850 @@
+{
+  "run_id": "12-7-after",
+  "scp_id": "SCP-049",
+  "scp_text": "SCP-049 is a humanoid entity roughly 1.9 meters in height that bears the appearance of a medieval plague doctor, wearing a hooded black robe and a ceramic mask that appears fused to the being's head. SCP-049 is generally cooperative and capable of speech, expressing a belief that it is a doctor seeking a cure for a 'Great Pestilence' that only it can perceive. Physical contact with its bare hands causes death in living humans within moments. Following a subject's death, SCP-049 will often perform a surgical procedure on the corpse, reanimating it as an instance of SCP-049-2. It is to be contained in a standard secure humanoid containment cell and permitted controlled access to research materials at the discretion of Site Command.",
+  "outline_source": "_bmad-output/implementation-artifacts/12-6-live-validation/after_scenes.json",
+  "scenes": [
+    {
+      "scene_num": 1,
+      "narration": "맨손이 팔에 살짝 닿은 순간, 피험자는 비명조차 지르지 못하고, 쓰러졌습니다. 어떠한 상처도, 저항도 없었습니다. 단 몇 초 만에 심장이 멈춘 시신 앞으로, 창백하고 길쭉한 손가락을 가진 존재가, 천천히 다가섭니다. 이음새조차 없는 부리 마스크 너머로, 짙은 그림자가 드리워진 채, 개체는 차갑게 식어버린 몸 위로, 곧바로 수술을 집도하기 시작합니다. 칼날 하나 대지 않고, 목숨을 빼앗은 이 기괴한 의사는, 도대체 시체 위에서 무엇을 완성하려는 걸까요?",
+      "shots": [
+        {
+          "shot_id": "S00100",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "tight close-up, low-angle across the chamber floor, a bolted steel examination chair with loose restraint straps swaying slowly, freshly gouged scuff marks in the concrete where a seated weight gave way a heartbeat ago, the chair centered with scuff trails raking toward the right edge of frame and a surgical lamp arm hanging into the top corner casting a cold white cone, aged poured concrete with hairline cracks and an oxidized drain grate beneath the chair, overhead surgical lamp from above with one fluorescent tube at the left strobing at odd intervals, disturbed dust motes drifting in the lamp beam and a cold draft, sudden finality, silent violence, the wrongness of a death with no cause",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            },
+            {
+              "card_key": "STOCK-d-class",
+              "position": "right",
+              "depth": "near",
+              "pose": "sitting",
+              "pose_hint": "collapsing from touch",
+              "pose_guide_key": "humanoid_collapsed",
+              "motion_style": "tremble",
+              "motion_energy": "high"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00101",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "high-angle looking straight down onto the containment chamber floor, a single overturned steel chair lying on its side in the lower left quadrant, a perfectly undisturbed layer of settled dust across the open concrete expanse with a faint body-shaped impression pressed into it where a form recently lay and was removed, the wide clean floor dominating the frame with a drain grate near center-right, smooth cold concrete with micro-cracks and faint mineral deposits ringing the grate, flat overhead fluorescent wash with no shadows and unnaturally even illumination, a thin film of settled dust whose stillness feels deliberate, sterile emptiness, the hollow absence of struggle, quiet aftermath perversion",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00102",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "wide establishing shot across the length of the containment chamber, a steel examination table with a thin mattress standing at left midground beside a stainless supply cart, a heavy blast door at the far right corner with hydraulic pistons, a faint trail of disturbed dust leading from the doorway toward the table where slow movement has just passed, wall-mounted monitoring camera with a red indicator LED above the door, table at left midground and blast door anchoring the right third of the frame with an empty corridor of floor between them, poured concrete floor with expansion joints and stained white tiled walls peeling at the base, twin rows of fluorescent tubes overhead with the far row strobing irregularly casting long shifting shadows, cold volumetric haze pooling at knee level with condensation mist in the air, mounting dread, inevitable surgical intent, hanging anticipation",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low",
+              "movement_mode": "approach",
+              "movement_direction": "in",
+              "movement_pace": "slow"
+            },
+            {
+              "card_key": "STOCK-d-class",
+              "position": "left",
+              "depth": "mid",
+              "pose": "sitting",
+              "pose_hint": "lying on back",
+              "pose_guide_key": "humanoid_lying_supine",
+              "motion_style": "hold",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00103",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "over-the-shoulder composition looking down onto a steel examination table, a stainless instrument tray at the head of the table with tools laid in neat untouched rows, a single long shadow cast across the table's center reaching from the left edge of frame thrown by something just out of view, the surgical field still bare with no scalpel drawn and the instruments arranged but unused, table spanning the lower two thirds of frame with the instrument tray at upper right and a deep pool of shadow occupying the middle, cold brushed steel with worn leather corner straps and grout-lined tiled floor below, one overhead surgical light hard-edged from above throwing the shadow across the steel, faint breath-visible cold air and moisture beading on the metal surface, clinical violation, shadowed intent, cold procedure about to begin",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "over-the-shoulder",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            },
+            {
+              "card_key": "STOCK-d-class",
+              "position": "right",
+              "depth": "near",
+              "pose": "sitting",
+              "pose_hint": "lying on back",
+              "pose_guide_key": "humanoid_lying_supine",
+              "motion_style": "hold",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00104",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "tight close-up with shallow depth of field on the center of the examination table, brushed steel surface with a faint impression left by a weighted form recently removed, a stainless instrument tray at the right edge holding a precise row of clamps and probes none of which show any use, a small indistinct object half-hidden at the extreme frame edge that the eye catches but cannot identify, tray anchoring the right third while the table surface fills the foreground with a shadowed gap at the top edge where the field continues out of frame, cold brushed steel with a single bead of condensation and fine dust settling on the tray, surgical light from above creating a bright pool with deep falloff into shadow at the frame edges, cold silent air with the sense of a held breath, unanswered ritual, methodical coldness, the wrongness of a cure that uses no tools",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            },
+            {
+              "card_key": "STOCK-d-class",
+              "position": "right",
+              "depth": "mid",
+              "pose": "sitting",
+              "pose_hint": "lying on back",
+              "pose_guide_key": "humanoid_lying_supine",
+              "motion_style": "hold",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "dread",
+      "title": "치명적 접촉",
+      "kicker": "맨손이 닿자 환자는 쓰러졌다",
+      "display_narration": "맨손이 팔에 살짝 닿은 순간, 피험자는 비명조차 지르지 못하고 쓰러졌습니다. 어떠한 상처도, 저항도 없었습니다. 단 몇 초 만에 심장이 멈춘 시신 앞으로, 창백하고 길쭉한 손가락을 가진 존재가 천천히 다가섭니다. 이음새조차 없는 부리 마스크 너머로 짙은 그림자가 드리워진 채, 개체는 차갑게 식어버린 몸 위로 곧바로 수술을 집도하기 시작합니다. 칼날 하나 대지 않고 목숨을 빼앗은 이 기괴한 의사는, 도대체 시체 위에서 무엇을 완성하려는 걸까요?",
+      "word_budget": 65,
+      "assigned_devices": [
+        "dramatic_question"
+      ]
+    },
+    {
+      "scene_num": 2,
+      "narration": "그 섬뜩한 순간이 지난 뒤, 강화유리 너머의 격리실은 차가운 정적에 싸였습니다. 맨 콘크리트 벽 앞에, 일점구 미터의 키에 중세 흑사병 의사의 모습을 한, 단 하나뿐인 인간형 개체가 있었습니다. 놀랍게도, 이 개체는 관찰하는 의사에게 매우 정중하고 협조적인 태도로 말을 건넸습니다. 스스로를 의사라고 부르며, 진료를 계속하겠다고 밝힌 겁니다. 만약 당신이 그 창문 밖의 의사라면, 저 정중함 뒤의 위화감을 어떻게 다루었을지 상상해 보십시오.",
+      "shots": [
+        {
+          "shot_id": "S00200",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "static wide shot from behind a reinforced-glass observation window overlooking an empty humanoid containment cell, the cold interior stretching to a far wall of bare poured-concrete panels with faint mineral staining tracing down the wall seams, an empty steel floor drain grate set in the pale gray concrete floor slightly left of center with thin rust residue outlining its bars, a single wall-mounted utility panel with a closed steel latch on the right third of the far wall, the ceiling showing a bank of fluorescent tubes running in parallel rows with the nearest tube at the right edge emitting a weak intermittent flicker that tints its light a cooler blue-green, fine dust motes hanging perfectly still in the air, the vast empty negative space of the cell floor dominating the midground, faint condensation beading on the foreground glass surface catching a cool white glare from the cell lights, suspended aftermath, sterile stillness, the heavy residue of a moment that just ended",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00201",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "low-angle shot from within a bare humanoid containment cell, the left third of the frame filled by a tall unadorned concrete wall running vertically with a deep vertical seam and faint salt efflorescence tracing from the ceiling downward, a smooth gray poured-concrete floor sweeping toward a centered floor drain with a rusted grate at the bottom of frame, the far right corner tight against a second plain wall with a single recessed fluorescent fixture throwing harsh even light downward across the wall face, a wall-mounted vent grille with four horizontal slats three meters up on the right, the room's scale emphasized by the wide empty floor extending edge to edge, no furniture, no fixtures other than the embedded utilities, the eye drawn to the left-third wall seam where the empty room meets its vertical edge, clinical scrutiny, mute expectancy, the wide silent volume of a room measured against the form that fills its left edge",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "low-angle",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00202",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "medium eye-level shot centered on a reinforced-glass partition dividing a dim observation room from a brighter containment cell, the left third of the frame occupied by the edge of a metal console desk with a stack of blank paper forms, a coiled intercom microphone wire, and a small desk lamp switched off, the right third showing a bare gray concrete wall of the cell interior with faint parallel scratch marks running near the baseboard and a floor drain visible low on the right, the wire-mesh safety glass in the midground carrying a soft blurred reflection of the observation room's ceiling fixtures bowing across its surface, a thin horizontal line of condensation tracing the bottom edge of the glass where the two climate zones meet, cool fluorescent light from the cell side slightly brighter than the dim amber tone of the observation side, the glass reading as a boundary between two temperatures and two intentions, polite distance rendered as physical separation, the clinical ceremony of a measured exchange, observational stillness",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            },
+            {
+              "card_key": "STOCK-researcher",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00203",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "close-up shot through a thick pane of reinforced glass at a bare concrete cell wall filling the frame, the surface pitted with fine grain and hairline cracks, a shallow recessed alcove at the right edge containing a small rectangular vent with three horizontal slats, a single floor drain grate at the extreme lower edge of frame with a thin rust ring, the glass surface in the foreground showing fine micro-scratches and a faint film of dust catching the light at a grazing angle, cool fluorescent light raking across the concrete at a diagonal from the upper left, the close proximity of the frame compressing the depth, the wall texture dense and immediate, the weight of a spoken declaration pressing against the glass, institutional gravity, clinical conviction, restrained intensity",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "sway",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00204",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "wide locked shot from inside an observation room looking through a full-height reinforced-glass window into a long narrow containment cell beyond, the cell depth stretching roughly twelve meters to a far wall of pale gray concrete with a single utility pipe running vertically at the left third of that far wall, a floor drain ringed by a faint reddish-brown stain at the center of the empty concrete floor, a single dim ceiling light bank at the far end casting weak cool illumination that fades before reaching the glass, in the observation room foreground the edge of a metal console desk with a dead monitor screen tilted and reflecting the cell's dim light, a wall-mounted intercom speaker grille and a plastic chair pushed back slightly from the console, the glass surface bearing a faint film of dust that catches a low grazing light, the two rooms separated by one pane and a vast difference in intention, decision suspended in stale cold air, the weight of an imminent choice, institutional responsibility, isolated resolve",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "observation-room"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "clinical",
+      "title": "정중한 진료",
+      "kicker": "대상은 의사라고 말한다",
+      "display_narration": "그 섬뜩한 순간이 지난 뒤, 강화유리 너머의 격리실은 차가운 정적에 싸였습니다. 맨 콘크리트 벽 앞, 1.9미터 키에 중세 흑사병 의사 모습을 한 단 하나의 인간형 개체. 놀랍게도 이 개체는 관찰하는 의사에게 매우 정중하고 협조적인 태도로 말을 건넸습니다. 스스로를 의사라 부르며 진료를 계속하겠다고 밝힌 겁니다. 만약 당신이 그 창문 밖의 의사라면, 저 정중함 뒤의 위화감을 어떻게 다루었을지 상상해 보십시오.",
+      "word_budget": 55,
+      "assigned_devices": [
+        "second_person",
+        "hypothetical"
+      ]
+    },
+    {
+      "scene_num": 3,
+      "narration": "그 정중한 관찰 도중, 의사가 대역병의 정체를 물었습니다. 깊은 후드의 그늘 아래, 마스크의 뚫린 눈구멍이 순식간에 어두워집니다. 그 존재는 지극히 당연하다는 듯, 자신을 대역병을 치료하는 의사라고 말했습니다. 인간은 이미 그 병을 앓고 있으며, 자신만이 치료법을 찾고 있다는 임상적인 확신. 하지만 다른 사람의 눈에는 아무런 증상도 보이지 않습니다. 오직 그 존재의 시선 끝에만 존재하는 지독한 병.",
+      "shots": [
+        {
+          "shot_id": "S00300",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "medium shot from inside a dim Foundation observation room, a reinforced observation window with wire-mesh safety glass dominating the left third, its surface layered with faint reflections and grime, beyond it the isolation cell's bare concrete walls stretching into muted shadow, a row of dark monitoring consoles lining the near right wall with dormant screens, conduits and cable trays running along the ceiling, two fluorescent panels casting flat clinical light that pools on worn linoleum, fine dust suspended in the cold air, restrained institutional tension, anticipatory quiet",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00301",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "close-up through slightly fogged observation glass, the isolation cell's single overhead light fixture flickering once then dying to a dull amber filament glow, concentric rings of shadow collapsing inward toward the center of the frame, hairline cracks radiating across the frosted window pane catching the last marginal light, condensation beading and running down the glass surface, the cell's far walls losing definition as the light fails, only a faint outline of conduit along the ceiling remaining visible, a wall-mounted clock frozen with its second hand between ticks, suffocating stillness, abrupt weight",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "pulse",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00302",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "wide establishing shot of the observation room with the reinforced window running along the right wall, revealing the isolation cell's far end where medical equipment including an instrument tray and a rolling cart sits arranged with precise procedural order, harsh overhead spots throwing hard-edged diagonal shadows across the cell's concrete floor, the observation room's own scuffed tile floor dimly lit with scattered cable runs trailing toward a monitoring console, a red indicator LED blinking steadily on a wall-mounted intercom panel, faint heat-haze distortion rising from a floor vent near the window, clinical self-assurance, rigid order",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00303",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "close-up low-angle view into the isolation cell through the observation window's lower-left corner, the cell floor of stained poured concrete with a single iron inspection grate, a battered medical folder splayed open on the floor with papers scattered in an arc pattern, a rolled canvas sheet leaning against the far wall, pale fluorescent light struggling through layers of grime on the ceiling fixture, the window glass carrying ghost reflections of the dim observation room, moisture crawling down the metal frame in thin rivulets, institutional certainty, creeping vitiation",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00304",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "high-angle view from above the observation room's monitoring station, a wall of flat-screen displays showing uniformly flat vital-sign waveforms and normal value readouts, a medical light box with unremarkable scan films clipped in place, below the screens a stainless steel counter with a single disorganized stack of paperwork and a coffee mug with undisturbed surface, the reinforced window at the bottom edge of the frame revealing the isolation cell through wire-reinforced glass, twin fluorescent tubes humming in even rows casting uniform light across the room, dust particles drifting slowly through the light beams, the profound emptiness of a diagnosis that has no evidence, hollow certainty, suspended doubt",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00305",
+          "sentence_indices": [
+            5
+          ],
+          "image_prompt": "POV shot through the observation window into the isolation cell's far corner, a wall-mounted examination lamp casting a sickly pale cone of light onto an empty steel examination table, a thick layer of dust on the table surface disturbed in a slow swirled pattern as if by a brush or cloth, the cell's air appearing thicker and milkier than before with fine particles hanging suspended, dark green painted walls peeling in long strips revealing gray concrete beneath, the window glass developing a subtle film that softens the view at the edges, a faint greenish tint creeping into the lamp light, palpable contamination, poisoned stillness",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "POV",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "pulse",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": null
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "dread",
+      "title": "보이지 않는 병",
+      "kicker": "그가 본다는 병은 무엇인가",
+      "display_narration": "그 정중한 관찰 도중, 의사가 대역병의 정체를 물었습니다. 깊은 후드 그늘 아래, 마스크의 뚫린 눈구멍이 순식간에 어두워집니다. 그 존재는 지극히 당연하다는 듯, 자신을 대역병을 치료하는 의사라 말했습니다. 인간은 이미 그 병을 앓고 있으며, 자신만이 치료법을 찾고 있다는 임상적인 확신. 하지만 다른 사람의 눈에는 아무런 증상도 보이지 않습니다. 오직 그 존재의 시선 끝에만 존재하는 지독한 병.",
+      "word_budget": 65,
+      "assigned_devices": []
+    },
+    {
+      "scene_num": 4,
+      "narration": "그 임상적인 확신 뒤로, 재단은 마침내 이 존재를 에스씨피 공사구로 지정했습니다. 얼굴을 덮은 창백한 무유약 도자기 부리 마스크. 이음새나 끈, 피부 틈조차 보이지 않아 머리에 그대로 융합된 것으로 보입니다. 대상이 수용된 곳은 표준 인간형 격리 셀. 그러나 연구 자료 접근은 오직 시설 지휘부의 재량에 달려 있습니다. 그 엄격한 절차가 개체의 위험성을 증명하는 상황. 차가운 정적 속에서, 마침내 의사의 손길이 움직이기 시작합니다.",
+      "shots": [
+        {
+          "shot_id": "S00400",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "wide shot of a standard humanoid containment cell, poured concrete floor with a single rusted drain grate near center, reinforced concrete walls with vertical expansion joints, heavy blast door with hydraulic pistons occupying the left third, wire-mesh observation window set high on the far wall revealing a sliver of brightly lit corridor beyond, twin rows of ceiling-mounted fluorescent tubes creating symmetric pools of cold light, a small red LED indicator glowing on a wall-mounted security camera in the upper right corner, dead-still sterile air, cold institutional verdict, absolute containment finality",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00401",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "close-up with shallow depth of field, out-of-focus pale institutional wall filling the frame, a single hard overhead light source from above-right casting a sharp diagonal beam across the frame, fine dust particles suspended and drifting within the beam, faint hairline cracks tracing across the painted surface, subtle condensation sheen on the upper wall, the right third of the frame bathed in harsh light while the left falls into soft shadow, negative space suggesting an unseen presence just beyond the frame, clinical scrutiny, alien stillness, unblinking observation",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00402",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "medium shot framing an isolation cell interior, a vertical seam of shadow running down the center of a bare concrete wall, institutional green paint peeling near the ceiling line, a steel examination table bolted to the floor on the right with restraint anchor points, an empty stainless instrument tray on the table, a single overhead fluorescent tube strobing at irregular intervals casting shifting shadows that make the wall appear to breathe, fine dust hanging in the flickering light, everything frozen in a moment of wrongness, unease at the unnatural fusion, suffocating stillness",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00403",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "wide establishing shot of a standard humanoid containment cell stretching to a back wall, poured concrete floor with expansion joints and a central drain grate, windowless reinforced walls with metal panel seams, a single ceiling-mounted fluorescent fixture casting a cold oval of light near the back right corner, the rest of the cell falling into deep gray shadow, a small rubber mat on the floor worn at the edges, fine dust accumulating in the corners suggesting long vacancy, the vast empty space in the middle of the cell dominant in frame, institutional isolation, hollow emptiness, silent confinement",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00404",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "high-angle view down a short corridor ending at a sealed steel door, a keycard reader beside the door with a single red LED blinking, yellow-black hazard striping along the floor baseboard, wall-mounted document holder containing a faded clearance-level sign, two security cameras on opposite walls pointing toward the door, fluorescent tube overhead flickering erratically creating a strobe effect on the metal door surface, dust motes stirring in the light, the door's surface marked with faint fingerprint smudges, bureaucratic secrecy, restricted knowledge, silent authority",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [],
+          "location_key": "corridor"
+        },
+        {
+          "shot_id": "S00405",
+          "sentence_indices": [
+            5
+          ],
+          "image_prompt": "low-angle view looking up at a reinforced containment door, multiple heavy locking bolts visible along the door edge, a red emergency indicator light glowing steady above the door frame, layered hazard warning stickers peeling at the corners, a small wire-mesh observation window set in the door showing only a dark sliver of the cell interior, condensation beading on the metal frame, the corridor floor reflecting the red light in a thin streak, the sheer layered security of the door dominating the frame, proof of danger in every redundant lock, cold institutional caution, the heavy weight of protocol",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "low-angle",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00406",
+          "sentence_indices": [
+            6
+          ],
+          "image_prompt": "close-up of the lower floor of a containment cell, cold fluorescent light from above, a wide expanse of scuffed poured concrete with hairline cracks radiating from a central drain grate, fine dust motes drifting in slow motion near the floor, a thin crescent of light curving along the left edge of the frame where the floor meets the wall, everything utterly still except the barely perceptible drift of particles, the air thick and unmoving, a single held moment before motion begins, anticipatory silence, the pressure of an imminent gesture",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [],
+          "location_key": "containment-chamber"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "escalation",
+      "title": "SCP-049",
+      "kicker": "격리 절차가 그를 말해준다",
+      "display_narration": "그 임상적인 확신 뒤로, 재단은 마침내 이 존재를 SCP-049로 지정했습니다. 얼굴을 덮은 창백한 무유약 도자기 부리 마스크. 이음새나 끈, 피부 틈조차 보이지 않아 머리에 그대로 융합된 것으로 보입니다. 대상이 수용된 곳은 표준 인간형 격리 셀. 그러나 연구 자료 접근은 오직 시설 지휘부의 재량에 달려 있습니다. 그 엄격한 절차가 개체의 위험성을 증명하는 상황. 차가운 정적 속에서, 마침내 의사의 손길이 움직이기 시작합니다.",
+      "word_budget": 60,
+      "assigned_devices": []
+    },
+    {
+      "scene_num": 5,
+      "narration": "그 엄중한 경계 속에서도, 대상의 손길은 망설임이 없었습니다. 사망한 피험자에게 정교하고 서두르지 않는 수술을 집도하기 시작합니다. 솔직히, 그 담담한 임상적 몸짓을 보고 있으면 가슴이 서늘해집니다. 잠시 후, 수술이 끝나자, 멈춰 있던 시체가 다시 움직이며 일어섭니다. 이렇게 되살아난 존재가 바로 에스씨피 공사구 이 개체. 분명 다시 살아났고 순종적이었지만, 완전히 죽지도 않은 기괴한 상태였습니다. 어쩌면 대상의 눈에는, 이것이야말로 완벽히 치료가 성공한 환자의 모습이었을지도 모릅니다.",
+      "shots": [
+        {
+          "shot_id": "S00500",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "wide establishing shot, underground medical containment chamber viewed from one corner, poured concrete floor with expansion joints and a single rusted drainage grate, reinforced wall panels with industrial seams, surgical bay at the far-left third holding a stainless steel operating table beneath a cold overhead surgical lamp not yet at full power, heavy blast door on the right wall with hydraulic pistons and hazard warning stripes, high observation window of wire-mesh safety glass, a security camera's red indicator LED glowing against the ceiling, the room holding an unnatural stillness like a held breath, overhead fluorescent strips dimmed to a weak hum, thin cold fog settling at floor level and condensing on the metal door frame, faint dark soil traces flecked across the concrete near the table legs, clinical dread, unwavering resolve, institutional isolation",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "wide",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00501",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "medium shot, stainless steel autopsy table centered in frame with a perforated drainage gutter running along its edges, instrument tray cart wheeled to the right third holding a precise array of scalpels, clamps, and retractors aligned in surgical order, saline IV stand at the far left with an empty bag hanging, restraint straps unfastened and lying flat along the table edges, overhead surgical lamp burning at full intensity while surrounding fluorescent tubes sit dark, cold blue ambient spill from a wall-mounted monitoring display, condensation beading on steel surfaces, sterile air carrying faint dried-herb particulates drifting through the light beam, procedural wrongness, cold curiosity, clinical violation",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "medium",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            },
+            {
+              "card_key": "STOCK-d-class",
+              "position": "left",
+              "depth": "mid",
+              "pose": "sitting",
+              "pose_hint": "lying on operating table",
+              "pose_guide_key": "humanoid_lying_supine",
+              "motion_style": "hold",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "autopsy-room"
+        },
+        {
+          "shot_id": "S00502",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "close-up shot, surgical field on the operating table surface, a fine array of instruments resting on a sterile blue drape, a scalpel with a slender steel handle set beside a half-finished line of dark sutures, a gauze pad bearing dark dried fluid stains near the table edge, one clamp left open catching the surgical light, the steel surface slightly concave from years of procedures, harsh overhead surgical light from directly above throwing knife-edged shadows around each tool, the room behind falling into soft-focus shadow, faint steam rising from a sterilizing tray on the side cart, a single fleck of dark soil on the otherwise clean drape edge, chilled detachment, measured cruelty, breathless pause",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "close-up",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "autopsy-room"
+        },
+        {
+          "shot_id": "S00503",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "medium shot, operating table now disturbingly empty at center, restraint straps unbuckled and dangling loose over the table edges, a crumpled surgical sheet pooling on the floor at the table's foot, instrument tray knocked off its cart with a clamp and spreader lying on the tile, the surgical lamp still swinging a fraction of a degree as if brushed moments ago, bare steel surface gleaming under the light, wall-mounted surgical clock with moving second hand on the right third, rolling instrument cart with scattered tools on the left third, displaced dust still swirling in the beam, faint damp-earth scent lingering in the cold air, impossible movement, arrested shock, wrongness of the risen dead",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "medium",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            },
+            {
+              "card_key": "SCP-049-2",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "tremble",
+              "motion_energy": "high"
+            }
+          ],
+          "location_key": "autopsy-room"
+        },
+        {
+          "shot_id": "S00504",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "low-angle shot, the center of the surgical chamber opened upward, a harsh cone of surgical light isolated in the middle of the empty floor between the operating table and the far wall, the emptied table visible behind at a low angle with its bare steel surface and hanging straps, ceiling-mounted ventilation grille dark above, walls converging upward in cold perspective, a glass-front supply cabinet reflecting the lamp as a pinpoint of glare, floor tiles with fine grout lines leading the eye toward the center, dust motes suspended in the light shaft, an unnatural hollowness in the middle where a shape should fill the frame, clinical lighting with hard cut-offs, cold air settling downward, uncanny recognition, grotesque vitality, wrong identity",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "low-angle",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049-2",
+              "position": "center",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "pulse",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "autopsy-room"
+        },
+        {
+          "shot_id": "S00505",
+          "sentence_indices": [
+            5
+          ],
+          "image_prompt": "high-angle shot looking down on the surgical bay, operating table centered-low in frame with loose restraint straps and a bare gleaming top, floor around it scattered with dropped surgical instruments — a forceps, a needle driver, a retractor resting where they fell, a surgical sheet slid partially off the table, a flat-screen monitor on the far wall showing a flat green line, scrub sink at the upper frame edge, tile floor with grout lines, a cart wheel stopped mid-turn leaving a rubber scuff mark, harsh overhead lamp casting pooling light with deep shadows under the table legs, disturbed dust still hanging in the air, a hush thick as wool, submissive wrongness, half-dead stillness, uneasy obedience",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "high-angle",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049-2",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "pose_hint": "head bowed",
+              "motion_style": "tremble",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "autopsy-room"
+        },
+        {
+          "shot_id": "S00506",
+          "sentence_indices": [
+            6
+          ],
+          "image_prompt": "over-the-shoulder shot from the near-left corner of the room looking toward the far-right, the surgical bay stretching into dimness, the emptied operating table mid-frame with its still-lit lamp creating an empty halo of light, far-right wall holding a closed steel cabinet and a heavy blast door with its handle at waist height, a wall-mounted clock with a slow second hand, fluorescent tubes at the far end flickering once, cable conduits running along the concrete wall, the floor carrying faint drag marks converging toward the door, cold surgical light thinning into shadow, dry herb and earth residue scattered on the floor near the table, iron-cold stillness, misguided triumph, hollow success",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person, bright colors, cheerful, cartoon",
+          "camera_angle": "over-the-shoulder",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            },
+            {
+              "card_key": "SCP-049-2",
+              "position": "right",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "autopsy-room"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "clinical",
+      "title": "수술대 위에서",
+      "kicker": "시체가 다시 일어났다",
+      "display_narration": "그 엄중한 경계 속에서도, 대상의 손길은 망설임이 없었습니다. 사망한 피험자에게 정교하고 서두르지 않는 수술을 집도하기 시작합니다. 솔직히 그 담담한 임상적 몸짓을 보고 있으면 가슴이 서늘해집니다. 잠시 후, 수술이 끝나자 멈춰 있던 시체가 다시 움직이며 일어섭니다. 이렇게 되살아난 존재가 바로 SCP-049-2 개체. 분명 다시 살아났고 순종적이었지만, 완전히 죽지도 않은 기괴한 상태였습니다. 어쩌면 대상의 눈에는, 이것이야말로 완벽히 치료가 성공한 환자의 모습이었을지도 모릅니다.",
+      "word_budget": 55,
+      "assigned_devices": [
+        "narrator_reaction"
+      ]
+    },
+    {
+      "scene_num": 6,
+      "narration": "시체가 일어선 그 기괴한 광경 뒤로, 시설 지휘부는 뜻밖의 결정을 내립니다. 에스씨피 공사구에게 연구 자료에 대한 통제된 접근을 허가한 겁니다. 움직이는 시체는 부작용이 아닌, 치료가 완성된 환자라는 판단. 자격을 얻은 의사는 그렇게 스스로의 치료를 이어가고 있습니다. 어쩌면 당신이 품은 생명 자체가 그 역병이고, 오직 그만이 유일한 의사일지 모릅니다.",
+      "shots": [
+        {
+          "shot_id": "S00600",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "wide establishing shot with the dominant horizontal composition offset by a chalk-outlined rectangle on the right third of the concrete floor, restraint straps coiled and clipped to the left wall, a steel examination gurney pushed against the far wall with rolled canvas straps, an observation window with wire-mesh glass on the left catching a narrow cold beam of light, cracked floor tile with burnt chemical residue at the center of the chalk outline, twin rows of fluorescent tubes above with the nearest strobing at irregular intervals, fine dust suspended in the light shaft, institutional normalization of the impossible, hollow bureaucratic silence",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [],
+          "location_key": null
+        },
+        {
+          "shot_id": "S00601",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "medium shot with the background anchoring along the left third, an open steel archival cabinet with sliding drawers pulled out, manila folders and bound research volumes stacked on a stainless-steel cart beside it, glass specimen jars with sealed lids on the top shelf reflecting a sickly amber light, a badge-reader panel mounted by the cabinet with its LED blinking green, scuffed linoleum floor with wheel marks from the cart, overhead fluorescent tube casting flat clinical light with a faint amber undercast, dust motes drifting over the opened drawers, sanctioned access, the wrongness of granted trust",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": null
+        },
+        {
+          "shot_id": "S00602",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "high-angle shot looking down at a steel desk in the research alcove, a thick case file spread open with pages curling at the edges, a rubber stamp and ink pad set aside with fresh green ink, a wire-bound medical assessment form half-filled, a coffee mug with cold residue beside the file, a desk lamp casting a narrow sickly amber cone over the paperwork while the rest of the room falls into flat shadow, fluorescent glare washing the far wall, scattered dried plant fragments pinched between two file pages carrying a faint herbal atmosphere, bureaucratic normalization of atrocity, the indifference of paperwork",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [],
+          "location_key": null
+        },
+        {
+          "shot_id": "S00603",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "low-angle shot with the background anchoring along the right third, a stainless-steel research bench with a row of sealed specimen jars in amber liquid catching cold light, a worn leather medical bag open on a stool with brass clasps, a tray of surgical instruments laid out on a green cloth with one pair of forceps set apart, a chalk circle drawn on the floor beneath a hanging examination lamp, black paint chipping on the bench edge, a single fluorescent tube overhead buzzing with a low hum, air heavy with dust and the faint yellow cast of old varnish, self-directed continuation of the work, the quiet momentum of a trusted threat",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "low-angle",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": null
+        },
+        {
+          "shot_id": "S00604",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "close-up shot with the background narrowing to a tight pocket of the research bench, a stainless-steel instrument tray edge in sharp focus at the bottom of the frame, forceps and a curved scalpel catching a single amber highlight, two sealed specimen jars behind the tray with pale sediment settled at their bases, a hanging examination lamp swinging in a slow arc casting moving shadows across the wall, the far wall falling into black with a faint geometric chalk outline barely visible, cool clinical white light counter-cut by the sickly amber glow beneath the tray, condensation beading on the glass jar surfaces, the viewer's own mortality interrogated, the unbearable intimacy of being diagnosed",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, bright colors, cheerful, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "shake",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "pose_hint": "reaching toward camera",
+              "pose_guide_key": "humanoid_reaching_forward",
+              "motion_style": "pulse",
+              "motion_energy": "high"
+            }
+          ],
+          "location_key": null
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "escalation",
+      "title": "치료의 대가",
+      "kicker": "재단이 연구를 허가했다",
+      "display_narration": "시체가 일어선 그 기괴한 광경 뒤로, 시설 지휘부는 뜻밖의 결정을 내립니다. SCP-049에게 연구 자료에 대한 통제된 접근을 허가한 겁니다. 움직이는 시체는 부작용이 아닌, 치료가 완성된 환자라는 판단. 자격을 얻은 의사는 그렇게 스스로의 치료를 이어가고 있습니다. 어쩌면 당신이 품은 생명 자체가 그 역병이고, 오직 그만이 유일한 의사일지 모릅니다.",
+      "word_budget": 45,
+      "assigned_devices": [
+        "second_person"
+      ]
+    },
+    {
+      "scene_num": 7,
+      "narration": "통제된 허가가 떨어진 직후, 담당 정신과 의사가 그의 형체를 정밀하게 관찰합니다. 마스크 가장자리에는 끈도, 이음새도, 피부와의 틈새조차 없었습니다. 도자기 마스크는 두개골과 완전히 융합되어 있었죠. 로브의 주름조차, 옷감이 아닌 몸 그 자체. 솔직히, 이 대목에서 소름이 돋았습니다. 그는 의상을 입은 존재가 아니었습니다, 외형 전체가 하나의 해부학적 구조인 겁니다.",
+      "shots": [
+        {
+          "shot_id": "S00700",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "static wide shot of a containment interview chamber, poured concrete floor scrubbed to a pale grey with faint joints, walls in flat institutional white, a steel examination desk and wire-mesh safety-glass observation window clustered on the left third, the window's recording LED blinking a fixed surgical red, a ceiling-mounted camera drifting through a slow pan, chipped paint along the baseboards, one dead fluorescent tube at the far corner, twin rows of overhead fluorescents throwing a cold even light across the long empty floor, condensation beading on the wire mesh, faint film grain in the air, clinical scrutiny, controlled unease, analytic detachment",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "interview-room"
+        },
+        {
+          "shot_id": "S00701",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "extreme close-up of an inspection counter in a clinical interview chamber, a sterilized steel tray crowded on the right third of the frame and racked with jeweler's loupes, dental mirrors, and a fine-tipped probe, the hinged surgical examination lamp swiveled at a steep angle with its halogen beam flattening the tray into hard white glare, a swing-arm magnifier lens hovering over the empty velvet-lined depression of the tray as if there is nothing left to examine, the counter's scrubbed steel edge catching a mirror-clean reflection with no join line breaking its surface, twin fluorescent tubes overhead strobing faintly, cold condensation beading on the instrument handles, obsessive scrutiny, the anxiety of finding no seam, dawning wrongness",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [],
+          "location_key": "interview-room"
+        },
+        {
+          "shot_id": "S00702",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "medium shot of a clinical interview chamber's rear wall, a backlit x-ray lightbox glowing at the center of the frame with an overexposed film whose core is blown to pure white, its edges showing ribbed glass texture and clipped clipping pins, beneath it a steel examination desk holding a sealed evidence box labeled only with a barcode, a two-way mirror band running across the upper wall with its reflection murky and depthless, a single fluorescent tube humming flat and cold above the lightbox, condensation streaking the illuminated glass in thin rivulets, frozen realization, medical disbelief, anatomical impossibility",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "interview-room"
+        },
+        {
+          "shot_id": "S00703",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "over-the-shoulder view across a clinical desk toward a bare wall, the left third anchoring on a chrome hook holding a crumpled sterile polypropylene drape whose folds are clearly separate and fabric-like, beside it a wire hanger caught mid-swing with its shadow frozen at an angle, the desk surface scarred with faint parallel scratch arcs, the white wall curving seamlessly into the ceiling with no visible joint line anywhere, cold fluorescent glow flattening every surface to the same pale tone, a thin film of dust settling on the hanger's chrome, visceral wrongness, the dread of unclothing, quiet medical tension",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "over-the-shoulder",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "interview-room"
+        },
+        {
+          "shot_id": "S00704",
+          "sentence_indices": [
+            4
+          ],
+          "image_prompt": "high-angle view down onto a steel examination counter, a ceramic coffee mug halved by a hairline crack still holding a cold dark liquid, fine rime frost creeping across the metal instrument tray beside it, scattered dried herb fragments lying in a loose arc as if dropped and abandoned, a spiral notebook open with handwriting that trails off mid-sentence, the fluorescent tube above stuttering and throwing a slow strobe across the surfaces, cold breath-fog suspended in the still air, hollow stillness, creeping goosebumps, breath-held silence",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "locked",
+          "image_path": null,
+          "cast": [],
+          "location_key": "interview-room"
+        },
+        {
+          "shot_id": "S00705",
+          "sentence_indices": [
+            5
+          ],
+          "image_prompt": "wide pull-back of the full clinical interview chamber, the right wall anchoring with a wall-mounted anatomical chart in an unfamiliar script, its diagram of a human form annotated with thin red ink lines that cross beyond the figure's outline into the paper's margin, a wheeled instrument cart parked near the chart with trays stacked empty, the long poured-concrete floor stretching to the far wall where the interview station sits bare, a last fluorescent tube still lit a few steps away casting a hard even coldness, faint condensation hanging low in the air, final truth settling, hollow awe, irreconcilable reality",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, oversaturated, cartoon, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "pull_back",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "pulse",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "interview-room"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "revelation",
+      "title": "의상이 아니다",
+      "kicker": "마스크는 살과 하나였다",
+      "display_narration": "통제된 허가가 떨어진 직후, 담당 정신과 의사가 그의 형체를 정밀하게 관찰합니다. 마스크 가장자리에는 끈도, 이음새도, 피부와의 틈새조차 없었습니다. 도자기 마스크는 두개골과 완전히 융합되어 있었죠. 로브의 주름조차 옷감이 아닌 몸 그 자체. 솔직히 이 대목에서 소름이 돋았습니다. 그는 의상을 입은 존재가 아니었습니다, 외형 전체가 하나의 해부학적 구조인 겁니다.",
+      "word_budget": 40,
+      "assigned_devices": [
+        "narrator_reaction"
+      ]
+    },
+    {
+      "scene_num": 8,
+      "narration": "그 기이한 형체가 드러난 뒤에도, 재단의 기록은 침묵을 지키고 있습니다. 이 개체의 회수 경위와 위험 등급, 그리고 연대기적 항목은, 문서 어디에서도 찾아볼 수 없는 상태입니다. 놈이 그토록 목매던 대역병의 실존 여부 역시, 재단은 끝내 확인하지 못했습니다. 대역병이 실제로 존재하고, 그것을 보지 못하는 쪽이 우리라면, 격리실 안의 존재는 의사일까요, 아니면 환자일까요?",
+      "shots": [
+        {
+          "shot_id": "S00800",
+          "sentence_indices": [
+            0
+          ],
+          "image_prompt": "static wide shot from an observation gallery looking down into a humanoid containment chamber, the enormous reinforced concrete space yawning below with a single rusted steel chair bolted to the floor at center, restraint straps hanging limp and motionless, heavy blast door sealed flush against the far wall, walls streaked with years of mineral deposits and hairline cracks radiating from anchor points, cold fluorescent panels buzzing overhead, the nearest tube strobing at irregular intervals and casting shifting shadows across the empty floor, thin layer of dust undisturbed except for a single curved drag mark circling the chair, condensation mist hanging at knee level, dead institutional silence, void-like abandonment",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "wide",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "left",
+              "depth": "far",
+              "pose": "standing",
+              "motion_style": "breath",
+              "motion_energy": "low"
+            }
+          ],
+          "location_key": "containment-chamber"
+        },
+        {
+          "shot_id": "S00801",
+          "sentence_indices": [
+            1
+          ],
+          "image_prompt": "high-angle shot looking down at an empty steel document tray on a worn metal desk in a dim office annex, a single manila folder lying open with pages missing, blank spaces where classification stamps should be, dust settled thickly over the keyboard and monitor, desk lamp casting a sickly yellow pool of light that catches floating motes in the air, a half-filled coffee mug with a dried ring on the surface, scattered paperclips and a rolled-up redacted document shoved into a shredder basket overflowing with ribbon-cut strips, cinder block walls with peeling institutional paint, fluorescent light flickering weakly overhead, fine particles drifting down through the light beam, bureaucratic erasure, archival silence",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "high-angle",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [],
+          "location_key": "office"
+        },
+        {
+          "shot_id": "S00802",
+          "sentence_indices": [
+            2
+          ],
+          "image_prompt": "medium shot from behind a thick wire-mesh observation window, the sealed containment chamber beyond visible through smudged glass, an empty examination room with a steel gurney pushed against the far wall, instrument tray overturned on the floor, drawers hanging open with their contents scattered, a black leather bag lying open on the concrete with a few dried herb fragments spilled beside it, the air hazy with faint dust motes catching a cold shaft of light from a single working fluorescent tube, wall-mounted air sampling equipment with a blinking red indicator LED, floor scuffed in a circular pattern around the gurney, faint moisture beading on the window's interior, oppressive clinical sterility, failed verification",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "medium",
+          "camera_movement": "push_in",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "right",
+              "depth": "mid",
+              "pose": "standing",
+              "motion_style": "sway",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "observation-room"
+        },
+        {
+          "shot_id": "S00803",
+          "sentence_indices": [
+            3
+          ],
+          "image_prompt": "close-up shot of the bare concrete wall inside the containment chamber, moisture beading and running down in thin dark streaks, a single small crack in the plaster shaped like a branching vein, faint discoloration spreading outward like a stain that doesn't match the concrete's mineral deposits, a few dry herb fragments scattered on the floor below where the wall meets the ground, one bent metal bracket where something was mounted but removed, dust swirling in a slow vortex from a ventilation grate above, the frame dominated by empty negative space where the rest of the chamber should be, sickly yellow-gray light filtering from a distant fixture, cold shadow pooling in the corners, existential ambiguity, unresolved presence",
+          "negative_prompt": "extra limbs, extra arms, extra fingers, deformed hands, mutated, bad anatomy, blurry, watermark, text, low quality, person, human figure, character, silhouette of a person",
+          "camera_angle": "close-up",
+          "camera_movement": "drift",
+          "image_path": null,
+          "cast": [
+            {
+              "card_key": "SCP-049",
+              "position": "center",
+              "depth": "near",
+              "pose": "standing",
+              "motion_style": "pulse",
+              "motion_energy": "medium"
+            }
+          ],
+          "location_key": "containment-chamber"
+        }
+      ],
+      "audio_path": null,
+      "audio_duration": null,
+      "word_timings": [],
+      "subtitle_path": null,
+      "mood": "dread",
+      "title": "마지막 진료",
+      "kicker": "의사인가, 환자인가",
+      "display_narration": "그 기이한 형체가 드러난 뒤에도, 재단의 기록은 침묵을 지키고 있습니다. 이 개체의 회수 경위와 위험 등급, 연대기적 항목은 문서 어디에서도 찾아볼 수 없는 상태입니다. 놈이 그토록 목매던 대역병의 실존 여부 역시 재단은 끝내 확인하지 못했습니다. 대역병이 실제로 존재하고 그것을 보지 못하는 쪽이 우리라면, 격리실 안의 존재는 의사일까요, 아니면 환자일까요?",
+      "word_budget": 45,
+      "assigned_devices": [
+        "dramatic_question"
+      ]
+    }
+  ],
+  "structure": [
+    {
+      "scene_num": 1,
+      "act": "hook",
+      "synopsis": "콜드 오픈: 맨손 접촉 한 번으로 피험자가 수 초 만에 쓰러지고, 대상이 곧바로 그 시체에 수술을 시작한다.",
+      "event": {
+        "who": "D계급 피험자 1명과 대장",
+        "what": "대상의 맨손이 피험자의 팔에 닿았다",
+        "consequence": "피험자가 수 초 안에 사망했고 대상은 시체에 수술을 집도했다"
+      },
+      "key_points": [
+        "상처도 투쟁도 없다 — 피험자가 그저 쓰러진다",
+        "맨손: 창백하고 길쭉한 손가락, 이완된 외과의 자세 — 접촉만으로 치명적",
+        "눈구멍을 그림자가 덮는다 / 부리 마스크의 이음새 없는 가장자리 클로즈업"
+      ],
+      "emotional_beat": "shock",
+      "estimated_duration_sec": 30,
+      "hook_type": "shock",
+      "loops_planted": [
+        "loop_mask_fused"
+      ],
+      "loops_closed": [],
+      "pattern_interrupt": "none",
+      "word_budget": 65,
+      "fact_references": [
+        "맨손 접촉은 살아 있는 인간을 수 초 안에 죽인다",
+        "SCP-049는 죽은 시체에 수술을 집도한다"
+      ],
+      "mood": "dread",
+      "title": "치명적 접촉",
+      "kicker": "맨손이 닿자 환자는 쓰러졌다",
+      "assigned_devices": [
+        "dramatic_question"
+      ]
+    },
+    {
+      "scene_num": 2,
+      "act": "mystery_expansion",
+      "synopsis": "격리 정신과 의사가 격리실 창문 밖에서 대상을 관찰한다. 대상은 정중하고 협조적이며 스스로를 의사라 부른다.",
+      "event": {
+        "who": "격리 정신과 의사 1명",
+        "what": "격리실 창문을 통해 대상을 관찰하고 상호작용을 시도했다",
+        "consequence": "대상이 정중하고 협조적인 태도로 응했고 진료를 계속하겠다고 말했다"
+      },
+      "key_points": [
+        "1.9미터, 가냘프고 정지해 있는, 의사의 고요한 인내로 서 있는 단일 인간형",
+        "표준 인간형 격리 셀 — 맨 콘크리트 벽, 냉광등, 강화문",
+        "상상해보라 — 당신이 그 의사라면, 당신은 어떻게 그의 진료 이야기를 다루겠는가"
+      ],
+      "emotional_beat": "mystery",
+      "estimated_duration_sec": 65,
+      "hook_type": "none",
+      "loops_planted": [],
+      "loops_closed": [],
+      "pattern_interrupt": "direct_address",
+      "word_budget": 55,
+      "fact_references": [
+        "SCP-049는 키 약 1.9미터의 인간형 개체로 중세 흑사병 의사의 모습을 하고 있다",
+        "이 개체는 정중하고 협조적이며 말을 할 수 있다"
+      ],
+      "mood": "clinical",
+      "title": "정중한 진료",
+      "kicker": "대상은 의사라고 말한다",
+      "assigned_devices": [
+        "second_person",
+        "hypothetical"
+      ]
+    },
+    {
+      "scene_num": 3,
+      "act": "mystery_expansion",
+      "synopsis": "의사가 대역병의 정체를 묻자, SCP-049는 오직 자신만이 볼 수 있는 인간의 숨은 병을 임상적인 확신으로 설명한다.",
+      "event": {
+        "who": "SCP-049",
+        "what": "인간이 앓고 있는 '대역병'에 대해 설명했다",
+        "consequence": "오직 자신만이 그 병을 볼 수 있다는 신념이 드러났다"
+      },
+      "key_points": [
+        "대역병 — 그가 보는 병은 남들에게 보이지 않는다",
+        "임상적 확신: 인간은 이미 병에 걸렸고 그는 치료법을 찾고 있다",
+        "깊은 후드가 마스크의 눈구멍을 그림자로 가린다"
+      ],
+      "emotional_beat": "dread",
+      "estimated_duration_sec": 50,
+      "hook_type": "none",
+      "loops_planted": [
+        "loop_great_pestilence"
+      ],
+      "loops_closed": [],
+      "pattern_interrupt": "none",
+      "word_budget": 65,
+      "fact_references": [
+        "SCP-049는 자신이 '대역병'을 치료하는 의사라고 믿는다",
+        "오직 SCP-049만이 그 대역병을 볼 수 있다고 주장한다"
+      ],
+      "mood": "dread",
+      "title": "보이지 않는 병",
+      "kicker": "그가 본다는 병은 무엇인가",
+      "assigned_devices": []
+    },
+    {
+      "scene_num": 4,
+      "act": "identity_reveal",
+      "synopsis": "대상이 공식적으로 SCP-049로 지정된다. 격리 절차 항목이 낭독되며, 각 절차가 그를 위험하게 만드는 이유를 암시한다.",
+      "event": {
+        "who": "재단 문서와 격리 담당 부서",
+        "what": "대상의 명칭과 격리 절차를 낭독했다",
+        "consequence": "대상이 공식적으로 SCP-049로 지정되었고 그 위험도가 절차를 통해 드러났다"
+      },
+      "key_points": [
+        "이것이 SCP-049다",
+        "도자기 부리 마스크 — 창백한 무유약 도자기, 머리에 직접 융합된 것으로 보인다. 이음새, 끈, 피부 틈이 보이지 않는다",
+        "격리는 표준 인간형 격리 셀 — 연구 자료 접근은 시설 지휘부 재량"
+      ],
+      "emotional_beat": "horror",
+      "estimated_duration_sec": 35,
+      "hook_type": "none",
+      "loops_planted": [],
+      "loops_closed": [],
+      "pattern_interrupt": "format_change",
+      "word_budget": 60,
+      "fact_references": [
+        "도자기 부리 마스크는 머리에 융합된 것으로 보이며 이음새나 끈, 피부 틈이 보이지 않는다",
+        "격리는 표준 인간형 격리 셀에서 이루어지며 연구 자료 접근은 시설 지휘부의 재량에 달려 있다"
+      ],
+      "mood": "escalation",
+      "title": "SCP-049",
+      "kicker": "격리 절차가 그를 말해준다",
+      "assigned_devices": []
+    },
+    {
+      "scene_num": 5,
+      "act": "depth",
+      "synopsis": "격리 셀 안, SCP-049가 이전 사망자에게 수술을 집도한다. 정확하고 서두르지 않는 손놀림. 시체가 SCP-049-2로 다시 일어난다.",
+      "event": {
+        "who": "SCP-049와 사망한 피험자",
+        "what": "대상이 시체에 수술을 집도했다",
+        "consequence": "시체가 SCP-049-2 개체로 되살아나 움직이기 시작했다"
+      },
+      "key_points": [
+        "수술 — 정확하고 서두르지 않는다, 임상적 몸서리",
+        "SCP-049-2: 살아났으며, 순종적이며, 온전히 죽지 않았다",
+        "되살아난 것은 '치료가 성공한' 환자일지도 모른다는 가능성을 심는다"
+      ],
+      "emotional_beat": "clinical",
+      "estimated_duration_sec": 70,
+      "hook_type": "none",
+      "loops_planted": [
+        "loop_cure_transformation"
+      ],
+      "loops_closed": [],
+      "pattern_interrupt": "tone_shift",
+      "word_budget": 55,
+      "fact_references": [
+        "수술 후 시체는 SCP-049-2 개체로 되살아난다",
+        "SCP-049-2는 살아났으며 순종적이고 완전히 죽지 않은 상태다"
+      ],
+      "mood": "clinical",
+      "title": "수술대 위에서",
+      "kicker": "시체가 다시 일어났다",
+      "assigned_devices": [
+        "narrator_reaction"
+      ]
+    },
+    {
+      "scene_num": 6,
+      "act": "depth",
+      "synopsis": "Site Command가 통제된 연구 접근을 허가한다. 시청자에게 직접 묻는다 — 만약 SCP-049가 옳다면? 우리 모두 이미 그 병을 지니고 있다면?",
+      "event": {
+        "who": "Site Command와 SCP-049",
+        "what": "SCP-049에게 통제된 연구 자료 접근을 허가했다",
+        "consequence": "SCP-049가 계속해서 '치료'를 수행할 수 있게 되었다"
+      },
+      "key_points": [
+        "허락 — 재단이 의사에게 일할 자격을 준다",
+        "되살아난 시체는 부작용이 아니라, 그가 보기에 '치료가 성공한' 환자다",
+        "만약 그가 옳다면? 우리 모두 이미 그 병을 지니고 있고, 단 한 명의 의사만이 그것을 볼 수 있다면"
+      ],
+      "emotional_beat": "tense_irony",
+      "estimated_duration_sec": 40,
+      "hook_type": "none",
+      "loops_planted": [],
+      "loops_closed": [
+        "loop_cure_transformation"
+      ],
+      "pattern_interrupt": "direct_address",
+      "word_budget": 45,
+      "fact_references": [
+        "SCP-049는 연구 자료에 대한 통제된 접근을 시설 지휘부의 재량으로 허가받았다",
+        "SCP-049는 스스로의 '치료'를 계속 수행한다"
+      ],
+      "mood": "escalation",
+      "title": "치료의 대가",
+      "kicker": "재단이 연구를 허가했다",
+      "assigned_devices": [
+        "second_person"
+      ]
+    },
+    {
+      "scene_num": 7,
+      "act": "unresolved_residue",
+      "synopsis": "마스크 가장자리가 최종 검증된다. 이음새도 끈도 피부 틈도 없다 — 그것은 처음부터 형체였고, 의상이 아니었다.",
+      "event": {
+        "who": "격리 정신과 의사 1명",
+        "what": "마스크 가장자리와 로브의 경계를 최종 확인했다",
+        "consequence": "마스크가 융합된 것이며 전체 외형이 의상이 아니라 해부학적 구조임이 드러났다"
+      },
+      "key_points": [
+        "마스크는 착용이 아니라 융합 — 도자기가 살에 붙어 있다",
+        "로브의 주름이 형체 자체와 구분되지 않는다 — 외형 전체가 해부학이다",
+        "그는 결코 의상을 입고 있지 않았다"
+      ],
+      "emotional_beat": "revelation",
+      "estimated_duration_sec": 55,
+      "hook_type": "none",
+      "loops_planted": [],
+      "loops_closed": [
+        "loop_mask_fused"
+      ],
+      "pattern_interrupt": "pov_shift",
+      "word_budget": 40,
+      "fact_references": [
+        "마스크는 착용된 것이 아니라 융합된 것이며 이음새, 끈, 피부 틈이 보이지 않는다",
+        "로브의 주름이 형체 자체와 구분되지 않아 외형 전체가 의상이 아니라 해부학적 구조로 보인다"
+      ],
+      "mood": "revelation",
+      "title": "의상이 아니다",
+      "kicker": "마스크는 살과 하나였다",
+      "assigned_devices": [
+        "narrator_reaction"
+      ]
+    },
+    {
+      "scene_num": 8,
+      "act": "unresolved_residue",
+      "synopsis": "재단은 대역병의 실존을 확인하지 못했다. 마지막 질문 — 격리실 안의 존재는 의사인가, 환자인가 — 을 남기며 끝난다.",
+      "event": {
+        "who": "SCP-049와 재단",
+        "what": "대역병의 실존 여부가 확인되지 않았다",
+        "consequence": "SCP-049가 정신이 온전한지, 혹은 병이 실제로 존재하는지 답이 남지 않았다"
+      },
+      "key_points": [
+        "원문에는 회수 경위, 위험 등급, 연대기 항목이 없다",
+        "대역병이 존재하고 그것을 보지 못하는 쪽이 우리라면 — 격리실 안의 존재는 의사인가, 환자인가",
+        "질문은 닫히지 않는다 — 대역병의 존재는 재단도 확인하지 못했다"
+      ],
+      "emotional_beat": "lingering_unease",
+      "estimated_duration_sec": 60,
+      "hook_type": "none",
+      "loops_planted": [],
+      "loops_closed": [
+        "loop_great_pestilence"
+      ],
+      "pattern_interrupt": "none",
+      "word_budget": 45,
+      "fact_references": [
+        "제공된 문서는 이 개체의 회수 경위, 위험 등급, 연대기적 항목을 포함하지 않는다",
+        "대역병이 실제로 존재하는지 확인된 바 없다"
+      ],
+      "mood": "dread",
+      "title": "마지막 진료",
+      "kicker": "의사인가, 환자인가",
+      "assigned_devices": [
+        "dramatic_question"
+      ]
+    }
+  ],
+  "research": {
+    "frozen_descriptor": "A towering humanoid silhouette of roughly 1.9 meters, draped in a heavy hooded black robe that falls to the floor, obscuring all body contours. The head is a pale, featureless ceramic mask in the shape of a plague doctor's beak, with dark hollow eye sockets and a slight curve to the beak; the mask appears fused directly to the skull with no visible seam. The hands are bare, pale, and long-fingered, often held clasped in front of the robe. No other carried items are visible. The robe's fabric is worn and age-darkened, and subtle organic textures—vein-like lines, faint stains—are integrated into the mask and robe, suggesting the entity and its covering are one continuous organism.",
+    "entity_sheet": "SCP-049, the plague doctor, is immediately recognizable by its fused ceramic beak mask and trailing black robes. It leaves behind a faint smell of damp earth and old herbs, and a chilling silence that settles wherever it passes—even when it is not in the frame.",
+    "story_logline": "A doctor who sees an invisible plague tries to \"cure\" humanity by ending lives and reanimating them—this video follows the slow, chilling revelation of what that cure actually means, and the mystery of what the Foundation never learned about its purpose.",
+    "story_archetype": "incident_first"
+  },
+  "allocation": {
+    "1": [
+      "dramatic_question"
+    ],
+    "2": [
+      "second_person",
+      "hypothetical"
+    ],
+    "3": [],
+    "4": [],
+    "5": [
+      "narrator_reaction"
+    ],
+    "6": [
+      "second_person"
+    ],
+    "7": [
+      "narrator_reaction"
+    ],
+    "8": [
+      "dramatic_question"
+    ]
+  },
+  "scenario_quality": {
+    "final_pass_index": 2,
+    "retry_scope": "scene",
+    "review_overall_pass": true,
+    "critic_verdict": "retry",
+    "critic_feedback": "Scene 1: 오프닝 씬으로서 매우 훌륭합니다. 첫 문장에서 SCP-049의 치명적인 변칙성(치명적 접촉)을 즉각 보여주는 Shock/Contrast 훅으로 시청자의 시선을 잡았으며, 팩트 시트에 명시된 '사후 수술 집도' 행위로 자연스럽게 연결했습니다. 재단 보고서식 나레이션을 탈피하고 유튜브 시청층이 몰입할 수 있는 시각적·감각적 연출을 성공적으로 구현했습니다.\nScene 2: Scene 2는 SCP-049 Fact Sheet의 핵심 사실(1.9m 키, 중세 흑사병 의사 외견, 협조적인 태도 및 스스로를 의사로 인식하는 특성)을 훼손하지 않으면서 관찰실 너머의 시점과 2인칭 가상 상황 질문을 통해 시청자 몰입감을 효과적으로 끌어올렸습니다. 직전의 긴장감 이후 차가운 정적과 기괴한 정중함으로 톤을 전환하는 구성이 훌륭하며, 억지로 왜곡된 사실이나 지어낸 설정 없이 원문의 분위기를 효과적으로 장면화했습니다.\nScene 3: Scene 3은 SCP-049의 핵심 설정인 '대역병(Great Pestilence)'에 대한 자각과 본인을 의사로 규정하는 광기 어린 확신을 몰입감 있게 잘 전달하고 있습니다. 원문 팩트 시트의 범주를 벗어난 임의의 사실 단언이 없으며, 관찰실 유리 너머의 긴장감 넘치는 분위기와 감각적 묘사를 효과적으로 활용하여 관객의 호기심과 은근한 공포감을 높여줍니다.\nScene 4: Scene 4의 나레이션이 위키 문서나 재단 보고서의 항목(지정 -> 외형 설명 -> 격리 절차)을 단순 나열하듯 읽어주는 구조로 작성되어 시청자의 흥미를 떨어뜨립니다. YouTube 스토리텔링 기준에 맞추어 보고서식 나열을 피하고, 격리실 내부의 긴장감과 시청자를 현장에 불러들이는 몰입형 묘사로 재구성해야 합니다.\nScene 5: Scene 5는 SCP-049의 핵심 기믹인 수술 및 SCP-049-2 재해생 과정을 감각적이고 몰입감 있게 전달합니다. Fact Sheet의 사실관계를 정확히 준수하면서도, 시청자의 가입감을 높이는 구술체 나레이션과 관찰자적 시점이 잘 유지되었습니다.\nScene 6: SCP-049의 격리 수칙 중 '연구 자료 접근 허가'라는 원문의 핵심 규정을 시격 및 서사적 맥락에 맞게 자연스럽게 녹여낸 훌륭한 씬입니다. 재단 지휘부의 결정과 개체의 집착을 대조하며, 2인칭 던짐(\"어쩌면 당신이 품은 생명 자체가 그 역병이고...\")을 통해 시청자를 심리적 기괴함 속으로 성공적으로 끌어들입니다. 원약 사실 위반 없이 감정선과 몰입을 극대화한 완성도 높은 연출입니다.\nScene 7: Scene 7에서 원문(Fact Sheet)의 서술 한계를 넘어선 명백한 단언 오류(ungrounded_claim)가 발생했습니다. Fact Sheet상 SCP-049의 마스크는 \"두개골에 융합된 것으로 보인다(appears fused)\"라고 추정형으로만 기록되어 있으나, 나레이션에서는 \"두개골과 완전히 융합되어 있었죠\", \"외형 전체가 하나의 해부학적 구조인 겁니다\"라며 미확인 사실을 단언하고 있습니다. 원문의 빈칸이나 불확실성을 단언으로 메우지 말고, 관찰자의 시점이나 의문/추정 형식으로 재작성해야 합니다.\nScene 8: SCP-049의 핵심 요소인 '대역병(Great Pestilence)'의 불확실성을 활용해 완벽한 'Wave 3: The Abyss' 결말을 연출했습니다. 원문 데이터의 공백(회수 경위 및 등급 미기재)을 단순 결점이 아닌 서사적 미스터리로 승화시켰으며, 마지막 \"의사인가, 환자인가\"라는 질문은 시청자에게 강렬한 여운과 존재론적 공포를 남깁니다. 사실 단언이나 불필요한 설정 추가 없이 깔끔하게 마무리된 훌륭한 엔딩 씬입니다.",
+    "rule_metrics": {
+      "aggregate": {
+        "character_count": 1386,
+        "sentence_count": 45,
+        "duplicate_sentence_count": 0,
+        "repeated_4gram_count": 0
+      },
+      "scenes": [
+        {
+          "scene_num": 1,
+          "character_count": 188,
+          "sentence_count": 5,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 2,
+          "character_count": 173,
+          "sentence_count": 5,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 3,
+          "character_count": 168,
+          "sentence_count": 6,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 4,
+          "character_count": 182,
+          "sentence_count": 7,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 5,
+          "character_count": 213,
+          "sentence_count": 7,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 6,
+          "character_count": 151,
+          "sentence_count": 5,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 7,
+          "character_count": 158,
+          "sentence_count": 6,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        },
+        {
+          "scene_num": 8,
+          "character_count": 153,
+          "sentence_count": 4,
+          "duplicate_sentence_count": 0,
+          "repeated_4gram_count": 0
+        }
+      ],
+      "repeated_ngrams": [],
+      "slop_phrase_hits": [
+        {
+          "scene_num": 2,
+          "phrase": "상상해 보십시오",
+          "count": 1
+        }
+      ],
+      "slop_vocabulary_version": 1,
+      "total_words": 438
+    },
+    "grounded_contradictions": [],
+    "review_issues": [
+      {
+        "scene_num": 2,
+        "type": "descriptor_violation",
+        "severity": "warning",
+        "description": "Prompts 2 through 5 list SCP-049 in the cast and set entity_visible to true, but the image_prompt text omits the SCP-049 Frozen Descriptor from the Visual Identity Profile.",
+        "correction": "Incorporate the Frozen Descriptor ('A towering humanoid silhouette of roughly 1.9 meters, draped in a heavy hooded black robe that falls to the floor...') into image_prompts 2-5 where SCP-049 is present in the frame."
+      },
+      {
+        "scene_num": 3,
+        "type": "descriptor_violation",
+        "severity": "info",
+        "description": "The generic descriptor \"dark\" appears in visual descriptions for Shot 1 (\"dark monitoring consoles\") and Shot 6 (\"dark green painted walls\"). The visual guidelines prohibit generic quality terms like \"dark\".",
+        "correction": "Replace \"dark monitoring consoles\" with \"shadowed monitoring consoles\" and \"dark green painted walls\" with \"deep green painted walls\"."
+      },
+      {
+        "scene_num": 4,
+        "type": "descriptor_violation",
+        "severity": "warning",
+        "description": "Visual descriptions for Shots 1, 2, 3, 4, and 7 include SCP-049 in the cast list while entity_visible is true, but their image_prompts omit the entity's Frozen Descriptor. Additionally, Shot 6 uses the forbidden term \"dark\" (\"dark sliver\").",
+        "correction": "Integrate the Frozen Descriptor into image_prompts where SCP-049 is present, and replace forbidden terms like \"dark\" with allowed visual descriptors such as \"shadowed\" or \"dimly lit\"."
+      },
+      {
+        "scene_num": 7,
+        "type": "invented_content",
+        "severity": "warning",
+        "description": "Narration states that the mask is definitively fused to the skull (\"두개골과 완전히 융합되어 있었죠\"), whereas the source facts state that it \"appears fused\" to the head. Elevating a qualified observation to absolute certainty constitutes invented content.",
+        "correction": "도자기 마스크는 마치 두개골과 완전히 융합되어 있는 듯 보였습니다."
+      }
+    ],
+    "critic_scene_notes": [
+      {
+        "scene_num": 4,
+        "issue_type": "report_tone",
+        "issue": "\"그 임상적인 확신 뒤로, 재단은 마침내 이 존재를 SCP-049로 지정했습니다... 대상이 수용된 곳은 표준 인간형 격리 셀. 그러나 연구 자료 접근은 오직 시설 지휘부의 재량에 달려 있습니다.\" 문단이 지정 번호, 외형, 격리 규정을 순서대로 읽는 재단 보고서 낭독조(report_tone)로 구성되어 있습니다.",
+        "suggestion": "보고서 항목을 열거하는 대신, 관찰자 시점에서 격리실 내부의 압박감과 기이함을 체감하도록 각색하세요. 예: \"두꺼운 관측창 너머, 차가운 콘크리트 격리실 안의 정적이 깨집니다. 끈도 이음새도 없이 두피에 완전히 붙어버린 도자기 마스크. 오직 지휘부의 엄격한 통제 속에서 연구 자료만을 청하는 이 기괴한 의사가, 마침내 손을 움직이기 시작합니다.\""
+      },
+      {
+        "scene_num": 7,
+        "issue_type": "ungrounded_claim",
+        "issue": "\"도자기 마스크는 두개골과 완전히 융합되어 있었죠. 로브의 주름조차 옷감이 아닌 몸 그 자체.\", \"외형 전체가 하나의 해부학적 구조인 겁니다.\"라는 문장은 Fact Sheet의 \"appears fused to the being's head(융합된 것처럼 보인다)\"를 넘어 사실로 단언하고 있습니다.",
+        "suggestion": "단언형 문장을 추정이나 관찰 묘사로 수정하세요. 예시: \"마스크 가장자리에는 끈도, 이음새도 보이지 않았습니다. 도자기 마스크와 검은 로브가 마치 처음부터 하나의 몸인 것처럼 겉피부에 맞닿아 있었던 겁니다.\""
+      }
+    ],
+    "warning": {
+      "code": "unresolved_pass2",
+      "message": "재검토 후에도 품질 문제가 남아 있습니다. 아래 근거를 확인한 뒤 승인 또는 반려하세요.",
+      "categories": [
+        "descriptor_violation",
+        "invented_content",
+        "report_tone",
+        "ungrounded_claim"
+      ]
+    }
+  },
+  "story_archetype": "incident_first",
+  "stages": [
+    {
+      "name": "research",
+      "latency_ms": 14595,
+      "story_archetype": "incident_first",
+      "story_archetype_fallback_used": false,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 0,
+      "target_scene_indexes": [],
+      "prompt_tokens": 3431,
+      "completion_tokens": 1389,
+      "prompt_cache_hit_tokens": 3328,
+      "prompt_cache_miss_tokens": 103
+    },
+    {
+      "name": "structure",
+      "latency_ms": 0,
+      "story_archetype": "incident_first",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 0,
+      "target_scene_indexes": [],
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "writing",
+      "latency_ms": 27139,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 8,
+      "target_scene_indexes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "prompt_tokens": 62558,
+      "completion_tokens": 2946,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "visual_breakdown",
+      "latency_ms": 186678,
+      "scene_count": 8,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 8,
+      "target_scene_indexes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "prompt_tokens": 71300,
+      "completion_tokens": 103176,
+      "prompt_cache_hit_tokens": 29696,
+      "prompt_cache_miss_tokens": 41604
+    },
+    {
+      "name": "review",
+      "latency_ms": 20890,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 8,
+      "target_scene_indexes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "prompt_tokens": 45920,
+      "completion_tokens": 2023,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "critic_agent",
+      "latency_ms": 21375,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 1,
+      "retry_scope": "none",
+      "target_scene_count": 8,
+      "target_scene_indexes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "prompt_tokens": 43360,
+      "completion_tokens": 1813,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "writing_scene_repair",
+      "latency_ms": 36928,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 2,
+      "retry_scope": "scene",
+      "target_scene_count": 5,
+      "target_scene_indexes": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "rejected_scene_identifiers": [
+        {
+          "source": "review",
+          "scene_num": 8,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 4,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 7,
+          "reason": "duplicate"
+        }
+      ],
+      "prompt_tokens": 6502,
+      "completion_tokens": 1568,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "visual_breakdown",
+      "latency_ms": 162692,
+      "scene_count": 5,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "pass_index": 2,
+      "retry_scope": "scene",
+      "target_scene_count": 5,
+      "target_scene_indexes": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "rejected_scene_identifiers": [
+        {
+          "source": "review",
+          "scene_num": 8,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 4,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 7,
+          "reason": "duplicate"
+        }
+      ],
+      "prompt_tokens": 43866,
+      "completion_tokens": 58475,
+      "prompt_cache_hit_tokens": 31104,
+      "prompt_cache_miss_tokens": 12762
+    },
+    {
+      "name": "review",
+      "latency_ms": 18679,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 2,
+      "retry_scope": "scene",
+      "target_scene_count": 5,
+      "target_scene_indexes": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "rejected_scene_identifiers": [
+        {
+          "source": "review",
+          "scene_num": 8,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 4,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 7,
+          "reason": "duplicate"
+        }
+      ],
+      "prompt_tokens": 46608,
+      "completion_tokens": 1481,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "critic_agent",
+      "latency_ms": 17706,
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "pass_index": 2,
+      "retry_scope": "scene",
+      "target_scene_count": 5,
+      "target_scene_indexes": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "rejected_scene_identifiers": [
+        {
+          "source": "review",
+          "scene_num": 8,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 4,
+          "reason": "duplicate"
+        },
+        {
+          "source": "critic",
+          "scene_num": 7,
+          "reason": "duplicate"
+        }
+      ],
+      "prompt_tokens": 44048,
+      "completion_tokens": 1751,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 0
+    },
+    {
+      "name": "tts_normalize",
+      "latency_ms": 34429,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "pass_index": 2,
+      "retry_scope": "scene",
+      "target_scene_count": 5,
+      "target_scene_indexes": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "prompt_tokens": 17901,
+      "completion_tokens": 28881,
+      "prompt_cache_hit_tokens": 13312,
+      "prompt_cache_miss_tokens": 4589
+    }
+  ]
+}

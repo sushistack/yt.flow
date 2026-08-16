@@ -1,0 +1,17 @@
+# Story 12.7 live-validation artifacts.
+#
+# What is committed: everything a number in `after.md` is re-derived from — the driver
+# (`run_writing_only.py`), the scenario dump it produces (`after_scenes.json`, which
+# carries the pinned outline, the allocation and the critic/review payload), the spoken
+# durations (`after_durations.json`), the measurement report (`after.json`), and the
+# prose that reads them (`after.md`, `seeding.md`). All text, well under a megabyte.
+#
+# What is NOT here: the WAVs. `run_after_tts.py` parks its audio under the sibling
+# story's already-ignored `12-6-live-validation/tts_audio/12-7-after/` (the script pins
+# `YTFLOW_WORKSPACE_PATH` relative to its own location, and reusing it unmodified was
+# cheaper than a second copy of it). Nothing here reads those files: the only thing
+# taken off them is duration, and that is in `after_durations.json`. They are
+# regenerable by re-running `run_after_tts.py` against the same `after_scenes.json` —
+# expect ~0.2 % drift in the seconds, which is the TTS's own variance.
+#
+# Nothing here is the only surviving copy of anything.

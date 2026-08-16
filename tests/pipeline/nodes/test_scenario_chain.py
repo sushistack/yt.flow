@@ -836,7 +836,11 @@ async def test_structure_step_returns_a_contract_valid_outline_untouched(monkeyp
     async def call(rendered, s):
         return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
 
-    assert await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call) == expected
+    outline = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    # Story 12.7 annotates the validated outline in place; that write is the ONLY
+    # difference, so with it removed the outline is still returned byte-identical.
+    assert [scene.pop("assigned_devices") for scene in outline] == chain._allocate_devices(expected)
+    assert outline == expected
 
 
 async def test_writing_scene_repair_step_sends_the_paired_structure_subset(monkeypatch):
@@ -5620,3 +5624,224 @@ async def test_tts_normalize_spells_designations_even_on_sentence_mismatch(monke
     scene = out["scenes"][0]
     assert "에스씨피 공사구" in scene["narration"]
     assert "SCP-049" in scene["display_narration"]  # subtitles keep the readable form
+
+
+# ── Story 12.7: script-wide device quotas become per-scene assignments ────────
+
+
+def _alloc_outline(n: int, budgets: list[int] | None = None, **interrupts: str) -> list[dict]:
+    """A minimal outline for allocation: only the fields `_allocate_devices` reads.
+
+    `pattern_interrupt` is set per scene via `s<idx>=` kwargs (0-based), everything
+    else is a uniform `none` — the allocation must not need anything the retention
+    validator does not already constrain.
+    """
+    return [
+        {
+            "pattern_interrupt": interrupts.get(f"s{idx}", "none"),
+            "word_budget": budgets[idx] if budgets else 45,
+        }
+        for idx in range(n)
+    ]
+
+
+def _owners(allocation: list[list[str]], device: str) -> list[int]:
+    return [idx for idx, devices in enumerate(allocation) if device in devices]
+
+
+@pytest.mark.parametrize("n", range(1, 13))
+def test_allocate_devices_is_total_for_every_outline_length(n):
+    """AC1/AC4. A device with no owner is a device the whole script lost — arm A of
+    the ablation lost 상황 가정 that way (5 occurrences → 0), and its closing scene
+    drew nothing at all because the second question followed the last loop-closer."""
+    allocation = chain._allocate_devices(_alloc_outline(n))
+    assert len(allocation) == n
+    for device in chain.WRITING_DEVICES:
+        assert _owners(allocation, device), f"n={n}: {device} has no owner"
+    assert allocation[-1], f"n={n}: the closing scene drew no device"
+    assert "dramatic_question" in allocation[0]
+
+
+def test_allocate_devices_gives_the_question_to_the_hook_and_the_final_scene():
+    # The ablation's rule sent the second question to the scene closing the LAST loop,
+    # which in a 9-scene outline was scene 7 — leaving the closer bare. Position is now
+    # the only input, so `loops_closed` is not set here: it would not be read.
+    assert _owners(chain._allocate_devices(_alloc_outline(9)), "dramatic_question") == [0, 8]
+
+
+def test_allocate_devices_sends_second_person_to_the_direct_address_scenes():
+    # `structure.md` already plans where the viewer is addressed; the pre-12.7
+    # prompt overrode that plan in every scene.
+    allocation = chain._allocate_devices(_alloc_outline(8, s2="direct_address", s5="direct_address"))
+    assert _owners(allocation, "second_person") == [2, 5]
+
+
+def test_allocate_devices_takes_every_direct_address_scene_not_the_first_two():
+    """`writing.md`'s `pattern_interrupt` bullet already orders a `direct_address`
+    scene to address the viewer. Capping the list here would hand a third such scene
+    "do it" and "do not do it" in the same prompt — the contradiction this story is
+    about, reintroduced one layer down."""
+    allocation = chain._allocate_devices(
+        _alloc_outline(8, s1="direct_address", s3="direct_address", s6="direct_address")
+    )
+    assert _owners(allocation, "second_person") == [1, 3, 6]
+
+
+def test_allocate_devices_sends_the_reaction_to_the_stance_shift_scenes():
+    allocation = chain._allocate_devices(_alloc_outline(8, s1="pov_shift", s4="tone_shift"))
+    assert _owners(allocation, "narrator_reaction") == [1, 4]
+
+
+def test_allocate_devices_puts_the_hypothetical_on_the_first_second_person_scene():
+    """AC4's second hole: 상황 가정 shared the `second_person` bullet and vanished.
+    It owns its own slot now, and lands where the viewer is already being addressed."""
+    allocation = chain._allocate_devices(_alloc_outline(8, s2="direct_address", s5="direct_address"))
+    assert _owners(allocation, "hypothetical") == [2]
+    assert set(_owners(allocation, "hypothetical")) <= set(_owners(allocation, "second_person"))
+
+
+def test_allocate_devices_falls_back_to_the_largest_middle_scenes():
+    # No `direct_address` anywhere: the two biggest middle scenes carry 2인칭, and
+    # the hook/closer are never conscripted as a second device carrier.
+    allocation = chain._allocate_devices(_alloc_outline(6, budgets=[40, 50, 90, 45, 80, 40]))
+    assert _owners(allocation, "second_person") == [2, 4]
+    assert _owners(allocation, "dramatic_question") == [0, 5]
+    # ...and the reaction fallback steps aside rather than making scene 3 carry three
+    # of the four devices. Clustering in one scene is the defect, not a smaller version
+    # of the fix.
+    assert _owners(allocation, "narrator_reaction") == [1]
+    assert not set(_owners(allocation, "narrator_reaction")) & set(_owners(allocation, "second_person"))
+
+
+def test_allocate_devices_returns_nothing_for_an_empty_outline():
+    # `writing_step` and `_validate_retention_outline` both reject this before it can
+    # arrive; the point is that allocation answers calmly instead of raising from
+    # `min()` on an empty list.
+    assert chain._allocate_devices([]) == []
+
+
+@pytest.mark.parametrize(
+    "scene",
+    [{}, {"pattern_interrupt": None}, {"word_budget": None}, {"word_budget": "많이"},
+     {"word_budget": True}, {"pattern_interrupt": ["direct_address"], "word_budget": [45]}],
+)
+def test_allocate_devices_never_raises_on_a_missing_or_garbage_field(scene):
+    """Allocation is an ornament budget — it must never be the thing that kills a run.
+    A missing `pattern_interrupt` reads as `none`, a non-numeric budget sorts as 0."""
+    outline = _alloc_outline(5)
+    outline[2] = scene
+    allocation = chain._allocate_devices(outline)
+    assert len(allocation) == 5
+    for device in chain.WRITING_DEVICES:
+        assert _owners(allocation, device)
+
+
+async def test_structure_step_annotates_every_scene_with_its_assigned_devices(monkeypatch):
+    """AC1: the whole-outline decision is made once, right after validation — the
+    same seam `hook_type` uses. No LLM call is added to reach it."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    calls = {"n": 0}
+
+    async def call(rendered, s):
+        calls["n"] += 1
+        return _retention_yaml(8), {}, "stop"
+
+    outline = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    assert calls["n"] == 1
+    assert [scene["assigned_devices"] for scene in outline] == chain._allocate_devices(outline)
+    assert outline[-1]["assigned_devices"]
+
+
+async def test_writing_scene_brief_carries_this_scenes_assigned_devices(monkeypatch):
+    """The delivery half of AC1: each per-scene call sees its own share and no other
+    scene's — `{**scene}` in the payload is why one write reaches the prompt."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: EchoPrompt())
+    structure = _structure(4)
+    for scene, devices in zip(structure, [["dramatic_question"], [], ["second_person"], []], strict=True):
+        scene["assigned_devices"] = devices
+    seen = {}
+
+    async def call(rendered, s):
+        brief = json.loads(rendered)["scene_structure"]
+        n = _requested_scene(brief)
+        seen[n] = json.loads(brief.split("\n", 1)[1])["write_only_this_scene"]["assigned_devices"]
+        assert "assigned_devices" in brief.split("\n", 1)[0], "the steering sentence must name it"
+        return f"scenes:\n  - scene_num: {n}\n    narration: narr {n}.\n    location: chamber\n    color_palette: grey\n    atmosphere: tense\n", {}, "stop"
+
+    await chain.writing_step("SCP-173", structure, "desc", "guide", "", None, call)
+    assert seen == {1: ["dramatic_question"], 2: [], 3: ["second_person"], 4: []}
+
+
+def test_writing_prompt_asks_only_for_the_devices_this_scene_was_assigned():
+    content = _prompt_text("writing.md")
+    assert "### 필수 몰입 기법 (전부 사용)" not in content, "the script-wide quota block is back"
+    assert "배정되지 않은 기법은 쓰지 마세요" in content
+    assert "assigned_devices" in content
+
+
+def test_writing_prompt_no_longer_demands_a_question_in_every_scenes_rhythm():
+    """AC3, source #2. The 종결어미 rhythm rule is scene-scoped by construction, so on
+    its own it holds 질문 at 1.0 per scene — editing only the technique block yields a
+    null result and the wrong conclusion that the hypothesis failed."""
+    content = _prompt_text("writing.md")
+    assert '2. 의문형 (-까요?/-을까요? — 위 "극적 질문" 기법과 동일)' not in content
+    assert "이 씬에 `dramatic_question`이 배정된 경우에만" in content
+
+
+def test_writing_prompt_lets_a_connective_sentence_run_long():
+    """AC5/AC6: a flat 15~25자 ceiling forbids the subordinate clause that carries
+    causation, which is why control opened 0 of 7 scenes on a link to the previous one."""
+    content = _prompt_text("writing.md")
+    assert "- 문장 길이: 15~25자 (TTS 최적화용 — 짧고 펀치있게)" not in content
+    assert "40자까지" in content
+    assert "첫 문장은 앞 씬과의 연결을 세우고 시작하세요" in content
+    assert "드라마틱 포즈" in content, "short-sentence pauses must stay legal"
+
+
+def test_writing_scene_repair_prompt_carries_the_allocation():
+    """AC3, source #3. The repair pass runs a DIFFERENT prompt and fired in all three
+    ablation runs — without this line it can hand back a device the allocation removed."""
+    content = _prompt_text("writing_scene_repair.md")
+    assert "assigned_devices" in content
+    assert "새로 추가하지 마세요" in content
+
+
+def test_every_allocated_device_name_appears_in_the_writing_prompt():
+    # One vocabulary. A device the allocator can assign but the prompt cannot read
+    # is an assignment that silently does nothing.
+    content = _prompt_text("writing.md")
+    for device in chain.WRITING_DEVICES:
+        assert device in content, f"writing.md never mentions {device}"
+
+
+class _SeededPrompt:
+    """A Langfuse-ish text prompt: `.prompt` is the raw template `.compile()` renders."""
+
+    def __init__(self, text: str):
+        self.prompt = text
+        self.version = 7
+
+    def compile(self, **variables):
+        return self.prompt
+
+
+def test_writing_seeding_guard_rejects_a_prompt_that_predates_the_allocation(monkeypatch):
+    """The allocation rides inside the free-text `scene_structure`, so an unseeded
+    `scenario/writing` renders fine and simply ignores it — every prompt-text test in
+    this file stays green while the shipped script goes back to a question per scene.
+    The runtime text is the only place the two can be compared."""
+    monkeypatch.setattr(
+        chain.prompt_service, "get_prompt",
+        lambda name, label=None: _SeededPrompt("### 필수 몰입 기법 (전부 사용)"),
+    )
+    with pytest.raises(RuntimeError, match="assigned_devices"):
+        chain._require_seeded_device_allocation()
+
+
+def test_writing_seeding_guard_passes_on_the_seeded_text_and_on_a_test_double(monkeypatch):
+    seeded = _prompt_text("writing.md")
+    monkeypatch.setattr(chain.prompt_service, "get_prompt", lambda name, label=None: _SeededPrompt(seeded))
+    chain._require_seeded_device_allocation()
+    # A double with no raw text claims nothing rather than failing the run.
+    monkeypatch.setattr(chain.prompt_service, "get_prompt", lambda name, label=None: FakePrompt())
+    chain._require_seeded_device_allocation()

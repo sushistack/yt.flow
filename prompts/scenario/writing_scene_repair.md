@@ -23,6 +23,9 @@ Use Korean narration, retain factual fidelity, and follow the storytelling guide
 - `loops_planted`에 있는 질문은 여전히 열어둔 채로, `loops_closed`에 있는 질문은 여전히 이 씬에서
   답해야 합니다. 약속된 회수를 누락하면 안 됩니다.
 - `pattern_interrupt`가 `none`이 아니면 그 기법을 계속 사용하세요.
+- 구조 항목의 `assigned_devices`가 이 씬에 배정된 몰입 기법의 전부입니다. 배정되지 않은 기법(2인칭·극적 질문·리액션·상황 가정)을 수리하면서 새로 추가하지 마세요. 위 `pattern_interrupt` 항목과 어긋나 보이면 `assigned_devices`가 우선입니다.
+- 구조 항목에 `assigned_devices` 키 자체가 없으면(구조를 못 받은 씬) 원본 씬이 이미 쓴 기법을 그대로 두고, 지적된 부분만 고치세요. 없는 목록을 "배정 없음"으로 읽지 마세요.
+- 첫 문장이 앞 씬과의 연결로 열려 있으면 그 연결을 유지하세요 (Scene 1 제외).
 - `hook_type`이 `none`이 아니면 (Scene 1) 첫 문장은 계속 그 훅 유형이어야 합니다.
 - `word_budget`(공백 기준 어절 수)을 ±20% 안에서 유지하세요.
 

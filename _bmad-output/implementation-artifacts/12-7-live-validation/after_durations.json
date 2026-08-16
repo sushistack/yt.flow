@@ -1,0 +1,19 @@
+{
+  "run_id": "12-7-after",
+  "source_scenes": "after_scenes.json",
+  "voice_mode": "clone",
+  "model": "qwen3-tts-vc-2026-01-22",
+  "voice": "qwen-tts-vc-sutak-voice-20260710174246336-dce4",
+  "speed": 1.2,
+  "audio_dir": "/mnt/work/projects/yt.flow/_bmad-output/implementation-artifacts/12-6-live-validation/tts_audio/12-7-after/audio",
+  "audio_duration_sec": {
+    "1": 24.128458333333334,
+    "2": 22.204416666666667,
+    "3": 20.74170833333333,
+    "4": 28.135625,
+    "5": 29.205041666666666,
+    "6": 18.667541666666665,
+    "7": 19.533083333333334,
+    "8": 19.136125
+  }
+}

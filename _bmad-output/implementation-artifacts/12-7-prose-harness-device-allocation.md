@@ -9,7 +9,7 @@ baseline_commit: c4ab38bcabad8e9945d045f4b5d1480797f9a455
 
 # Story 12.7: 문체 하네스 — 전체용 할당량을 씬별 배정으로
 
-Status: draft
+Status: done
 
 ## Story
 
@@ -108,3 +108,5 @@ Ablation이 밝힌 가장 중요한 사실: **세 arm 모두, 접지 위반 문�
 - 프로젝트 메모리: `project_12-6-review-done`, `gotcha_measure-densely-before-declaring-a-fix`
 
 ## Dev Agent Record
+
+- 2026-08-16 — 구현·리뷰·라이브 검증 완료. dev-auto 스펙: [spec-12-7-prose-harness-device-allocation.md](spec-12-7-prose-harness-device-allocation.md). 라이브 증거: [12-7-live-validation/after.md](12-7-live-validation/after.md) — 질문 8of8씬 → 2of8씬, 앞 씬 연결 0/7 → 7/7, WPM 146.9(상한 165), writing 유래 접지 위반 0건.

@@ -74,7 +74,8 @@ def count(narration: str) -> dict:
 
 
 # `assigned_devices` name → the axis it is supposed to license.
-ASSIGNED_AXIS = {"second_person": "2인칭", "dramatic_question": "질문", "narrator_reaction": "리액션"}
+ASSIGNED_AXIS = {"second_person": "2인칭", "dramatic_question": "질문",
+                 "narrator_reaction": "리액션", "hypothetical": "가정"}
 
 
 def main() -> None:
