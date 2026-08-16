@@ -183,9 +183,21 @@ HUMANOID_POSES: dict[str, dict] = {
     ),
     # "lying on floor" (24). Same skeleton, rotated 90deg — a horizontal figure
     # built from its own angle table drifts out of proportion with the others.
+    #
+    # 2026-08-16, Jay on the Story 10.8 live gate: "누워있는데 팔이 너무 벌려져 있는 것".
+    # The arms were the widest in the catalog by 3-4x — measured as the included angle
+    # between the two limbs, this pose was 47deg at the upper arms and 70deg at the
+    # forearms, against `humanoid_collapsed`'s 12deg ("arms slack at the sides") and
+    # `humanoid_kneeling`'s 16deg. The rendered card came out spread like a starfish,
+    # with an alpha bbox of w/h 2.15 that spanned the full 832px canvas width and
+    # clipped the head and one boot at the frame edges.
+    # Brought to 18deg / 26deg: arms near the body as a figure on an operating table
+    # holds them, still parted enough to read as separate limbs rather than one mass.
+    # These four numbers are the whole knob — widen or narrow them symmetrically about
+    # 90 (straight down, pre-rotation) if the next render wants a different spread.
     "humanoid_lying_supine": dict(
         head=-96, torso=90,
-        r_upper=115, r_fore=128, l_upper=68, l_fore=58,
+        r_upper=100, r_fore=104, l_upper=82, l_fore=78,
         r_thigh=86, r_shin=94, l_thigh=97, l_shin=88,
         rotate=-90,
     ),
