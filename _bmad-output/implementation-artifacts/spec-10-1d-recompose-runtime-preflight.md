@@ -5,7 +5,7 @@ created: '2026-08-16'
 status: 'in-review'
 review_loop_iteration: 0
 baseline_revision: 'd39037f'
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
 warnings: ['oversized']
@@ -82,6 +82,83 @@ warnings: ['oversized']
 
 ## Review Triage Log
 
+### 2026-08-16 — Review pass
+
+Both reviewers ran (Blind Hunter + Edge Case Hunter, in parallel, no prior context). Every
+high-severity claim was verified against a primary source before patching — ComfyUI's own
+`comfy/cli_args.py` / `main.py`, this box's `~/workspaces/ComfyUI/run.sh`, and
+`domain/warnings.py`'s `MAX_DETAIL_CHARS`.
+
+- intent_gap: 0
+- bad_spec: 0
+- patch: 13: (high 4, medium 5, low 4)
+- defer: 1: (high 0, medium 1, low 0)
+- reject: 7: (high 0, medium 1, low 6)
+- addressed_findings:
+  - `[high]` `[patch]` **The gate passed the exact state it exists to catch.** The flag check
+    was token-only, but ComfyUI declares `--cache-lru type=int default=0` (`comfy/cli_args.py:113`)
+    and enables the LRU cache only `if args.cache_lru > 0` (`main.py:233`) — so `--cache-lru 0`
+    is byte-for-byte the 490 s/shot eviction behaviour, and `_preflight` returned `None` for it.
+    A non-empty declared value in `REQUIRED_FLAGS` now means "takes a positive-integer value"
+    and is enforced; a present-but-inert flag reports itself as such.
+  - `[high]` `[patch]` **The restart command was wrong for the only ComfyUI on this box.**
+    `~/workspaces/ComfyUI/run.sh` is `source venv/bin/activate` + `HSA_OVERRIDE_GFX_VERSION=12.0.0`
+    + `PYTORCH_HIP_ALLOC_CONF=…` + `python main.py --preview-method auto --cache-lru 10`. An
+    operator following `restart with: python main.py …` literally would lose the venv and the
+    RDNA-4 override — AC3 ("fix it without reading code") failed against the real environment.
+    Message and README now say *add these flags to the launcher you already use*.
+  - `[high]` `[patch]` **The actionable half never reached the UI.** `make_warning` truncates
+    `context["detail"]` at 200 chars; the composed message is ~370 with the argv repr in the
+    middle, so the `add to ComfyUI's launcher` line was cut out of the gate payload entirely.
+    `_message` is now headline-first by contract and `video_node` files `splitlines()[0]`.
+  - `[high]` `[patch]` **An exception here reproduced the silent skip this story exists to end.**
+    `_preflight` read `s.recompose_preflight_min_free_ram_gb` by hard attribute access while the
+    sibling gate at `video.py:2558` uses `getattr` precisely because Settings stubs are
+    SimpleNamespaces — an `AttributeError` escaped into video_node's blanket `except`, which
+    logs a WARNING and files **no** `run_warning`. Now `getattr(..., 12.0)`, and that blanket
+    `except` also files a `recompose_preflight_failed` with `reason="resolver_error"`, so a
+    raising resolver or a non-dict stats payload can no longer be invisible either.
+  - `[medium]` `[patch]` An unreadable `ram_free` bailed `stats_unreadable` **before** the flag
+    comparison ran, so a box with two flags absent was told only "payload unreadable" — the one
+    thing the operator cannot act on, hiding the one thing they can. Flags are compared first.
+  - `[medium]` `[patch]` `get_system_stats`' docstring still claimed "called once per run: this
+    is observability, **not a health gate**" — both halves falsified by this story. Amended to
+    record the second caller, that `None` is now consequential, and that a busy-but-healthy
+    ComfyUI can answer `None` because it stops serving `/system_stats` mid-prompt. Deliberately
+    not compensated with retries or a longer timeout.
+  - `[medium]` `[patch]` `tests/stubs/fakes.py`'s `fake_get_system_stats` had no `argv` and no
+    `ram_free`, so the offline E2E profile would have reported a preflight failure
+    indistinguishable from a real one to whoever runs 10.1e. Payload now satisfies the gate.
+  - `[medium]` `[patch]` The 12.0 floor is calibrated against the **failure** only; no free-RAM
+    reading from a healthy run at `video_node` entry has ever been recorded, and
+    `--disable-smart-memory` parks weights in system RAM precisely so a working box may sit
+    lower than intuition suggests. The config comment now states the false-bail rate is
+    unmeasured and names 10.1e as where it would show up. Value unchanged.
+  - `[medium]` `[patch]` Untested branches: `ram_total` absent/non-numeric, flags-missing-with-
+    unreadable-RAM ordering, and that the probe is actually pointed at `s.comfyui_url`.
+  - `[low]` `[patch]` GiB computed (`2**30`), GB printed. Messages now say GiB and the config
+    comment records the unit, since that number is the entire content of the setting.
+  - `[low]` `[patch]` The rewritten verdict item (b) had dropped the fp8 text encoder from the
+    record even though it is still a prerequisite. Restored as an explicit out-of-reach clause.
+  - `[low]` `[patch]` `data/comfyui/README.md` declared itself "not a second source of truth"
+    and then restated every flag. Softened to "the code table is authoritative; update both".
+  - `[low]` `[patch]` The bail rebuilt `dict(cast_cards)` when `remaining` already held it.
+  - `[medium]` `[defer]` A `recompose_preflight_failed` row survives a `video` stage retry via
+    `merge_warnings`, so a run whose operator fixed ComfyUI and retried still shows the old
+    claim. Pre-existing property of the whole `run_warnings` mechanism (13.1), not of this
+    change — recorded in `deferred-work.md`.
+  - `[medium]` `[reject]` "(b) CLOSED overstates it — the preflight never runs while the flag is
+    off." 10.1c's UNBLOCK wording is "*a runtime-prerequisite guard exists*", not "runs in
+    production". The guard existing when the flag is flipped is exactly what (b) asked for, and
+    AC9 forbids flipping it here.
+  - `[low]` `[reject]` Six speculative or out-of-scope edge cases: the warning fires even when
+    no shot would have recomposed anyway (the operator still wants to know ComfyUI is
+    misconfigured); `comfyui_mock` opens a socket (the recompose path never honoured mock mode —
+    pre-existing, and the bail is now the louder outcome); re-check RAM every N shots mid-loop
+    (this is a preflight, not a watchdog); negative/absurd `ram_free`; a required flag token
+    appearing as another option's *value*; a floor configured above the box's total RAM (the
+    message already prints free **and** total).
+
 ## Design Notes
 
 **Why the service and not the node.** `pipeline/nodes/shot_recompose.py` is layer-pure by an enforced test; an HTTP probe cannot live there. `recompose_service.recompose_run_shots` lines 45-48 are the only run-level code in the path, already hold `Settings` and the `comfyui_client` module, and its return type `(cast_cards, stats)` can already express a whole-run bail-out. Splitting a pure `check(argv, ram_free)` helper into the node module buys a test-mocking convenience the existing `monkeypatch.setattr(recompose_service, "comfyui_client", stub)` already provides — skipped.
@@ -110,3 +187,95 @@ Recompose is skipped for this run; every shot renders through the overlay path.
 **Manual checks (if no CLI):**
 - `git diff d39037f -- src/yt_flow/pipeline/nodes/video.py` shows only the warning append after line 2560 — no hunk inside `_build_card_chain`, `_apply_placement`, `ground_y_expr`, `_occlusion_fragment` or `MotionSource`.
 - The composed failure message is read once as an operator would: does it name every missing prerequisite, the observed `argv`, and a runnable command?
+
+## Auto Run Result
+
+Status: done
+
+**Implemented.** Story 10.1c's unblock condition (b) — "the path needs ComfyUI started with
+`--lowvram --disable-smart-memory` and an fp8 text encoder, and **nothing here detects or
+enforces that**" — is now closed. `recompose_run_shots` interrogates the **running** server's
+`/system_stats` at its one run-level moment, before the first shot, and refuses the whole path
+with a named, actionable failure instead of swap-grinding for twelve minutes. The default flag
+is untouched: `shot_recompose_enabled` is still `False`, and (a) legibility and (c) the time
+budget remain open, which is 10.1e's call.
+
+Three things the story asked for that the investigation answered differently from its premise:
+
+1. **The fp8 text encoder is not a runtime prerequisite the preflight can check.** It is pinned
+   in `comfyui_shot_recompose_qwen_api.json`'s `clip` node — a property of the graph file, absent
+   from `argv` and from `/system_stats` — and a missing file fails fast at that node with
+   ComfyUI's own error. The requirement table records it as deliberately unchecked rather than
+   pretending to verify it, which is what Task 1's second bullet asked for.
+2. **`--cache-lru` needed a value check, not a presence check.** ComfyUI declares
+   `--cache-lru type=int default=0` and enables the LRU cache only `if args.cache_lru > 0`, so
+   `--cache-lru 0` would have passed a presence-only gate while delivering the exact 490 s/shot
+   eviction the flag is in the table to prevent. Found in review, verified against ComfyUI source.
+3. **The restart command could not be a bare `python main.py …`.** This box starts ComfyUI from
+   `~/workspaces/ComfyUI/run.sh`, which activates a venv and exports `HSA_OVERRIDE_GFX_VERSION`
+   / `PYTORCH_HIP_ALLOC_CONF` first. The message tells the operator to *append* the flags to the
+   launcher they already use — AC3 is about an operator who can act on the line, and a command
+   that silently drops the RDNA-4 override fails that test.
+
+**Files changed**
+- `src/yt_flow/services/recompose_service.py` — `REQUIRED_FLAGS` (the single declaration:
+  flag → required value → why), `_flag_value` / `_gb` / `_message` / `_preflight`, and the
+  run-level bail that returns the cast map untouched
+- `src/yt_flow/pipeline/nodes/video.py` — +34 lines, one hunk: the preflight bail becomes a
+  `recompose_preflight_failed` run_warning, and the pre-existing blanket `except` now files one
+  too (`reason="resolver_error"`) instead of only logging
+- `src/yt_flow/config.py` — `recompose_preflight_min_free_ram_gb` (12.0 GiB, with the honest
+  provenance of the number and its unvalidated false-bail rate); verdict item (b) rewritten to
+  record what closed it and what stays out of its reach
+- `src/yt_flow/domain/state.py` + `src/yt_flow/domain/warnings.py` — the new code and its Korean
+  operator copy, both halves, since the import-time guard fails if only one is edited
+- `src/yt_flow/services/comfyui_client.py` — `get_system_stats`' docstring, which claimed "not a
+  health gate" and "called once per run" and was falsified by this story on both counts
+- `tests/services/test_recompose_service.py` — `_StubClient.get_system_stats` + `PASSING_STATS`
+  so the 8 pre-existing tests keep passing, plus the preflight matrix
+- `tests/pipeline/nodes/test_video_harmonization.py` — three video_node gate tests
+- `tests/stubs/fakes.py` — the offline stub's payload now satisfies the gate
+- `data/comfyui/README.md` — "How ComfyUI must be started", with the real launcher body
+- `_bmad-output/implementation-artifacts/deferred-work.md` — two entries
+
+**Review findings.** Both reviewers ran in parallel. **13 patched (4 high, 5 medium, 4 low),
+1 deferred (medium), 7 rejected.** Every high-severity claim was verified against a primary
+source before patching, not taken on the reviewer's word: ComfyUI's `comfy/cli_args.py` and
+`main.py` for the `--cache-lru 0` hole, this machine's `run.sh` for the restart command, and
+`MAX_DETAIL_CHARS` for the truncation. The sharpest finding was that a hard attribute read of
+the new setting would raise into `video_node`'s blanket `except`, which logs a WARNING and files
+**no** warning — the story reproducing the exact silent skip it exists to end.
+
+**Verification.** `uv run pytest -q -p no:cacheprovider --ignore=e2e` → **1 failed, 3146 passed,
+1 skipped** (6:28). The single failure is
+`tests/test_render_pose_guides.py::test_render_is_deterministic_and_content_pinned[humanoid_lying_supine]`,
+proven pre-existing by stashing all working-tree changes and re-running at `d39037f`
+(`1 failed, 14 passed`) — the baseline commit retuned the supine joint table without updating
+that test's pinned raster hash. `uv run ruff check src/ tests/` clean. `git diff d39037f --
+video.py` is one hunk at 2559, with no change inside `_build_card_chain`, `_apply_placement`,
+`ground_y_expr`, `_occlusion_fragment` or `MotionSource`.
+
+**Residual risks.**
+1. **The preflight has never run against a live ComfyUI.** ComfyUI was not up during this
+   session, so `/system_stats`' real payload shape was taken from the story's 2026-08-15 live
+   capture (`system.argv`) and from `_build_provenance`'s existing reader, not re-observed. The
+   defensive reads mean an unexpected shape produces a named bail rather than a crash, but
+   whether a correctly-started server *passes* is unproven on hardware. First live exercise is
+   10.1e.
+2. **The 12 GiB floor is calibrated against the failure only.** No free-RAM reading from a
+   healthy run at `video_node` entry exists anywhere, and `--disable-smart-memory` parks weights
+   in system RAM precisely so a working box may sit lower than intuition suggests. If the floor
+   is too high, every run bails — loudly and with the measurement in the message, which is the
+   designed behaviour, but it is a false-bail rate nobody has measured. Recorded in the config
+   comment; 10.1e is where it shows up.
+3. **A busy-but-healthy ComfyUI can be refused.** `check_health`'s own docstring records that
+   ComfyUI stops serving `/system_stats` while a prompt runs, so a concurrent A/B run can make
+   the 5-second unretried probe answer `None` → `stats_unavailable`. Deliberately not
+   compensated with retries or a longer timeout (both are forbidden by the story); the cost is
+   one overlay-path run with a visible warning, and the reasoning is now in the docstring.
+4. **Nothing in a production run is protected today**, because `shot_recompose_enabled` is
+   `False` and `video.py:2558` is the only reader. That is the story's own constraint, not a
+   defect — but the incident that motivated it (`e5ed4b3a`) was the *background* path, which
+   stays ungated. Recorded in `deferred-work.md`.
+5. `tests/test_render_pose_guides.py`'s pinned hash is still stale from `d39037f`. It belongs to
+   whoever owns 10.8, is untouched here, and is the repository's only failing test.
