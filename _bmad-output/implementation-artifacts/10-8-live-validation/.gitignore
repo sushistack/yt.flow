@@ -1,22 +1,34 @@
 # Story 10.8 live-validation artifacts.
 #
-# What is committed: everything that re-derives or adjudicates a number — the driver
-# (`measure_fallbacks.py`), the pre-registration (`README.md`) and the raw measurement
-# ledger (`measurements.jsonl`). All of it is text and all of it is small; a reader can
-# check every claim in the spec's `## Auto Run Result` from this directory alone,
-# without a GPU and without re-running the pipeline.
+# What is committed: everything that re-derives or adjudicates a number — the drivers
+# (`measure_fallbacks.py`, `make_adjudication_sheet.py`), the pre-registration
+# (`README.md`), the raw measurement ledger (`measurements.jsonl`), the adjudication
+# sheets (`before_after.jpg`, `grid_<card_key>.jpg`) and the numbers behind them
+# (`angle_histogram.txt`/`.json`, `adjudication_placements.json`). A reader can check
+# every claim in the spec's `## Auto Run Result` from this directory alone, without a
+# GPU and without re-running the pipeline.
 #
-# What is ignored: rendered frames and clips. NONE EXIST YET — the before/after render
-# (story AC9) is blocked on ComfyUI being up and on Jay watching it, so this directory
-# currently holds no image at all. The rules are written now so the follow-up run drops
-# its output into an already-decided split instead of inventing one:
+# What is ignored: rendered frames and clips. THE RENDER STILL DOES NOT EXIST — the
+# before/after *video* frames (story AC9) are blocked on ComfyUI and on Jay watching
+# them. The images that DO exist (2026-08-16) are card-resolution sheets: the actual
+# card PNG each of the 40 placements resolves to, before and after, which is an input to
+# that verdict and not a substitute for it. The split:
 #
-#   - commit the adjudication images the verdict cites, downscaled to ~512 px on the
-#     long edge — "which way is the figure facing" survives that easily. Name them
-#     `before_after.*`, `*_pair.*` or `grid_*.*`: those three are what the rules below
-#     un-ignore, in any image format;
+#   - commit the adjudication images the verdict cites. ~512 px on the long edge is the
+#     rule for a handful of frames; the contact sheets deliberately use 168–232 px cells
+#     because 80 cells at 512 px is a sheet nobody scrolls, and each thumb is cropped to
+#     its alpha bbox so facing stays readable (reasoned in README § Adjudication
+#     artifact). Name them `before_after.*`, `*_pair.*` or `grid_*.*`: those three are
+#     what the rules below un-ignore, in any image format;
 #   - ignore the raw per-shot renders and full videos they were built from, which are
-#     regenerable from the committed driver against the same run.
+#     regenerable from the committed drivers against the same run. The DB snapshot
+#     `make_adjudication_sheet.py` freezes is written to the system tempdir, not here,
+#     so no rule is needed for it.
+#
+# An image dropped here under any OTHER name is ignored and will vanish silently. That
+# is the trap this header exists to name — check with `git add --dry-run <path>`, not
+# with `git check-ignore`, which exits 0 on a negation match too and so reads the same
+# for "ignored" and "explicitly un-ignored".
 #
 # `git status --porcelain` on this directory proves nothing (it is ignored by design).
 # Assert file state with `find _bmad-output/implementation-artifacts/10-8-live-validation
@@ -36,3 +48,12 @@
 !before_after.*
 !*_pair.*
 !grid_*.*
+# 2026-08-16, second session: the live-library adjudication images. They are the
+# evidence that an angle LABEL is not always a facing CHANGE — a `back` card that
+# draws a front-facing figure is the defect the fallback numbers cannot see — plus
+# the rejected STOCK-d-class sitting set and the SCP-049 sitting control that proves
+# the generation path itself works. Named explicitly rather than by prefix so the
+# next writer has to think about whether their file is evidence or a raw render.
+!angle_reality_grid.*
+!dclass_sitting_rejected.*
+!scp049_sitting_control.*

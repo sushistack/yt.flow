@@ -284,3 +284,93 @@ Two things this story cannot close unattended, both named in `Block If` before i
 `followup_review_recommended: true` — the review pass applied 24 patches including three high-severity
 ones that change failure containment (`return_exceptions`), a diagnostic label, and what the AC8 guard
 refuses. That is enough behavioural change to deserve an independent second look.
+
+## Auto Run Result — Round 2 (2026-08-16, GPU session): the library attempt, and a correction
+
+ComfyUI was brought up for this round (`--cache-lru 10`, queue empty, verified 200). Two things happened:
+the library fill was attempted and **rejected on viewing**, and looking at the actual card pixels
+**falsified a claim Round 1 had already committed**.
+
+### Correction: "distinct angles 1 → 4" counts labels, not facing
+
+Round 1 reported the fixed leg drawing 4 / 3 / 3 / 2 distinct angles per `card_key` and treated that as
+the on-screen variety metric. Opening the cards says otherwise — an angle **label** is not always a
+facing **change**. Judged from [`angle_reality_grid.jpg`](10-8-live-validation/angle_reality_grid.jpg)
+(all 8 seeded keys × `CANONICAL_ANGLES`):
+
+| key | what the four tier-A cards actually show |
+|---|---|
+| `SCP-049` | genuine front / back / side / three_quarter — **the metric is real here** |
+| `SCP-049-2`, `SCP-096`, `STOCK-researcher`, `STOCK-security` | `back` genuine; `side` and `three_quarter` read near-frontal |
+| `STOCK-d-class` | **all four are front-facing standing figures** — the label is the only thing that differs |
+| `SCP-1471` | not sprites: two cells are a brown wall photo, two hold **two figures** in one card |
+| `SCP-682` | not sprites: four landscape photos with the background baked in, no alpha cutout |
+
+This does **not** overturn the fix. `SCP-049` is 24 of the 40 placements, and
+[`grid_SCP-049.jpg`](10-8-live-validation/grid_SCP-049.jpg) shows the BEFORE half as ~24 copies of one
+front-facing figure against an AFTER half carrying real side, three_quarter, back and seated-in-profile
+draws. It does bound the claim: **the fix changes the screen for the majority of placements and does
+close to nothing for `STOCK-d-class`**, whose entire angle set is one facing.
+
+[`grid_STOCK-d-class.jpg`](10-8-live-validation/grid_STOCK-d-class.jpg) shows something worse than a
+no-op. Its one changed cell (`1:S00102`, front → side) draws a figure that is still frontal **and is a
+different person** — jumpsuit number 2135 → 250, different hair, plus a stray black "12" blob. Character
+identity now breaks between shots of the same run. That is a 10.6-class library defect the angle fix
+**exposes** rather than causes: it was invisible while every placement drew the same `front` file.
+`SCP-049-2`'s side/three_quarter carry the same defect in milder form. The cause is recorded in the
+library's own source — `scripts/seed_stock_cast.py:52-55`, *"with nothing to hold onto the model drew a
+different person for every angle"* — so this is a known problem whose blast radius just grew.
+
+### The library fill was attempted, rejected on viewing, and reverted
+
+`uv run python scripts/seed_stock_cast.py --key STOCK-d-class --pose sitting` generated 4 cards with no
+warning and no figure-guard rejection (they are all single figures). On inspection —
+[`dclass_sitting_rejected.jpg`](10-8-live-validation/dclass_sitting_rejected.jpg) — **3 of the 4 show a
+standing figure**, and the one that sits (`sitting_back`) faces the camera. Pose and angle both missed.
+
+All four rows were set `status='retired'`. The PNGs are kept as evidence (CLAUDE.md: never blanket-delete
+an ignored payload). **They were reverted because they are worse than the gap they filled**, not merely
+useless: before them a `sitting` request for this key demoted to standing and stamped
+`fallback_reason: asset`; with them approved, the same standing figure is drawn with `fallback` **False**.
+That is exactly the "the card lies about its own fallback" state Story 13.1 was built to remove.
+
+The path itself works — [`scp049_sitting_control.jpg`](10-8-live-validation/scp049_sitting_control.jpg)
+is the control: `SCP-049`'s four `sitting` cards are genuinely seated *and* genuinely angled. So this is
+a per-key reliability problem, not a broken mechanism, and `_POSE_DESCRIPTIONS["sitting"]` reaching the
+prompt as text is consistent with this epic's standing finding that **text-only pose instructions are
+ignored** (which is why Story 10.5 built the ControlNet guide path).
+
+**The remaining 12 generatable cards were NOT run.** Same path, same stock descriptors, same auto-approval
+to a library with no gate — the expected outcome is 12 more cards that need a human to reject them one by
+one. Sizing the fill was this story's job (`MISSING 36 of 72`); making it reliable is a new one.
+
+### Corrected library arithmetic
+
+`MISSING 36 of 72` is a full-vocabulary target, and the generatable subset is much smaller than it reads:
+
+- **8 slots (`SCP-999`) are not generatable at all** — the row has no angle paths and no usable descriptor,
+  and the entity is an amorphous gelatinous mass for which `standing`/`sitting` is not a meaningful axis.
+- **8 slots (`SCP-1471`, `SCP-682`) need a human-authored descriptor** — `visual_descriptor` is empty for
+  both and neither appears in `STOCK_DESCRIPTORS`/`DERIVED_DESCRIPTORS`. Their existing tier-A cards are
+  also not sprites (see above), so these two keys need repair before they need coverage.
+- **4 slots (`SCP-096`)** could use the stored `visual_descriptor`, untested.
+- **16 slots** (`STOCK-d-class`, `STOCK-researcher`, `STOCK-security`, `SCP-049-2`) have authored
+  descriptors — this is the set the attempt sampled, and it failed 3/4 on the first key.
+
+Also corrected: `report_card_coverage.py`'s `OFF-EPOCH` compares against a **single** epoch, but epoch is
+per-key (the new `STOCK-d-class` cards stamped epoch **2**, matching that key's standing set, while
+`SCP-049` sits at epoch 1). The AC7 epoch match held; the report's flag was wrong.
+
+### Status unchanged: blocked
+
+Still **`Jay viewing verdict required`**. What this round adds is that the verdict now has a real artifact
+to be given against — [`before_after.jpg`](10-8-live-validation/before_after.jpg) plus the four per-key
+grids, regenerable with
+`uv run python _bmad-output/implementation-artifacts/10-8-live-validation/make_adjudication_sheet.py`.
+Both legs resolve against a frozen sqlite snapshot, so the concurrent card-library writes could not skew
+them. What the sheet cannot show is also stated in its README: no compositing, grounding, depth, parallax,
+grade, motion or stacking, and the alpha-bbox crop deliberately erases scale and position.
+
+New work this round surfaced, recorded in `deferred-work.md`: per-key angle identity drift (10.6-class,
+now visible), `SCP-1471`/`SCP-682` tier-A cards are not sprites, and the sitting fill needs structural
+conditioning rather than a text pose token.

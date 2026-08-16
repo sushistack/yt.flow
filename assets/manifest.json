@@ -447,6 +447,62 @@
       },
       "status": "retired"
     },
+    "STOCK-d-class/sitting_back": {
+      "angle": "back",
+      "approved_at": "2026-08-16T09:10:52.090837+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-16T09:10:52.088881+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/sitting_back.png",
+      "pose": "sitting",
+      "sha256": "951d4287815140028c989e2aae163b7a921211caf61a4840cf61374648b580ad",
+      "source": {
+        "ipadapter_weight": 0.35,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/sitting_front": {
+      "angle": "front",
+      "approved_at": "2026-08-16T09:02:08.657518+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-16T09:02:08.654450+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/sitting_front.png",
+      "pose": "sitting",
+      "sha256": "8a5453ab6e24c4c4b23d69ea45b98d86ed49aabc431ce0e1afe4335e66ece36f",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/sitting_side": {
+      "angle": "side",
+      "approved_at": "2026-08-16T09:11:35.241390+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-16T09:11:35.239137+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/sitting_side.png",
+      "pose": "sitting",
+      "sha256": "75dcaf125beed9cf34f2e635bf323887d0bf48ea37e24fdffb05ed3d3f65bc1c",
+      "source": {
+        "ipadapter_weight": 0.35,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/sitting_three_quarter": {
+      "angle": "three_quarter",
+      "approved_at": "2026-08-16T09:12:08.745225+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-16T09:12:08.740645+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/sitting_three_quarter.png",
+      "pose": "sitting",
+      "sha256": "f8720ce1b9ab163fc02cfa5bc54264e2c25effa0dea6da2ef5b5f7ee745bc46b",
+      "source": {
+        "ipadapter_weight": 0.4,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
     "STOCK-d-class/standing_back": {
       "angle": "back",
       "approved_at": "2026-08-02T03:37:27.371120+00:00",

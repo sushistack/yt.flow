@@ -1,0 +1,28 @@
+Story 10.8 AC9 — angles drawn per card_key, both legs
+run        e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889
+generated  2026-08-16T09:23:50+00:00   git 0c0b2de
+regenerate uv run python _bmad-output/implementation-artifacts/10-8-live-validation/make_adjudication_sheet.py
+
+Counted off the SAME resolver results the JPEG cells were drawn from
+(adjudication_placements.json), so every cell in the sheet is in exactly one
+bucket below and the sheet can be recounted by hand against it.
+Both legs resolved against ONE frozen snapshot of yt_flow.db, so the only
+difference between them is the code (library_state in the JSON is the proof).
+
+=== baseline ===  40 placements, 26 fallback (angle 23, asset 3)
+card_key             n  distinct  angles
+SCP-049             24         1  front 24
+SCP-049-2            6         1  front 6
+STOCK-d-class        4         1  front 4
+STOCK-researcher     6         1  front 6
+  SCP-049: poses hint:b36d4021a2 1, sitting 2, standing 21; fallback angle 23
+  STOCK-d-class: poses hint:475c8a9231 1, standing 3; fallback asset 3
+
+=== fixed ===  40 placements, 3 fallback (asset 3)
+card_key             n  distinct  angles
+SCP-049             24         4  front 12  three_quarter 6  side 4  back 2
+SCP-049-2            6         3  front 2  side 2  three_quarter 2
+STOCK-d-class        4         2  front 3  side 1
+STOCK-researcher     6         3  front 3  three_quarter 2  side 1
+  SCP-049: poses hint:b36d4021a2 1, sitting 2, standing 21; fallback none
+  STOCK-d-class: poses hint:475c8a9231 1, standing 3; fallback asset 3

@@ -1,0 +1,124 @@
+{
+  "ts": "2026-08-16T09:23:50+00:00",
+  "run": "e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889",
+  "scp_id": "SCP-049",
+  "git_rev": "0c0b2de",
+  "git_dirty": false,
+  "command": "uv run python _bmad-output/implementation-artifacts/10-8-live-validation/make_adjudication_sheet.py",
+  "placement_slots": 40,
+  "db_snapshot": "/tmp/10-8-adjudication-snapshot.db",
+  "histogram": {
+    "baseline": {
+      "SCP-049": {
+        "placements": 24,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 24
+        },
+        "poses": {
+          "hint:b36d4021a2": 1,
+          "sitting": 2,
+          "standing": 21
+        },
+        "fallback": {
+          "angle": 23
+        }
+      },
+      "SCP-049-2": {
+        "placements": 6,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 6
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      },
+      "STOCK-d-class": {
+        "placements": 4,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 4
+        },
+        "poses": {
+          "hint:475c8a9231": 1,
+          "standing": 3
+        },
+        "fallback": {
+          "asset": 3
+        }
+      },
+      "STOCK-researcher": {
+        "placements": 6,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 6
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      }
+    },
+    "fixed": {
+      "SCP-049": {
+        "placements": 24,
+        "distinct_angles": 4,
+        "angles": {
+          "back": 2,
+          "front": 12,
+          "side": 4,
+          "three_quarter": 6
+        },
+        "poses": {
+          "hint:b36d4021a2": 1,
+          "sitting": 2,
+          "standing": 21
+        },
+        "fallback": {}
+      },
+      "SCP-049-2": {
+        "placements": 6,
+        "distinct_angles": 3,
+        "angles": {
+          "front": 2,
+          "side": 2,
+          "three_quarter": 2
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      },
+      "STOCK-d-class": {
+        "placements": 4,
+        "distinct_angles": 2,
+        "angles": {
+          "front": 3,
+          "side": 1
+        },
+        "poses": {
+          "hint:475c8a9231": 1,
+          "standing": 3
+        },
+        "fallback": {
+          "asset": 3
+        }
+      },
+      "STOCK-researcher": {
+        "placements": 6,
+        "distinct_angles": 3,
+        "angles": {
+          "front": 3,
+          "side": 1,
+          "three_quarter": 2
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      }
+    }
+  }
+}

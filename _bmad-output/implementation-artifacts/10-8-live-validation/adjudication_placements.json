@@ -1,0 +1,1024 @@
+{
+  "ts": "2026-08-16T09:23:50+00:00",
+  "run": "e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889",
+  "scp_id": "SCP-049",
+  "git_rev": "0c0b2de",
+  "git_dirty": false,
+  "command": "uv run python _bmad-output/implementation-artifacts/10-8-live-validation/make_adjudication_sheet.py",
+  "placement_slots": 40,
+  "db_snapshot": "/tmp/10-8-adjudication-snapshot.db",
+  "legs": {
+    "baseline": [
+      {
+        "shot_key": "1:S00101",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "1:S00101",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "1:S00102",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "1:S00103",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "1:S00104",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "2:S00200",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "2:S00202",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "2:S00203",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "2:S00203",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00204",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "3:S00300",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "3:S00301",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "3:S00302",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "3:S00303",
+        "card_key": "SCP-049",
+        "pose": "hint:b36d4021a2",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "4:S00402",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "4:S00404",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "4:S00404",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "4:S00405",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "5:S00501",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "5:S00502",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "5:S00502",
+        "card_key": "STOCK-d-class",
+        "pose": "hint:475c8a9231",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/hint_475c8a9231_front.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00503",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00504",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00505",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00600",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "6:S00601",
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/sitting_front.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "6:S00601",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00602",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "6:S00603",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "7:S00700",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "7:S00702",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00702",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "7:S00703",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00704",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "8:S00800",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00801",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00802",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00802",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "9:S00901",
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/sitting_front.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      },
+      {
+        "shot_key": "9:S00903",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "angle"
+      }
+    ],
+    "fixed": [
+      {
+        "shot_key": "1:S00101",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "1:S00101",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "1:S00102",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/STOCK-d-class/epoch_2/side_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "1:S00103",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "1:S00104",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00200",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00202",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00203",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00203",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "2:S00204",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "3:S00300",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "3:S00301",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "3:S00302",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/STOCK-researcher/epoch_2/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "3:S00303",
+        "card_key": "SCP-049",
+        "pose": "hint:b36d4021a2",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "4:S00402",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "4:S00404",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "4:S00404",
+        "card_key": "STOCK-d-class",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+        "fallback": true,
+        "fallback_reason": "asset"
+      },
+      {
+        "shot_key": "4:S00405",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00501",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00502",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "back",
+        "path": "assets/characters/SCP-049/epoch_1/back_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00502",
+        "card_key": "STOCK-d-class",
+        "pose": "hint:475c8a9231",
+        "angle": "front",
+        "path": "assets/characters/STOCK-d-class/epoch_2/hint_475c8a9231_front.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00503",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049-2/epoch_2/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00504",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/SCP-049-2/epoch_2/side_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "5:S00505",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00600",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "back",
+        "path": "assets/characters/SCP-049/epoch_1/back_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00601",
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "side",
+        "path": "assets/characters/SCP-049/epoch_1/sitting_side.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00601",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/STOCK-researcher/epoch_2/side_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00602",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "6:S00603",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00700",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00702",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/STOCK-researcher/epoch_2/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00702",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00703",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "7:S00704",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00800",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "side",
+        "path": "assets/characters/SCP-049-2/epoch_2/side_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00801",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "three_quarter",
+        "path": "assets/characters/SCP-049-2/epoch_2/three_quarter_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00802",
+        "card_key": "SCP-049-2",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "8:S00802",
+        "card_key": "STOCK-researcher",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "9:S00901",
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "side",
+        "path": "assets/characters/SCP-049/epoch_1/sitting_side.png",
+        "fallback": false,
+        "fallback_reason": null
+      },
+      {
+        "shot_key": "9:S00903",
+        "card_key": "SCP-049",
+        "pose": "standing",
+        "angle": "front",
+        "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+        "fallback": false,
+        "fallback_reason": null
+      }
+    ]
+  },
+  "histogram": {
+    "baseline": {
+      "SCP-049": {
+        "placements": 24,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 24
+        },
+        "poses": {
+          "hint:b36d4021a2": 1,
+          "sitting": 2,
+          "standing": 21
+        },
+        "fallback": {
+          "angle": 23
+        }
+      },
+      "SCP-049-2": {
+        "placements": 6,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 6
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      },
+      "STOCK-d-class": {
+        "placements": 4,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 4
+        },
+        "poses": {
+          "hint:475c8a9231": 1,
+          "standing": 3
+        },
+        "fallback": {
+          "asset": 3
+        }
+      },
+      "STOCK-researcher": {
+        "placements": 6,
+        "distinct_angles": 1,
+        "angles": {
+          "front": 6
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      }
+    },
+    "fixed": {
+      "SCP-049": {
+        "placements": 24,
+        "distinct_angles": 4,
+        "angles": {
+          "back": 2,
+          "front": 12,
+          "side": 4,
+          "three_quarter": 6
+        },
+        "poses": {
+          "hint:b36d4021a2": 1,
+          "sitting": 2,
+          "standing": 21
+        },
+        "fallback": {}
+      },
+      "SCP-049-2": {
+        "placements": 6,
+        "distinct_angles": 3,
+        "angles": {
+          "front": 2,
+          "side": 2,
+          "three_quarter": 2
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      },
+      "STOCK-d-class": {
+        "placements": 4,
+        "distinct_angles": 2,
+        "angles": {
+          "front": 3,
+          "side": 1
+        },
+        "poses": {
+          "hint:475c8a9231": 1,
+          "standing": 3
+        },
+        "fallback": {
+          "asset": 3
+        }
+      },
+      "STOCK-researcher": {
+        "placements": 6,
+        "distinct_angles": 3,
+        "angles": {
+          "front": 3,
+          "side": 1,
+          "three_quarter": 2
+        },
+        "poses": {
+          "standing": 6
+        },
+        "fallback": {}
+      }
+    }
+  },
+  "library_state": {
+    "character_cards": [
+      {
+        "card_key": "SCP-049",
+        "pose": "hint:7031f483b8",
+        "angle": "front",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049",
+        "pose": "hint:b36d4021a2",
+        "angle": "front",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "back",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "front",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "side",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049",
+        "pose": "sitting",
+        "angle": "three_quarter",
+        "status": "approved",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "SCP-049-2",
+        "pose": "hint:475c8a9231",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:475c8a9231",
+        "angle": "front",
+        "status": "approved",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:6525d3c087",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:821f983459",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:970ede32f4",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:a40ec9c170",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "hint:aabd2f03df",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 1
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "sitting",
+        "angle": "back",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "sitting",
+        "angle": "front",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "sitting",
+        "angle": "side",
+        "status": "retired",
+        "style_epoch": 2
+      },
+      {
+        "card_key": "STOCK-d-class",
+        "pose": "sitting",
+        "angle": "three_quarter",
+        "status": "retired",
+        "style_epoch": 2
+      }
+    ],
+    "characters_angle_paths": {
+      "SCP-049": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "SCP-049-2": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "SCP-096": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "SCP-1471": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "SCP-682": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "SCP-999": [],
+      "STOCK-d-class": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "STOCK-researcher": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ],
+      "STOCK-security": [
+        "front",
+        "back",
+        "side",
+        "three_quarter"
+      ]
+    }
+  }
+}
