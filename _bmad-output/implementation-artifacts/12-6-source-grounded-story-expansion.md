@@ -9,7 +9,7 @@ baseline_commit: f803a0dc9e0a4a9e8c0ba0e4c81dca2ba9c8a3f1
 
 # Story 12.6: 원문에 살을 붙이는 각색 — 짧고 밋밋한 대본의 두 뿌리
 
-Status: draft
+Status: done
 
 ## Story
 
