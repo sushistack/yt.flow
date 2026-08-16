@@ -2,7 +2,7 @@
 title: 'Story 10.8 — Cast pose/angle coverage: 21 identical front-facing shots'
 type: 'bugfix'
 created: '2026-08-16'
-status: 'blocked'
+status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
 baseline_revision: 'c7c3789'
@@ -435,3 +435,55 @@ ComfyUI was brought up for Round 2 and has been stopped again (verified `000`). 
 this round — the descriptor gate is upstream of the GPU and SCP-682 does not clear it. Status remains
 **blocked** on `Jay viewing verdict required`; the two SCP keys above are a separate defect from Story
 10.8's subject and are recorded in `deferred-work.md` rather than absorbed into this spec's scope.
+
+## Live gate — Jay's viewing verdict, 2026-08-16
+
+**Verdict, verbatim:** *"오오 확실히 좋아진 것 같음! 많이 좋아졌어, 누워있는 포즈가 좀 이상하긴 한데 ㅇㅇ"*
+
+Given against [`before_after.jpg`](10-8-live-validation/before_after.jpg) and the four per-key grids —
+the adjudication package described above, regenerable with `make_adjudication_sheet.py`. **AC9 is
+satisfied and the story's blocking condition is cleared.** The angle repair is accepted on viewing, not
+on its numbers: the numbers were the thing Round 2 had to correct.
+
+### The one complaint, identified
+
+"누워있는 포즈" is `hint:475c8a9231` — `pose_hint: "lying on operating table"`, `pose_guide_key:
+humanoid_lying_supine`, drawn for `STOCK-d-class`. It is **not** the angle work and would look the same
+before and after; it is visible in `grid_STOCK-d-class.jpg` as the one cell identical in both legs
+(an approved hint card short-circuits before angle selection).
+
+Measured, so the follow-up does not start from an impression:
+
+| card | alpha bbox | w/h | top gap |
+|---|---|---|---|
+| `front_candidate_1` (standing control) | (231, 73, 601, 1216) | **0.32** | 73 |
+| `hint_b36d4021a2` (reaching, control) | (53, 77, 695, 1141) | **0.60** | 77 |
+| `hint_475c8a9231` (lying) | **(0, 821, 832, 1208)** | **2.15** | **821** |
+
+Three things at once, and only the third is a drawing problem:
+
+1. **The sprite is horizontal in a portrait canvas.** 2.15:1 against a standing card's 0.32:1 — a 6.7x
+   difference in aspect. Card framing in this project is **alpha-bbox arithmetic, not prompting**
+   (`gotcha_sprite-scale-and-two-figure-detection`), and every scale/anchor rule downstream was written
+   for an upright figure whose feet sit at the bottom. A supine sprite is sized and placed by rules that
+   assume the opposite, which is the most likely reason it reads wrong on screen.
+2. **It is clipped on both sides.** The bbox spans x 0-832, the full canvas width, so the head and the
+   boot touch or exceed the edges — the generation prompt's "feet visible, no crop" framing has no
+   horizontal equivalent.
+3. **It is a different person again**, in the same way `STOCK-d-class`'s angle set is: white shirt
+   sleeves here against orange sleeves on the standing cards.
+
+Story 10.5 added `humanoid_lying_supine` to the guide catalogue without anything downstream learning
+that a card can be wider than it is tall. Recorded in `deferred-work.md` as its own defect.
+
+### Closing state
+
+- **AC9 — satisfied.** Verdict above.
+- **AC1, AC2, AC4, AC5, AC6, AC8 — satisfied**, as recorded in the Round 1 result and the review pass.
+- **AC3/AC7 (library fill) — NOT satisfied, carried forward.** The fill was attempted, rejected on
+  viewing, and reverted (Round 2). Round 3 then found the likely cause: `character-generation`'s
+  five-week-un-shipped prompt, now live. Remaining measured cost of not filling is **3 of 40 placements**
+  (`asset` demotions), which is why the verdict was obtainable without it. The fill is a follow-up with a
+  testable hypothesis rather than an open question.
+
+Status -> **done**.
