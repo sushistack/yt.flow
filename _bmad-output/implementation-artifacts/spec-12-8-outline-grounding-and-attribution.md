@@ -3,6 +3,7 @@ title: 'Story 12.8 — Outline grounding: ownerless fabrication and the misaddre
 type: 'feature'
 created: '2026-08-16'
 baseline_revision: '30893aa'
+final_revision: 'babadcd'
 status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
