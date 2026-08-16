@@ -578,6 +578,7 @@ RunWarningCode = Literal[
     "relight_pair_skipped",
     "relight_failed",
     "relit_sprite_invalid",
+    "recompose_preflight_failed",       # Story 10.1d — ComfyUI misconfigured, whole run on overlay
 ]
 
 

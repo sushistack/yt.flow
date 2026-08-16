@@ -20,13 +20,31 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + struct.pack(">II", 8, 8)
 RECOMPOSED = PNG + b"recomposed"
 
 
+# A server started the way Story 10.1d's preflight requires: every flag present and RAM
+# well clear of the floor. `_StubClient` answers this unless a test overrides it, so the
+# tests that are about the shot loop never have to think about the preflight.
+PASSING_STATS = {
+    "system": {
+        "argv": ["main.py", "--lowvram", "--disable-smart-memory", "--cache-lru", "10"],
+        "ram_free": 20 * 2**30,
+        "ram_total": 31 * 2**30,
+    },
+}
+
+
 class _StubClient:
     """Duck-typed stand-in for services.comfyui_client (the module, not a class)."""
 
-    def __init__(self, result: bytes | None = RECOMPOSED):
+    def __init__(self, result: bytes | None = RECOMPOSED, stats: dict | None = PASSING_STATS):
         self.result = result
+        self.stats = stats
         self.uploads: list[str] = []
         self.submits = 0
+        self.stats_urls: list[str] = []
+
+    async def get_system_stats(self, url):
+        self.stats_urls.append(url)
+        return self.stats
 
     async def upload_image(self, url, data, name):
         self.uploads.append(name)
@@ -73,6 +91,7 @@ def env(tmp_path, monkeypatch):
     settings = SimpleNamespace(
         workspace_path=str(tmp_path), comfyui_url="http://stub",
         shot_recompose_workflow_path=_workflow(tmp_path),
+        recompose_preflight_min_free_ram_gb=12.0,
     )
     return SimpleNamespace(
         scenes=scenes, cast=cast, settings=settings, client=client,
@@ -188,3 +207,181 @@ async def test_failed_render_keeps_both_paths_and_the_cards(env, monkeypatch):
     assert env.shot["depth_map_path"] == str(env.depth)
     assert remaining == env.cast
     assert stats == {"recomposed": 0, "skipped": 0, "failed": 1}
+
+
+# ── Story 10.1d: runtime-prerequisite preflight ──────────────────────────────
+# A RUN-level refusal, not the per-shot skips above: a misconfigured ComfyUI is wrong for
+# every shot, so the whole cast map comes back untouched and nothing is submitted. The
+# eight tests above all pass this gate via `_StubClient`'s PASSING_STATS default, which is
+# the point — the loop's own behaviour must not have changed.
+
+
+async def test_a_satisfied_preflight_is_invisible(env):
+    """The shipped-good case: no bail keys, and the loop ran exactly as before."""
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats == {"recomposed": 1, "skipped": 0, "failed": 0}
+    assert env.client.submits == 1
+
+
+@pytest.mark.parametrize("flag", ["--lowvram", "--disable-smart-memory", "--cache-lru"])
+async def test_each_missing_flag_is_named_alone(env, flag):
+    """One absent flag must accuse itself and nothing else — a message that over-reports
+    sends the operator to restart with settings that were already correct."""
+    argv = [a for a in PASSING_STATS["system"]["argv"] if a != flag]
+    env.client.stats = {"system": {**PASSING_STATS["system"], "argv": argv}}
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "missing_flags"
+    detail = stats["preflight_detail"]
+    assert detail.splitlines()[0] == (
+        f"Shot recompose preflight failed: ComfyUI is missing {flag}.")
+    # The operator must be able to act on this line alone: what was observed, what to add.
+    assert f"observed argv: {argv}" in detail
+    # ADD, not replace: run.sh carries the venv activation and the ROCm gfx override, and
+    # an operator who pastes a bare `python main.py …` over it loses both.
+    assert ("add to ComfyUI's launcher (e.g. run.sh) and restart: "
+            "--lowvram --disable-smart-memory --cache-lru 10") in detail
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+@pytest.mark.parametrize("argv_tail", [
+    ["--cache-lru", "0"],       # ComfyUI's own default: main.py enables LRU only when > 0
+    ["--cache-lru=0"],
+    ["--cache-lru", "-1"],
+    ["--cache-lru", "auto"],    # unparseable — argparse would have refused it, but ask
+    ["--cache-lru"],            # value swallowed by the end of argv
+])
+async def test_a_value_taking_flag_present_but_inert_counts_as_missing(env, argv_tail):
+    """`--cache-lru 0` IS the eviction behaviour the flag exists to prevent (490 s/shot),
+    so presence alone must not satisfy the gate — the operator has to hear the value."""
+    env.client.stats = {"system": {**PASSING_STATS["system"],
+                                   "argv": ["main.py", "--lowvram",
+                                            "--disable-smart-memory", *argv_tail]}}
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "missing_flags"
+    assert "--cache-lru is present but set to" in stats["preflight_detail"]
+    assert "which is the same as not passing it" in stats["preflight_detail"]
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+async def test_missing_flags_are_reported_even_when_the_ram_reading_is_unreadable(env):
+    """Flags are the half the operator can act on. Bailing `stats_unreadable` first told a
+    doubly-broken box only about the field it can do nothing about."""
+    env.client.stats = {"system": {"argv": ["main.py", "--lowvram"], "ram_free": "?"}}
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "missing_flags"
+    assert "missing --disable-smart-memory, --cache-lru" in stats["preflight_detail"]
+    assert "free RAM:" not in stats["preflight_detail"]   # nothing readable to report
+
+
+async def test_ram_total_absent_degrades_to_the_free_only_form(env):
+    """`ram_total` is decoration — the floor is compared against `ram_free` alone, so a
+    payload without it must still bail (or pass) on the reading that matters."""
+    env.client.stats = {"system": {"argv": PASSING_STATS["system"]["argv"],
+                                   "ram_free": int(1.2 * 2**30)}}
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "low_ram"
+    assert "1.2 GiB free (threshold 12.0)" in stats["preflight_detail"]
+
+    env.client.stats = {"system": {"argv": PASSING_STATS["system"]["argv"],
+                                   "ram_free": 20 * 2**30, "ram_total": "lots"}}
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+    assert "preflight_failed" not in stats
+
+
+async def test_the_preflight_asks_the_configured_server(env):
+    """The RUNNING server is the only argv that decides the outcome, and it may be on
+    another host — reading our own Settings/.env instead would answer the wrong question."""
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert env.client.stats_urls == [env.settings.comfyui_url]
+
+
+async def test_a_flag_written_with_an_equals_sign_still_counts(env):
+    """`--cache-lru=10` is what argparse accepts too; telling an operator who wrote the
+    working spelling that it is missing would send them to fix a non-problem."""
+    env.client.stats = {"system": {**PASSING_STATS["system"],
+                                   "argv": ["main.py", "--lowvram", "--disable-smart-memory",
+                                            "--cache-lru=10"]}}
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert "preflight_failed" not in stats
+
+
+async def test_low_free_ram_bails_and_states_the_measurement(env):
+    """The reading and the threshold both go in the message: 1.2 GB free means something
+    else on the box has to be stopped, which no restart command can say on its own."""
+    env.client.stats = {"system": {**PASSING_STATS["system"],
+                                   "ram_free": int(1.2 * 2**30), "ram_total": 31 * 2**30}}
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "low_ram"
+    # GiB, because that is what the reading was divided by and what `free` reports.
+    assert "1.2 / 31.0 GiB (threshold 12.0)" in stats["preflight_detail"]
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+async def test_an_unanswered_server_bails_rather_than_assuming_the_best(env):
+    """`get_system_stats` is best-effort and answers None for every failure [AD-10]. A
+    misconfigured server is indistinguishable from a healthy one without the answer, so
+    "could not ask" is not "prerequisites met"."""
+    env.client.stats = None
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "stats_unavailable"
+    assert "did not answer /system_stats" in stats["preflight_detail"]
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+# The `ram_free` rows carry a PASSING argv on purpose: flags are compared first now, so an
+# argv of `["main.py"]` would bail `missing_flags` and never reach the RAM read.
+@pytest.mark.parametrize("payload, field", [
+    ({}, "'system'"),
+    ({"system": []}, "'system'"),
+    ({"system": {"argv": "x"}}, "'system.argv'"),
+    ({"system": {"argv": PASSING_STATS["system"]["argv"], "ram_total": 31 * 2**30}},
+     "'system.ram_free'"),
+    ({"system": {"argv": PASSING_STATS["system"]["argv"], "ram_free": True}},
+     "'system.ram_free'"),
+])
+async def test_an_unreadable_payload_names_the_field_and_never_raises(env, payload, field):
+    """`/system_stats`' shape differs across ComfyUI versions — that is the reason to read
+    it at all — so every unexpected shape must produce a named bail, not a TypeError out
+    of a path whose whole job is to keep the run rendering."""
+    env.client.stats = payload
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "stats_unreadable"
+    assert field in stats["preflight_detail"]
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+async def test_a_bailed_run_leaves_every_shot_on_the_overlay_path(env):
+    """The whole point of a run-level bail: the shots must be exactly as renderable as if
+    the feature flag were off — frame, depth map (11.5 parallax needs it) and cards."""
+    env.client.stats = {"system": {**PASSING_STATS["system"], "argv": ["main.py"]}}
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert env.shot["image_path"] == str(env.plate)
+    assert env.shot["depth_map_path"] == str(env.depth)
+    assert remaining == env.cast
+    assert stats["recomposed"] == stats["skipped"] == stats["failed"] == 0
+    assert env.client.submits == 0

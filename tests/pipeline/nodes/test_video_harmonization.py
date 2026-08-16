@@ -696,6 +696,98 @@ async def test_an_opaque_relit_sprite_warns_and_names_the_shot(monkeypatch, tmp_
     }
 
 
+async def test_a_bailed_recompose_preflight_reaches_the_gate(monkeypatch, tmp_path, assets):
+    """Story 10.1d: a run-level bail is otherwise INDISTINGUISHABLE from the feature being
+    off — same overlay render, same cards, same filtergraph. This row is the difference."""
+    settings = _settings_ns(tmp_path)
+    settings.shot_recompose_enabled = True
+    monkeypatch.setattr(video, "_settings", lambda: settings)
+
+    # Shaped like the service's real text: headline first, then ~370 chars of argv repr and
+    # the flags to add. make_warning truncates `detail` at 200, so passing the whole thing
+    # would cut off everything actionable — the gate gets the headline alone.
+    headline = "Shot recompose preflight failed: ComfyUI is missing --lowvram, --cache-lru."
+
+    async def _bailed(scenes, cast_cards):
+        return cast_cards, {"recomposed": 0, "skipped": 0, "failed": 0,
+                            "preflight_failed": "missing_flags",
+                            "preflight_detail": "\n".join([headline, "  observed argv: " + "y" * 400,
+                                                           "  add to ComfyUI's launcher…"])}
+
+    monkeypatch.setattr(video, "_recompose_resolver", _bailed)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    assert out.get("error") is None      # a preflight bail is a degradation, never fatal
+    warnings = out["run_warnings"]
+    assert [w["code"] for w in warnings] == ["recompose_preflight_failed"]
+    assert warnings[0]["stage"] == "video"
+    assert warnings[0]["context"]["reason"] == "missing_flags"
+    # Intact, not truncated at 200: the row's whole job is to name what is wrong.
+    assert warnings[0]["context"]["detail"] == headline
+
+
+async def test_a_raising_recompose_resolver_files_a_warning_too(monkeypatch, tmp_path, assets):
+    """The blanket except is AD-10 (never fail the run), not a licence to be silent: a
+    resolver that raises renders exactly like a preflight bail, so it needs the same row."""
+    settings = _settings_ns(tmp_path)
+    settings.shot_recompose_enabled = True
+    monkeypatch.setattr(video, "_settings", lambda: settings)
+
+    async def _boom(scenes, cast_cards):
+        raise RuntimeError("recompose exploded")
+
+    monkeypatch.setattr(video, "_recompose_resolver", _boom)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    assert out.get("error") is None
+    warnings = out["run_warnings"]
+    assert [w["code"] for w in warnings] == ["recompose_preflight_failed"]
+    assert warnings[0]["context"]["reason"] == "resolver_error"
+    assert "recompose exploded" in warnings[0]["context"]["detail"]
+
+
+async def test_recompose_resolver_is_untouched_while_the_flag_is_off(monkeypatch, tmp_path, assets):
+    """`shot_recompose_enabled` ships False and the test Settings stubs omit it entirely
+    (absent == off). Neither may reach the resolver — which is also what keeps the
+    preflight's `/system_stats` request off every run that never asked for recompose."""
+    monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
+    calls = []
+
+    async def _resolver(scenes, cast_cards):
+        calls.append(1)
+        return cast_cards, {}
+
+    monkeypatch.setattr(video, "_recompose_resolver", _resolver)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    assert calls == []
+    assert out["run_warnings"] == []
+
+
 async def test_an_unreadable_relit_sprite_warns_with_the_os_error(monkeypatch, tmp_path, assets):
     missing = tmp_path / "vanished.png"  # in the map, never on disk
 

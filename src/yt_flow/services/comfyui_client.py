@@ -197,10 +197,23 @@ async def get_system_stats(base_url: str) -> dict | None:
     ``scripts/seed_location_plates.py`` monkeypatch it with that shape.
 
     Best-effort by contract [AD-10] — every failure (down, slow, non-JSON) logs
-    and answers ``None``, which the caller records as a null provenance block.
-    Unretried, short-timeout (:data:`STATS_READ_TIMEOUT`, *not* the health gate's
-    long configurable one) and called once per run: this is observability, not a
-    health gate, and it must not delay a run that never renders anything.
+    and answers ``None``. Unretried and short-timeout (:data:`STATS_READ_TIMEOUT`,
+    *not* the health gate's long configurable one), so it never delays a run.
+
+    TWO callers since Story 10.1d, and ``None`` now means different things to them:
+
+    * ``image_node``'s provenance block records it as a null provenance block.
+    * ``recompose_service._preflight`` reads ``system.argv`` and ``system.ram_free``
+      off this payload to decide whether the recompose path may run at all, and
+      treats ``None`` as a refusal (``stats_unavailable``) — "could not ask" is not
+      "prerequisites met" there. So a ``None`` answer is now consequential.
+
+    That makes one property of the endpoint load-bearing, the same one
+    :func:`check_health` records: ComfyUI is single-threaded on the GPU and stops
+    serving ``/system_stats`` while a prompt runs, so a busy-but-healthy server can
+    time out and answer ``None`` here. Deliberately NOT compensated with retries or
+    a longer timeout — the preflight runs once at ``video_node`` entry and a
+    conservative bail costs one overlay-path run, while waiting costs every run.
     """
     timeout = httpx.Timeout(STATS_READ_TIMEOUT, connect=HEALTH_CONNECT_TIMEOUT)
     try:

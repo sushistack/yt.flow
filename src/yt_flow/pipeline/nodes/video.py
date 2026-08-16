@@ -2559,8 +2559,31 @@ async def video_node(state: PipelineState) -> dict:
             try:
                 cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
                 logger.info("Shot recompose: %s", recompose_stats)
+                if recompose_stats.get("preflight_failed"):
+                    # Story 10.1d: the run bailed out of recompose before the first shot —
+                    # ComfyUI is misconfigured, which is wrong for every shot rather than
+                    # one. All the cards came back, so everything below renders exactly as
+                    # if the flag were off; this row is the ONLY thing that tells the
+                    # operator recompose did not run. The full text (missing flags, the
+                    # observed argv, the flags to add) is in the service's error log.
+                    # First line only: make_warning truncates `detail` at 200 chars and the
+                    # full text is ~370 with the argv repr in the middle, so passing all of
+                    # it would cut off everything actionable. The service composes
+                    # headline-first for exactly this reason.
+                    warnings.append(make_warning(
+                        "recompose_preflight_failed",
+                        reason=recompose_stats["preflight_failed"],
+                        detail=next(iter(
+                            str(recompose_stats.get("preflight_detail") or "").splitlines()), None),
+                    ))
             except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
+                # Warns, not just logs: a raising resolver (or a non-dict stats payload) is
+                # a run-level failure, and leaving it at WARNING reproduces the invisible
+                # skip Story 10.1d exists to end — the render below is identical either way.
                 logger.warning("Shot recompose failed, keeping the overlay path: %s", exc)
+                warnings.append(make_warning("recompose_preflight_failed",
+                                              reason="resolver_error",
+                                              detail=f"{type(exc).__name__}: {exc}"))
 
         # ── Story 8.16: depth-aware ground plane per (shot, card) ──────────
         # After alpha validation (the cards are known-good sprites by here) and

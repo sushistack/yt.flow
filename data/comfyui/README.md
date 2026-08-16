@@ -10,6 +10,59 @@ recorded which ComfyUI produced which render. Its sha256 is written into every
 render's sidecar as `provenance.env_snapshot_sha256`, so a bad batch can be tied
 to an environment instead of re-litigated from memory.
 
+## How ComfyUI must be started
+
+Two graphs in this pipeline are not satisfied by a stock `python main.py`. The
+requirement is **declared once in code** —
+`src/yt_flow/services/recompose_service.py`'s `REQUIRED_FLAGS` — and **that table
+is authoritative**: this section restates it for operators and must be updated in
+the same commit that changes it, or it becomes a stale second copy. Story 10.1d's
+preflight reads the running server's own `system.argv` from `/system_stats` and
+refuses the recompose path when any of it is missing (or, for `--cache-lru`,
+present with a non-positive value — ComfyUI's `main.py` enables the LRU cache only
+when it is `> 0`, so `--cache-lru 0` is the default behaviour wearing a flag).
+
+**Append these to the launcher you already use — do not replace it.** On this
+machine ComfyUI starts from `~/workspaces/ComfyUI/run.sh`, and a bare
+`python main.py …` pasted over it loses the venv, the ROCm override and
+`--preview-method auto`:
+
+```bash
+source venv/bin/activate                       # already in run.sh — keep it
+export HSA_OVERRIDE_GFX_VERSION=12.0.0         # RDNA 4 detection — keep it
+export PYTORCH_HIP_ALLOC_CONF=garbage_collection_threshold:0.8,max_split_size_mb:512
+python main.py --preview-method auto --cache-lru 10 \
+  --lowvram --disable-smart-memory             # <- what run.sh is still missing
+```
+
+| Flag | Why | Measured |
+|---|---|---|
+| `--lowvram` | weights stream instead of staying resident on the GPU | required by the Qwen recompose graph |
+| `--disable-smart-memory` | without it the Qwen recompose graph swap-deadlocks | Story 10.1c. It pays for that with **system** RAM, which is the scarce resource here — do **not** generalise it to the background path, where it was proposed on 2026-08-15 and was the wrong lever |
+| `--cache-lru 10` | the default `cache-classic` evicts the checkpoint on every graph alternation | run `e5ed4b3a`: **490 s vs 14.8 s** per shot. Recompose adds a third graph to the alternation. The value must be **> 0**: `--cache-lru 0` is ComfyUI's own default and the preflight rejects it |
+| free system RAM ≥ 12 GiB | not a flag — `Settings.recompose_preflight_min_free_ram_gb` | 2026-08-15: 0 free / 4 GB swap on a 31 GB box was already thrashing a lighter path. Calibrated against that failure only — no healthy-run reading exists yet, so a false-bail rate is unmeasured |
+
+`--cache-lru` is **pipeline-wide** operational advice: every path that alternates
+graphs pays the eviction cost, and the ordinary background path in `image_node`
+has **no** gate for it. Only the recompose preflight enforces any of this. The
+fp8 text encoder the recompose graph needs is not startup state at all — it is
+pinned in the workflow JSON's `clip` node and fails fast there with ComfyUI's own
+error, so the preflight deliberately does not check it.
+
+### Verifying a restart actually took
+
+HTTP 200 is not readiness. Twice in this repo a `curl /system_stats` answered 200
+from an **old process that had not died**, so a restart looked successful while
+the new instance had exited on a port conflict. Verify the *process*, not the port:
+
+```bash
+ss -ltnp 'sport = :8188'        # -> the PID actually holding the socket
+cat /proc/<pid>/cmdline | tr '\0' ' '
+```
+
+Take the PID from the listening socket. `pkill -f` / `pgrep -f` match the
+operator's own shell and have killed the wrong PID here more than once.
+
 ## Refresh command
 
 Run it from ComfyUI's own directory, with ComfyUI's own interpreter (the CLI

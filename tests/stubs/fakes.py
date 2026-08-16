@@ -140,9 +140,19 @@ async def fake_get_system_stats(base_url) -> dict:
     "offline" stub profile opened a real socket to whatever ``comfyui_url``
     pointed at — silently, since the probe swallows every failure [AD-10]. A
     fixed payload, so provenance assertions stay deterministic.
+
+    Story 10.1d added a second reader: `recompose_service._preflight` bails the whole
+    recompose path when `system.argv` or `system.ram_free` is unreadable. So the payload
+    also states a server started the way REQUIRED_FLAGS demands, with RAM well clear of
+    the floor — otherwise the offline profile would report a preflight failure that is
+    indistinguishable from a real misconfiguration to whoever runs the next live gate.
     """
     return {
-        "system": {"comfyui_version": "stub-0.0.0", "pytorch_version": "stub-torch"},
+        "system": {
+            "comfyui_version": "stub-0.0.0", "pytorch_version": "stub-torch",
+            "argv": ["main.py", "--lowvram", "--disable-smart-memory", "--cache-lru", "10"],
+            "ram_free": 24 * 2**30, "ram_total": 32 * 2**30,
+        },
         "devices": [{"name": "stub-device"}],
     }
 

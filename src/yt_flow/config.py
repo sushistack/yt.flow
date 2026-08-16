@@ -318,17 +318,36 @@ class Settings(BaseSettings):
     # composition collapses across the 42-plate sweep. Against, and decisive for the
     # *default*: (a) 10.4's post-hoc audit scored recomposed frames WORSE on blind
     # legibility than the plates they replaced — unreadable 20% vs 13%, misread-as-corridor
-    # 57% vs 27% — on this epic's largest defect cluster; (b) the path needs ComfyUI started
-    # with --lowvram --disable-smart-memory and an fp8 text encoder, and nothing here detects
-    # or enforces that: on a stock install it swap-deadlocks for ~12 minutes and the
-    # try/except fallback never fires; (c) 90–120s x 51 passes adds 1.3–1.7h to a 2h E2E
-    # budget. UNBLOCK: when 13-2's rebuilt evaluation axes score a paired recompose-on/off
-    # set, flip if legibility is neutral-or-better AND a runtime-prerequisite guard exists.
+    # 57% vs 27% — on this epic's largest defect cluster; (b) CLOSED by Story 10.1d — the
+    # path needs ComfyUI started with specific flags and free system RAM, and that is now
+    # declared once in `recompose_service.REQUIRED_FLAGS` and read off the RUNNING server's
+    # argv at recompose entry: a miss bails the whole run out to the overlay with a
+    # `recompose_preflight_failed` run_warning, instead of swap-deadlocking for ~12 minutes
+    # while the try/except fallback never fires. The one prerequisite that guard cannot see
+    # is the fp8 text encoder: it is pinned in the workflow JSON's `clip` node rather than
+    # in argv, and a missing file fails fast at that node with ComfyUI's own error naming
+    # it, so it is out of the preflight's reach by design and not an unchecked gap;
+    # (c) 90–120s x 51 passes adds 1.3–1.7h to a
+    # 2h E2E budget. So (a) and (c) are still open and this stays False. UNBLOCK: when
+    # 13-2's rebuilt evaluation axes score a paired recompose-on/off set, flip if legibility
+    # is neutral-or-better — the runtime-prerequisite guard half of that condition now exists.
     # That commit is also what retires the overlay-only machinery (ground placement,
     # _GROUND_Y_MAX, occlusion, contact shadow, 11.5 parallax, 1.9c idle motion) — while
     # this stays False they are the production path, not dead code.
     shot_recompose_enabled: bool = False
     shot_recompose_workflow_path: str = "data/workflows/comfyui_shot_recompose_qwen_api.json"
+    # Story 10.1d — the free-system-RAM floor the recompose preflight enforces. NOT a
+    # model-footprint calculation: it is the floor that catches the known-fatal state
+    # (2026-08-15, run e5ed4b3a: 0 free / 4 GB swap on a 31 GB box was ALREADY thrashing a
+    # path lighter than this one), rounded up so the Q4_K_M unet's ~12 GB can load without
+    # swapping. A number that ends a 90-minute misdiagnosis, not a sizing model. GiB
+    # (2**30), which is how /system_stats and `free` both report memory — the preflight
+    # divides the same way it prints. CALIBRATED AGAINST THE FAILURE ONLY: no free-RAM
+    # reading from a HEALTHY run at video_node entry was ever recorded, and
+    # `--disable-smart-memory` parks weights in system RAM precisely so a working box may
+    # sit lower than intuition suggests, so a false-bail rate is possible and unmeasured —
+    # 10.1e's paired recompose-on/off scoring is where it would show up.
+    recompose_preflight_min_free_ram_gb: float = Field(12.0, gt=0)
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.
     # 0=off (byte-for-byte pre-8.7 output), 1=mood tint+contact shadow,
