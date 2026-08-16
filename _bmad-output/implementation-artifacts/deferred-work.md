@@ -649,3 +649,11 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-12-7-prose-harness-device-allocation.md`
   summary: Longer sentences push more narration past `subtitle.py`'s `_CUE_CHAR_SOFT_CAP = 44`, changing on-screen cue rhythm, and nothing measured the result.
   evidence: `subtitle.py:182` splits any sentence over 44 chars into multiple cues. Control's max sentence was 53 chars; 12.7 pass 3's is 75, with 4 over-40 sentences in each of scenes 1 and 2. The split path is designed behaviour, but the subtitle rhythm it produces was never looked at.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-8-outline-grounding-and-attribution.md`
+  summary: `review_step`'s counter-based strictness switch has the same truncation-re-roll leak Story 12.8 just removed from `structure_step`.
+  evidence: `_make_parse()` is invoked once per `_call_stage_with_retry` (i.e. per concurrent scene), not per `_parse_with_retry`, so `reroll_on_truncation` restarting `_parse_with_retry` leaves the counter at 1 and the re-roll's first payload takes the lenient branch — the grounded-contradiction correction is silently skipped. `structure_step` now uses a ContextVar scoped to the pre-retry parses; `review_step` is the only counter-based switch left.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-8-outline-grounding-and-attribution.md`
+  summary: `ArtifactPanel` counts `접지 모순 N건` / `미해결 지적 N건` / `비평 지적 N건` off the `_MAX_QUALITY_ITEMS`-capped arrays, so a run with 35 review issues reads "20건" to the operator.
+  evidence: `frontend/src/components/ArtifactPanel.tsx:265,284,304` render `.length` of lists `_bounded` already truncated at 20 (`scenario.py:352-357`, which logs the drop server-side only). Story 12.8 fixed this for the list it added (`outline_grounding_total`) and for the summary side in 12.6, but the three pre-existing display counts still assert a total they do not have.

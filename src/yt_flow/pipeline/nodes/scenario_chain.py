@@ -15,6 +15,7 @@ parser here has to know or ask which provider it is talking to; the seam's
 """
 
 import asyncio
+import contextvars
 import json
 import logging
 import re
@@ -118,6 +119,32 @@ MIN_PLANTED_LOOPS, MAX_PLANTED_LOOPS = 2, 3
 # scene, i.e. N times the intended density — measured 8/8 scenes carrying a
 # question on the 12.6 output.
 WRITING_DEVICES = ("dramatic_question", "second_person", "narrator_reaction", "hypothetical")
+
+# --- Story 12.8: outline grounding ------------------------------------------
+# Two thresholds on `_overlap`, both TUNING KNOBS rather than truths. They were
+# chosen from a labelled set — the three committed 12.6 ablation outlines and the
+# attribution table a human wrote at `ablation.md:283-288` — by the rules stated
+# and re-derivable in `12-8-live-validation/calibrate.py`. Neither axis separates
+# cleanly, and the script says so in its own output; these are floors on lexical
+# disjointness, not detectors.
+#
+# `_EVENT_SUPPORT_MIN`: an `event.what`/`event.consequence` below this shares
+# essentially no wording with any of its scene's fact statements, i.e. it asserts
+# something the outline never sourced. Chosen as the largest threshold whose fire
+# rate over the 50 pre-change event fields stays <= 20% (measured 18% at 0.03;
+# 0.20 would catch all three known fabrications and fire on 60%). A false note
+# costs one corrective retry, so the spec's "prefer the conservative side" is the
+# tie-break.
+_EVENT_SUPPORT_MIN = 0.03
+# `_ATTRIBUTION_MIN`: a pass-2 contradiction whose narration quote clears this
+# against its scene's outline fields is charged to the OUTLINE, not the writer.
+# The 8 hand-attributed sentences score 0.045 / 0.128 / 0.205 / 0.220 / 0.233 /
+# 0.341 / 0.385 / 0.486; 0.10 sits between the lowest two, recovering 7 of 8. The
+# miss is control 씬7, where "융합되어" and the outline's "융합된" share one trigram.
+# Erring toward "outline" is deliberate: mislabelling an outline fabrication as
+# writing-originated reproduces exactly the misaddressed bill this story exists
+# to fix, while the opposite error costs one wasted look at the outline.
+_ATTRIBUTION_MIN = 0.10
 
 # --- Story 12.6: length is ONE decision, density is a SEPARATE one -----------
 # The 12.1 constants above this line were hand-set literals (씬당 20~90, 총합
@@ -684,6 +711,36 @@ def _metric_text(text: object) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).split())
 
 
+_OVERLAP_GRAM = 3
+
+
+def _overlap(text: object, reference: object) -> float:
+    """Fraction of ``text``'s character trigrams that also occur in ``reference``.
+
+    Story 12.8's one similarity instrument, shared by the outline's event-support
+    check and the gate's contradiction attribution — deliberately dumb and fully
+    transparent, in the spirit of ``count_devices.py``: no tokenizer, no stemmer,
+    no model, and a number anyone can recompute by hand from two strings.
+
+    Character (not word) n-grams because Korean glues its particles onto the noun:
+    "가면은" and "가면이" share no word token and four of five trigrams. Trigrams
+    are still brittle across conjugation ("융합된" vs "융합되어" share exactly one),
+    which is why both thresholds that read this are calibrated against a labelled
+    set rather than assumed — see ``12-8-live-validation/calibrate.py``.
+
+    Both sides run through ``_metric_text``, so a non-string measures as empty and
+    nothing here can raise: a similarity score is diagnostic, never a run's fate.
+    """
+    a = _metric_text(text)
+    b = _metric_text(reference)
+    if len(a) < _OVERLAP_GRAM or not b:
+        return 0.0
+    grams = {a[i:i + _OVERLAP_GRAM] for i in range(len(a) - _OVERLAP_GRAM + 1)}
+    # `gram in b` IS "b contains this trigram" — a contiguous 3-char substring of
+    # `b` is exactly one of `b`'s trigrams, so no second gram set is built.
+    return sum(gram in b for gram in grams) / len(grams)
+
+
 def _sentence_key(sentence: str) -> str:
     """Comparison key for duplicate detection: terminal ``.?!`` stripped and
     case folded, so "It is good." / "It is good!" / "IT IS GOOD." are one
@@ -917,18 +974,28 @@ def _validate_retention_outline(scenes: list) -> None:
                     "event_field_empty", f"{where} event.{field} must be a non-empty string, got {value!r}"
                 )
 
-        # Shape only. Whether a statement is actually grounded in the source
-        # article is not machine-checkable here — review/critic and Story 12.3's
-        # deterministic metrics own that, and this story adds no fact-check call.
+        # Shape only, still — but the shape now carries its own evidence. Until Story
+        # 12.8 this comment deferred grounding to "review/critic and Story 12.3's
+        # deterministic metrics"; neither of those is ever shown the outline, so in
+        # practice nobody owned it and every ungrounded claim in the 12.6 ablation was
+        # minted right here. `_check_fact_evidence` (called from `structure_step.parse`,
+        # before this validator runs) is the owner now: it locates each `quote` in the
+        # source article and stamps `quote_verified`. What stays here is the contract
+        # that both halves exist, because a missing `statement` blinds the writer and a
+        # missing `quote` makes the evidence check silently vacuous.
         facts = scene.get("fact_references")
-        if (
-            not isinstance(facts, list)
-            or not facts
-            or not all(isinstance(fact, str) and fact.strip() for fact in facts)
+        if not isinstance(facts, list) or not facts or not all(
+            isinstance(fact, dict)
+            and isinstance(fact.get("statement"), str) and fact["statement"].strip()
+            and isinstance(fact.get("quote"), str) and fact["quote"].strip()
+            for fact in facts
         ):
             raise RetentionError(
                 "fact_references_invalid",
-                f"{where} fact_references must be a non-empty list of non-empty fact statements",
+                f"{where} fact_references must be a non-empty list of "
+                "{statement, quote} mappings, both non-empty strings — the statement is the "
+                "Korean fact the writer reads, the quote is the verbatim source span that "
+                "supports it",
             )
 
         hook = _canonicalize(scene, "hook_type")
@@ -1072,6 +1139,211 @@ def _validate_retention_outline(scenes: list) -> None:
             f"(max {max(budgets)} / min {min(budgets)}) is below the required {MIN_BUDGET_SPREAD} — "
             f"the largest scene budget must be at least {MIN_BUDGET_SPREAD}x the smallest",
         )
+
+
+# Story 12.8. The source article is English (`data/scps.json`: 5 articles, 696-739
+# chars) and every `fact_references` statement is Korean, so the two hedge
+# vocabularies are separate lists — and they are genuinely disjoint, not one list
+# copied twice. The SOURCE side only ever runs against text proven to be a span of
+# `scp_text`, so Korean markers there were unreachable; the STATEMENT side only ever
+# runs against a Korean paraphrase, so English markers there would be.
+#
+# ASCII markers carry `\b` because a bare "appear" also matches "appearance"; Korean
+# markers are substrings because the language agglutinates and a boundary would match
+# nothing. What they may NOT be is so common they match ordinary Korean: bare `수 있`
+# ("can/is able to") and bare `듯` (also `듯이 = as if`, and a substring of unrelated
+# words) both matched "말할 수 있다" — "it can speak", a plain capability statement —
+# so a genuine certainty upgrade in the same sentence suppressed its own note. Only
+# the hedging constructions are listed now.
+_HEDGE_IN_SOURCE = re.compile(
+    # `may`/`might` are deliberately absent for the same reason `수 있` is: in
+    # procedural SCP prose they are permission ("personnel may not enter"), not doubt.
+    r"\b(?:appears?|seems?|believed?|thought|apparently|presumably|reportedly|suspected"
+    r"|estimated|approximately|unknown|unclear|possibly|likely)\b",
+    re.IGNORECASE,
+)
+_HEDGE_IN_STATEMENT = re.compile(
+    r"보인|추정|알려|여겨|가능성|불명|미상|확인되지 않|밝혀지지 않|모른다|없다고 한다"
+    r"|듯하|듯한|듯 |듯이|것으로 보|수 있다고|일 수 있|수도 있"
+)
+# How far either side of the located quote the source-side hedge search reaches. The
+# defect this exists for is a quote TRIMMED to exclude its own hedge ("appears fused
+# to the being's head" quoted as "fused to the being's head"), which the quote text
+# alone cannot catch. Measured against the 26 quotes of the two live runs: 0/16/24/32
+# add no note, 40 adds one (it reaches "believed" across a clause boundary onto "말할
+# 수 있다"), so 32 is the largest window with no observed false positive. Deliberately
+# NOT the enclosing sentence — SCP-049's article is four sentences long and its first
+# one carries "appears", which would hedge-flag the entity's height.
+_HEDGE_CONTEXT_CHARS = 32
+# A quote shorter than this is not evidence: "the" is a verbatim span of every article
+# in `data/scps.json` and locating it proves nothing. Measured floor rather than a
+# guess — the shortest quote across both live runs is 28 characters.
+_MIN_QUOTE_CHARS = 12
+# The codes a corrective regeneration can actually act on. `event_unsupported` is
+# NOT one: the I/O matrix rules it note-only ("dramatization is legitimate, so this
+# never hard-fails"), and its measured precision is 2 정탐 / 2 경계 / 2 오탐 live and
+# 1-of-3 recall at an 18% fire rate on the calibration set. `source_unavailable` is
+# not one either — no regeneration can conjure an article the caller did not have.
+_CORRECTABLE_EVIDENCE_CODES = ("quote_not_found", "hedge_dropped")
+
+_CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
+                        "–": "-", "—": "-", "−": "-", " ": " "})
+
+
+def _evidence_text(text: object) -> str:
+    """``_metric_text`` plus the two folds a *locatability* check must not fail on.
+
+    Case and curly punctuation are typography, not evidence: a model that retypes
+    "The Foundation" or turns the article's ``'Great Pestilence'`` into
+    ``‘Great Pestilence’`` has still pointed at the right span, and failing it
+    would burn the one corrective retry on a quotation mark. NFKC (in ``_metric_text``)
+    does not fold either — U+2019 is unchanged by every normalization form.
+    """
+    return _metric_text(text).translate(_CURLY).casefold()
+
+
+def _check_fact_evidence(scenes: object, scp_text: object) -> list[dict]:
+    """Story 12.8: is the outline's evidence actually IN the source article?
+
+    The gap this closes is an ownership vacuum, not an omission. Story 12.1
+    deliberately deferred grounding to review/critic — but ``review_step`` gets
+    ``scp_fact_sheet`` + narration and ``critic_step`` gets the fact sheet +
+    scenario JSON, and NEITHER has ever seen the outline. So the outline minted
+    facts, the writer executed them faithfully (``writing.md``: "그 씬의
+    `fact_references`가 당신이 가진 사실의 전부"), and the critic billed the writer
+    for a fabrication one layer up. All four violations in the 12.6 ablation, across
+    all three arms, were this.
+
+    Three checks, deterministic and LLM-free:
+
+    - ``quote_not_found`` — ``quote`` is not a verbatim span of the source once both
+      sides run through ``_evidence_text``, or is too short to be one. This is the
+      whole reason the item is a
+      ``{statement, quote}`` pair: a Korean paraphrase can never be substring-checked
+      against an English article, but the quote it was drawn from can, and the
+      language mismatch also makes it structurally impossible for the requirement to
+      degrade ``fact_references`` into a copy of the source.
+    - ``hedge_dropped`` — the located quote hedges and the statement does not.
+      ``critic_agent.md:42``'s "'~로 보인다'를 '~이다'로 올리는 것도 단언" rule, applied
+      one stage earlier, where the certainty is actually being raised.
+    - ``event_unsupported`` — ``event.what``/``event.consequence`` share almost no
+      wording with any of the scene's own fact statements. Three of the ablation's
+      four fabrications were ``event`` fields, and the retention contract forces the
+      writer to deliver the consequence unchanged, so an `event` is a factual claim
+      of exactly the same weight as a `fact_references` entry. NOTE-ONLY, always:
+      dramatization is legitimate, the instrument is a trigram floor that cannot see
+      Korean synonyms (죽음/사망 measured as unsupported), so it never raises and
+      never spends the corrective retry (``_CORRECTABLE_EVIDENCE_CODES``).
+
+    Never raises, and never reads anything it has not type-checked: it runs inside
+    ``structure_step``'s ``parse`` callback, BEFORE ``_validate_retention_outline``
+    has rejected a malformed outline, so every shape here is still untrusted. A
+    malformed item is skipped rather than reported — the validator owns shape and
+    says it better.
+
+    Side effect, deliberately: each well-formed item is stamped ``quote_verified``,
+    so an unverified statement still reaches the writer (it is the outline's plan and
+    the run does not fail on evidence) while carrying the fact that nobody could
+    confirm it.
+    """
+    source = _evidence_text(scp_text)
+    if not source:
+        # An A/B clone, a restarted run, or any caller with no article in scope. The
+        # skip is REPORTED rather than silent: a run whose evidence was never checked
+        # must not look identical at the gate to one that passed [AD-10].
+        return [{
+            "scene": 0, "code": "source_unavailable",
+            "detail": "no scp_text in scope — outline evidence was not checked at all",
+        }]
+
+    notes: list[dict] = []
+    for pos, scene in enumerate(scenes if isinstance(scenes, list) else [], start=1):
+        if not isinstance(scene, dict):
+            continue
+        facts = scene.get("fact_references")
+        statements: list[str] = []
+        for item in facts if isinstance(facts, list) else []:
+            if not isinstance(item, dict):
+                continue  # bare string / junk: `_validate_retention_outline` names it
+            statement = str(item.get("statement") or "").strip()
+            quote = str(item.get("quote") or "").strip()
+            statements.append(statement)
+            needle = _evidence_text(quote)
+            # Two ways to fail locatability, and they are not the same finding: a span
+            # that is not in the article, and a span too short to BE one. `quote: "the"`
+            # is a verbatim substring of every article in `data/scps.json`, so without a
+            # floor the check passes vacuously on the one input it most needs to reject.
+            found = source.find(needle) if len(needle) >= _MIN_QUOTE_CHARS else -1
+            item["quote_verified"] = found >= 0
+            if not item["quote_verified"]:
+                why = (f"is only {len(needle)} characters — too short to be evidence "
+                       f"(minimum {_MIN_QUOTE_CHARS})" if len(needle) < _MIN_QUOTE_CHARS
+                       else "is not a verbatim span of the source")
+                notes.append({
+                    "scene": pos, "code": "quote_not_found",
+                    "detail": f"quote {quote!r} {why} (statement: {statement!r})",
+                })
+                continue  # a hedge check on unlocated evidence would grade a fiction
+            # The hedge may sit just OUTSIDE the quote — trimming "appears" off the
+            # front of "appears fused to the being's head" is precisely how a certainty
+            # upgrade hides from a check that only reads the quote (`ablation.md:288`).
+            context = source[max(0, found - _HEDGE_CONTEXT_CHARS):
+                             found + len(needle) + _HEDGE_CONTEXT_CHARS]
+            if _HEDGE_IN_SOURCE.search(context) and not _HEDGE_IN_STATEMENT.search(statement):
+                notes.append({
+                    "scene": pos, "code": "hedge_dropped",
+                    "detail": f"source hedges — {context!r} — but the statement asserts it: {statement!r}",
+                })
+        reference = " ".join(statements)
+        event = scene.get("event")
+        # No fact statements at all (missing, malformed, or every entry junk) means the
+        # reference is empty and EVERY event field would score 0.0 — reporting that as
+        # `event_unsupported` diagnoses a `fact_references` defect as an `event` defect,
+        # and `_validate_retention_outline` already names the real one.
+        if not _metric_text(reference):
+            continue
+        for field in ("what", "consequence"):
+            value = str((event or {}).get(field) or "") if isinstance(event, dict) else ""
+            # `_overlap` returns 0.0 for anything shorter than one trigram, so a
+            # two-character event field is a guaranteed note about nothing.
+            if len(_metric_text(value)) < _OVERLAP_GRAM:
+                continue
+            if _overlap(value, reference) < _EVENT_SUPPORT_MIN:
+                notes.append({
+                    "scene": pos, "code": "event_unsupported",
+                    "detail": f"event.{field} {value!r} asserts what no fact statement in this "
+                              f"scene supports (overlap {_overlap(value, reference):.2f} < "
+                              f"{_EVENT_SUPPORT_MIN})",
+                })
+    return notes
+
+
+def _writer_facts(scene: object) -> dict:
+    """The outline scene as the WRITER may see it: quotes stripped, statements kept.
+
+    Story 12.8 AC6 / Story 8.8. Giving the writer the source article measured
+    ``article_fidelity -1.00``, and Story 12.1 cut that connection on purpose. This
+    story hands the article to the OUTLINE, which is a different seam — but the
+    quote it brings back is source text, and ``_writing_scene_brief`` splats the
+    whole outline scene into the prompt. So the flattening happens at the two writer
+    boundaries and nowhere else: ``fact_references`` reaches both writing prompts as
+    the same list of Korean statement strings it saw before this story.
+
+    ``quote_verified`` goes with the quote. It is an operator signal, not a writing
+    instruction, and a writer told "this fact is unconfirmed" would hedge narration
+    the outline meant as fact.
+    """
+    if not isinstance(scene, dict):
+        return {}
+    facts = scene.get("fact_references")
+    if not isinstance(facts, list):
+        return dict(scene)
+    return {
+        **scene,
+        "fact_references": [
+            str(item.get("statement") or "") if isinstance(item, dict) else item for item in facts
+        ],
+    }
 
 
 async def _call_stage(
@@ -1330,6 +1602,22 @@ async def _call_stage_with_retry(
     )
 
 
+# Story 12.8: "does a corrective regeneration still remain for this payload?", asked
+# by a `parse` callback that wants to be strict exactly while one does. Only
+# `_parse_with_retry` knows the answer — a counter kept by the callback answers a
+# different question and is wrong after a deterministic YAML repair and after a
+# truncation re-roll (see `structure_step.parse`). A ContextVar rather than a module
+# global because `review_step` parses its scenes concurrently; the default is False so
+# a `parse` called outside this function degrades to notes rather than raising.
+_RETRY_REMAINS: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "yt_flow.scenario_chain.retry_remains", default=False
+)
+
+
+def _corrective_retry_remains() -> bool:
+    return _RETRY_REMAINS.get()
+
+
 async def _parse_with_retry(
     prompt_name: str,
     variables: dict,
@@ -1377,6 +1665,7 @@ async def _parse_with_retry(
     raw, usage = await _call_stage(prompt_name, {**variables, "parse_error": ""}, s, call_llm, label=label)
     if usage_sink is not None:
         usage_sink.append(usage)
+    token = _RETRY_REMAINS.set(True)  # every parse below this line still has a retry
     try:
         return parse(raw)
     except yaml.YAMLError as exc:
@@ -1402,11 +1691,22 @@ async def _parse_with_retry(
                 "Your ENTIRE response must be the YAML document itself — no prose, no "
                 "commentary, no markdown code fences, no backticks. Start at the first key."
             )
+        except ValueError as exc2:
+            # Story 12.8: the syntax repair worked and the SEMANTIC check then failed.
+            # This used to propagate straight out of the function — the run died on a
+            # validation verdict that had a corrective retry sitting unspent right here,
+            # purely because the payload had also needed a YAML repair first.
+            parse_error = (
+                f"Previous output failed validation: {' '.join(str(exc2).split())[:500]}. "
+                "Output ONLY valid YAML, no prose, no markdown code fences."
+            )
     except ValueError as exc:
         parse_error = (
             f"Previous output failed validation: {' '.join(str(exc).split())[:500]}. "
             "Output ONLY valid YAML, no prose, no markdown code fences."
         )
+    finally:
+        _RETRY_REMAINS.reset(token)
     raw, usage = await _call_stage(
         prompt_name, {**variables, "parse_error": parse_error}, s, call_llm, label=label
     )
@@ -1617,6 +1917,11 @@ _STRUCTURE_BUDGET_VARIABLES = (
     "total_word_budget_min", "total_word_budget_max",
     "scene_word_budget_min", "scene_word_budget_max",
 )
+# Story 12.8's own variable, checked separately because it fails differently: a
+# prompt that never reads the article cannot ask for a quote, so it emits bare-string
+# `fact_references`, both attempts die on `fact_references_invalid`, and the run
+# fails with a shape error that names the model instead of the prompt version.
+_STRUCTURE_SOURCE_VARIABLE = "scp_source_text"
 
 
 def _require_seeded_budget_variables(label: str | None = None) -> None:
@@ -1642,24 +1947,39 @@ def _require_seeded_budget_variables(label: str | None = None) -> None:
         else prompt_service.get_prompt("scenario/structure")
     )
     template = getattr(prompt, "prompt", None)
+    names = (*_STRUCTURE_BUDGET_VARIABLES, _STRUCTURE_SOURCE_VARIABLE)
     if isinstance(template, str):
-        missing = [name for name in _STRUCTURE_BUDGET_VARIABLES if "{{" + name + "}}" not in template]
+        missing = [name for name in names if "{{" + name + "}}" not in template]
     elif isinstance(getattr(prompt, "variables", None), list):
-        missing = [name for name in _STRUCTURE_BUDGET_VARIABLES if name not in prompt.variables]
+        missing = [name for name in names if name not in prompt.variables]
     else:
         return  # a test double with neither: nothing to check, nothing to claim
+    version = getattr(prompt, "version", "?")
+    reseed = "uv run python scripts/migrate_prompts.py --label production --source prompts"
+    # Two different stale states, two different messages — "does not read X" with a
+    # generic remedy would leave the operator guessing which decision never shipped.
+    # Oldest first: a template missing the budget band is missing the source block too,
+    # and naming 12.6 there is the more precise diagnosis of how far it was rolled back.
+    if budget_missing := [name for name in missing if name != _STRUCTURE_SOURCE_VARIABLE]:
+        raise RuntimeError(
+            f"scenario/structure (label={label or 'production'}, version={version}) does not read "
+            f"{budget_missing} — it predates Story 12.6 and still states its own word-budget band, "
+            f"which now disagrees with the {MIN_TOTAL_WORD_BUDGET}-{MAX_TOTAL_WORD_BUDGET} this code "
+            f"enforces. Re-seed it: {reseed}"
+        )
     if missing:
         raise RuntimeError(
-            f"scenario/structure (label={label or 'production'}, version="
-            f"{getattr(prompt, 'version', '?')}) does not read {missing} — it predates Story 12.6 and "
-            f"still states its own word-budget band, which now disagrees with the "
-            f"{MIN_TOTAL_WORD_BUDGET}-{MAX_TOTAL_WORD_BUDGET} this code enforces. Re-seed it: "
-            "uv run python scripts/migrate_prompts.py --label production --source prompts"
+            f"scenario/structure (label={label or 'production'}, version={version}) does not read "
+            f"{{{{{_STRUCTURE_SOURCE_VARIABLE}}}}} — it predates Story 12.8 and never sees the source "
+            "article, so it cannot put a verbatim quote beside each fact statement. Every scene would "
+            f"fail `fact_references_invalid` on both attempts, and the failure would name the model "
+            f"rather than the prompt version. Re-seed it: {reseed}"
         )
 
 
 async def structure_step(
     scp_id: str,
+    scp_text: str,
     research: dict,
     format_guide: str,
     s,
@@ -1668,7 +1988,22 @@ async def structure_step(
     story_archetype: str = STORY_ARCHETYPE_FALLBACK,
     label: str | None = None,
     usage_sink: list[dict] | None = None,
+    grounding_sink: list[dict] | None = None,
 ) -> list[dict]:
+    """Stage 2: the outline. Story 12.8 gives it ``scp_text`` — the SOURCE article.
+
+    Note what that is not. AC6 forbids giving the *writer* the article (Story 8.8
+    measured ``article_fidelity -1.00`` when it had one, and Story 12.1 cut the
+    connection deliberately); the outline is a different seam, and it is the one
+    stage that was asked to carry facts while never being shown where they came
+    from. ``_writer_facts`` keeps the writer's blindfold exactly where it was.
+
+    ``grounding_sink`` follows the ``usage_sink`` idiom rather than becoming part of
+    the return value: the return type stays a plain ``list[dict]`` because three live
+    drivers (``12-6-live-validation/run_ablation.py``, ``run_after.py``,
+    ``12-7-live-validation/run_writing_only.py``) monkeypatch this function and
+    return one.
+    """
     _require_seeded_budget_variables(label)
 
     def parse(raw: str) -> list[dict]:
@@ -1684,6 +2019,53 @@ async def structure_step(
                 if not isinstance(scene, dict) or not str(scene.get("title") or "").strip():
                     num = scene.get("scene_num") if isinstance(scene, dict) else "?"
                     raise ValueError(f"structure: scene[{num}] missing non-empty 'title'")
+        notes = _check_fact_evidence(scenes, scp_text)
+        # Strict while a corrective regeneration is still available, notes once it is
+        # not — `_validate_grounded_contradictions`'s shape, and deliberately NOT
+        # `RetentionError`'s. A raise HERE buys exactly one corrective regeneration
+        # with the error text fed back (`_parse_with_retry`), which is the "rejection"
+        # AC1 asks for; a `RetentionError` after the await would fail the run instead,
+        # and the epic forbids failing a run on a quality verdict [AD-10]. A ledger
+        # violation is a planning failure worth dying on; an ungrounded quote is model
+        # wobble on fresh content, and the statement is still usable narration either way.
+        #
+        # The condition is `_corrective_retry_remains()`, NOT a parse counter this
+        # closure keeps. A counter answers "how many payloads have I judged", which is
+        # a different question and gets the answer wrong in both directions: a first
+        # payload that died on YAML or on the title check never reached the counter, so
+        # the retry's payload looked like attempt 1 and RAISED — turning a recovered
+        # syntax error into a run failed on an evidence verdict, which the I/O matrix
+        # forbids outright. And after a truncation `reroll_on_truncation` restarts
+        # `_parse_with_retry` with a fresh retry budget while the closure's counter is
+        # already spent, so the re-roll's first payload silently skipped the correction.
+        # `_parse_with_retry` is the only thing that knows whether a retry is left.
+        #
+        # `event_unsupported` and `source_unavailable` never trigger the retry: the
+        # matrix rules the first note-only (dramatization is legitimate) and no
+        # regeneration can conjure an article the caller did not have.
+        correctable = [note for note in notes if note["code"] in _CORRECTABLE_EVIDENCE_CODES]
+        if correctable and _corrective_retry_remains():
+            # `_parse_with_retry` clips this message to 500 chars before feeding it
+            # back. `s3 quote_not_found` told the model a scene number and a code it
+            # would then have to guess the referent of, while ~280 of the budget went
+            # to restating rules the prompt already carries — so the budget goes to the
+            # offending TEXT instead, which is the only thing the model cannot re-derive.
+            raise ValueError(
+                "structure: these fact_references failed the source-evidence check. Copy each "
+                "quote character-for-character from the Source Article and keep its certainty "
+                "in the statement. "
+                + " | ".join(
+                    f"s{n['scene']} {n['code']}: {n['detail']}" for n in correctable
+                )
+            )
+        if notes:
+            logger.warning(
+                "structure: %d outline grounding note(s) survived the corrective retry "
+                "(%s) — surfacing at the human gate, not failing the run",
+                len(notes), ", ".join(sorted({note["code"] for note in notes})),
+            )
+            if grounding_sink is not None:
+                grounding_sink.extend(notes)
         return scenes
 
     scenes = await _call_stage_with_retry(
@@ -1691,6 +2073,11 @@ async def structure_step(
         {
             "scp_id": scp_id,
             "research_packet": json.dumps(research, ensure_ascii=False),
+            # Story 12.8: the ARTICLE, not the research packet's paraphrase of it.
+            # Until now the outline was asked to carry the source's facts while the
+            # only thing it had ever read was another model's summary — which is how
+            # "appears fused" became "융합되어 있다" before the writer was involved.
+            "scp_source_text": scp_text,
             "scp_visual_reference": research["frozen_descriptor"],
             "target_duration": TARGET_DURATION_MINUTES,
             # Story 12.6: the prompt no longer re-types the budget band it must obey.
@@ -1846,7 +2233,11 @@ def _writing_scene_brief(structure: list[dict], idx: int) -> str:
     repeats what ``assigned_devices`` (written by ``_allocate_devices``) means.
     """
     total = len(structure)
-    scene = structure[idx] if isinstance(structure[idx], dict) else {}
+    # Writer boundary #1 (Story 12.8 AC6). `_writer_facts` flattens `fact_references`
+    # back to the plain Korean statements this prompt has always read; the verbatim
+    # source quote beside each one is evidence for the gate, not material for the
+    # writer, and it is English.
+    scene = _writer_facts(structure[idx])
     payload = {
         "write_only_this_scene": {**scene, "scene_num": idx + 1},
         "previous_scene_context": _scene_role_text(structure[idx - 1]) if idx else None,

@@ -567,7 +567,7 @@ async def _run_stage_chain(
         research = await research_step(scp_id, scp_text, format_guide, s, _recording_call, label=chain_label)
         current_stage = "structure"
         structure = await structure_step(
-            scp_id, research, format_guide, s, _recording_call,
+            scp_id, scp_text, research, format_guide, s, _recording_call,
             # Same resolution rule as scenario_node: research owns the choice, this
             # stage only obeys it (Story 12.4).
             story_archetype=research.get("story_archetype") or STORY_ARCHETYPE_FALLBACK,

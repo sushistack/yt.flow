@@ -67,18 +67,26 @@ EXPECTED_FIELDS = {
         "aggregate", "scenes", "repeated_ngrams", "slop_phrase_hits", "slop_vocabulary_version",
         "total_words",  # Story 12.6 — written 어절, measured beside the declared budget
     },
+    # Story 12.8 — `origin` is NotRequired, so a pre-12.8 checkpoint still loads.
     "GroundedContradiction": {
         "scene_num", "narration_quote", "grounding_source", "grounding_quote",
-        "explanation", "correction",
+        "explanation", "correction", "origin", "origin_overlap",
     },
+    "OutlineGroundingNote": {"scene_num", "code", "detail"},
+    "OutlineOriginated": {"scenes", "note"},
     "ReviewIssue": {"scene_num", "type", "severity", "description", "correction"},
     # Story 12.6 — `categories` is NotRequired, so a pre-12.6 checkpoint still loads.
-    "ScenarioWarning": {"code", "message", "categories"},
-    "CriticSceneNote": {"scene_num", "issue_type", "issue", "suggestion"},
+    "ScenarioWarning": {"code", "message", "categories", "outline_originated"},
+    # Story 12.8 — `origin`/`origin_overlap` are NotRequired: this is the channel the
+    # grounding attribution actually fires on, and a pre-12.8 checkpoint carries neither.
+    "CriticSceneNote": {"scene_num", "issue_type", "issue", "suggestion",
+                        "origin", "origin_overlap"},
     "ScenarioQuality": {
         "final_pass_index", "retry_scope", "review_overall_pass", "critic_verdict",
         "critic_feedback", "rule_metrics", "grounded_contradictions", "review_issues",
         "critic_scene_notes",  # Story 12.6 — NotRequired, same compatibility reason
+        "outline_grounding",  # Story 12.8 — NotRequired, same compatibility reason
+        "outline_grounding_total",  # …and the uncapped count behind that bounded list
         "warning",
     },
 }
@@ -87,7 +95,8 @@ EXPECTED_FIELDS = {
 def test_typeddicts_import():
     for name in ("PipelineState", "SceneState", "ShotData", "WordTiming",
                   "SearchResult", "ReferenceImage", "Character", "CharacterCandidate", "AngleName",
-                  "CastMember", "ScenarioQuality", "RuleMetrics", "GroundedContradiction"):
+                  "CastMember", "ScenarioQuality", "RuleMetrics", "GroundedContradiction",
+                  "OutlineGroundingNote", "OutlineOriginated"):
         assert hasattr(state, name), name
 
 

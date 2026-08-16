@@ -33,6 +33,16 @@ You are a YouTube content director structuring a {{target_duration}}-minute SCP 
 ## Research Packet (from Stage 1)
 {{research_packet}}
 
+## Source Article (원문 — `fact_references`의 유일한 근거)
+
+아래는 이 SCP의 **원문 전체**입니다. 위 리서치 패킷은 원문을 다른 모델이 요약·해석한
+2차 자료이고, 아래 텍스트만이 1차 자료입니다. **`fact_references`의 `quote`는 반드시 이
+블록 안에서 글자 그대로 복사**해야 합니다 — 리서치 패킷에서 옮기지 마세요.
+
+```
+{{scp_source_text}}
+```
+
 ## Visual Identity Profile (Frozen Descriptor)
 {{scp_visual_reference}}
 
@@ -64,8 +74,10 @@ loops_closed: []
 pattern_interrupt: "none"
 word_budget: 45
 fact_references:
-  - "재단 인원 14명이 목이 꺾인 채 사망했다"
-  - "어떤 무기나 외상 흔적도 발견되지 않았다"
+  - statement: "그 개체는 목을 꺾거나 목을 졸라 공격한다"
+    quote: "attacks by snapping the neck at the base of the skull or by strangulation"
+  - statement: "원문은 그 조각상의 기원이 알려지지 않았다고만 적는다"
+    quote: "a sculpture of unknown origin"
 mood: "dread/clinical/escalation/revelation"
 title: "짧은 한국어 씬 제목"
 kicker: "상황을 알리는 한 줄 (스포일러 금지)"
@@ -84,6 +96,14 @@ kicker: "상황을 알리는 한 줄 (스포일러 금지)"
 - ❌ 형용사/의도 서술 금지: "긴장을 고조시킨다", "무섭게 만든다", "분위기를 잡는다"는 사건이
   아니라 연출 지시입니다. 이런 값은 유효하지 않습니다.
 - `synopsis`는 그대로 유지하세요 — `event`는 그것을 대체하지 않고 기계 판독 가능하게 만듭니다.
+- ⚠️ **`what`과 `consequence`는 이 씬의 `fact_references` 진술이 말하는 범위를 넘어서는 것을
+  하나도 주장해선 안 됩니다.** `event`는 연출 메모가 아니라 `fact_references`와 **동급의 사실
+  주장**입니다 — 리텐션 계약이 작성자에게 "consequence를 다른 것으로 바꾸지 마라"고 강제하기
+  때문에, 여기에 적은 것은 나레이션에 **그대로** 실려 나갑니다. 원문에 없는 기록·문서·요구·
+  수치를 `event`에 넣으면 그것이 곧 날조된 나레이션이 됩니다.
+  - ❌ `what: "과거의 실패한 재활성화 기록을 열람했다"` — 원문에 그런 기록이 없고, 이 씬의
+    `fact_references` 어디에도 없습니다.
+  - ✅ 이 씬의 `fact_references` 문장들이 이미 말한 사건·상태만 `event`로 옮겨 적으세요.
 
 **`hook_type`** — `question` / `shock` / `mystery` / `contrast` / `none` (위 Format Guide의
 Hook Type Library와 동일한 어휘. 새 유형을 만들지 마세요).
@@ -125,18 +145,44 @@ Hook Type Library와 동일한 어휘. 새 유형을 만들지 마세요).
   {{total_word_budget_max}}를 넘거나 {{total_word_budget_min}}에 못 미치면 아웃라인이
   거부되고 런이 실패합니다.
 
-### `fact_references` — 라벨이 아니라 사실 문장
+### `fact_references` — 사실 문장 + 그 근거가 된 원문 인용
 
 Stage 3(나레이션 작성)은 **원문도 리서치 패킷도 받지 못합니다.** 이 아웃라인이 작성자가 보는
-유일한 자료입니다. 따라서 `fact_references`는 조회용 키가 아니라 **그 자체로 읽히는 사실 문장**
-이어야 합니다.
+유일한 자료입니다. 따라서 `statement`는 조회용 키가 아니라 **그 자체로 읽히는 사실 문장**
+이어야 합니다. 그리고 그 문장이 정말 원문에서 나온 것인지는 **파이프라인이 기계로 확인**합니다.
 
-- 한 항목 = **하나의 구체적 주장**, 리서치 패킷(원문)에서 직접 끌어온 내용만.
+각 항목은 **두 개의 키**를 가집니다:
+
+```yaml
+fact_references:
+  - statement: "그 존재는 맨손 접촉만으로 사람을 죽인다"        # 한국어 패러프레이즈 — 작성자가 읽는 것
+    quote: "Physical contact with its bare hands causes death"   # 원문에서 글자 그대로 복사 — 기계가 찾는 것
+```
+
+**`statement` (작성자용, 한국어)**
+- 한 항목 = **하나의 구체적 주장**. 이 씬의 나레이션이 실제로 말해야 할 내용입니다.
 - ❌ 라벨·ID·주제어 금지: `"death_count"`, `"카메라"`, `"격리 절차"`, `"항목 3"` — 조회 키를 적으면
   Stage 3은 그것을 풀어낼 사전이 없어 빈 문장으로 때웁니다.
 - ✅ 사실 문장: `"재단 인원 14명이 목이 꺾인 채 사망했다"`, `"시선이 닿지 않으면 초당 최대 2미터를 이동한다"`
-- 숫자·등급·날짜·인용은 원문 표기 그대로 옮기세요. 원문에 없는 사실을 만들지 마세요.
-- 이 씬의 나레이션이 실제로 말해야 할 내용입니다. 씬마다 최소 1개, 비어 있으면 안 됩니다.
+- 숫자·등급·날짜는 원문 표기 그대로 옮기세요. 원문에 없는 사실을 만들지 마세요.
+- 씬마다 최소 1개, 비어 있으면 안 됩니다.
+
+**`quote` (근거, 원문 언어 그대로)**
+- 위 **Source Article 블록에서 글자 하나 바꾸지 말고 복사**하세요. 원문이 영어면 인용도 영어입니다
+  — `statement`가 한국어인 것과 아무 상관이 없습니다. 번역하지 말고, 줄이거나 다듬지 마세요.
+- 파이프라인이 이 문자열을 원문에서 **부분문자열로 검색**합니다. 못 찾으면 아웃라인이 기각되고
+  무엇이 어긋났는지 그대로 돌려받습니다. 요약하거나 두 문장을 이어 붙이면 찾지 못합니다.
+- 한 구절이면 충분합니다. 문장 전체를 넣어도 되지만, `statement`를 지지하는 최소 구간이면 됩니다.
+
+**`statement`는 `quote`보다 확신을 높일 수 없습니다.**
+- 원문이 `"a ceramic mask that **appears** fused to the being's head"`라고 말하면,
+  `statement`는 *"가면이 머리에 융합된 **것으로 보인다**"*까지입니다.
+  ❌ *"가면은 머리에 융합되어 있다"* — **"'~로 보인다'를 '~이다'로 올리는 것도 단언입니다.**
+  원문에 없는 확실성을 만든 것이고, 지어낸 것과 같습니다."
+- `appears` / `seems` / `believed` / `apparently` / `reportedly` / `estimated` / `unknown` 같은
+  표지가 인용에 있으면, `statement`에도 대응하는 헤지(`~로 보인다`, `~로 추정된다`,
+  `~로 알려져 있다`, `~일 가능성이 있다`)를 남기세요.
+- 반대로 원문이 단언한 것을 굳이 흐리지도 마세요.
 
 `mood` drives the scene's background-music/ambient/stinger audio bed — a separate
 4-value axis from `emotional_beat`, not a synonym for it: `dread` (tense unease,
@@ -152,7 +198,7 @@ viewer after a scene jump, not a wiki label:
 ### Rules:
 1. Each scene's `key_points` must reference the Visual Identity Profile verbatim when the entity appears
 2. Scenes must cover all Key Dramatic Beats from the research
-3. Each fact from the source data should appear in at least one scene's `fact_references` — since every entry is now a full fact statement, this rule is checkable by reading the outline alone
+3. Each fact from the source data should appear in at least one scene's `fact_references` — since every entry is now a full fact statement plus its verbatim source quote, this rule is checkable by reading the outline alone
 4. **Pacing variation is MANDATORY**: alternate between slower atmospheric scenes (60-90s) and faster incident scenes (30-45s). Never use the same duration for 3+ consecutive scenes.
 5. **The first scene must hook within 5 seconds** — use one of the candidate hooks from the research packet, shaped by the selected archetype's opening beat
 6. The last scene must satisfy the selected archetype's ending contract (all four leave something unresolved; *what* is left open differs)
@@ -170,7 +216,14 @@ viewer after a scene jump, not a wiki label:
 - [ ] `pattern_interrupt: "none"`이 3연속으로 나오는 구간이 없는가
 - [ ] 모든 `word_budget`이 {{scene_word_budget_min}}~{{scene_word_budget_max}} 정수이고 총합이 {{total_word_budget_min}}~{{total_word_budget_max}}인가
 - [ ] 첫 씬과 마지막 씬이 각각 총합의 {{max_opening_word_pct}}%/{{max_closing_word_pct}}% 이하이고, 가장 큰 씬이 가장 작은 씬의 {{min_budget_spread}}배 이상인가 (균등 배분이면 기각)
-- [ ] 모든 `fact_references` 항목이 라벨이 아니라 읽히는 사실 문장인가
+- [ ] 모든 `fact_references` 항목이 `statement`(라벨이 아니라 읽히는 한국어 사실 문장)와
+      `quote`(원문에서 글자 그대로 복사한 구절) **둘 다** 가지고 있는가
+- [ ] 각 `quote`를 위 Source Article 블록에서 실제로 찾을 수 있는가 — 요약·번역·재조합이 아니라
+      **복사**인가
+- [ ] `quote`가 헤지(`appears`/`seems`/`believed`/…)를 담고 있는데 `statement`가 그것을 단언으로
+      올리지 않았는가 ("'~로 보인다'를 '~이다'로 올리는 것도 단언입니다")
+- [ ] 모든 `event.what` / `event.consequence`가 그 씬의 `fact_references` 진술이 말하는 범위
+      안에 있는가 — 원문에 없는 기록·문서·요구·수치를 새로 만들지 않았는가
 - [ ] 씬 순서가 `{{story_archetype}}` 가이드의 비트 문법 순서를 따르고, 마지막 씬이 그 가이드의
       결말 계약을 지키는가 (다른 아키타입의 순서를 섞지 않았는가)
 - [ ] 가이드가 "만들지 마세요"라고 명시한 것(없는 날짜, 없는 발언, 없는 시각 표기)을 하나도

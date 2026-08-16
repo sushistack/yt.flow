@@ -68,7 +68,11 @@ async def run_ac6_ac7(scps: dict[str, str]) -> dict:
         for rep in range(REPS):
             try:
                 research = await research_step(scp_id, scp_text, format_guide, s, _call_deepseek, label=LABEL)
-                structure = await structure_step(scp_id, research, format_guide, s, _call_deepseek, label=LABEL)
+                # Story 12.8 gave this stage the source article (the outline now has to
+                # quote it). Positional, second — an old 5-argument call is a TypeError.
+                structure = await structure_step(
+                    scp_id, scp_text, research, format_guide, s, _call_deepseek, label=LABEL
+                )
                 writing = await writing_step(
                     scp_id, structure, research["frozen_descriptor"], format_guide, "", s, _call_deepseek, label=LABEL
                 )

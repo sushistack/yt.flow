@@ -34,6 +34,9 @@ from yt_flow.config import Settings
 from yt_flow.pipeline.nodes.scenario_chain import (
     SceneCoverageError,
     TruncationError,
+    _ATTRIBUTION_MIN,
+    _overlap,
+    _writer_facts,
     build_scenes,
     cast_decision_step,
     compute_rule_metrics,
@@ -309,10 +312,118 @@ _MAX_QUALITY_ITEMS = 20
 _ISSUE_KEYS = ("type", "severity", "description", "correction")
 # Story 12.6: `issue_type` first — it is the whitelisted key that makes a critic note
 # actionable, and `critic_step.parse` has already coerced it into CRITIC_ISSUE_TYPES.
-_CRITIC_NOTE_KEYS = ("issue_type", "issue", "suggestion")
+# Story 12.8: `origin`/`origin_overlap` here too. The channel that actually carried
+# the grounding findings in both live runs was the critic's `ungrounded_claim` scene
+# notes, not the review's `grounded_contradictions` — the attribution has to reach the
+# channel the evidence arrives on or it never fires.
+_CRITIC_NOTE_KEYS = ("issue_type", "issue", "suggestion", "origin", "origin_overlap")
 _CONTRADICTION_KEYS = (
     "narration_quote", "grounding_source", "grounding_quote", "explanation", "correction",
+    # Story 12.8: which layer minted the claim. Stamped in `_stamp_origin` below, not
+    # by a model — so unlike its five neighbours this key is trustworthy, and it is on
+    # the whitelist because `_bounded` drops everything not named here.
+    "origin", "origin_overlap",
 )
+_OUTLINE_NOTE_KEYS = ("code", "detail")
+# The critic issue types whose text is a FACT claim, and therefore the only ones worth
+# tracing back to the outline. Running the attribution over a `pacing` complaint would
+# be measuring the overlap of a craft opinion against a fact list.
+_FACT_CRITIC_ISSUE_TYPES = ("ungrounded_claim",)
+# The evidence codes that are themselves proof the OUTLINE minted something: a quote
+# that is not in the article, and a statement that raised its quote's certainty.
+# `event_unsupported` is deliberately absent — the I/O matrix rules it note-only
+# because dramatization is legitimate, and live it ran 2 정탐 / 2 경계 / 2 오탐, which
+# is not a basis for telling an operator to regenerate the whole outline.
+# `source_unavailable` means nothing was checked at all.
+_OUTLINE_MINTED_CODES = ("quote_not_found", "hedge_dropped")
+# Korean operator copy, stated as the ACTION rather than the diagnosis: the whole
+# point of the attribution is that the retry loop cannot reach an outline-minted
+# fabrication (`structure_step` runs once per run and `_full_rewrite` reuses the same
+# outline), so telling the operator "grounding issue" again would repeat 12.6.
+_OUTLINE_ORIGINATED_NOTE = (
+    "이 접지 위반은 아웃라인에서 만들어졌습니다 — 씬 리페어로는 고칠 수 없습니다. "
+    "아웃라인 재생성이 필요합니다."
+)
+
+
+def _outline_reference(structure: object, scene_num: object) -> str | None:
+    """That scene's own outline fields, joined — or ``None`` when there is no outline
+    to attribute against, which is a different answer from "no match".
+
+    Positional and 1-based, the same rule the whole chain uses. ``None`` covers every
+    way the question is unanswerable: no structure was passed, it is not a list, the
+    model's ``scene_num`` points past it, the entry is not a mapping, or the entry
+    carries no text at all (``[{}]``). Story 13.1's lesson — a producer that cannot
+    determine a value must say so rather than assert the fallback.
+    """
+    scenes = structure if isinstance(structure, list) else None
+    if scenes is None or type(scene_num) is not int or not 1 <= scene_num <= len(scenes):
+        return None
+    scene = scenes[scene_num - 1]
+    if not isinstance(scene, dict):
+        return None
+    event = scene.get("event") if isinstance(scene.get("event"), dict) else {}
+    facts = scene.get("fact_references")
+    reference = " ".join(
+        [
+            *(
+                str(fact.get("statement") or "") if isinstance(fact, dict) else str(fact)
+                for fact in (facts if isinstance(facts, list) else [])
+            ),
+            str(event.get("what") or ""),
+            str(event.get("consequence") or ""),
+        ]
+    )
+    return reference if reference.strip() else None
+
+
+def _stamp_origin(items: object, structure: object, *text_keys: str,
+                  issue_types: tuple[str, ...] | None = None) -> list[dict]:
+    """Charge each pass-2 grounding finding to the layer that minted it (12.8 AC4).
+
+    ``critic_agent.md`` judges narration against the **SCP fact sheet**, and the
+    writer is under orders to execute the outline's ``fact_references``/``event``
+    verbatim. So an outline fabrication arrives at the gate as a writing-stage
+    ``ungrounded_claim`` — the bill is correct and addressed to the wrong floor. The
+    12.6 ablation traced every violation in all three arms to the outline.
+
+    Applied to BOTH channels a grounding finding can arrive on: the review's
+    ``grounded_contradictions`` (matched on ``narration_quote``) and, when
+    ``issue_types`` is given, the critic's fact-typed ``scene_notes`` (matched on
+    ``issue``). Both live runs of this story carried zero contradictions and put every
+    grounding finding in the critic's channel, so stamping only the first one meant
+    the attribution never fired at all.
+
+    ``origin`` is ``_overlap(text, that scene's outline fields)`` against
+    ``_ATTRIBUTION_MIN`` — see that constant for the labelled set that chose the
+    threshold and why the tie goes to ``"outline"`` — or ``"unknown"`` when there is no
+    outline scene to compare with. The score rides along as ``origin_overlap`` so a
+    0.10-threshold judgment is never shown as a bare determination; it is a
+    preformatted string because ``_bounded`` clips every whitelisted value as text.
+
+    Returns COPIES. The input dicts are the parsed review/critic payloads, which stay
+    live in ``scenario_node`` afterwards; adding a key no prompt ever emitted to them
+    in place would leak this function's opinion into anything else that reads them.
+    """
+    stamped: list[dict] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if issue_types is not None and normalize_critic_issue_type(item.get("issue_type")) not in issue_types:
+            stamped.append(dict(item))  # not a fact claim — nothing to attribute
+            continue
+        reference = _outline_reference(structure, item.get("scene_num"))
+        text = " ".join(str(item.get(key) or "") for key in text_keys)
+        if reference is None or not text.strip():
+            stamped.append({**item, "origin": "unknown", "origin_overlap": ""})
+            continue
+        score = _overlap(text, reference)
+        stamped.append({
+            **item,
+            "origin": "outline" if score >= _ATTRIBUTION_MIN else "writing",
+            "origin_overlap": f"{score:.2f}",
+        })
+    return stamped
 
 
 def _clip(value: object, limit: int) -> str:
@@ -365,16 +476,45 @@ def _bounded(items: object, keys: tuple[str, ...], what: str) -> list[dict]:
 
 
 def _build_quality(
-    pass_index: int, retry_scope: str, review: dict, critic: dict, writing: dict
+    pass_index: int, retry_scope: str, review: dict, critic: dict, writing: dict,
+    structure: object = None, outline_notes: object = None,
 ) -> dict:
     """The scenario stage's quality verdict, JSON/checkpoint-safe by construction.
 
     ``warning`` is present ONLY when the FINAL pass is negative and that pass was
     the retry — a pass-1 failure that the repair fixed is a success story, and
     ``accept_with_notes`` is not a failure at all (AC3).
+
+    ``structure``/``outline_notes`` are Story 12.8's two grounding inputs: the
+    outline the narration was told to execute, and the evidence notes
+    ``structure_step`` recorded against the source article. Both default to absent so
+    a caller with neither (an old test double) still works — its findings then carry
+    ``origin: "unknown"``, because "nobody gave me an outline" is not evidence that the
+    writer invented the line.
     """
     verdict = str(critic.get("verdict") or "")
     overall_pass = bool(review.get("overall_pass"))
+    # Stamped BEFORE `_bounded`, on the raw list, because the bounded copy is a
+    # different set of dicts and the summary below has to read the same 21st entry the
+    # cap would have dropped (`gotcha_summary-from-a-capped-list-drops-the-severest-item`).
+    raw_contradictions = review.get("grounded_contradictions")
+    raw_notes = critic.get("scene_notes")
+    contradictions = _stamp_origin(raw_contradictions, structure, "narration_quote")
+    # Matched on `issue` ALONE, not `issue` + `suggestion`. Measured over the two live
+    # dumps: the suggestion is the critic's proposed REWRITE, which is grounded by
+    # construction, and including it flips run2 씬5 — a genuinely writing-originated
+    # fabrication ("[실험 기록 049-01]") — from 0.085 to 0.132, i.e. onto the outline.
+    # On `issue` alone both live notes land where §4 attributed them by hand
+    # (씬5 writing 0.085, 씬9 outline 0.198).
+    critic_notes = _stamp_origin(raw_notes, structure, "issue", issue_types=_FACT_CRITIC_ISSUE_TYPES)
+    # `structure_step` keys its notes on `scene`; the gate payload is keyed on
+    # `scene_num` everywhere else, and `_bounded` reads that name. Renamed once here
+    # rather than teaching `_bounded` a second spelling.
+    notes = [
+        {**note, "scene_num": note.get("scene")}
+        for note in (outline_notes if isinstance(outline_notes, list) else [])
+        if isinstance(note, dict)
+    ]
     quality: dict = {
         "final_pass_index": pass_index,
         "retry_scope": retry_scope,
@@ -385,11 +525,28 @@ def _build_quality(
         # AFTER review parsing — so a model reporting its own flattering metrics
         # cannot overwrite them (AC5).
         "rule_metrics": compute_rule_metrics(writing),
+        # The stamped list feeds `_bounded` only when the raw value WAS a list:
+        # `_stamp_origin` normalizes a mapping/scalar to `[]`, which would silently
+        # swallow `_bounded`'s "every typed finding vanished" warning (AD-10).
         "grounded_contradictions": _bounded(
-            review.get("grounded_contradictions"), _CONTRADICTION_KEYS, "grounded contradictions",
+            contradictions if isinstance(raw_contradictions, list) else raw_contradictions,
+            _CONTRADICTION_KEYS, "grounded contradictions",
         ),
         "review_issues": _bounded(review.get("issues"), _ISSUE_KEYS, "review issues"),
-        "critic_scene_notes": _bounded(critic.get("scene_notes"), _CRITIC_NOTE_KEYS, "critic scene notes"),
+        "critic_scene_notes": _bounded(
+            critic_notes if isinstance(raw_notes, list) else raw_notes,
+            _CRITIC_NOTE_KEYS, "critic scene notes",
+        ),
+        # Story 12.8: the deterministic evidence check's own findings, carried whether
+        # or not the pass-2 warning fires — a run that passed review can still have
+        # shipped an unlocatable quote, and the operator is the only reader who can
+        # tell a keyword false positive from a real certainty upgrade.
+        "outline_grounding": _bounded(notes, _OUTLINE_NOTE_KEYS, "outline grounding notes"),
+        # How many there REALLY were. `outline_grounding` is capped at
+        # `_MAX_QUALITY_ITEMS`, so a count taken from it at the gate would under-report
+        # exactly when there is most to report — the summary-from-a-capped-list shape
+        # this story's own review found on the warning side.
+        "outline_grounding_total": len(notes),
     }
     if pass_index == 2 and (verdict == "retry" or not overall_pass):
         # Story 12.6: same `code` (the UI and its tests key on it), plus the distinct
@@ -412,8 +569,30 @@ def _build_quality(
         # a 600-character sentence renders at the gate as a "category". It reads the
         # RAW `issues` for the same reason the critic side does — a fact-typed issue
         # sitting past entry 20 must not be capped out of the summary line.
-        raw_notes = critic.get("scene_notes")
         raw_issues = review.get("issues")
+        # Story 12.8: the third summary source, and it reads its RAW lists for the
+        # SAME reason the two above do. `contradictions`, `critic_notes` and `notes`
+        # are the stamped, uncapped lists built at the top of this function — the 21st
+        # contradiction is exactly the one that would otherwise be dropped from the
+        # category line while still being the only outline-originated finding in the run.
+        #
+        # ATTRIBUTED findings only. This line tells the operator to regenerate the
+        # outline, so it may not be populated by any finding that merely *mentions* a
+        # scene: an `event_unsupported` note is a trigram floor firing on a legitimate
+        # dramatization as often as on a fabrication (live: 2 정탐 / 2 경계 / 2 오탐), and
+        # run1's only entry here was one of those false positives — the operator was
+        # told to regenerate an outline over a Korean synonym the instrument cannot see.
+        outline_scenes = sorted(
+            {
+                num for item in [*contradictions, *critic_notes]
+                if item.get("origin") == "outline" and type(num := item.get("scene_num")) is int
+            }
+            | {
+                num for note in notes
+                if note.get("code") in _OUTLINE_MINTED_CODES
+                and type(num := note.get("scene_num")) is int and num > 0
+            }
+        )
         categories = sorted(
             {
                 normalize_critic_issue_type(note.get("issue_type"))
@@ -425,10 +604,18 @@ def _build_quality(
                 for issue in (raw_issues if isinstance(raw_issues, list) else [])
                 if isinstance(issue, dict) and issue.get("type") in REVIEW_ISSUE_TYPES
             }
+            | ({"outline_grounding"} if outline_scenes else set())
         )
         warning: dict = {"code": "unresolved_pass2", "message": _UNRESOLVED_PASS2_MESSAGE}
         if categories:
             warning["categories"] = categories
+        if outline_scenes:
+            # Named separately from `categories` because it is not a KIND of problem,
+            # it is a statement about which retry can reach it — and the retry loop
+            # provably cannot: `structure_step` runs once per run and `_full_rewrite`
+            # hands the same outline back. AC5 is "make the wasted retry visible", not
+            # "add a third pass".
+            warning["outline_originated"] = {"scenes": outline_scenes, "note": _OUTLINE_ORIGINATED_NOTE}
         quality["warning"] = warning
     return quality
 
@@ -529,7 +716,10 @@ async def _repair_and_review(
     # gets structure[idx] for each flagged index, never a model-reported
     # scene_num lookup (Story 12.1 AC9). An index past structure (writing
     # over-produced) degrades to {} exactly as the visual path already does.
-    subset_structure = [structure[idx] if idx < len(structure) else {} for idx in indexes]
+    # Writer boundary #2 (Story 12.8 AC6): `writing_scene_repair_step` json.dumps these
+    # dicts straight into `{{scene_structure}}`, so the source quotes have to come off
+    # here exactly as `_writing_scene_brief` takes them off for the first pass.
+    subset_structure = [_writer_facts(structure[idx]) if idx < len(structure) else {} for idx in indexes]
     t0 = time.perf_counter()
     usage: list[dict] = []
     repaired = await writing_scene_repair_step(
@@ -643,9 +833,15 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         # Truncation here killed 6 of 6 live runs on 2026-08-05; structure_step's
         # single `_call_stage_with_retry` call re-rolls it whole, which is where
         # every stage's re-roll now lives (see reroll_on_truncation).
+        # Story 12.8: `state["scp_text"]` was already in scope here and simply never
+        # passed, which is why the outline could not have quoted the source even if
+        # asked. `grounding_sink` carries the evidence notes out without changing the
+        # return type the live drivers monkeypatch (the `usage_sink` idiom).
+        outline_notes: list[dict] = []
         structure = await structure_step(
-            state["scp_id"], research, format_guide, s, _call_deepseek,
+            state["scp_id"], state["scp_text"], research, format_guide, s, _call_deepseek,
             story_archetype=story_archetype, label=label, usage_sink=usage,
+            grounding_sink=outline_notes,
         )
         stages.append({
             "name": "structure", "latency_ms": _ms(t0),
@@ -742,7 +938,9 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
         # Read the FINAL review/critic here, before tts_normalize rewrites
         # `writing` and both locals go out of scope unread (Story 12.3). Metrics
         # describe the text the judge saw, not the pronunciation rewrite.
-        quality = _build_quality(final_pass_index, final_retry_scope, review, critic, writing)
+        quality = _build_quality(
+            final_pass_index, final_retry_scope, review, critic, writing, structure, outline_notes,
+        )
         if warning := quality.get("warning"):
             logger.warning(
                 "scenario: %s after pass %d (retry_scope=%s, critic=%s, review_pass=%s) — "
@@ -750,6 +948,22 @@ async def scenario_node(state: PipelineState, *, trace_sink: list[dict] | None =
                 warning["code"], final_pass_index, final_retry_scope,
                 quality["critic_verdict"], quality["review_overall_pass"],
             )
+            # Story 12.8 AC5: log AND gate. The gate is read by whoever is at the
+            # console; this line is read afterwards, by whoever is asking why a pass-2
+            # repair changed nothing.
+            if originated := warning.get("outline_originated"):
+                logger.warning(
+                    "scenario: scene(s) %s carry OUTLINE-originated grounding findings — the "
+                    "scene repair that just ran could not have fixed them (structure_step runs "
+                    "once per run and the full-rewrite fallback reuses the same outline). "
+                    "Regenerating the outline is the only path. outline_grounding notes: %s",
+                    originated["scenes"],
+                    # The RAW notes, not `quality["outline_grounding"]`: that copy is
+                    # capped at 20, so the log could name a scene in the line above and
+                    # then fail to list its note in the same sentence.
+                    "; ".join(f"scene {n.get('scene')} {n.get('code')}" for n in outline_notes)
+                    or "none",
+                )
 
         t0 = time.perf_counter()
         usage = []

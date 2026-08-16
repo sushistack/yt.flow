@@ -499,7 +499,12 @@ _QUALITY = {
     },
     "grounded_contradictions": [],
     "review_issues": [],
-    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+    "outline_grounding": [{"scene_num": 4, "code": "event_unsupported", "detail": "…"}],
+    "warning": {
+        "code": "unresolved_pass2", "message": "확인 후 승인하세요",
+        # Story 12.8: the reason a pass-2 warning may be unfixable by another repair.
+        "outline_originated": {"scenes": [4], "note": "씬 리페어로는 고칠 수 없습니다"},
+    },
 }
 
 _SCENE = {

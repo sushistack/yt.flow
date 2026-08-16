@@ -127,9 +127,13 @@ export function ArtifactPanel({
       {/* Both contracts render when both are present: 12.3's block is the scenario
           review verdict, this one is the run's fallback history. Neither replaces
           the other, and neither is a gate state. */}
-      {data?.stage === "scenario" && data.scenario_quality?.warning && (
-        <ScenarioQualityWarning quality={data.scenario_quality} />
-      )}
+      {/* Story 12.8: `outline_grounding` is deliberately carried on a CLEAN pass, so
+          gating this block on `warning` alone meant every note from a run that passed
+          review was collected, bounded, shipped to the checkpoint — and never shown. */}
+      {data?.stage === "scenario" &&
+        (data.scenario_quality?.warning || data.scenario_quality?.outline_grounding?.length) && (
+          <ScenarioQualityWarning quality={data.scenario_quality} />
+        )}
 
       {warnings.length > 0 && <RunWarningList warnings={warnings} />}
 
@@ -202,6 +206,17 @@ const IDENTIFIER_LABELS: [string, (v: string | number | boolean) => string][] = 
   ["total_count", (v) => `총 ${v}건`],
 ]
 
+// Story 12.8: "which layer minted this" as the operator reads it. `unknown` is a real
+// third state, not a missing value — it means there was no outline scene to compare
+// against, and rendering it as "나레이션 유래" would show a determination nobody made.
+// The overlap rides along because the label is a 0.10-threshold judgment, not a fact.
+function originText(origin?: string, overlap?: string): string {
+  if (!origin) return ""
+  const label =
+    origin === "outline" ? "아웃라인 유래" : origin === "writing" ? "나레이션 유래" : "귀속 불가"
+  return overlap ? `${label} ${overlap}` : label
+}
+
 function identifierText(context: RunWarning["context"]): string {
   if (!context) return ""
   return IDENTIFIER_LABELS.filter(([key]) => context[key] !== undefined)
@@ -219,24 +234,44 @@ function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
     grounded_contradictions: contradictions,
     review_issues: issues,
     critic_scene_notes: criticNotes = [],
+    outline_grounding: outlineNotes = [],
   } = quality
+  const outlineOriginated = quality.warning?.outline_originated
   return (
     <section
       role="alert"
       aria-live="polite"
       className="rounded-md border border-status-awaiting bg-card p-4 text-[12px] text-foreground"
     >
+      {/* Story 12.8: this block also renders with no `warning` at all, because the
+          outline's evidence notes are carried on a clean pass too — a run can satisfy
+          review AND critic while having shipped a statement nobody could locate. The
+          heading has to say which of the two it is. */}
       <h2 className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
         <span aria-hidden="true">⚠</span>
-        2차 검토 경고
+        {quality.warning ? "2차 검토 경고" : "대본 자동 검토"}
       </h2>
-      <p className="mb-2 leading-[1.6]">{quality.warning?.message}</p>
+      {quality.warning?.message && <p className="mb-2 leading-[1.6]">{quality.warning.message}</p>}
       {/* Story 12.6: a fabricated-fact finding and a pacing complaint used to reach
           this gate as the same undifferentiated warning. Its own line, not folded
           into the message, because the two call for different operator actions. */}
       {quality.warning?.categories?.length ? (
         <p className="mb-2 font-mono text-[11px] text-subtle-foreground">
           유형: {quality.warning.categories.join(" · ")}
+        </p>
+      ) : null}
+      {/* Story 12.8: the categories say WHAT is wrong; this says which layer minted it
+          and therefore what to do. The scene-scoped repair that already ran cannot
+          reach an outline-originated finding — `structure_step` runs once per run —
+          so without this line the operator reads a repair that changed nothing and
+          has no way to know why. */}
+      {outlineOriginated ? (
+        <p className="mb-2 border-l-2 border-status-awaiting pl-2 leading-[1.6]">
+          <span className="font-mono text-[11px] text-subtle-foreground">
+            아웃라인 유래 · 씬 {outlineOriginated.scenes.join(", ")}
+          </span>
+          <br />
+          {outlineOriginated.note}
         </p>
       ) : null}
       {/* AC8: an inline narration edit does not re-run review, so the evidence stays
@@ -266,7 +301,13 @@ function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
           <ul className="flex flex-col gap-2">
             {contradictions.map((c, i) => (
               <li key={`${c.scene_num}-${i}`} className="border-l-2 border-status-awaiting pl-2">
-                <span className="font-mono text-[11px] text-subtle-foreground">씬 {c.scene_num}</span>
+                <span className="font-mono text-[11px] text-subtle-foreground">
+                  씬 {c.scene_num}
+                  {/* Story 12.8: beside the scene, not in a separate block — the
+                      operator decides per contradiction whether to regenerate the
+                      outline or re-run the scene repair. */}
+                  {c.origin ? ` · ${originText(c.origin, c.origin_overlap)}` : ""}
+                </span>
                 <p className="leading-[1.6]">대본: “{c.narration_quote}”</p>
                 <p className="leading-[1.6]">
                   <span className="font-mono text-[11px]">{c.grounding_source}</span>: “{c.grounding_quote}”
@@ -307,9 +348,42 @@ function ScenarioQualityWarning({ quality }: { quality: ScenarioQuality }) {
               <li key={`${note.scene_num}-${i}`} className="leading-[1.6]">
                 <span className="font-mono text-[11px] text-subtle-foreground">
                   씬 {note.scene_num} · {note.issue_type}
+                  {/* Story 12.8: the fact-typed notes carry the same attribution the
+                      contradictions do — this is the channel the live runs actually
+                      used, so without it the distinction never reaches the operator. */}
+                  {note.origin ? ` · ${originText(note.origin, note.origin_overlap)}` : ""}
                 </span>{" "}
                 {note.issue}
                 {note.suggestion && <span className="text-muted-foreground"> → {note.suggestion}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Story 12.8: the outline's own evidence check. Deterministic, so unlike the
+          two lists above it is not a judge's opinion — but the hedge check is
+          keyword-based and WILL have false positives, which is exactly why the raw
+          quote/statement pair is rendered rather than a count. */}
+      {outlineNotes.length > 0 && (
+        <div className="mb-3">
+          {/* The count is the RAW total, not the length of this capped list — naming
+              20 when there were 25 under-reports exactly when there is most to report
+              (`gotcha_summary-from-a-capped-list-drops-the-severest-item`). */}
+          <h3 className="mb-1 font-semibold">
+            아웃라인 접지 {quality.outline_grounding_total ?? outlineNotes.length}건
+            {(quality.outline_grounding_total ?? 0) > outlineNotes.length
+              ? ` (아래 ${outlineNotes.length}건만 표시)`
+              : ""}
+          </h3>
+          <ul className="flex flex-col gap-1">
+            {outlineNotes.map((note, i) => (
+              <li key={`${note.scene_num}-${i}`} className="leading-[1.6]">
+                <span className="font-mono text-[11px] text-subtle-foreground">
+                  {note.scene_num > 0 ? `씬 ${note.scene_num} · ` : ""}
+                  {note.code}
+                </span>{" "}
+                {note.detail}
               </li>
             ))}
           </ul>

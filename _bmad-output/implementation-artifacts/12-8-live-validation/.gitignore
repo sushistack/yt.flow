@@ -1,0 +1,19 @@
+# Story 12.8 live-validation artifacts.
+#
+# What is committed: everything a number in `after.md` is re-derived from — the two
+# instruments (`calibrate.py`, which picks `_EVENT_SUPPORT_MIN`/`_ATTRIBUTION_MIN` from
+# the labelled 12.6 ablation set, and `attribute.py`, which answers "where did the
+# writer get this?" mechanically), the live driver (`run_outline.py`), the scenario
+# dumps it produces (`run1_scenes.json`, `run2_scenes.json` — each carrying the full
+# outline with every `fact_references` quote and `quote_verified` flag, the RAW
+# grounding notes before `_bounded` caps them, and the gate payload), and the prose
+# that reads them (`after.md`, `seeding.md`). All text, well under a megabyte.
+#
+# What is NOT here: nothing is ignored. This story is text-only — no GPU, no renders,
+# no TTS. There is no large or unregenerable payload to split off, and the sibling
+# directories' `tts_audio/` rule has no counterpart here. The file exists so a reader
+# looking for the split convention finds the answer stated rather than absent.
+#
+# Nothing here is the only surviving copy of anything: both dumps are reproducible by
+# re-running `run_outline.py` against the same seeded `production` prompts, with the
+# per-run variance `after.md` records.

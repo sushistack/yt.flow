@@ -441,6 +441,33 @@ class GroundedContradiction(TypedDict):
     grounding_quote: str
     explanation: str
     correction: str
+    # Story 12.8: "outline", "writing", or "unknown" — which stage minted the claim,
+    # decided in code (`scenario._stamp_origin`), never by a model. The critic judges
+    # narration against the SCP fact sheet while the writer is under orders to execute
+    # the outline verbatim, so an outline fabrication used to arrive here billed to the
+    # writer. "unknown" is the honest answer when there is no outline scene to compare
+    # against; asserting "writing" there would be the producer claiming a determination
+    # it never made. Absent on a pre-12.8 checkpoint.
+    origin: NotRequired[str]
+    # The `_overlap` score behind `origin`, preformatted ("0.29") because the gate
+    # payload clips every field as text. Empty when `origin` is "unknown". Carried so a
+    # judgment made against a 0.10 threshold is never read as a bare determination.
+    origin_overlap: NotRequired[str]
+
+
+class OutlineGroundingNote(TypedDict):
+    """Story 12.8: one deterministic finding from `_check_fact_evidence`.
+
+    Not a model claim and not a verdict — a pure-Python observation about the
+    outline: a `quote` that is not a verbatim span of the source article
+    (`quote_not_found`), a statement that raised the quote's certainty
+    (`hedge_dropped`), an `event` field asserting what no fact statement in its scene
+    supports (`event_unsupported`), or a run whose source article was not in scope at
+    all (`source_unavailable`, `scene_num` 0).
+    """
+    scene_num: int
+    code: str
+    detail: str
 
 
 class ReviewIssue(TypedDict):
@@ -456,6 +483,13 @@ class CriticSceneNote(TypedDict):
     issue_type: str  # a CRITIC_ISSUE_TYPES member — normalized in critic_step.parse
     issue: str
     suggestion: str
+    # Story 12.8: same attribution as `GroundedContradiction`, and this is the channel
+    # that actually carries grounding findings in practice — both live runs of that
+    # story reported `grounded_contradictions: []` with every finding here instead.
+    # Stamped only on the fact-typed notes (`ungrounded_claim`); a `pacing` note has no
+    # fact to trace, so it carries neither key.
+    origin: NotRequired[str]
+    origin_overlap: NotRequired[str]
 
 
 class ScenarioWarning(TypedDict):
@@ -466,6 +500,17 @@ class ScenarioWarning(TypedDict):
     # are what tell the operator whether they are looking at a fact violation or a
     # craft one. Absent on a pre-12.6 checkpoint.
     categories: NotRequired[list[str]]
+    # Story 12.8: the scenes whose grounding findings were minted by the OUTLINE, plus
+    # the Korean sentence saying what that means for the operator — scene repair
+    # cannot fix them, because `structure_step` runs once per run and the retry reuses
+    # the same outline. Absent when nothing traced to the outline (and on a pre-12.8
+    # checkpoint), so its presence is the signal.
+    outline_originated: NotRequired["OutlineOriginated"]
+
+
+class OutlineOriginated(TypedDict):
+    scenes: list[int]
+    note: str
 
 
 class ScenarioQuality(TypedDict):
@@ -486,6 +531,13 @@ class ScenarioQuality(TypedDict):
     # gate carried `critic_feedback` (a joined prose blob) and nothing else from the
     # critic, so a typed note had nowhere to land. Absent on a pre-12.6 checkpoint.
     critic_scene_notes: NotRequired[list[CriticSceneNote]]
+    # Story 12.8: the outline's own evidence check, carried even on a clean pass — a
+    # run can satisfy review and critic while still having shipped a statement whose
+    # quote nobody could locate in the source. Absent on a pre-12.8 checkpoint.
+    outline_grounding: NotRequired[list[OutlineGroundingNote]]
+    # How many notes there were before `_MAX_QUALITY_ITEMS` capped the list above, so a
+    # count rendered at the gate is the real one.
+    outline_grounding_total: NotRequired[int]
     warning: NotRequired[ScenarioWarning]
 
 

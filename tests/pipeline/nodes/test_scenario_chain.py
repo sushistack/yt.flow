@@ -81,7 +81,13 @@ def _retention_scene(pos: int, total: int, **overrides) -> dict:
         "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
         "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
         "word_budget": budget,
-        "fact_references": [f"재단 기록에 사건 {pos}이 남아 있다"],
+        # Story 12.8: statement + the verbatim source span that supports it. The
+        # quote is only located when a caller passes a `scp_text` containing it —
+        # most callers here pass "" and get one `source_unavailable` note, which is
+        # deliberately not a correctable failure.
+        "fact_references": [
+            {"statement": f"재단 기록에 사건 {pos}이 남아 있다", "quote": f"incident {pos} was recorded"}
+        ],
         "mood": "dread",
         "title": f"제목 {pos}",
         "kicker": f"한 줄 {pos}",
@@ -263,7 +269,7 @@ async def test_structure_step_returns_scene_list(monkeypatch):
     )
     call = _deepseek_from_cassette("deepseek_structure.json")
     research = {"frozen_descriptor": "desc"}
-    scenes = await chain.structure_step("SCP-173", research, "guide", None, call)
+    scenes = await chain.structure_step("SCP-173", "", research, "guide", None, call)
     # 4, not 2: Story 12.6's distribution contract (opening/closing <= 20% each,
     # max/min >= 1.6) has no solution below four scenes, so the cassette grew.
     assert len(scenes) == 4
@@ -280,7 +286,7 @@ async def test_structure_step_rejects_empty_scene_list(monkeypatch):
         return json.dumps({"scenes": []}), {}, "stop"
 
     with pytest.raises(ValueError, match="scenes"):
-        await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+        await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
 
 
 async def test_structure_step_candidate_label_requires_title(monkeypatch):
@@ -295,7 +301,7 @@ async def test_structure_step_candidate_label_requires_title(monkeypatch):
         return json.dumps(payload), {}, "stop"
 
     with pytest.raises(ValueError, match="title"):
-        await chain.structure_step("SCP-173", {"frozen_descriptor": "x"}, "guide", None, call, label="candidate")
+        await chain.structure_step("SCP-173", "", {"frozen_descriptor": "x"}, "guide", None, call, label="candidate")
 
 
 async def test_structure_step_label_none_tolerates_missing_title(monkeypatch):
@@ -311,7 +317,7 @@ async def test_structure_step_label_none_tolerates_missing_title(monkeypatch):
             scene.pop("title")
         return json.dumps({"scenes": scenes}), {}, "stop"
 
-    scenes = await chain.structure_step("SCP-173", {"frozen_descriptor": "x"}, "guide", None, call)
+    scenes = await chain.structure_step("SCP-173", "", {"frozen_descriptor": "x"}, "guide", None, call)
     assert scenes[0]["scene_num"] == 1
     assert "title" not in scenes[0]
 
@@ -807,7 +813,7 @@ async def test_structure_step_retention_failure_makes_no_second_call(monkeypatch
         return json.dumps({"scenes": outline}), {}, "stop"
 
     with pytest.raises(chain.RetentionError) as excinfo:
-        await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+        await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     assert excinfo.value.code == "loop_unclosed"
     assert attempts["n"] == 1, "retention validation must sit OUTSIDE the semantic-retry boundary"
 
@@ -824,7 +830,7 @@ async def test_structure_step_base_schema_error_still_gets_its_one_retry(monkeyp
             return json.dumps({"scenes": []}), {}, "stop"
         return json.dumps({"scenes": _retention_outline(4)}), {}, "stop"
 
-    scenes = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    scenes = await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     assert attempts["n"] == 2
     assert len(scenes) == 4
 
@@ -836,7 +842,7 @@ async def test_structure_step_returns_a_contract_valid_outline_untouched(monkeyp
     async def call(rendered, s):
         return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
 
-    outline = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    outline = await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     # Story 12.7 annotates the validated outline in place; that write is the ONLY
     # difference, so with it removed the outline is still returned byte-identical.
     assert [scene.pop("assigned_devices") for scene in outline] == chain._allocate_devices(expected)
@@ -1039,7 +1045,7 @@ async def test_structure_step_passes_the_derived_budget_band(monkeypatch):
     async def call(rendered, s):
         return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
 
-    await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     assert captured["target_duration"] == chain.TARGET_DURATION_MINUTES
     assert captured["total_word_budget_min"] == chain.MIN_TOTAL_WORD_BUDGET
     assert captured["total_word_budget_max"] == chain.MAX_TOTAL_WORD_BUDGET
@@ -1062,7 +1068,10 @@ class _SeededPrompt:
         return "rendered"
 
 
-_SEEDED_12_6 = " ".join("{{" + name + "}}" for name in chain._STRUCTURE_BUDGET_VARIABLES)
+_SEEDED_12_6 = " ".join(
+    "{{" + name + "}}"
+    for name in (*chain._STRUCTURE_BUDGET_VARIABLES, chain._STRUCTURE_SOURCE_VARIABLE)
+)
 _SEEDED_PRE_12_6 = "씬당 20~90 어절, 총합 180~360 (현재 3분 파이프라인 기준)"
 
 
@@ -1081,7 +1090,7 @@ async def test_structure_step_rejects_a_prompt_version_that_predates_the_derived
         raise AssertionError("the provider must not be called on a stale prompt")
 
     with pytest.raises(RuntimeError) as excinfo:
-        await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+        await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     message = str(excinfo.value)
     assert "total_word_budget_min" in message
     assert "version=7" in message
@@ -1096,7 +1105,7 @@ async def test_structure_step_accepts_a_prompt_that_reads_the_derived_band(monke
     async def call(rendered, s):
         return json.dumps({"scenes": _retention_outline(6)}), {}, "stop"
 
-    assert len(await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)) == 6
+    assert len(await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)) == 6
 
 
 def test_the_repo_prompt_would_pass_the_seeding_check():
@@ -1658,7 +1667,7 @@ def _truncatable_stages():
         # the re-rolled structure payload must satisfy the retention contract, or
         # the stage fails after the successful re-roll for an unrelated reason
         ("structure", _retention_yaml(4),
-         lambda call: chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)),
+         lambda call: chain.structure_step("SCP-173", "", {"frozen_descriptor": "desc"}, "guide", None, call)),
         ("cast_decision", "shots:\n  - sentence: 1\n    cast: []\n",
          lambda call: chain.cast_decision_step("SCP-173", scene, ["문장 하나."], None, call)),
         ("visual_breakdown", "visual_descriptions:\n  - sentence_start: 1\n    image_prompt: p\n",
@@ -1727,7 +1736,7 @@ async def test_structure_and_writing_are_not_double_rerolled(monkeypatch, tmp_pa
         return "runaway", {"completion_tokens": 32768}, "length"
 
     with pytest.raises(chain.TruncationError):
-        await chain.structure_step("SCP-173", {"frozen_descriptor": "desc"}, "guide", None, call)
+        await chain.structure_step("SCP-173", "", {"frozen_descriptor": "desc"}, "guide", None, call)
     assert attempts["n"] == 2
 
     attempts["n"] = 0
@@ -5475,7 +5484,7 @@ async def test_structure_step_injects_only_the_selected_guide(monkeypatch, arche
     fetched, captured = _recording_prompt_service(monkeypatch)
     call, _ = _scripted(_retention_yaml(4))
     await chain.structure_step(
-        "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype=archetype,
+        "SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype=archetype,
     )
     assert captured["story_archetype"] == archetype
     assert captured["archetype_guide"] == f"GUIDE_TEXT:scenario/archetypes/{archetype}"
@@ -5488,7 +5497,7 @@ async def test_structure_step_defaults_to_the_production_template(monkeypatch):
     """A caller that predates this story keeps producing incident-first outlines."""
     _, captured = _recording_prompt_service(monkeypatch)
     call, _ = _scripted(_retention_yaml(4))
-    await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     assert captured["story_archetype"] == "incident_first"
 
 
@@ -5498,7 +5507,7 @@ async def test_structure_step_never_infers_the_choice_from_the_research_packet(m
     _, captured = _recording_prompt_service(monkeypatch)
     call, _ = _scripted(_retention_yaml(4))
     await chain.structure_step(
-        "SCP-173", {"frozen_descriptor": "d", "story_archetype": "discovery_log"}, "guide", None, call,
+        "SCP-173", "", {"frozen_descriptor": "d", "story_archetype": "discovery_log"}, "guide", None, call,
         story_archetype="interview_testimony",
     )
     assert captured["story_archetype"] == "interview_testimony"
@@ -5510,7 +5519,7 @@ async def test_unknown_archetype_reaching_structure_uses_the_default_guide(monke
     call, _ = _scripted(_retention_yaml(4))
     with caplog.at_level(logging.WARNING):
         await chain.structure_step(
-            "SCP-173", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype="nonsense",
+            "SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call, story_archetype="nonsense",
         )
     assert captured["archetype_guide"].endswith("incident_first")
     assert "nonsense" in caplog.text
@@ -5746,7 +5755,7 @@ async def test_structure_step_annotates_every_scene_with_its_assigned_devices(mo
         calls["n"] += 1
         return _retention_yaml(8), {}, "stop"
 
-    outline = await chain.structure_step("SCP-173", {"frozen_descriptor": "d"}, "guide", None, call)
+    outline = await chain.structure_step("SCP-173", "", {"frozen_descriptor": "d"}, "guide", None, call)
     assert calls["n"] == 1
     assert [scene["assigned_devices"] for scene in outline] == chain._allocate_devices(outline)
     assert outline[-1]["assigned_devices"]
@@ -5845,3 +5854,573 @@ def test_writing_seeding_guard_passes_on_the_seeded_text_and_on_a_test_double(mo
     # A double with no raw text claims nothing rather than failing the run.
     monkeypatch.setattr(chain.prompt_service, "get_prompt", lambda name, label=None: FakePrompt())
     chain._require_seeded_device_allocation()
+
+
+# ── Story 12.8: outline grounding ────────────────────────────────────────────
+#
+# The gap this closes is an ownership vacuum: Story 12.1 deferred grounding to
+# review/critic, and neither of them has ever been shown the outline. Every
+# ungrounded claim in the 12.6 ablation, across all three arms, was minted here.
+
+SOURCE = (
+    "SCP-049 is a humanoid entity roughly 1.9 meters in height that bears the appearance "
+    "of a medieval plague doctor, wearing a hooded black robe and a ceramic mask that "
+    "appears fused to the being's head. Physical contact with its bare hands causes death "
+    "in living humans within moments."
+)
+
+
+def _fact(statement: str, quote: str) -> dict:
+    return {"statement": statement, "quote": quote}
+
+
+def _evidence_scene(facts: list[dict], **event) -> list[dict]:
+    """One scene, just enough shape for `_check_fact_evidence` — which runs BEFORE
+    `_validate_retention_outline` and therefore may never assume a valid outline."""
+    return [{"fact_references": facts, "event": {"who": "연구원", **event}}]
+
+
+# --- _overlap: totality and bounds -------------------------------------------
+
+
+@pytest.mark.parametrize("text,reference", [
+    (None, "abc"), ("abc", None), ("", "abc"), ("abc", ""), ("ab", "abcd"),  # shorter than one trigram
+    ({}, []), (0, 0), ("가나", "가나다"),
+])
+def test_overlap_returns_zero_for_anything_it_cannot_measure(text, reference):
+    assert chain._overlap(text, reference) == 0.0
+
+
+def test_overlap_is_bounded_and_identity_is_one():
+    assert chain._overlap("격리 절차가 시작된다", "격리 절차가 시작된다") == 1.0
+    assert chain._overlap("완전히 다른 문장", "격리 절차가 시작된다") < 0.2
+    for text, reference in [("가면은 융합되어 있다", "가면이 융합된 것으로 보인다"), ("abc def", "xyz")]:
+        assert 0.0 <= chain._overlap(text, reference) <= 1.0
+
+
+def test_overlap_is_containment_not_similarity():
+    """A short text fully inside a long reference scores 1.0 — the direction matters,
+    because both callers ask "is this text supported by that one", never "are these
+    two the same length"."""
+    assert chain._overlap("bare hands", SOURCE) == 1.0
+    assert chain._overlap(SOURCE, "bare hands") < 0.1
+
+
+def test_overlap_normalizes_the_way_every_other_comparison_here_does():
+    assert chain._overlap("격리  절차가\n시작된다", "격리 절차가 시작된다") == 1.0
+
+
+# --- _check_fact_evidence: the I/O matrix ------------------------------------
+
+
+def test_evidence_quote_located_in_the_source_produces_no_note():
+    scenes = _evidence_scene(
+        [_fact("맨손 접촉만으로 사람이 죽는다", "Physical contact with its bare hands causes death")],
+        what="맨손 접촉만으로 사람이 죽는다", consequence="맨손 접촉으로 사람이 죽었다",
+    )
+    assert chain._check_fact_evidence(scenes, SOURCE) == []
+    assert scenes[0]["fact_references"][0]["quote_verified"] is True
+
+
+def test_evidence_quote_absent_from_the_source_is_named_with_its_scene():
+    scenes = _evidence_scene([_fact("등급은 유클리드다", "SCP-049 is classified Euclid")])
+    notes = [n for n in chain._check_fact_evidence(scenes, SOURCE) if n["code"] == "quote_not_found"]
+    assert [n["scene"] for n in notes] == [1]
+    assert "Euclid" in notes[0]["detail"]
+    assert scenes[0]["fact_references"][0]["quote_verified"] is False
+
+
+def test_evidence_hedge_dropped_names_the_scene_and_both_texts():
+    """AC3, and the defect `ablation.md:288` traced through all three arms: the source
+    says "appears fused" and the outline states it as settled fact."""
+    scenes = _evidence_scene(
+        [_fact("가면은 머리에 융합되어 있다", "a ceramic mask that appears fused to the being's head")],
+        what="가면은 머리에 융합되어 있다", consequence="가면이 융합되어 있음이 확인됐다",
+    )
+    notes = chain._check_fact_evidence(scenes, SOURCE)
+    assert [n["code"] for n in notes] == ["hedge_dropped"]
+    assert notes[0]["scene"] == 1
+    assert "appears fused" in notes[0]["detail"] and "융합되어 있다" in notes[0]["detail"]
+
+
+@pytest.mark.parametrize("quote", [
+    "A Ceramic Mask That Appears Fused To The Being's Head",   # retyped, not copied
+    "a ceramic mask that appears fused to the being’s head",  # curly apostrophe
+    "a ceramic  mask that appears fused\nto the being's head",  # re-wrapped
+])
+def test_evidence_locating_a_quote_survives_case_and_curly_punctuation(quote):
+    """A model that retypes a span instead of pasting it has still pointed at the right
+    evidence. Failing it costs the run's one corrective retry over a quotation mark —
+    and NFKC folds neither case nor U+2019."""
+    scenes = _evidence_scene([_fact("가면은 머리에 융합된 것으로 보인다", quote)])
+    assert [n["code"] for n in chain._check_fact_evidence(scenes, SOURCE)] == []
+
+
+def test_evidence_a_quote_too_short_to_be_evidence_is_rejected():
+    """"the" is a verbatim span of every article in `data/scps.json`. Without a floor
+    the locatability check passes vacuously on exactly the input it exists to catch."""
+    scenes = _evidence_scene([_fact("등급은 유클리드다", "the")])
+    notes = chain._check_fact_evidence(scenes, SOURCE)
+    assert [n["code"] for n in notes] == ["quote_not_found"]
+    assert "too short" in notes[0]["detail"]
+    assert scenes[0]["fact_references"][0]["quote_verified"] is False
+
+
+def test_evidence_a_hedge_just_outside_the_quote_is_still_a_dropped_hedge():
+    """The defect this check exists for, quoted so as to hide from it: the source says
+    "appears fused", the outline quotes only "fused to the being's head" and states it
+    as settled fact. Reading the quote alone reports nothing."""
+    scenes = _evidence_scene([_fact("가면은 머리에 융합되어 있다", "fused to the being's head")])
+    notes = chain._check_fact_evidence(scenes, SOURCE)
+    assert [n["code"] for n in notes] == ["hedge_dropped"]
+    assert "appears" in notes[0]["detail"]
+
+
+@pytest.mark.parametrize("statement", [
+    "그는 일반적으로 협조적이며 말할 수 있다",       # "can speak" — a capability, not a hedge
+    "재단은 개체를 표준 격리실에 수용할 수 있었다",   # "was able to" — a fact, not a doubt
+])
+def test_evidence_ordinary_korean_does_not_read_as_a_hedge(statement):
+    """`수 있`/`듯` as bare substrings match extremely common non-hedging Korean, so a
+    genuine certainty upgrade in the same sentence suppressed its own note."""
+    assert not chain._HEDGE_IN_STATEMENT.search(statement)
+
+
+def test_evidence_hedge_preserved_in_the_statement_is_not_flagged():
+    scenes = _evidence_scene(
+        [_fact("가면은 머리에 융합된 것으로 보인다", "a ceramic mask that appears fused to the being's head")],
+        what="가면은 머리에 융합된 것으로 보인다", consequence="가면이 융합된 것으로 보인다고 기록됐다",
+    )
+    assert chain._check_fact_evidence(scenes, SOURCE) == []
+
+
+def test_evidence_unsupported_event_is_a_note_never_an_exception():
+    """Three of the ablation's four fabrications were `event` fields, not
+    `fact_references` — B 씬8's "실패한 재활성화 기록" was `event.what` verbatim."""
+    scenes = _evidence_scene(
+        [_fact("맨손 접촉만으로 사람이 죽는다", "Physical contact with its bare hands causes death")],
+        what="과거의 실패한 재활성화 기록을 열람했다", consequence="더 많은 환자를 요구하는 메모가 남았다",
+    )
+    notes = chain._check_fact_evidence(scenes, SOURCE)
+    assert sorted(n["code"] for n in notes) == ["event_unsupported", "event_unsupported"]
+    assert "event.what" in notes[0]["detail"]
+
+
+def test_evidence_without_source_text_skips_every_check_and_says_so():
+    scenes = _evidence_scene([_fact("아무 문장", "nothing at all")], what="x", consequence="y")
+    assert chain._check_fact_evidence(scenes, "") == [
+        {"scene": 0, "code": "source_unavailable",
+         "detail": "no scp_text in scope — outline evidence was not checked at all"}
+    ]
+    assert chain._check_fact_evidence(scenes, None)[0]["code"] == "source_unavailable"
+    # and nothing was stamped, because nothing was checked
+    assert "quote_verified" not in scenes[0]["fact_references"][0]
+
+
+@pytest.mark.parametrize("scenes", [
+    None, "not a list", [], [None], ["scene"], [{}], [{"fact_references": "x"}],
+    [{"fact_references": ["bare string"], "event": None}],
+    [{"fact_references": [{"statement": 1, "quote": None}], "event": "x"}],
+])
+def test_check_fact_evidence_never_raises_on_a_malformed_outline(scenes):
+    """It runs inside `parse`, BEFORE `_validate_retention_outline` has rejected
+    anything, so every shape it touches is still untrusted."""
+    assert isinstance(chain._check_fact_evidence(scenes, SOURCE), list)
+
+
+def test_evidence_note_scene_numbers_are_positional():
+    scenes = [
+        {"fact_references": [_fact("a", "its bare hands causes death")],
+         "event": {"what": "a", "consequence": "a"}},
+        {"scene_num": 99, "fact_references": [_fact("b", "not in the source")], "event": {}},
+    ]
+    notes = chain._check_fact_evidence(scenes, SOURCE)
+    assert [n["scene"] for n in notes if n["code"] == "quote_not_found"] == [2]
+
+
+# --- structure_step: strict on attempt 1, notes on the last -------------------
+
+
+def _grounded_outline(total: int, quote: str) -> str:
+    outline = _retention_outline(total)
+    for scene in outline:
+        scene["fact_references"] = [_fact("맨손 접촉만으로 사람이 죽는다", quote)]
+        scene["event"] = {"who": "연구원", "what": "맨손 접촉만으로 사람이 죽는다",
+                          "consequence": "맨손 접촉으로 사람이 죽었다"}
+    return yaml.safe_dump({"scenes": outline}, allow_unicode=True)
+
+
+async def test_structure_step_rejects_an_ungrounded_quote_and_buys_one_retry(monkeypatch):
+    """AC1: the rejection is a `ValueError` from `parse`, which `_parse_with_retry`
+    turns into exactly ONE corrective regeneration with the error fed back. Not a
+    `RetentionError` — that is raised after the await and would fail the run."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _grounded_outline(4, "SCP-049 is classified Euclid")
+    good = _grounded_outline(4, "Physical contact with its bare hands causes death")
+    payloads, errors = [bad, good], []
+
+    async def call(rendered, s):
+        errors.append(rendered)
+        return payloads.pop(0), {}, "stop"
+
+    sink: list[dict] = []
+    outline = await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert len(errors) == 2, "exactly one corrective retry, no third pass"
+    assert sink == [], "the retry grounded it, so nothing reaches the gate"
+    assert len(outline) == 4
+
+
+async def test_structure_step_keeps_the_outline_when_the_retry_also_fails(monkeypatch):
+    """AC2: the run is never failed on an evidence verdict. The statement survives for
+    the writer and the note reaches the gate payload instead."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _grounded_outline(4, "SCP-049 is classified Euclid")
+    calls = {"n": 0}
+
+    async def call(rendered, s):
+        calls["n"] += 1
+        return bad, {}, "stop"
+
+    sink: list[dict] = []
+    outline = await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert calls["n"] == 2, "no third pass"
+    assert len(outline) == 4 and outline[0]["fact_references"][0]["statement"]
+    assert {n["code"] for n in sink} == {"quote_not_found"}
+    assert len(sink) == 4  # one per scene, all four of them
+
+
+async def test_a_first_payload_that_dies_on_shape_does_not_make_the_retry_strict(monkeypatch):
+    """The I/O matrix says "Quote absent, final attempt … run continues". A parse
+    counter kept by the closure never saw attempt 1 (it dies above the counter), so the
+    retry's payload looked like the FIRST one, raised, and failed the run on an
+    evidence verdict — with no retry left to spend."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    shape_failure = yaml.safe_dump({"scenes": []}, allow_unicode=True)
+    ungrounded = _grounded_outline(4, "SCP-049 is classified Euclid")
+    call, calls = _scripted(shape_failure, ungrounded)
+
+    sink: list[dict] = []
+    outline = await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert calls["n"] == 2, "still exactly one corrective retry"
+    assert len(outline) == 4, "the run survives — the notes go to the gate"
+    assert {n["code"] for n in sink} == {"quote_not_found"}
+
+
+async def test_a_yaml_repaired_payload_still_gets_its_corrective_retry(monkeypatch):
+    """Story 6.11's deterministic repair calls `parse` again from inside the YAMLError
+    handler, where a `ValueError` used to propagate straight out of `_parse_with_retry`
+    — killing the run over an ungrounded quote that had an unspent retry sitting there,
+    purely because the same payload had also needed a YAML fix."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    # An unquoted `: ` inside a free-text scalar — the exact class `_blockify_line` fixes.
+    broken = _grounded_outline(4, "SCP-049 is classified Euclid").replace(
+        "synopsis: scene 1", "synopsis: scene 1: 격리 실패"
+    )
+    good = _grounded_outline(4, "Physical contact with its bare hands causes death")
+    call, calls = _scripted(broken, good)
+
+    sink: list[dict] = []
+    outline = await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert calls["n"] == 2 and len(outline) == 4
+    assert sink == [], "the retry grounded it"
+
+
+async def test_a_truncation_reroll_gets_a_fresh_correction_budget(monkeypatch):
+    """`reroll_on_truncation` restarts `_parse_with_retry` whole, so the re-roll's first
+    payload has a corrective retry again. A counter that outlives the re-roll would let
+    that payload through leniently and skip the correction entirely."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    bad = _grounded_outline(4, "SCP-049 is classified Euclid")
+    good = _grounded_outline(4, "Physical contact with its bare hands causes death")
+    replies = [(bad, "stop"), ("", "length"), (bad, "stop"), (good, "stop")]
+    calls = {"n": 0}
+
+    async def call(rendered, s):
+        calls["n"] += 1
+        raw, finish = replies[calls["n"] - 1]
+        return raw, {}, finish
+
+    sink: list[dict] = []
+    outline = await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert calls["n"] == 4, "call 1 rejected, call 2 truncated, then the re-roll's pair"
+    assert len(outline) == 4 and sink == [], "the re-roll's own correction actually ran"
+
+
+async def test_an_unsupported_event_never_spends_the_corrective_retry(monkeypatch):
+    """The I/O matrix: "Note only — dramatization is legitimate, so this never
+    hard-fails". Its measured precision is 2 정탐 / 2 경계 / 2 오탐 live, so making it
+    buy a regeneration spends the run's one correction on a trigram artefact."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    outline_yaml = yaml.safe_dump({"scenes": [
+        {**scene,
+         "fact_references": [_fact("맨손 접촉만으로 사람이 죽는다",
+                                   "Physical contact with its bare hands causes death")],
+         "event": {"who": "연구원", "what": "무관한 사건이 벌어졌다", "consequence": "무관한 결과가 남았다"}}
+        for scene in _retention_outline(4)
+    ]}, allow_unicode=True)
+    call, calls = _scripted(outline_yaml)
+
+    sink: list[dict] = []
+    await chain.structure_step(
+        "SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call, grounding_sink=sink,
+    )
+    assert calls["n"] == 1, "no regeneration was bought"
+    assert {n["code"] for n in sink} == {"event_unsupported"}
+
+
+async def test_the_retry_feedback_carries_the_offending_quote_not_just_a_code(monkeypatch):
+    """`s3 quote_not_found` names a scene and a code the model then has to guess the
+    referent of, while ~280 of the 500-char budget went to rules the prompt already
+    states. The text it must fix is the one thing it cannot re-derive."""
+    _, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(
+        _grounded_outline(4, "SCP-049 is classified Euclid"),
+        _grounded_outline(4, "Physical contact with its bare hands causes death"),
+    )
+    await chain.structure_step("SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call)
+    assert "SCP-049 is classified Euclid" in captured["parse_error"], "the retry never saw the quote"
+
+
+async def test_structure_step_returns_a_plain_list_and_the_sink_is_optional(monkeypatch):
+    """The live drivers monkeypatch this function and return a bare list; carrying the
+    notes in the return value would break all three of them."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    call, _ = _scripted(_grounded_outline(4, "Physical contact with its bare hands causes death"))
+    outline = await chain.structure_step("SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call)
+    assert isinstance(outline, list) and all(isinstance(scene, dict) for scene in outline)
+
+
+async def test_structure_step_with_no_source_text_does_not_spend_the_retry(monkeypatch):
+    """`source_unavailable` is the caller's gap, not the model's: no regeneration could
+    conjure an article, so it degrades to a gate note without buying an attempt."""
+    monkeypatch.setattr("yt_flow.services.prompt_service.get_prompt", lambda *a, **k: FakePrompt())
+    calls = {"n": 0}
+
+    async def call(rendered, s):
+        calls["n"] += 1
+        return _retention_yaml(4), {}, "stop"
+
+    sink: list[dict] = []
+    await chain.structure_step("SCP-049", "", {"frozen_descriptor": "d"}, "guide", None, call,
+                               grounding_sink=sink)
+    assert calls["n"] == 1
+    assert [n["code"] for n in sink] == ["source_unavailable"]
+
+
+async def test_structure_step_passes_the_source_article_to_the_prompt(monkeypatch):
+    """AC1's precondition: the outline cannot quote a source it has never seen."""
+    _, captured = _recording_prompt_service(monkeypatch)
+    call, _ = _scripted(_grounded_outline(4, "Physical contact with its bare hands causes death"))
+    await chain.structure_step("SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call)
+    assert captured["scp_source_text"] == SOURCE
+
+
+# --- fact_references shape ---------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [
+    ["bare string"],                                   # the pre-12.8 shape
+    [{"statement": "사실"}],                            # no evidence
+    [{"quote": "evidence"}],                           # nothing for the writer to read
+    [{"statement": "", "quote": "evidence"}],
+    [{"statement": "사실", "quote": "  "}],
+    [{"statement": ["사실"], "quote": "evidence"}],
+    [], None, "x",
+])
+def test_retention_fact_references_must_be_statement_quote_pairs(bad):
+    outline = _retention_outline(8)
+    outline[1]["fact_references"] = bad
+    assert _raises(outline) == "fact_references_invalid"
+
+
+def test_retention_fact_references_accepts_the_pair_and_ignores_extra_keys():
+    outline = _retention_outline(8)
+    outline[1]["fact_references"] = [{"statement": "사실", "quote": "evidence", "quote_verified": False}]
+    chain._validate_retention_outline(outline)  # does not raise
+
+
+# --- the writer's blindfold (AC6) --------------------------------------------
+
+
+def test_writer_facts_flattens_the_pair_to_the_statements_the_writer_always_read():
+    scene = {"synopsis": "x", "fact_references": [
+        _fact("맨손 접촉만으로 사람이 죽는다", "Physical contact with its bare hands causes death"),
+        {"statement": "두 번째 사실", "quote": "q2", "quote_verified": False},
+    ]}
+    out = chain._writer_facts(scene)
+    assert out["fact_references"] == ["맨손 접촉만으로 사람이 죽는다", "두 번째 사실"]
+    assert out["synopsis"] == "x"
+    assert scene["fact_references"][0]["quote"], "the original outline entry is not mutated"
+
+
+@pytest.mark.parametrize("scene", [None, "x", 3, {}, {"fact_references": "x"}, {"fact_references": None}])
+def test_writer_facts_never_raises_on_a_scene_it_cannot_read(scene):
+    assert isinstance(chain._writer_facts(scene), dict)
+
+
+def test_writing_brief_carries_no_source_quote(monkeypatch):
+    """Writer boundary #1. Story 8.8 measured `article_fidelity -1.00` when the writer
+    had the article; this story hands it to the OUTLINE, and the quote comes off here."""
+    outline = _retention_outline(4)
+    for scene in outline:
+        scene["fact_references"] = [_fact("맨손 접촉만으로 사람이 죽는다", "bare hands causes death")]
+    brief = chain._writing_scene_brief(outline, 1)
+    assert "bare hands causes death" not in brief
+    assert "맨손 접촉만으로 사람이 죽는다" in brief
+    assert json.loads(brief[brief.index("{"):])["write_only_this_scene"]["fact_references"] == [
+        "맨손 접촉만으로 사람이 죽는다"
+    ]
+
+
+def test_writing_brief_hides_the_verification_flag_too():
+    """`quote_verified` is an operator signal. A writer told a fact is unconfirmed
+    would hedge narration the outline meant as fact."""
+    outline = _retention_outline(4)
+    outline[1]["fact_references"] = [
+        {"statement": "사실", "quote": "evidence", "quote_verified": False}
+    ]
+    assert "quote_verified" not in chain._writing_scene_brief(outline, 1)
+
+
+# --- the seeding guard (a prompt-shape decision that only reaches prompts/) ---
+
+
+_SEEDED_PRE_12_8 = " ".join("{{" + name + "}}" for name in chain._STRUCTURE_BUDGET_VARIABLES)
+
+
+async def test_structure_step_rejects_a_prompt_version_that_never_reads_the_source(monkeypatch):
+    """An unseeded template renders without error and emits bare-string
+    `fact_references`, so both attempts die on `fact_references_invalid` and the
+    failure names the model rather than the prompt version. Fail at the fetch."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt", lambda *a, **k: _SeededPrompt(_SEEDED_PRE_12_8)
+    )
+
+    async def call(rendered, s):
+        raise AssertionError("the provider must not be called on a stale prompt")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await chain.structure_step("SCP-049", SOURCE, {"frozen_descriptor": "d"}, "guide", None, call)
+    message = str(excinfo.value)
+    assert "scp_source_text" in message
+    assert "12.8" in message
+    assert "migrate_prompts.py" in message
+
+
+def test_the_repo_structure_prompt_would_pass_the_12_8_seeding_check(monkeypatch):
+    """The guard is only useful if the file `migrate_prompts.py` seeds satisfies it."""
+    monkeypatch.setattr(
+        "yt_flow.services.prompt_service.get_prompt",
+        lambda *a, **k: _SeededPrompt(_prompt_text("structure.md")),
+    )
+    chain._require_seeded_budget_variables()
+
+
+# --- prompt-text pins --------------------------------------------------------
+
+
+def test_structure_prompt_reads_the_source_article_and_demands_a_quote():
+    content = _prompt_text("structure.md")
+    assert "{{scp_source_text}}" in content, "the outline still cannot see the source"
+    assert "quote:" in content and "statement:" in content
+    # Ported verbatim from `critic_agent.md:42` — the rule that existed for the writer
+    # and not for the outline, which is where the certainty is actually being raised.
+    assert "'~로 보인다'를 '~이다'로 올리는 것도 단언" in content
+    assert "appears" in content, "the hedge markers the check looks for are not named"
+
+
+def test_structure_prompt_no_longer_shows_a_bare_string_fact_reference():
+    """The old exemplar is now a rejected shape; leaving it would teach the model to
+    emit exactly what `fact_references_invalid` rejects."""
+    content = _prompt_text("structure.md")
+    assert '  - "재단 인원 14명이 목이 꺾인 채 사망했다"' not in content
+    assert re.search(r"fact_references:\n\s*- statement:", content), "the pair exemplar is gone"
+
+
+def _real_articles() -> list[str]:
+    path = Path(__file__).parents[3] / "data" / "scps.json"
+    return [chain._evidence_text(r["scp_text"]) for r in json.loads(path.read_text(encoding="utf-8"))]
+
+
+def test_every_exemplar_quote_in_the_prompt_is_a_real_span_of_a_real_article():
+    """A few-shot exemplar is copied. An invented `quote:` in the prompt teaches the
+    model to invent one — producing exactly the `quote_not_found` this check exists to
+    catch, from the instruction that was supposed to prevent it."""
+    quotes = re.findall(r'^\s*quote: "([^"]+)"', _prompt_text("structure.md"), re.M)
+    assert quotes, "the exemplar pairs are gone"
+    articles = _real_articles()
+    for quote in quotes:
+        assert any(chain._evidence_text(quote) in article for article in articles), \
+            f"{quote!r} appears in no article in data/scps.json"
+
+
+def test_the_structure_cassette_quotes_are_real_spans_of_its_own_article():
+    """Same trap in the fixture: the cassette is an SCP-173 outline, so its quotes have
+    to be locatable in SCP-173. Recorded quotes that are not make the fixture a
+    demonstration of the defect."""
+    content = _load_cassette("deepseek_structure.json")["choices"][0]["message"]["content"]
+    scenes = yaml.safe_load(content)["scenes"]
+    path = Path(__file__).parents[3] / "data" / "scps.json"
+    article = next(r["scp_text"] for r in json.loads(path.read_text(encoding="utf-8"))
+                   if r["id"] == "SCP-173")
+    notes = [n for n in chain._check_fact_evidence(scenes, article) if n["code"] == "quote_not_found"]
+    assert notes == []
+
+
+def test_structure_prompt_disciplines_the_event_fields_too():
+    content = _prompt_text("structure.md")
+    assert "event.what" in content and "event.consequence" in content
+    assert "fact_references" in content.split("`what`과 `consequence`")[1][:400]
+
+
+# AC8: every grounding criterion, threshold and issue type the two judges carried
+# before this story, named one by one. The previous version of this test asserted that
+# two substrings existed SOMEWHERE in the file, which it still would after deleting
+# essentially every criterion below — a story whose entire thesis is "the judges were
+# right, the bill went to the wrong floor" cannot be guarded by that.
+_UNLOOSENED = {
+    "critic_agent.md": (
+        # criterion 7 itself, and the one-line boundary that defines it
+        "**Fidelity**: 나레이션이 **아래 SCP Fact Sheet에 없는 사실을 단언하는가?**",
+        "**경계선은 하나입니다: 새 사실을 단언했는가.**",
+        # the certainty-escalation rule this story ported into `structure.md`
+        '원문이 "~로 보인다"라고 한 것을 "~이다"로 올리는 것도 **단언**입니다.',
+        # the verdict threshold — one occurrence is enough to fail the whole script
+        '**Fact Sheet에 없는 사실을 단언한 곳이 하나라도 있으면 ALWAYS "retry"**',
+        # the typed vocabulary the gate's categories are computed from
+        *(f"`{issue_type}`" for issue_type in domain_state.CRITIC_ISSUE_TYPES if issue_type != "other"),
+    ),
+    "review.md": (
+        "A contradiction is only reportable with **quoted evidence on both sides**.",
+        # all five required evidence fields — dropping any one makes the claim uncheckable
+        "`narration_quote`", "`grounding_source`", "`grounding_quote`",
+        "`explanation`", "`correction`",
+        "Any grounded contradiction fails the review.",
+        "Do not report `overall_pass: true` alongside one.",
+        # the same certainty-upgrade rule, on the review side
+        "확실성을 올린 **새 단언**입니다.",
+        *domain_state.REVIEW_ISSUE_TYPES,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "name,pin",
+    [(name, pin) for name, pins in _UNLOOSENED.items() for pin in pins],
+    ids=lambda v: v[:40],
+)
+def test_the_judging_prompts_were_not_loosened(name, pin):
+    """AC7/AC8: the ablation's findings were all correct — the bill was addressed to
+    the wrong floor. Nothing here may be weakened to make the attribution look better,
+    so every criterion, evidence requirement, threshold and issue type is pinned."""
+    assert pin in _prompt_text(name), f"{name} no longer carries: {pin}"

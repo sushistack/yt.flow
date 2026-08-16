@@ -305,9 +305,15 @@ _QUALITY = {
     "grounded_contradictions": [{
         "scene_num": 1, "narration_quote": "파란 눈", "grounding_source": "entity_sheet",
         "grounding_quote": "눈은 검은색이다", "explanation": "반대다", "correction": "검은 눈",
+        # Story 12.8: stamped in code, not by a judge — the UI renders it beside the scene.
+        "origin": "outline",
     }],
     "review_issues": [],
-    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+    "outline_grounding": [{"scene_num": 4, "code": "hedge_dropped", "detail": "appears fused"}],
+    "warning": {
+        "code": "unresolved_pass2", "message": "확인 후 승인하세요",
+        "outline_originated": {"scenes": [1, 4], "note": "씬 리페어로는 고칠 수 없습니다"},
+    },
 }
 
 
@@ -318,6 +324,19 @@ def test_scenario_artifacts_carry_quality_warning(client, monkeypatch):
     assert body["scenario_quality"]["grounded_contradictions"][0]["grounding_quote"] == "눈은 검은색이다"
     assert body["scenario_quality"]["rule_metrics"]["slop_phrase_hits"][0]["count"] == 2
     assert body["scenes"][0]["narration"] == "narration 1"  # existing payload intact
+
+
+def test_scenario_artifacts_carry_the_outline_attribution(client, monkeypatch):
+    """Story 12.8: `origin`, `outline_grounding` and `warning.outline_originated` are
+    what tell the operator the scene repair could not have fixed this. If the
+    serializer drops them the gate is back to a single undifferentiated warning."""
+    _mock_graph(monkeypatch, {**_SCENARIO_ONLY, "scenario_quality": _QUALITY})
+    quality = client.get(f"/runs/{RUN_ID}/stages/scenario/artifacts").json()["scenario_quality"]
+    assert quality["grounded_contradictions"][0]["origin"] == "outline"
+    assert quality["outline_grounding"] == [
+        {"scene_num": 4, "code": "hedge_dropped", "detail": "appears fused"}
+    ]
+    assert quality["warning"]["outline_originated"]["scenes"] == [1, 4]
 
 
 def test_scenario_artifacts_pre_12_3_checkpoint_quality_is_null(client, monkeypatch):

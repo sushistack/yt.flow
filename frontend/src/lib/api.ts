@@ -71,6 +71,19 @@ export type GroundedContradiction = {
   grounding_quote: string
   explanation: string
   correction: string
+  // Story 12.8: which stage minted the claim — "outline", "writing", or "unknown"
+  // when there was no outline scene to compare against. Decided in Python, not by a
+  // judge. `origin_overlap` is the score behind it, preformatted ("0.29") and empty
+  // for "unknown". Optional: a pre-12.8 checkpoint carries neither.
+  origin?: string
+  origin_overlap?: string
+}
+// Story 12.8: one deterministic finding from the outline's evidence check —
+// `quote_not_found` / `hedge_dropped` / `event_unsupported` / `source_unavailable`.
+export type OutlineGroundingNote = {
+  scene_num: number
+  code: string
+  detail: string
 }
 export type ScenarioQuality = {
   final_pass_index: number
@@ -89,10 +102,30 @@ export type ScenarioQuality = {
   review_issues: { scene_num: number; type: string; severity: string; description: string; correction: string }[]
   // Story 12.6: the critic's own per-scene findings, each led by its closed-vocabulary
   // `issue_type`. Optional — a pre-12.6 checkpoint carries none.
-  critic_scene_notes?: { scene_num: number; issue_type: string; issue: string; suggestion: string }[]
+  // Story 12.8: `origin`/`origin_overlap` are stamped on the fact-typed notes only —
+  // this is the channel grounding findings actually arrive on.
+  critic_scene_notes?: {
+    scene_num: number
+    issue_type: string
+    issue: string
+    suggestion: string
+    origin?: string
+    origin_overlap?: string
+  }[]
+  // Story 12.8: the outline's own evidence check, present even on a clean pass.
+  outline_grounding?: OutlineGroundingNote[]
+  // How many notes there were before the 20-entry cap — render THIS as the count.
+  outline_grounding_total?: number
   // Story 12.6: `categories` is the distinct `issue_type`s (critic) + `issues[].type`
   // (review) behind this one warning. Optional — a pre-12.6 checkpoint has none.
-  warning?: { code: string; message: string; categories?: string[] }
+  // Story 12.8: `outline_originated` names the scenes whose findings the scene-repair
+  // retry could not have fixed. Its presence IS the "regenerate the outline" signal.
+  warning?: {
+    code: string
+    message: string
+    categories?: string[]
+    outline_originated?: { scenes: number[]; note: string }
+  }
 }
 // Story 13.1: one non-fatal degradation recorded during the run. `code` is the stable
 // identifier (backend `RunWarningCode`), `message` the short Korean copy to render, and

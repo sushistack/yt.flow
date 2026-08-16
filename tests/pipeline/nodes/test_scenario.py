@@ -47,10 +47,18 @@ RESEARCH = {"core_identity": "x", "frozen_descriptor": "desc", "entity_sheet": "
 STRUCTURE = [{
     "scene_num": 1, "act": "hook", "synopsis": "x", "key_points": [], "emotional_beat": "tension",
     "estimated_duration_sec": 45, "mood": "escalation",
-    "event": {"who": "경비원", "what": "격리실에 진입했다", "consequence": "통신이 끊겼다"},
+    # Story 12.8: this outline has to survive `_check_fact_evidence` when the REAL
+    # `structure_step` runs (the two "no regeneration" tests below), so the quote is a
+    # verbatim span of `_state()`'s `scp_text`. The `event` is ordinary — a consequence
+    # is a CONSEQUENCE, not a restatement of `what` — because `event_unsupported` is
+    # note-only and never spends the corrective retry.
+    "event": {"who": "경비원", "what": "격리실 문을 열고 내부를 확인했다",
+              "consequence": "다음 순찰에서 둘 다 목이 꺾인 채 발견됐다"},
     "hook_type": "shock", "loops_planted": ["loop_a", "loop_b"], "loops_closed": [],
     "pattern_interrupt": "tone_shift", "word_budget": 45,
-    "fact_references": ["재단 인원 14명이 사망했다"],
+    "fact_references": [
+        {"statement": "재단 인원 14명이 사망했다", "quote": "SCP-173 is a concrete statue"}
+    ],
 }]
 WRITING = {"scp_id": "SCP-173", "title": "t", "scenes": [{"scene_num": 1, "narration": "문장.", "location": "x", "characters_present": [], "color_palette": "x", "atmosphere": "x"}]}
 VISUAL = [{"image_prompt": "shot", "negative_prompt": "neg", "sentence_start": 1, "sentence_end": 1, "camera_type": "wide"}]
@@ -677,8 +685,14 @@ async def test_scoped_repair_receives_the_positionally_matching_structure_subset
     out = await sc.scenario_node(_state())
     assert out["error"] is None
     assert [scene["scene_num"] for scene in captured["originals"]] == [2, 5]
-    assert captured["structure"] == [structure[1], structure[4]]
-    assert captured["structure"][0] is structure[1] and captured["structure"][1] is structure[4]
+    # Story 12.8: the same two entries, positionally — but through `_writer_facts`,
+    # which is writer boundary #2. The repair prompt json.dumps these dicts, so the
+    # source quote comes off here exactly as it does for the first writing pass.
+    assert captured["structure"] == [chain._writer_facts(structure[1]), chain._writer_facts(structure[4])]
+    assert captured["structure"][0]["fact_references"] == ["재단 인원 14명이 사망했다"]
+    # Identity is no longer assertable (`_writer_facts` returns a copy), so the
+    # positional pairing is pinned on a field only the right entries carry.
+    assert [scene["synopsis"] for scene in captured["structure"]] == ["syn2", "syn5"]
 
 
 async def test_retention_violation_fails_the_run_before_any_writing_call(monkeypatch):
@@ -1612,7 +1626,11 @@ async def test_critic_scene_notes_reach_the_gate_bounded(monkeypatch):
     notes = quality["critic_scene_notes"]
     assert [n["issue_type"] for n in notes] == ["pacing", "ungrounded_claim", "ungrounded_claim"]
     # Whitelisted keys only — nothing the prompt happened to emit rides along.
-    assert set(notes[0]) == {"scene_num", "issue_type", "issue", "suggestion"}
+    # `origin`/`origin_overlap` are Story 12.8's, added in code rather than by the model.
+    assert set(notes[0]) == {"scene_num", "issue_type", "issue", "suggestion",
+                             "origin", "origin_overlap"}
+    # …and blank on a `pacing` note: a craft complaint has no fact to trace.
+    assert notes[0]["origin"] == ""
 
 
 async def test_critic_scene_notes_are_capped_and_clipped(monkeypatch):
@@ -1933,3 +1951,262 @@ async def test_a_failed_run_reports_no_archetype(monkeypatch):
     assert out["error"].startswith("stage=scenario run_id=run-123:")
     assert "story_archetype" not in out
     assert "story_archetype_fallback_used" not in out
+
+
+# ── Story 12.8: the bill goes to the layer that minted the fabrication ───────
+#
+# `critic_agent.md` judges narration against the SCP fact sheet while the writer is
+# under orders to execute the outline verbatim, so an outline fabrication arrived at
+# the gate billed to the writer — and the scene repair it triggers cannot fix it,
+# because `structure_step` runs once per run and `_full_rewrite` reuses the outline.
+
+_OUTLINE_SCENE = {
+    "scene_num": 1,
+    "event": {"who": "연구팀", "what": "격리 문서를 열람하여 대상을 식별했다",
+              "consequence": "유클리드 등급 인간형이라는 추가 정보가 확보됐다"},
+    "fact_references": [
+        {"statement": "SCP-049는 유클리드 등급의 인간형 개체이며 키 약 1.9미터다",
+         "quote": "a humanoid entity roughly 1.9 meters"},
+    ],
+}
+
+
+def _contradiction(quote: str, scene_num: int = 1) -> dict:
+    return {
+        "scene_num": scene_num, "narration_quote": quote, "grounding_source": "scp_text",
+        "grounding_quote": "원문에는 등급 표기가 없다", "explanation": "원문에 없다", "correction": "삭제",
+    }
+
+
+_DEFAULT = object()  # `structure=None` is a case under test, not "use the default"
+
+
+def _quality(contradictions, *, structure=_DEFAULT, notes=None, critic=None):
+    review = {**REVIEW_FAIL, "issues": [], "grounded_contradictions": contradictions}
+    return sc._build_quality(
+        2, "scene", review, critic or {**CRITIC_RETRY, "scene_notes": []}, WRITING,
+        [_OUTLINE_SCENE] if structure is _DEFAULT else structure, notes or [],
+    )
+
+
+def test_contradiction_tracing_to_the_outline_is_charged_to_the_outline():
+    """`ablation.md:285` — B 씬4's "보고서에 기록된 등급은 유클리드" came straight out of
+    that scene's own `fact_references`, and the critic billed the writer for it."""
+    quality = _quality([_contradiction("보고서에 기록된 등급은 유클리드, 인간형 개체")])
+    assert quality["grounded_contradictions"][0]["origin"] == "outline"
+    assert "outline_grounding" in quality["warning"]["categories"]
+    assert quality["warning"]["outline_originated"]["scenes"] == [1]
+    assert "씬 리페어로는 고칠 수 없습니다" in quality["warning"]["outline_originated"]["note"]
+
+
+def test_contradiction_that_traces_to_nothing_in_the_outline_stays_with_the_writer():
+    quality = _quality([_contradiction("녀석은 밤마다 노래를 부른다고 전해집니다")])
+    assert quality["grounded_contradictions"][0]["origin"] == "writing"
+    assert "outline_grounding" not in (quality["warning"].get("categories") or [])
+    assert "outline_originated" not in quality["warning"]
+
+
+def test_a_contradiction_whose_scene_num_is_outside_the_outline_reads_as_unknown():
+    """Positional, 1-based, like everything else in this chain — and when the
+    model-supplied `scene_num` points past the outline there is nothing to compare
+    against, which is NOT the same finding as "this did not come from the outline".
+    Saying "writing" there is the producer asserting a determination it never made
+    (`project_13-1-review-done`)."""
+    quality = _quality([_contradiction("보고서에 기록된 등급은 유클리드", scene_num=99)])
+    assert quality["grounded_contradictions"][0]["origin"] == "unknown"
+    assert quality["grounded_contradictions"][0]["origin_overlap"] == ""
+    assert "outline_originated" not in quality["warning"]
+
+
+def test_the_overlap_behind_the_label_travels_with_it():
+    """A 0.10-threshold judgment presented as a bare "아웃라인 유래" hides the fact that
+    it is a threshold judgment. The operator gets the number that decided it."""
+    quality = _quality([_contradiction("보고서에 기록된 등급은 유클리드, 인간형 개체")])
+    item = quality["grounded_contradictions"][0]
+    assert item["origin"] == "outline"
+    assert float(item["origin_overlap"]) >= sc._ATTRIBUTION_MIN
+
+
+def test_stamping_does_not_mutate_the_review_payload_it_was_handed():
+    """The parsed review stays live in `scenario_node` after this runs; adding a key
+    no prompt emitted to it in place leaks this function's opinion into every other
+    reader of that dict."""
+    contradictions = [_contradiction("보고서에 기록된 등급은 유클리드, 인간형 개체")]
+    _quality(contradictions)
+    assert "origin" not in contradictions[0] and "origin_overlap" not in contradictions[0]
+
+
+def test_a_non_list_contradiction_field_still_warns_about_the_silent_drop(caplog):
+    """`_stamp_origin` normalizes a mapping to `[]`, so without care it would swallow
+    `_bounded`'s "every typed finding vanished from the gate" warning (AD-10)."""
+    with caplog.at_level("WARNING"):
+        quality = _quality({"scene_num": 1})
+    assert quality["grounded_contradictions"] == []
+    assert "grounded contradictions arrived as dict" in caplog.text
+
+
+def test_outline_originated_survives_past_the_gate_payload_cap():
+    """The 12.6 review's finding, on the contradiction side this time
+    (`gotcha_summary-from-a-capped-list-drops-the-severest-item`). The one
+    outline-originated entry sits at position 21 and would fall off `_bounded`'s
+    copy — the summary must read the RAW list."""
+    filler = [_contradiction("녀석은 밤마다 노래를 부른다고 전해집니다") for _ in range(sc._MAX_QUALITY_ITEMS)]
+    quality = _quality(filler + [_contradiction("보고서에 기록된 등급은 유클리드, 인간형 개체")])
+
+    assert len(quality["grounded_contradictions"]) == sc._MAX_QUALITY_ITEMS  # still capped
+    assert all(c["origin"] == "writing" for c in quality["grounded_contradictions"])
+    assert "outline_grounding" in quality["warning"]["categories"]
+    assert quality["warning"]["outline_originated"]["scenes"] == [1]
+
+
+def _critic_note(issue: str, *, issue_type: str = "ungrounded_claim", scene_num: int = 1) -> dict:
+    return {"scene_num": scene_num, "issue_type": issue_type, "issue": issue,
+            "suggestion": "문장을 삭제하세요"}
+
+
+def test_a_fact_typed_critic_note_is_attributed_the_same_way_a_contradiction_is():
+    """The channel that actually carried every grounding finding in both live runs.
+    `grounded_contradictions` was empty in each of them, so an attribution that only
+    reads that field never fires at all (`after.md` §5)."""
+    critic = {**CRITIC_RETRY, "scene_notes": [
+        _critic_note("\"보고서에 기록된 등급은 유클리드, 인간형 개체\"는 Fact Sheet에 없습니다"),
+    ]}
+    quality = _quality([], critic=critic)
+    note = quality["critic_scene_notes"][0]
+    assert note["origin"] == "outline"
+    assert float(note["origin_overlap"]) >= sc._ATTRIBUTION_MIN
+    assert quality["warning"]["outline_originated"]["scenes"] == [1]
+    assert "outline_grounding" in quality["warning"]["categories"]
+
+
+def test_a_critic_note_that_traces_to_nothing_in_the_outline_stays_with_the_writer():
+    critic = {**CRITIC_RETRY, "scene_notes": [
+        _critic_note("\"녀석은 밤마다 노래를 부른다\"는 Fact Sheet에 없습니다"),
+    ]}
+    quality = _quality([], critic=critic)
+    assert quality["critic_scene_notes"][0]["origin"] == "writing"
+    assert "outline_originated" not in quality["warning"]
+
+
+def test_only_the_fact_typed_critic_notes_are_attributed():
+    """A `pacing` complaint has no fact to trace; scoring its prose against the outline
+    would manufacture an attribution out of shared vocabulary — run1's `report_tone`
+    note scores 0.283 against its scene, which is well over the threshold."""
+    critic = {**CRITIC_RETRY, "scene_notes": [
+        _critic_note("\"보고서에 기록된 등급은 유클리드, 인간형 개체\"는 건조합니다",
+                     issue_type="report_tone"),
+    ]}
+    quality = _quality([], critic=critic)
+    assert quality["critic_scene_notes"][0]["origin"] == ""
+    assert "outline_originated" not in quality["warning"]
+
+
+def test_outline_grounding_notes_reach_the_payload_and_the_summary():
+    notes = [{"scene": 3, "code": "hedge_dropped", "detail": "appears fused -> 융합되어 있다"}]
+    quality = _quality([], notes=notes)
+    assert quality["outline_grounding"] == [
+        {"scene_num": 3, "code": "hedge_dropped", "detail": "appears fused -> 융합되어 있다"}
+    ]
+    assert quality["outline_grounding_total"] == 1
+    assert quality["warning"]["outline_originated"]["scenes"] == [3]
+    assert "outline_grounding" in quality["warning"]["categories"]
+
+
+def test_an_unsupported_event_note_does_not_order_an_outline_regeneration():
+    """`event_unsupported` is a trigram floor over legitimate dramatization: live it ran
+    2 정탐 / 2 경계 / 2 오탐, and run1's ONLY `outline_originated` scene traced to one of
+    the false positives (죽음/사망, a synonym the instrument cannot see). It is carried
+    as a note; it does not get to tell the operator to regenerate the outline."""
+    notes = [{"scene": 8, "code": "event_unsupported", "detail": "overlap 0.02"}]
+    quality = _quality([], notes=notes)
+    assert [n["code"] for n in quality["outline_grounding"]] == ["event_unsupported"]
+    assert "outline_originated" not in quality["warning"]
+    assert "outline_grounding" not in (quality["warning"].get("categories") or [])
+
+
+def test_the_raw_note_count_survives_the_payload_cap():
+    """`gotcha_summary-from-a-capped-list-drops-the-severest-item`, on the count this
+    time: the gate must not say "20건" when there were 25."""
+    notes = [{"scene": 1, "code": "event_unsupported", "detail": "x"}
+             for _ in range(sc._MAX_QUALITY_ITEMS + 5)]
+    quality = _quality([], notes=notes)
+    assert len(quality["outline_grounding"]) == sc._MAX_QUALITY_ITEMS
+    assert quality["outline_grounding_total"] == sc._MAX_QUALITY_ITEMS + 5
+
+
+def test_source_unavailable_is_carried_but_is_not_evidence_of_a_fabrication():
+    """Scene 0, "nothing was checked" — it must not make the gate claim the outline
+    minted something."""
+    notes = [{"scene": 0, "code": "source_unavailable", "detail": "no scp_text in scope"}]
+    quality = _quality([], notes=notes)
+    assert quality["outline_grounding"][0]["code"] == "source_unavailable"
+    assert "outline_originated" not in quality["warning"]
+    assert "outline_grounding" not in (quality["warning"].get("categories") or [])
+
+
+def test_outline_grounding_is_carried_on_a_clean_pass_with_no_warning_at_all():
+    """A run can satisfy review AND critic while still having shipped a statement
+    whose quote nobody could locate."""
+    notes = [{"scene": 2, "code": "quote_not_found", "detail": "..."}]
+    quality = sc._build_quality(1, "none", REVIEW_PASS, CRITIC_PASS, WRITING, [_OUTLINE_SCENE], notes)
+    assert "warning" not in quality
+    assert [n["code"] for n in quality["outline_grounding"]] == ["quote_not_found"]
+
+
+@pytest.mark.parametrize("structure", [None, "x", [], [None], [{}], [{"fact_references": "x"}]])
+def test_origin_stamping_reports_unknown_for_an_outline_it_cannot_read(structure):
+    """Every one of these means "no outline scene to compare against". None of them is
+    evidence that the writer invented the line, so none of them may say so."""
+    quality = _quality([_contradiction("아무 문장")], structure=structure)
+    assert quality["grounded_contradictions"][0]["origin"] == "unknown"
+
+
+def test_build_quality_without_the_two_new_arguments_reports_unknown_not_writing():
+    """A caller that predates this story (or a test double) must not get a TypeError —
+    but it must not get a fabricated determination either. There was no `origin` at all
+    before 12.8, so "writing" here would be a NEW claim invented by the absence of an
+    argument, not "pre-12.8 behaviour"."""
+    review = {**REVIEW_FAIL, "issues": [],
+              "grounded_contradictions": [_contradiction("아무 문장")]}
+    quality = sc._build_quality(2, "scene", review, CRITIC_RETRY, WRITING)
+    assert quality["outline_grounding"] == []
+    assert quality["grounded_contradictions"][0]["origin"] == "unknown"
+    assert "outline_originated" not in quality["warning"]
+
+
+async def test_outline_originated_findings_are_logged_as_unreachable_by_the_retry(monkeypatch, caplog):
+    """AC5: log AND gate. The log is what whoever asks "why did the repair change
+    nothing" reads afterwards — and no third pass is added either way."""
+    review = {**REVIEW_FAIL, "issues": [],
+              "grounded_contradictions": [_contradiction("보고서에 기록된 등급은 유클리드, 인간형 개체")]}
+    calls = _stub_chain(monkeypatch, review=review, critic=CRITIC_RETRY)
+    monkeypatch.setattr(sc, "structure_step", lambda *a, **k: _async_return([_OUTLINE_SCENE]))
+
+    with caplog.at_level("WARNING"):
+        out = await sc.scenario_node(_state())
+
+    assert out["error"] is None
+    assert calls["structure"] == 0, "the outline is never regenerated — that is the point"
+    assert "OUTLINE-originated" in caplog.text
+    assert "Regenerating the outline is the only path" in caplog.text
+    quality = out["scenario_quality"]
+    assert quality["final_pass_index"] == 2, "still exactly two passes"
+    assert quality["warning"]["outline_originated"]["scenes"] == [1]
+
+
+async def test_the_node_hands_the_outline_and_its_grounding_notes_to_the_gate(monkeypatch):
+    """End to end: `state["scp_text"]` reaches `structure_step`, the sink comes back,
+    and both land in the payload."""
+    seen: dict = {}
+
+    async def fake_structure(scp_id, scp_text, research, *a, grounding_sink=None, **k):
+        seen["scp_text"] = scp_text
+        if grounding_sink is not None:
+            grounding_sink.append({"scene": 2, "code": "quote_not_found", "detail": "…"})
+        return STRUCTURE
+
+    _stub_chain(monkeypatch)
+    monkeypatch.setattr(sc, "structure_step", fake_structure)
+    quality = (await sc.scenario_node(_state()))["scenario_quality"]
+    assert seen["scp_text"] == "SCP-173 is a concrete statue."
+    assert quality["outline_grounding"] == [{"scene_num": 2, "code": "quote_not_found", "detail": "…"}]

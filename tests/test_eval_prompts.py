@@ -391,6 +391,14 @@ class FakeSettings:
     content_language = "ko"
 
 
+# Long enough to BE evidence: `_check_fact_evidence` rejects a quote under
+# `_MIN_QUOTE_CHARS` as vacuous, and the old fixture quoted the 4-character `"text"`.
+# Carries no hedge marker either — the real SCP-096 sentence says "approximately
+# 2.38 meters", and a hedging quote against a flat Korean statement is a
+# `hedge_dropped` note, which DOES buy the corrective retry these tests must not spend.
+_EVAL_SCP_TEXT = "SCP-096 is a humanoid creature that is normally extremely docile."
+
+
 def _valid_structure_scenes(total: int = 4) -> list[dict]:
     """An outline that satisfies the retention contract at ANY legal scene count.
     `structure_step` rejects anything less, so the scripted chain below has to
@@ -410,14 +418,22 @@ def _valid_structure_scenes(total: int = 4) -> list[dict]:
         "scene_num": pos,
         "act": "hook" if pos == 1 else "mystery_expansion",
         "synopsis": f"scene {pos}",
-        "event": {"who": "경비원", "what": "격리실에 진입했다", "consequence": "통신이 끊겼다"},
+        # Story 12.8: the outline is now checked against the source article, so the
+        # quote below is a verbatim span of `_EVAL_SCP_TEXT` (which every caller here
+        # passes) — otherwise `structure_step` spends its one corrective retry and the
+        # scripted response list runs dry. The `event` is ordinary prose: an
+        # `event_unsupported` note is note-only and never buys a regeneration.
+        "event": {"who": "경비원", "what": f"격리실 {pos}번 문을 열었다",
+                  "consequence": "다음 순찰에서 둘 다 목이 꺾인 채 발견됐다"},
         "emotional_beat": "tension",
         "hook_type": "shock" if pos == 1 else "none",
         "loops_planted": ["loop_a", "loop_b"] if pos == 1 else [],
         "loops_closed": ["loop_a", "loop_b"] if pos == total else [],
         "pattern_interrupt": "tone_shift" if pos % 3 == 1 else "none",
         "word_budget": budgets[pos - 1],
-        "fact_references": [f"재단 기록에 사건 {pos}이 남아 있다"],
+        "fact_references": [
+            {"statement": f"재단 기록에 사건 {pos}이 남아 있다", "quote": _EVAL_SCP_TEXT}
+        ],
         "mood": "dread",
     } for pos in range(1, total + 1)]
 
@@ -501,7 +517,7 @@ def test_run_stage_chain_writing_succeeds(monkeypatch):
 
     _stub_stage_functions(monkeypatch)
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0)
     )
     assert failed is False
     assert actual_stage == "writing"
@@ -513,7 +529,7 @@ def test_run_stage_chain_writing_failure_stops_before_later_stages(monkeypatch):
 
     calls = _stub_stage_functions(monkeypatch, fail_at="writing")
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0)
     )
     assert failed is True
     assert actual_stage == "writing"
@@ -527,7 +543,7 @@ def test_run_stage_chain_cast_decision_failure(monkeypatch):
 
     calls = _stub_stage_functions(monkeypatch, fail_at="cast_decision")
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "cast_decision", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "cast_decision", FakeSettings(), 5.0)
     )
     assert failed is True
     assert actual_stage == "cast_decision"
@@ -541,7 +557,7 @@ def test_run_stage_chain_visual_breakdown_failure(monkeypatch):
 
     calls = _stub_stage_functions(monkeypatch, fail_at="visual_breakdown")
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "visual_breakdown", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "visual_breakdown", FakeSettings(), 5.0)
     )
     assert failed is True
     assert actual_stage == "visual_breakdown"
@@ -578,7 +594,7 @@ def test_run_stage_chain_captures_raw_and_finish_reason_on_truncation(monkeypatc
     monkeypatch.setattr(ep, "_call_gemini", scripted_call_gemini)
 
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0)
     )
 
     assert failed is True
@@ -1727,7 +1743,7 @@ def test_run_stage_chain_no_cache_calls_fresh_despite_identical_rendered_text(mo
     monkeypatch.setattr(ep, "_call_gemini", scripted_call)
 
     failed, actual_stage, error, finish_reason, raw = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0, no_cache=True)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0, no_cache=True)
     )
 
     assert failed is False
@@ -1770,7 +1786,7 @@ def test_run_stage_chain_cache_enabled_reuses_result_on_second_identical_run(mon
 
     for _ in range(2):
         failed, actual_stage, error, finish_reason, raw = asyncio.run(
-            ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+            ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0)
         )
         assert failed is False
         assert actual_stage == "writing"
@@ -1909,7 +1925,7 @@ def test_run_stage_chain_routes_the_writing_call_to_gemini(monkeypatch):
     monkeypatch.setattr(ep, "_call_gemini", fake_gemini)
 
     failed, actual_stage, error, _, _ = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0, no_cache=True)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0, no_cache=True)
     )
 
     assert (failed, actual_stage, error) == (False, "writing", None)
@@ -2089,7 +2105,7 @@ def _chain_with_research(monkeypatch, research: dict) -> dict:
     monkeypatch.setattr(ep, "research_step", fake_research_step)
     monkeypatch.setattr(ep, "structure_step", fake_structure_step)
     failed, _stage, error, *_ = asyncio.run(
-        ep._run_stage_chain("SCP-096", "text", "production", "writing", FakeSettings(), 5.0)
+        ep._run_stage_chain("SCP-096", _EVAL_SCP_TEXT, "production", "writing", FakeSettings(), 5.0)
     )
     assert failed is False, error
     return seen

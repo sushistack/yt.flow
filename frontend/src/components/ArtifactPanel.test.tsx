@@ -358,6 +358,136 @@ describe("ArtifactPanel", () => {
     expect(screen.getByRole("alert").textContent).not.toContain("비평 지적")
   })
 
+  // ── Story 12.8: which layer minted it, and therefore what to do about it ───
+  // The scene-scoped repair that already ran cannot reach an outline-originated
+  // finding — `structure_step` runs once per run — so the operator reading a repair
+  // that changed nothing needs the gate to say why.
+
+  it("labels each contradiction with the stage that minted it", () => {
+    const attributed = {
+      ...QUALITY,
+      grounded_contradictions: [
+        { ...QUALITY.grounded_contradictions[0], origin: "outline" },
+        { ...QUALITY.grounded_contradictions[0], scene_num: 5, origin: "writing" },
+      ],
+    }
+    renderPanel({ data: scenarioData(attributed) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("씬 3 · 아웃라인 유래")
+    expect(alert.textContent).toContain("씬 5 · 나레이션 유래")
+  })
+
+  it("shows the overlap behind the label, and 'unknown' as its own third state", () => {
+    const attributed = {
+      ...QUALITY,
+      grounded_contradictions: [
+        { ...QUALITY.grounded_contradictions[0], origin: "outline", origin_overlap: "0.29" },
+        { ...QUALITY.grounded_contradictions[0], scene_num: 5, origin: "unknown", origin_overlap: "" },
+      ],
+    }
+    renderPanel({ data: scenarioData(attributed) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    // a 0.10-threshold judgment is not presented as a bare determination
+    expect(alert.textContent).toContain("씬 3 · 아웃라인 유래 0.29")
+    // "no outline scene to compare against" is not "the writer invented it"
+    expect(alert.textContent).toContain("씬 5 · 귀속 불가")
+  })
+
+  it("carries the attribution on the critic's fact-typed notes too", () => {
+    const attributed = {
+      ...QUALITY,
+      critic_scene_notes: [
+        { scene_num: 9, issue_type: "ungrounded_claim", issue: "원문에 없는 단언", suggestion: "삭제",
+          origin: "outline", origin_overlap: "0.20" },
+        { scene_num: 4, issue_type: "report_tone", issue: "건조합니다", suggestion: "고치세요",
+          origin: "", origin_overlap: "" },
+      ],
+    }
+    renderPanel({ data: scenarioData(attributed) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("씬 9 · ungrounded_claim · 아웃라인 유래 0.20")
+    expect(alert.textContent).toContain("씬 4 · report_tone 건조합니다")
+  })
+
+  it("omits the origin label on a pre-12.8 checkpoint", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("alert").textContent).not.toContain("유래")
+  })
+
+  it("states that scene repair cannot fix an outline-originated finding", () => {
+    const originated = {
+      ...QUALITY,
+      warning: {
+        ...QUALITY.warning,
+        categories: ["outline_grounding", "ungrounded_claim"],
+        outline_originated: { scenes: [3, 7], note: "씬 리페어로는 고칠 수 없습니다 — 아웃라인 재생성이 필요합니다" },
+      },
+    }
+    renderPanel({ data: scenarioData(originated) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("아웃라인 유래 · 씬 3, 7")
+    expect(alert.textContent).toContain("씬 리페어로는 고칠 수 없습니다")
+    expect(alert.textContent).toContain("유형: outline_grounding · ungrounded_claim")
+  })
+
+  it("renders the outline grounding notes as their own list", () => {
+    const withNotes = {
+      ...QUALITY,
+      outline_grounding: [
+        { scene_num: 4, code: "hedge_dropped", detail: "appears fused -> 융합되어 있다" },
+        { scene_num: 0, code: "source_unavailable", detail: "원문이 없습니다" },
+      ],
+    }
+    renderPanel({ data: scenarioData(withNotes) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("아웃라인 접지 2건")
+    expect(alert.textContent).toContain("씬 4 · hedge_dropped")
+    // scene 0 means "nothing was checked" — no scene label, because there is no scene.
+    expect(alert.textContent).toContain("source_unavailable")
+    expect(alert.textContent).not.toContain("씬 0")
+  })
+
+  it("counts the outline notes that EXISTED, not the ones the cap kept", () => {
+    const capped = {
+      ...QUALITY,
+      outline_grounding: Array.from({ length: 20 }, (_, i) => ({
+        scene_num: i + 1, code: "event_unsupported", detail: "…",
+      })),
+      outline_grounding_total: 25,
+    }
+    renderPanel({ data: scenarioData(capped) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("아웃라인 접지 25건")
+    expect(alert.textContent).toContain("아래 20건만 표시")
+  })
+
+  it("shows the outline notes on a CLEAN pass, where there is no warning at all", () => {
+    // They are deliberately carried without a warning: a run can satisfy review and
+    // critic and still have shipped a statement whose quote nobody could locate.
+    const clean = {
+      ...QUALITY,
+      warning: undefined,
+      outline_grounding: [{ scene_num: 2, code: "quote_not_found", detail: "원문에 없는 인용" }],
+      outline_grounding_total: 1,
+    }
+    renderPanel({ data: scenarioData(clean) as StageArtifacts, gateState: "pending" })
+    const alert = screen.getByRole("alert")
+    expect(alert.textContent).toContain("대본 자동 검토")
+    expect(alert.textContent).toContain("씬 2 · quote_not_found")
+    expect(alert.textContent).not.toContain("2차 검토 경고")
+  })
+
+  it("renders nothing at all when the pass is clean and there are no notes", () => {
+    const clean = { ...QUALITY, warning: undefined }
+    renderPanel({ data: scenarioData(clean) as StageArtifacts, gateState: "pending" })
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  it("omits the outline-grounding block when the checkpoint carries none", () => {
+    renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
+    expect(screen.getByRole("alert").textContent).not.toContain("아웃라인 접지")
+  })
+
   it("labels the warning as generation-time review evidence (AC8)", () => {
     renderPanel({ data: scenarioData(QUALITY) as StageArtifacts, gateState: "pending" })
     expect(screen.getByRole("alert").textContent).toContain("이후 직접 수정한 내용은 재검토되지 않았습니다")

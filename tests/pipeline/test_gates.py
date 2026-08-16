@@ -179,7 +179,13 @@ _QUALITY = {
     },
     "grounded_contradictions": [],
     "review_issues": [],
-    "warning": {"code": "unresolved_pass2", "message": "확인 후 승인하세요"},
+    # Story 12.8: carried through the interrupt value like everything else in this
+    # object — the operator decides at the gate, so the attribution has to arrive there.
+    "outline_grounding": [{"scene_num": 4, "code": "quote_not_found", "detail": "…"}],
+    "warning": {
+        "code": "unresolved_pass2", "message": "확인 후 승인하세요",
+        "outline_originated": {"scenes": [4], "note": "씬 리페어로는 고칠 수 없습니다"},
+    },
 }
 
 
@@ -192,6 +198,8 @@ async def test_scenario_gate_interrupt_carries_quality(tmp_path, stub_stage_node
         value = result["__interrupt__"][0].value
         assert value["stage"] == "scenario"
         assert value["scenario_quality"]["warning"]["code"] == "unresolved_pass2"
+        assert value["scenario_quality"]["warning"]["outline_originated"]["scenes"] == [4]
+        assert value["scenario_quality"]["outline_grounding"][0]["code"] == "quote_not_found"
     finally:
         await saver.conn.close()
 
