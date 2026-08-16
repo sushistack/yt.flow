@@ -68,6 +68,30 @@ _KEY_FEATURES = {
 # with it the render is a skull mask or a visored helmet, without it an ordinary
 # person, every other lever held constant. The wardrobe carries the setting instead.
 STOCK_DESCRIPTORS = {
+    # 2026-08-16 — TRIED AND REVERTED: replacing "with a stenciled number" with
+    # "plain orange chest panel, wide white band around each upper sleeve".
+    #
+    # The motivation was sound and still stands: the number is an identity token this
+    # checkpoint cannot hold. A regenerated four-angle set came back 33 / 19 / 10 / 15,
+    # and it drifted even when the enriched descriptor pinned "33" explicitly, while the
+    # white sleeve bands that appeared spontaneously in that same set held on 4 of 4.
+    # A chest number is also invisible from behind, so it never could have anchored
+    # identity across angles.
+    # The replacement nevertheless made the render far worse: all four angles came back
+    # CHIBI (big head, short limbs) wearing an orange t-shirt and grey trousers instead
+    # of a jumpsuit, with shoulder-length hair against the pinned "very short cropped",
+    # and the front card carried a large ring artifact and uncut background.
+    # Read the `_BARE_FACE` comment above: this checkpoint is already pulling hard toward
+    # young/chibi and the counter-pull lives in the tags. "with a stenciled number" was
+    # load-bearing — it is what kept the garment reading as PRISON JUMPSUIT, and the
+    # casual-clothing wording that replaced it pulled the other way on both axes at once.
+    # So the number stays until a replacement is found that names the jumpsuit at least
+    # as strongly (e.g. keeping "prison jumpsuit" adjacent to a single marking rather
+    # than describing chest and sleeves as separate garment features).
+    # CAVEAT on that attribution: that render changed THREE things at once (this
+    # descriptor, `_POSE_DESCRIPTIONS`, and the vision-enrichment prompt), so the blame
+    # is inferred, not isolated — only the front card is enrichment-independent, which is
+    # what rules enrichment out. Re-test one variable at a time.
     "STOCK-d-class": (
         f"{_BARE_FACE}, {_KEY_FEATURES['STOCK-d-class']}, a gaunt man in his thirties, "
         "orange prison jumpsuit with a stenciled number, long sleeves and long trousers, "

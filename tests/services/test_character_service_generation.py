@@ -1899,3 +1899,38 @@ class TestProviderFlags:
 
         asyncio_run(provider.generate("prompt", None, pose_guide_path=temp_ref_image))
         assert provider.last_pose_guide_applied is True
+
+
+class TestCardSeedPinning:
+    """`_inject_seed` randomizes by default; YTFLOW_CARD_SEED pins it for A/B work.
+
+    2026-08-16: the generator being unseeded is what made a day of single-sample
+    before/after card comparisons unattributable — four renders spent on variance.
+    A pinned seed is the difference between "this prompt change helped" being a
+    measurement and being a guess, so the pin has to actually reach the KSampler.
+    """
+
+    @staticmethod
+    def _workflow() -> dict:
+        return {"3": {"class_type": "KSampler", "inputs": {"seed": 0}},
+                "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "x"}}}
+
+    def test_seed_is_randomized_by_default(self, monkeypatch):
+        from yt_flow.services.character_image_provider import ComfyUICharacterProvider as P
+        monkeypatch.delenv("YTFLOW_CARD_SEED", raising=False)
+        seeds = {P._inject_seed(self._workflow())["3"]["inputs"]["seed"] for _ in range(8)}
+        # 8 draws from 2**32 colliding into one value is not something to tolerate.
+        assert len(seeds) > 1
+        assert 0 not in seeds or len(seeds) > 1
+
+    def test_env_pin_reaches_the_ksampler(self, monkeypatch):
+        from yt_flow.services.character_image_provider import ComfyUICharacterProvider as P
+        monkeypatch.setenv("YTFLOW_CARD_SEED", "12345")
+        for _ in range(3):
+            assert P._inject_seed(self._workflow())["3"]["inputs"]["seed"] == 12345
+
+    def test_non_numeric_pin_falls_back_to_random_rather_than_crashing(self, monkeypatch):
+        from yt_flow.services.character_image_provider import ComfyUICharacterProvider as P
+        monkeypatch.setenv("YTFLOW_CARD_SEED", "not-a-number")
+        # A typo in an env var must not take down a three-hour run.
+        assert isinstance(P._inject_seed(self._workflow())["3"]["inputs"]["seed"], int)

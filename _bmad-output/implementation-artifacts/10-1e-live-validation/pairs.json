@@ -1,0 +1,1327 @@
+{
+  "generated_at": "2026-08-16T21:51:51+0900",
+  "run": "e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889",
+  "scp_id": "SCP-049",
+  "checkpoint": "file:yt_flow.db?mode=ro&uri=true",
+  "totals": {
+    "shots_in_run": 43,
+    "recompose_eligible": 33,
+    "paired": 33,
+    "recompose_passes": 40
+  },
+  "settings_snapshot": {
+    "composite_harmonization_tier": 1,
+    "depth_placement_enabled": true,
+    "parallax_25d_enabled": true,
+    "shot_recompose_enabled": false,
+    "shot_recompose_workflow_path": "data/workflows/comfyui_shot_recompose_qwen_api.json",
+    "recompose_preflight_min_free_ram_gb": 12.0,
+    "comfyui_url": "http://localhost:8188"
+  },
+  "dropped": [
+    {
+      "shot_id": "S00100",
+      "scene_num": 1,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00201",
+      "scene_num": 2,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00400",
+      "scene_num": 4,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00401",
+      "scene_num": 4,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00403",
+      "scene_num": 4,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00500",
+      "scene_num": 5,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00701",
+      "scene_num": 7,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00803",
+      "scene_num": 8,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00900",
+      "scene_num": 9,
+      "reason": "empty cast — ineligible for recompose"
+    },
+    {
+      "shot_id": "S00902",
+      "scene_num": 9,
+      "reason": "empty cast — ineligible for recompose"
+    }
+  ],
+  "shots": [
+    {
+      "shot_key": "1:S00101",
+      "scene_num": 1,
+      "shot_id": "S00101",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_001_S00101.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "통제된 실험실 안, 디계급 인원이 그 손에 닿자마자 쓰러졌습니다."
+      ],
+      "image_prompt": "medium shot, a controlled testing room with a steel examination table spanning the middle ground, the table's surface polished to a cold sheen, a stack of disposable surgical drapes folded neatly on one end, a swivel stool pushed back on the left side with its seat still rotating, an empty IV pole with a dangling drip line drifting slightly on the right, the floor between the stool and the table scuffed by recent movement, twin fluorescent tubes overhead strobing at uneven intervals casting sliding shadows across the linoleum, fine dust particles suspended in the light beams, abrupt motion halted, clinical alarm, the specific wrongness of contact without consequence",
+      "cast": [
+        {
+          "card_key": "STOCK-d-class",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/STOCK-d-class/epoch_2/three_quarter_candidate_1.png",
+          "fallback": true,
+          "angle_fallback": false,
+          "asset_fallback": true,
+          "fallback_reason": "asset",
+          "position": "left",
+          "depth": "near",
+          "motion_style": "tremble",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        },
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9176
+        }
+      ]
+    },
+    {
+      "shot_key": "1:S00102",
+      "scene_num": 1,
+      "shot_id": "S00102",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_001_S00102.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "겨우 수 초 만의 허망한 죽음."
+      ],
+      "image_prompt": "close-up shot, a cold concrete floor with a faint impression of a body outlined in disturbed dust, a single hospital bracelet torn off lying near the edge, an overturned plastic cup with a small pool of water spreading slowly toward a floor drain grate, the drain's metal slats oxidized green, a wall-mounted clock in the background blur frozen at the same second it was struck, harsh top-down fluorescent light isolating the imprint, condensation mist hanging at knee height above the floor, stillness that feels too soon, futile finality, the weight of a breath that stopped",
+      "cast": [
+        {
+          "card_key": "STOCK-d-class",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+          "fallback": true,
+          "angle_fallback": false,
+          "asset_fallback": true,
+          "fallback_reason": "asset",
+          "position": "center",
+          "depth": "near",
+          "motion_style": "hold",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.7915
+        }
+      ]
+    },
+    {
+      "shot_key": "1:S00103",
+      "scene_num": 1,
+      "shot_id": "S00103",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_001_S00103.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "어떤 도구도 없이, 오직 맨손으로 말이죠."
+      ],
+      "image_prompt": "low-angle shot looking down the room's length, a narrow steel workbench along the left wall covered with rolled gauze, antiseptic bottles, and a tray of forceps all untouched, no scalpel or tool out of place, the bench's surface dust-free except for a single smudged palm print on the near edge, the far right corner holds a wall-mounted oxygen line with its valve closed, a hanging surgical lamp tilted at an odd angle throwing a halo of light onto the floor, the entire scene suggesting nothing was used, cold white light with pale blue undertones, faint odor of disinfectant rendered as a visual haze over the counter, instrument-free emptiness, the dissonance of no intervention, silent accusation",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "near",
+          "motion_style": "sway",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "1:S00104",
+      "scene_num": 1,
+      "shot_id": "S00104",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_001_S00104.png",
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "이 존재의 정체는, 대체 무엇일까요?"
+      ],
+      "image_prompt": "wide shot, a clinical chamber now perfectly still, a single empty examination chair at the center with its restraints hanging loose, the floor around it marked with chalk outlines of where a body had fallen, the chalk lines already smudged at the edges, a wall-mounted camera in the background with its red indicator light blinking, the observation window's glass fogged on the inside with a single partial handprint high up, as if pressed from within, harsh fluorescent light washing everything into a flat gray-white, sparse equipment pushed against the walls forming a hollow arena, the empty middle ground stretching like an unasked question, unresolved identity, the absence that begs to be named, clinical unease",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "mid",
+          "motion_style": "pulse",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.861
+        }
+      ]
+    },
+    {
+      "shot_key": "2:S00200",
+      "scene_num": 2,
+      "shot_id": "S00200",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00200.png",
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "사고 직후, 대상은 표준 인간형 격리 셀에 수용되었습니다."
+      ],
+      "image_prompt": "wide establishing shot, standard humanoid containment cell with poured concrete walls bearing vertical expansion joints, a heavy steel blast door with hydraulic pistons set into the right wall, a small wire-mesh observation window high on the left wall, floor of damp concrete with a central drainage grate and faint scuff marks trailing toward a bolted-down steel cot in the far corner, dim ceiling-mounted fluorescent tubes casting flat gray light, fine condensation haze hanging at knee level, the cell's sterile emptiness pressing inward from all sides, containment finality, muted institutional dread",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "far",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9047
+        }
+      ]
+    },
+    {
+      "shot_key": "2:S00202",
+      "scene_num": 2,
+      "shot_id": "S00202",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00202.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "관측창 너머의 그는 뜻밖에도 늘 평온하고 예의 바릅니다."
+      ],
+      "image_prompt": "medium shot through a reinforced observation window, a narrow ledge of concrete sill in the foreground with a worn intercom grille, the window's wire-mesh glass slightly distorting the view near its edges, beyond it a sparse containment cell interior with a neatly made cot against the far wall, a single chair placed with careful precision beside a small table, books and papers stacked in orderly rows on a wall shelf, an untouched tray of food set down at exact right angles, cold blue-white ceiling light washing the space evenly, the impression of deliberate calm maintained in sterile confinement, brittle politeness, unnatural composure",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9017,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00202.occ_SCP-049_right_mid.png"
+        }
+      ]
+    },
+    {
+      "shot_key": "2:S00203",
+      "scene_num": 2,
+      "shot_id": "S00203",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00203.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "재단 재량으로 연구 자료를 제공받으면서 말입니다."
+      ],
+      "image_prompt": "over-the-shoulder shot of an exchange point at a containment cell's document pass-through slot, a small steel tray extended halfway through the opening holding a neat stack of manila folders and printed research papers with dense black redaction bars, the slot's heavy metal shutter half-raised, institutional green walls with scuffed paint on the corridor side, fluorescent light throwing a long shadow across the tray, a single loose page catching the light showing typed text and a stamped classification seal, the quiet transaction of knowledge across a barrier, studious unease, the price of curiosity",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8659,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00203.occ_SCP-049_left_mid.png"
+        },
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/STOCK-researcher/epoch_2/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8688
+        }
+      ]
+    },
+    {
+      "shot_key": "2:S00204",
+      "scene_num": 2,
+      "shot_id": "S00204",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_002_S00204.png",
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "그 신사적인 가면 뒤로, 대체 무엇을 쫓고 있는 걸까요?"
+      ],
+      "image_prompt": "close-up shot of a containment cell's interior wall directly ahead, its poured concrete surface covered with faint pencil markings in neat rows — annotations, dates, small diagrams of human anatomy drawn with careful precision, a single wall-mounted shelf holding a row of worn leather-bound books and glass vials with amber contents, the observation window's dim light casting a soft rectangle on the floor tiles, an open notebook on a small desk with handwriting trailing off mid-sentence, the stillness of obsessive study filling the frame, fixation without resolution, the ache of an unanswered question",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "near",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9374
+        }
+      ]
+    },
+    {
+      "shot_key": "3:S00300",
+      "scene_num": 3,
+      "shot_id": "S00300",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_003_S00300.png",
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "대상은 말을 할 수 있으며, 스스로를 의사라고 부릅니다."
+      ],
+      "image_prompt": "wide establishing shot through thick observation glass, a humanoid containment cell with poured concrete floor and a central steel examination table bolted to the left third, restraint anchor rings welded along the table edge, a wall-mounted metal tray holding outdated medical instruments arranged in perfectly neat rows — bone saw, brass syringe, curved needles — cracked white tiles with hairline fissures, a single ceiling-mounted surgical lamp throwing a hard circular pool of cold light on the floor, faint breath-fog haze near the floor, condensation beading on the observation window distorting the view beyond, clinical wrongness, misplaced care",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8967
+        }
+      ]
+    },
+    {
+      "shot_key": "3:S00301",
+      "scene_num": 3,
+      "shot_id": "S00301",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_003_S00301.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "그리고 오직 자신만 볼 수 있는 '대역병'을 치료하려 하죠."
+      ],
+      "image_prompt": "medium shot of an examination alcove, a stainless steel instrument cart pressed against the right wall holding a rack of empty blood-sample vials and a microscope with a dust-filmed slide, a wall-mounted monitoring display showing flat clean waveforms in faint green, tiled floor with a central drainage grate, single overhead fluorescent bar with one tube strobing unevenly, thin layer of disinfectant vapor lingering at ankle height, cold light reflecting off every sterile surface, invisible threat, paranoid scrutiny",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "sway",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8688,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_003_S00301.occ_SCP-049_right_mid.png"
+        }
+      ]
+    },
+    {
+      "shot_key": "3:S00302",
+      "scene_num": 3,
+      "shot_id": "S00302",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_003_S00302.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "재단 연구진은 그 병의 흔적조차 관찰할 수 없었습니다."
+      ],
+      "image_prompt": "high-angle shot down onto a monitoring station, wall-mounted display screens showing identical flat analysis readouts in muted teal and white, a bank of security camera feeds trained on an empty examination room, scattered printed reports with blank result columns fanned across the console, a swivel chair pushed back from the desk with its armrest grazing the floor, tangled cables snaking across the stamped metal floor, recessed fluorescent panels in even rows above, dust motes drifting in cold light, frustrated helplessness, evidence of absence",
+      "cast": [
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/STOCK-researcher/epoch_2/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8858
+        }
+      ]
+    },
+    {
+      "shot_key": "3:S00303",
+      "scene_num": 3,
+      "shot_id": "S00303",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_003_S00303.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "만약 그가 당신마저 감염자로 지목한다면, 과연 어떤 치료를 시작할까요?"
+      ],
+      "image_prompt": "close-up perspective shot down the length of the examination room, a steel surgical cart holding archaic instruments — bone saw, curved needles, brass syringe — resting within reach beside the vanishing point, a long observation window running along the left wall with wire-mesh glass darkening beyond mid-room, an overhead surgical lamp tilted low casting elongated shadows across the tiled floor, cold vapor suspended in layered bands at waist height, the far end of the room dissolving into indistinct shadow, anticipatory dread, the moment before diagnosis",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "hint:b36d4021a2",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "near",
+          "motion_style": "pulse",
+          "motion_energy": "high",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "4:S00402",
+      "scene_num": 4,
+      "shot_id": "S00402",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_004_S00402.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "중세 흑사병 의사의 검은 로브를 걸친 이 개체는, 새의 부리를 닮은 세라믹 가면을 쓰고 있습니다."
+      ],
+      "image_prompt": "low-angle shot of a Foundation briefing room, an illuminated display terminal glowing cold blue on the right wall above a long steel conference table, a tall wire-mesh observation window on the left third letting in thin pale exterior light, scattered classified documents and a single steel chair pushed back from the table edge leaving dark negative space on the left, ceiling panels receding into shadow overhead, dark fluorescent tubes with one flickering at irregular intervals, fine dust drifting downward through intersecting light beams, the floor stretching toward the far left corner where light fails, formal gravity, spectral hierarchy, clinical absence",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "far",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8123
+        }
+      ]
+    },
+    {
+      "shot_key": "4:S00404",
+      "scene_num": 4,
+      "shot_id": "S00404",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_004_S00404.png",
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "손길 하나로 D계급을 즉사시킨 그 존재의 정체는..."
+      ],
+      "image_prompt": "medium shot of a Foundation briefing room, an illuminated display terminal on the right side glowing with a personnel dossier interface, a steel chair on the left pulled back from the table leaving a gap of empty floor, a single document sheet lying on the ground with redaction bars catching the terminal glow, the long table stretching toward the right with its scuffed steel surface, wall monitors in the background showing static and a camera feed, ceiling fluorescent lighting casting harsh clinical shadows with one tube dead, condensation mist hanging low in the air, charged silence between two points in the room, lethal history, the cold distance where violence was measured",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8778
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/STOCK-d-class/epoch_2/front_candidate_1.png",
+          "fallback": true,
+          "angle_fallback": false,
+          "asset_fallback": true,
+          "fallback_reason": "asset",
+          "position": "left",
+          "depth": "near",
+          "motion_style": "hold",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "4:S00405",
+      "scene_num": 4,
+      "shot_id": "S00405",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_004_S00405.png",
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [
+        "그건 사람이 아니기 때문입니다."
+      ],
+      "image_prompt": "low-angle shot of a Foundation briefing room, an illuminated display terminal casting a cold blue glow that stretches long distorted shadows across the poured concrete floor, fresh dark scuff marks leading from the left third toward the center where the light intensifies, the display screen above showing a single classification file frozen in blue interface, ceiling panels receding into blackness overhead with one fluorescent tube flickering weakly, a steel table edge cutting through the right foreground with a scattered document glowing in the terminal light, condensation mist hanging at knee level catching the blue glow, the empty space along the left third compressed and dense, final revelation, the terrible stillness of an answer that cannot be unsaid",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "approach",
+          "movement_direction": "in",
+          "movement_pace": "slow",
+          "ground_y": 0.8778
+        }
+      ]
+    },
+    {
+      "shot_key": "5:S00501",
+      "scene_num": 5,
+      "shot_id": "S00501",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00501.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "로브 소매 밖으로 나온 살색 맨손, 차갑고 생기가 없죠."
+      ],
+      "image_prompt": "low-angle close view, a steel operating table edge catching cold light in the foreground left, pale blue surgical drapes bunched in folds on a tray beside it, ceiling-mounted surgical lamp throwing a hard oval of white light onto the empty table surface, the table's metal frame reflecting a distorted blob of fluorescent glow, medical instrument cabinet with brushed steel doors standing against the right wall, its glass front reflecting the overhead light in a blind glare, an IV stand with an empty saline bag swaying almost imperceptibly beside the table, the air cold and still with a faint greenish tint from the fluorescent tubes, frozen clinical numbness, visceral wrongness, procedural detachment",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "side",
+          "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "near",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.6882
+        }
+      ]
+    },
+    {
+      "shot_key": "5:S00502",
+      "scene_num": 5,
+      "shot_id": "S00502",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00502.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "그 손이 굳어버린 D계급 시체에 외과 수술을 시작합니다."
+      ],
+      "image_prompt": "over-the-shoulder perspective, a sterile operating theater with a steel gurney centered under a wide cold surgical lamp, the table surface bearing a dark indented body-shaped hollow in the thin padding, scattered blood-tinged saline puddles reflecting overhead light, instrument tray wheeled close on the right with forceps and needle drivers arranged in a precise arc, rubber tubing coiled on the floor near the table's wheel, wall-mounted heart monitor with a flat green line frozen on its display, harsh white surgical light washing out the far corner where shadowed supply cabinets stand, thin condensation mist hanging above the floor, tension-held breath, macabre focus, surgical dread",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "side",
+          "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9176
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "pose": "hint:475c8a9231",
+          "angle": "front",
+          "path": "assets/characters/STOCK-d-class/epoch_2/hint_475c8a9231_front.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "near",
+          "motion_style": "hold",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "5:S00503",
+      "scene_num": 5,
+      "shot_id": "S00503",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00503.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "마침내 시체가 기괴하게 움직이며 다시 일어섭니다."
+      ],
+      "image_prompt": "high-angle wide shot, an operating theater viewed from above near the ceiling corner, a steel gurney positioned off-center with surgical drapes thrown half onto the floor, an overturned instrument tray scattering metal tools across the scuffed linoleum, one forceps still rocking slightly on its side, the white sheet on the gurney hanging partially to the floor with a deep crease pressed into it as if something just rose from it, the cold surgical lamp swinging in a slow arc casting moving shadows that slide across the walls, a trail of fluid marks leading from the gurney toward the room's far door a few meters away, rows of wall cabinets with one door hanging open, the harsh overhead light casting elongated shadows that shift with the lamp's movement, reanimated wrongness, jarring violation, intimate terror",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "side",
+          "path": "assets/characters/SCP-049-2/epoch_2/side_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "near",
+          "motion_style": "pulse",
+          "motion_energy": "high",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8878
+        }
+      ]
+    },
+    {
+      "shot_key": "5:S00504",
+      "scene_num": 5,
+      "shot_id": "S00504",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00504.png",
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "그가 치료라 부르는 것의 결과, 오싹한 에스씨피 공사구 이의 탄생입니다."
+      ],
+      "image_prompt": "medium shot from behind the operating table, a deep body-shaped indentation pressed into the gurney's thin mattress, the surrounding surgical drapes rucked into dense folds as if wrenched aside, a ceiling ventilation grate directly above the table with a slow wisp of condensation curling from its vents, the room's far wall lined with steel cabinets, one door ajar exposing dark shelves inside, on the floor a discarded scalpel with a smear of dark fluid leading in a hesitant trail toward the room's exit door, the exit door heavy steel with a small wire-reinforced window showing only blackness beyond, cold fluorescent light casting long shadows that stretch toward the corners, a faintly visible breath vapor hanging in the air column above the table, shivering wrongness, guttural unease, fate-defying stillness",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "sway",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9305,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00504.occ_SCP-049-2_left_mid.png"
+        }
+      ]
+    },
+    {
+      "shot_key": "5:S00505",
+      "scene_num": 5,
+      "shot_id": "S00505",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_005_S00505.png",
+      "sentence_indices": [
+        5
+      ],
+      "sentences": [],
+      "image_prompt": "wide establishing shot, an empty operating theater now sitting in oppressive stillness, a lone steel gurney at the center with surgical drapes pooled on the floor around its legs, the overturned instrument tray lying on its side with scattered tools forming an uneven arc on the linoleum, the ceiling surgical lamp angled away from the table now illuminating a blank wall with peeling institutional paint, the room's exit door standing fully open revealing a dark corridor beyond its threshold, a single fluorescent tube flickering at irregular intervals casting rapid alternating shadows across the room, condensation and dust motes drifting through the strobing light, the used medicine bottles on the shelf now arranged in a clean row as if recently handled, a faint damp footprint trail on the floor leading out the door, stunned aftermath, hollow emptiness, lingering contamination",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049-2/epoch_2/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "far",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8302
+        }
+      ]
+    },
+    {
+      "shot_key": "6:S00600",
+      "scene_num": 6,
+      "shot_id": "S00600",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00600.png",
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "대상은 끊임없이 '대역병'을 치료한다고 주장합니다."
+      ],
+      "image_prompt": "slow push-in wide shot, Foundation interview room with a steel-frame table bolted to the poured concrete floor, restraint anchor straps hanging loose from the table edge, a worn black examination chair pushed back at an angle, a two-way observation mirror set into the left wall catching a thin cold reflection of the room's own light, recording equipment stacked on a side counter with a red indicator LED pulsing at a steady beat, brushed steel wall panels with expansion joints, twin rows of ceiling-mounted fluorescent tubes casting flat white light, faint condensation haze hanging in the cold air, a fine layer of settled dust on the table surface, clinical unease, obsessive persistence, measured dread",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "sway",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.7408
+        }
+      ]
+    },
+    {
+      "shot_key": "6:S00601",
+      "scene_num": 6,
+      "shot_id": "S00601",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00601.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "하지만 재단이 아무리 정밀 검사를 진행해도, 병의 실체는 측정할 수 없었죠."
+      ],
+      "image_prompt": "locked static medium shot, medical observation laboratory with a row of wall-mounted monitoring screens all displaying flat baseline readouts at zero, a large window into an adjacent dimmed examination bay filling the right third of the frame, a stainless steel workbench lining the left wall lined with empty sample vials and a dormant microscope, laminated test charts with blank data fields taped to the wall, calibration equipment with every dial resting at neutral, cool blue-white monitor glow overlapping the flat overhead fluorescent lighting, faint antiseptic residue haze in the air, moisture beading on the instrument trays, methodological helplessness, silent failure, impotent science",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "sitting",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/sitting_three_quarter.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8688
+        },
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.7627,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00601.occ_STOCK-researcher_left_mid.png"
+        }
+      ]
+    },
+    {
+      "shot_key": "6:S00602",
+      "scene_num": 6,
+      "shot_id": "S00602",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00602.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "대체 그가 시신 너머에서 보고 있는 증상은 무엇일까요?"
+      ],
+      "image_prompt": "slow-drift close-up shot, an empty stainless steel autopsy table filling the lower two-thirds of the frame, faint etched scratch marks and thin residual stain lines tracing where a body had been laid, a surgical instrument tray arranged at the head end with forceps and a scalpel placed in precise order, a single overhead surgical lamp throwing a hard oval of light across the pitted table surface, the surrounding room falling into soft darkness beyond the light cone, a row of sealed specimen drawers along the left wall with one drawer slightly ajar, cold sterile air with a faint metallic tang, dust motes drifting through the surgical light beam, uneasy curiosity, the weight of an unseen diagnosis, chilling vacancy",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "near",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555,
+          "occlusion_mask": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00602.occ_SCP-049_left_near.png"
+        }
+      ]
+    },
+    {
+      "shot_key": "6:S00603",
+      "scene_num": 6,
+      "shot_id": "S00603",
+      "mood": "clinical",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_006_S00603.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "오직 그 자신만이 확신하는, 기괴한 진단."
+      ],
+      "image_prompt": "slow push-in low-angle shot, Foundation interview room seen from floor level, an empty steel-frame chair standing alone in the middle foreground facing the camera, the bolted interview table receding toward a two-way observation mirror that reflects cold hard light, dark institutional grid lines of ceiling panels converging overhead, a single ventilation vent faintly visible in the upper right corner, harsh white fluorescent light raking across the concrete floor with long hard-edged shadows, thin dust suspended in the cold air, the emptiness of the facing chair amplifying the space where no answer sits, isolated certainty, lonely conviction, unshakable dread",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "near",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "7:S00700",
+      "scene_num": 7,
+      "shot_id": "S00700",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_007_S00700.png",
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "말이 통하고 협조적인 이 개체는, 스스로를 의사라 믿고 있었습니다."
+      ],
+      "image_prompt": "wide establishing shot, a Foundation interview chamber with poured concrete walls in flat institutional gray, an empty steel interview table bolted to the floor with restraint anchor brackets visible at its base, a worn leather-bound medical journal open at its edge with pages curling under a stack of case-note binders, a dusty vintage apothecary bottle with a handwritten label on a side shelf anchoring the left third, hairline cracks and peeling mint-green paint near the ceiling, twin recessed fluorescent panels casting even cold light, fine dust motes drifting through the beams, clinical formality, the quiet weight of a misplaced belief",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8688
+        }
+      ]
+    },
+    {
+      "shot_key": "7:S00702",
+      "scene_num": 7,
+      "shot_id": "S00702",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_007_S00702.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "연구원이 묻습니다."
+      ],
+      "image_prompt": "medium shot across the interview table, a wall-mounted clock with a cracked face and a red recording-indicator light glowing on a ceiling camera bracket on the far wall, scattered paperwork with fingerprint smudges and an open steel clipboard on the table's left edge, two empty plastic water cups and a tangled audio cable snaking across the concrete floor, fluorescent battens humming cold white light above, the air heavy with still dust, formal distance straining at its limit, the space between words tightening",
+      "cast": [
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/STOCK-researcher/epoch_2/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.6395
+        },
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.86
+        }
+      ]
+    },
+    {
+      "shot_key": "7:S00703",
+      "scene_num": 7,
+      "shot_id": "S00703",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_007_S00703.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "당신이 정말 의사냐고."
+      ],
+      "image_prompt": "close-up across the interview table, an old-fashioned brass stethoscope lying coiled and tarnished on the metal surface in the foreground, a half-filled cup of cold coffee with a skin forming on its surface near the right edge, the far wall receding into flat gray as the light dims, a documentary camera lens reflecting the room's cold white light in the background, the strobing edge of an overhead fluorescent tube at frame top, slow dust settling in the beam, credibility suspended in doubt, a question that refuses to land",
+      "cast": [
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "near",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "7:S00704",
+      "scene_num": 7,
+      "shot_id": "S00704",
+      "mood": "revelation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_007_S00704.png",
+      "sentence_indices": [
+        4
+      ],
+      "sentences": [
+        "그러자 그가 차분히 답했습니다, 죽음은 치료의 과정일 뿐이라고 말입니다."
+      ],
+      "image_prompt": "low-angle view from beneath the interview table's edge, the table top looming as a dark geometric slab against the far concrete wall, a single aged bone saw with a worn wooden handle resting on a cloth near the left edge, the wall behind marked with faint repetitive scratches, recessed lighting panels casting long hard shadows that stretch diagonally across the floor, the air colder near the floor with a visible wisp of breath-mist catching the light, a slow pull-back settling the frame wide, medical certainty turned to stone, the calm of an unshakable conviction",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "three_quarter",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8997
+        }
+      ]
+    },
+    {
+      "shot_key": "8:S00800",
+      "scene_num": 8,
+      "shot_id": "S00800",
+      "mood": "escalation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_008_S00800.png",
+      "sentence_indices": [
+        0
+      ],
+      "sentences": [
+        "수술이 끝난 시체, 에스씨피 공사구 이가 기괴하게 일어서서 걸어다닙니다."
+      ],
+      "image_prompt": "wide shot of a bare containment cell with a drained steel autopsy table angled center-left, surgical instruments scattered across a stainless tray that has tipped partway off the table edge, fresh dark stains trailing across the poured concrete floor in a meandering path toward the cell's far corner, heavy hydraulic blast door sealed on the right third of the frame with its viewport glass fogged on the interior side, single overhead surgical lamp still swaying on a short arc as if brushed moments ago, cold fluorescent wash from the ceiling band dimmed to a sickly pale green, thin condensation hanging at knee level, the specific wrongness of a room that should be empty, waking disbelief",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "back",
+          "path": "assets/characters/SCP-049-2/epoch_2/back_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "pulse",
+          "motion_energy": "medium",
+          "movement_mode": "cross",
+          "movement_direction": "right",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "8:S00801",
+      "scene_num": 8,
+      "shot_id": "S00801",
+      "mood": "escalation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_008_S00801.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "되살아난 그 몸은, 더 이상 인간의 것이 아니었죠."
+      ],
+      "image_prompt": "medium shot of the cell's interior from just inside the sealed door, wire-mesh observation window running along the left wall with faint fingertip smudges pressed into the interior glass at uneven heights, the steel table edge in sharp focus at frame bottom with a single scalpel catching the pale green overhead light, a thin film of frost creeping across the concrete floor near the baseboard, wall-mounted intercom speaker with its grille crusted in old adhesive residue, single fluorescent tube strobing at an irregular rhythm casting shifting rectangles of dim light across the empty floor, faint mist curling from a floor grate, the pressure of words spoken into silence, suffocating nearness, arrested breath",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "side",
+          "path": "assets/characters/SCP-049-2/epoch_2/side_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "near",
+          "motion_style": "tremble",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "8:S00802",
+      "scene_num": 8,
+      "shot_id": "S00802",
+      "mood": "escalation",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_008_S00802.png",
+      "sentence_indices": [
+        2
+      ],
+      "sentences": [
+        "그 기이한 움직임을 관측하는 연구진에겐, 차가운 혼란이 번져갑니다."
+      ],
+      "image_prompt": "over-the-shoulder view from the observation room's control station, a wide wire-mesh glass panel filling the frame with the containment cell beyond it, the far wall of the cell lit by pale green emergency lighting, bank of monitoring screens mounted above the glass with live feeds each frozen at a different timestamp, together forming a fractured sequence of the same empty stretch of floor, lower console surface cluttered with scattered printouts and an abandoned mug with a thin curl of steam still rising, the glass smudged with repeated hand contact at eye level, harsh overhead fluorescents catching drifting dust motes across the observation bay, institutional paralysis, creeping doubt, measured alarm",
+      "cast": [
+        {
+          "card_key": "SCP-049-2",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "far",
+          "motion_style": "pulse",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.708
+        },
+        {
+          "card_key": "STOCK-researcher",
+          "pose": "standing",
+          "angle": "side",
+          "path": "assets/characters/STOCK-researcher/epoch_2/side_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "right",
+          "depth": "mid",
+          "motion_style": "sway",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9047
+        }
+      ]
+    },
+    {
+      "shot_key": "9:S00901",
+      "scene_num": 9,
+      "shot_id": "S00901",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_009_S00901.png",
+      "sentence_indices": [
+        1
+      ],
+      "sentences": [
+        "기원조차 미궁인 채, 도구도 없이, 홀로 앉아 있는 에스씨피 공사구."
+      ],
+      "image_prompt": "medium shot, a bare concrete containment cell with a metal cot against the back wall, cot has no mattress, just a thin metal frame, floor has a worn circular indentation near the center-left, dust accumulates along the wall edges, wall has a sealed air vent with a grid, left side of the cell is bare, a single ceiling-mounted fluorescent tube emits a cold blue-white light, slightly flickering, casting a faint shadow of the cot on the wall, fine mist hangs at ankle height, air feels heavy and still, a small observation window on the door is visible on the right, the cell is compact and oppressive, solitary confinement, originless existence, profound emptiness",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "sitting",
+          "angle": "back",
+          "path": "assets/characters/SCP-049/epoch_1/sitting_back.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "left",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "low",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.9420555555555555
+        }
+      ]
+    },
+    {
+      "shot_key": "9:S00903",
+      "scene_num": 9,
+      "shot_id": "S00903",
+      "mood": "dread",
+      "plate": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/images/scene_009_S00903.png",
+      "sentence_indices": [
+        3
+      ],
+      "sentences": [
+        "오늘도 그는 셀 안에서 당신을 기다립니다."
+      ],
+      "image_prompt": "low-angle shot, the interior of a containment cell viewed from floor level, looking up toward a heavy reinforced door at the far end, door has a small window showing a sliver of bright corridor light, walls converge toward the ceiling, a ventilation grille on the upper left, the floor is a uniform layer of fine dust, door is centered in the frame, a beam of corridor light creates a bright spot on the floor, rest of the cell is in deep shadow, a faint blue glow from an emergency light on the wall, haze hangs in the air making the light beam visible as a solid shaft, the cell feels closed and eternal, vigilant waiting, inescapable presence, eternal vigilance",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "pose": "standing",
+          "angle": "front",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "fallback": false,
+          "angle_fallback": false,
+          "asset_fallback": false,
+          "fallback_reason": null,
+          "position": "center",
+          "depth": "mid",
+          "motion_style": "breath",
+          "motion_energy": "medium",
+          "movement_mode": "anchored",
+          "movement_direction": "none",
+          "movement_pace": "slow",
+          "ground_y": 0.8688
+        }
+      ]
+    }
+  ]
+}

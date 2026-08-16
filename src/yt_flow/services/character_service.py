@@ -112,6 +112,23 @@ def _scrub_phrase(text: str, phrase: str) -> str:
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
+# A base-pose card is drawn once and reused in every shot that places this character,
+# so the arms should be doing nothing in particular — "standing upright" alone leaves
+# them entirely to the model, and one 2026-08-16 regeneration came back with a hand
+# raised to the chin in all four angles.
+#
+# TRIED AND REVERTED that same day: "standing upright, arms hanging relaxed at the
+# sides, both hands visible and empty, neutral resting pose". It removed the gesture and
+# broke more than it fixed — proportions went stubby, the `back` angle stopped being a
+# back view, and detached boots floated beside the figure. Isolated to this string: the
+# FRONT card is generated before vision enrichment runs, so enrichment could not be the
+# cause, and a re-render with the costume descriptor reverted was still broken.
+# The likely mechanism is dilution. Everything in this project's live tuning notes says
+# the identity tags are barely winning as it is — `_BARE_FACE` states "mature adult male"
+# three ways because one adjective lost to the checkpoint's pull toward young/chibi
+# (`scripts/seed_stock_cast.py`). Four more pose words compete for the same attention.
+# A future attempt should buy the pose without spending tag budget — a pose guide
+# (`humanoid_*`, already built for hint cards) rather than more prompt text.
 _POSE_DESCRIPTIONS: dict[str, str] = {
     "standing": "standing upright",
     "sitting": "sitting on a plain simple chair, seated pose",

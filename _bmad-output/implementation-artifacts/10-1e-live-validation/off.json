@@ -1,0 +1,209 @@
+{
+  "generated_at": "2026-08-16T21:56:15+0900",
+  "arm": "off",
+  "renderer": "video.render_composite_still (production _build_card_chain)",
+  "composite_harmonization_tier": 1,
+  "total_seconds": 129.5,
+  "rendered": 33,
+  "failed": [],
+  "frames": [
+    {
+      "shot_id": "S00101",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00101.png",
+      "size": "1920x1080",
+      "seconds": 5.13
+    },
+    {
+      "shot_id": "S00102",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00102.png",
+      "size": "1920x1080",
+      "seconds": 3.42
+    },
+    {
+      "shot_id": "S00103",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00103.png",
+      "size": "1920x1080",
+      "seconds": 3.48
+    },
+    {
+      "shot_id": "S00104",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00104.png",
+      "size": "1920x1080",
+      "seconds": 3.41
+    },
+    {
+      "shot_id": "S00200",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00200.png",
+      "size": "1920x1080",
+      "seconds": 3.42
+    },
+    {
+      "shot_id": "S00202",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00202.png",
+      "size": "1920x1080",
+      "seconds": 3.4
+    },
+    {
+      "shot_id": "S00203",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00203.png",
+      "size": "1920x1080",
+      "seconds": 4.97
+    },
+    {
+      "shot_id": "S00204",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00204.png",
+      "size": "1920x1080",
+      "seconds": 3.36
+    },
+    {
+      "shot_id": "S00300",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00300.png",
+      "size": "1920x1080",
+      "seconds": 3.34
+    },
+    {
+      "shot_id": "S00301",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00301.png",
+      "size": "1920x1080",
+      "seconds": 3.38
+    },
+    {
+      "shot_id": "S00302",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00302.png",
+      "size": "1920x1080",
+      "seconds": 3.34
+    },
+    {
+      "shot_id": "S00303",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00303.png",
+      "size": "1920x1080",
+      "seconds": 3.35
+    },
+    {
+      "shot_id": "S00402",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00402.png",
+      "size": "1920x1080",
+      "seconds": 3.38
+    },
+    {
+      "shot_id": "S00404",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00404.png",
+      "size": "1920x1080",
+      "seconds": 5.05
+    },
+    {
+      "shot_id": "S00405",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00405.png",
+      "size": "1920x1080",
+      "seconds": 3.44
+    },
+    {
+      "shot_id": "S00501",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00501.png",
+      "size": "1920x1080",
+      "seconds": 3.44
+    },
+    {
+      "shot_id": "S00502",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00502.png",
+      "size": "1920x1080",
+      "seconds": 5.16
+    },
+    {
+      "shot_id": "S00503",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00503.png",
+      "size": "1920x1080",
+      "seconds": 3.34
+    },
+    {
+      "shot_id": "S00504",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00504.png",
+      "size": "1920x1080",
+      "seconds": 3.54
+    },
+    {
+      "shot_id": "S00505",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00505.png",
+      "size": "1920x1080",
+      "seconds": 3.37
+    },
+    {
+      "shot_id": "S00600",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00600.png",
+      "size": "1920x1080",
+      "seconds": 3.73
+    },
+    {
+      "shot_id": "S00601",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00601.png",
+      "size": "1920x1080",
+      "seconds": 5.59
+    },
+    {
+      "shot_id": "S00602",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00602.png",
+      "size": "1920x1080",
+      "seconds": 3.88
+    },
+    {
+      "shot_id": "S00603",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00603.png",
+      "size": "1920x1080",
+      "seconds": 3.97
+    },
+    {
+      "shot_id": "S00700",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00700.png",
+      "size": "1920x1080",
+      "seconds": 3.58
+    },
+    {
+      "shot_id": "S00702",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00702.png",
+      "size": "1920x1080",
+      "seconds": 5.39
+    },
+    {
+      "shot_id": "S00703",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00703.png",
+      "size": "1920x1080",
+      "seconds": 3.59
+    },
+    {
+      "shot_id": "S00704",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00704.png",
+      "size": "1920x1080",
+      "seconds": 3.56
+    },
+    {
+      "shot_id": "S00800",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00800.png",
+      "size": "1920x1080",
+      "seconds": 3.77
+    },
+    {
+      "shot_id": "S00801",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00801.png",
+      "size": "1920x1080",
+      "seconds": 4.26
+    },
+    {
+      "shot_id": "S00802",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00802.png",
+      "size": "1920x1080",
+      "seconds": 6.38
+    },
+    {
+      "shot_id": "S00901",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00901.png",
+      "size": "1920x1080",
+      "seconds": 3.55
+    },
+    {
+      "shot_id": "S00903",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00903.png",
+      "size": "1920x1080",
+      "seconds": 3.52
+    }
+  ]
+}

@@ -532,10 +532,27 @@ class ComfyUICharacterProvider(CharacterImageProvider):
     def _inject_seed(workflow: dict) -> dict:
         """Randomize KSampler.seed — the authored workflow JSON pins seed=0, which
         would make repeated angle generations more likely to converge on near-identical
-        output for a given prompt/reference pair."""
+        output for a given prompt/reference pair.
+
+        ``YTFLOW_CARD_SEED`` overrides the randomization with a fixed value. That is an
+        EVALUATION lever, not a production one: an unseeded generator makes any
+        single-sample before/after comparison of a prompt change meaningless, which was
+        learned the expensive way on 2026-08-16 — four GPU renders were spent attributing
+        differences that turned out to be draw-to-draw variance, on a day that had already
+        recorded the same lesson (median-over-N) about a cheaper axis. `scripts/
+        repair_squared_alpha.py` had also recorded it, choosing to repair damaged cards
+        rather than regenerate them "(seed is random)".
+
+        ponytail: read from the environment rather than threaded through
+        `generate()` -> `generate_candidates_from_reference` -> `generate_cards_from_descriptor`
+        -> the seeder CLI. Four signatures for a knob only an A/B run touches is the
+        wrong trade; if a caller ever needs per-call seeds, thread it then.
+        """
+        pinned = os.environ.get("YTFLOW_CARD_SEED")
+        seed = int(pinned) if pinned and pinned.lstrip("-").isdigit() else None
         for node in workflow.values():
             if isinstance(node, dict) and node.get("class_type") == "KSampler":
-                node["inputs"]["seed"] = random.randint(0, 2**32 - 1)
+                node["inputs"]["seed"] = random.randint(0, 2**32 - 1) if seed is None else seed
         return workflow
 
     @staticmethod

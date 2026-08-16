@@ -1,0 +1,29 @@
+# Story 10.1e live-validation artifacts — paired recompose ON/OFF scoring of run
+# e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889.
+#
+# COMMITTED: the adjudication images the verdict cites (`pairs_grid.jpg`, the per-shot
+# `pair_sheets/*.jpg` for every discordant shot), every script, and every JSON that
+# re-derives a number — screening.json, pairs.json, off.json, on.json, results.json,
+# pairs_key.json, verdict.json, PREREGISTRATION.md, README.md.
+#
+# IGNORED: the raw 1920x1080 renders those sheets were built from —
+#   off/    the incumbent arm, rebuilt by `run_pairs.py render-off` (ffmpeg only, no GPU,
+#           ~2 minutes) against the committed pairs.json.
+#   on/     the treatment arm, re-framed copies of the recompose output. Rebuilt by
+#           `run_pairs.py render-on` — which needs ComfyUI started with
+#           `--lowvram --disable-smart-memory --cache-lru 10` and >=12 GiB free RAM, and
+#           costs roughly an hour of GPU time for 40 passes.
+#   blind/  opaque-id copies of the two arms, rebuilt by `run_pairs.py score` in seconds
+#           from off/ + on/ + the committed pairs_key.json.
+#
+# DO NOT BLANKET-DELETE. `workspace/e5ed4b3a-.../recomposed/` is the ONLY copy of the ON
+# arm's source renders: `on/` holds re-framed derivatives, not originals, and rebuilding
+# the sources means paying the GPU hour again. If you must clear space here, delete with an
+# explicit exclusion — never `git clean`, which would also take the committed sheets'
+# regeneration inputs and, in this directory's neighbours, has previously destroyed the
+# only surviving copy of a render a human judged (see 10-1b-live-validation/.gitignore).
+
+off/
+on/
+blind/
+score_progress.jsonl
