@@ -25,6 +25,22 @@ SOURCE_SUFFIXES = {".md", ".tmpl"}
 
 # Stable Langfuse names for known source files (folders = slashes).
 # Files not listed here get a name derived from their path (suffix stripped).
+#
+# 2026-08-16 — THE CHARACTER ENTRIES BELOW ARE NOT COSMETIC. `derive_name` produces
+# `character/vision_enrichment`, but `character_service.py` fetches
+# `character-vision-enrichment` (:769, :1230, :1820 — hyphens, no underscore). Both
+# families existed live in Langfuse, so running this script "successfully" created a
+# new version under a name nothing reads while the runtime kept serving a stale one.
+# CLAUDE.md's DEV MODE section names this script as *the* way to ship a prompt edit, so
+# for three months a character prompt edit could be seeded, reported as created, and
+# never reach a run. That is what `test_prompt_seeding_covers_runtime_names` now pins.
+#
+# Only prompt names that a runtime reader actually fetches belong in this map. The
+# `image/*`, `tts/scenario_refine` and `vision/descriptor_enrichment` entries that used
+# to sit here were removed in the same pass: a reader census over `src/` and `scripts/`
+# found no `get_prompt` call for any of them and their source files no longer exist, so
+# they mapped nothing to nothing (`gotcha_deleting-a-constant-needs-a-reader-census` —
+# the census is what licensed the deletion, not the fact that they looked unused).
 SOURCE_TO_NAME = {
     "scenario/01_research.md": "scenario/research",
     "scenario/02_structure.md": "scenario/structure",
@@ -34,10 +50,9 @@ SOURCE_TO_NAME = {
     "scenario/critic_agent.md": "scenario/critic_agent",
     "scenario/format_guide.md": "scenario/format_guide",
     "scenario/tts_normalize.md": "scenario/tts_normalize",
-    "image/01_shot_breakdown.md": "image/shot_breakdown",
-    "image/02_shot_to_prompt.md": "image/shot_to_prompt",
-    "tts/scenario_refine.md": "tts/scenario_refine",
-    "vision/descriptor_enrichment.md": "vision/descriptor_enrichment",
+    "character/angle_selection.md": "character-angle-selection",
+    "character/generation.md": "character-generation",
+    "character/vision_enrichment.md": "character-vision-enrichment",
 }
 
 # No runtime entrypoint aliases: scenario_chain.py fetches prompts by their

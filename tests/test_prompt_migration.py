@@ -3,6 +3,7 @@
 No live Langfuse: migration is exercised against an in-memory fake client.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -124,3 +125,47 @@ def test_migrate_creates_new_version_when_changed():
     results = mp.migrate(client, {"scenario": "new"}, "production")
     assert results["scenario"] == "created"
     assert client.created == ["scenario"]
+
+
+# ── The seeder must cover every name the runtime actually fetches ───────────
+#
+# 2026-08-16 (Story 10.8, round 3). `derive_name` turned
+# `prompts/character/vision_enrichment.md` into `character/vision_enrichment`, while
+# `character_service.py` fetches `character-vision-enrichment`. Both names existed in
+# live Langfuse, so seeding "succeeded" — printed `created` — and the runtime went on
+# serving a stale prompt. CLAUDE.md's DEV MODE section names this script as *the* way to
+# ship a prompt edit, so the documented workflow silently did nothing for every character
+# prompt. Nothing in the suite could catch it, because every existing test here checks
+# migrate() against names the test itself supplies.
+#
+# This one instead reads the names out of the source tree: any `get_prompt("...")` /
+# `get_prompt_with_fallback("...")` literal in `src/` is a name a run will ask Langfuse
+# for, and the seeder's manifest has to contain it.
+
+def _runtime_prompt_names() -> set[str]:
+    """Literal prompt names fetched by `src/`. Dynamic names are handled by the caller."""
+    src = Path(__file__).parent.parent / "src"
+    pattern = re.compile(r"""get_prompt(?:_with_fallback)?\(\s*["']([^"']+)["']""")
+    names: set[str] = set()
+    for path in src.rglob("*.py"):
+        names.update(pattern.findall(path.read_text(encoding="utf-8")))
+    return names
+
+
+def test_prompt_seeding_covers_runtime_names():
+    manifest = mp.build_manifest(Path(__file__).parent.parent / "prompts")
+    missing = sorted(_runtime_prompt_names() - set(manifest))
+    assert not missing, (
+        "these prompt names are fetched at runtime but the seeder would never create "
+        f"them, so editing their repo file cannot reach a run: {missing}"
+    )
+
+
+def test_runtime_name_census_actually_found_something():
+    # A regex that silently matches nothing would make the test above vacuously green —
+    # the exact failure mode it exists to prevent. Pin the three names whose mismatch
+    # started this, so a rename has to come here and be thought about.
+    names = _runtime_prompt_names()
+    assert len(names) >= 5, f"prompt-name census looks broken, found only: {sorted(names)}"
+    assert {"character-generation", "character-vision-enrichment",
+            "character-angle-selection"} <= names
