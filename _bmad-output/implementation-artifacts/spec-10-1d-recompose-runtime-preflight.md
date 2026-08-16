@@ -2,9 +2,10 @@
 title: 'Story 10.1d — Recompose runtime-prerequisite preflight (10.1c unblock condition (b))'
 type: 'feature'
 created: '2026-08-16'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_revision: 'd39037f'
+final_revision: 'eb59250'
 followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
