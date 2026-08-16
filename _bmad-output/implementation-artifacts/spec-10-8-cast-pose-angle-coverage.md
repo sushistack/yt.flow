@@ -2,10 +2,11 @@
 title: 'Story 10.8 — Cast pose/angle coverage: 21 identical front-facing shots'
 type: 'bugfix'
 created: '2026-08-16'
-status: 'in-review'
+status: 'blocked'
 review_loop_iteration: 0
 followup_review_recommended: true
 baseline_revision: 'c7c3789'
+final_revision: '23ebd2b'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/10-8-cast-pose-angle-coverage.md'
@@ -262,3 +263,24 @@ Sized on live data: run `e5ed4b3a` emitted **2** `pose_hint`s across 40 placemen
 1. **The rendered before/after verdict (story AC9) — HALT `blocked`, blocking condition: `Jay viewing verdict required`.** This epic closes on frames a human judged; an unattended run cannot obtain one. Evidence package path: `_bmad-output/implementation-artifacts/10-8-live-validation/`. The measured legs above are inputs to that verdict, not a substitute for it.
 2. **The library fill (story AC3/AC7).** ComfyUI verified down on 2026-08-16 — no listener on 8188, `curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8188/system_stats` → `000`. Not started, and no card generated or approved: writing a card row *is* publishing (`gotcha_standing-cards-have-no-approval-gate`). Sized input for the follow-up: the 36-slot `MISSING` summary above. AC7 (epoch match) applies — SCP-049's approved cards are epoch 1, STOCK-d-class epoch 2, and the run already mixes them on screen.
 3. **The figure-count guard is unvalidated against a real render.** It is unit-tested on synthetic zero-, one- and two-blob PNGs and its `0.15` area floor is reasoned from measured numbers (a flanking duplicate is 30–70% of the subject, dither speckle under 2%), but no live sprite has passed through it — same ComfyUI outage. The review pass widened it from "reject ≥ 2" to "reject anything that is not exactly 1", because the zero case (post-opening emptiness — a speckle-only render) was passing the guard, passing `has_alpha`'s IHDR read, and reaching disk, manifest and an approved `CharacterCard`. Its stated ceiling (overlapping figures are one component and pass) and one behaviour change it introduces (the separated case used to be silently repaired by `_clean_alpha_noise`'s keep-largest and shipped; it is now refused) are recorded in `deferred-work.md`.
+
+### Final status — 2026-08-16
+
+Status: **blocked** — blocking condition: **Jay viewing verdict required**.
+
+Committed as `23ebd2b`. Everything reachable without a GPU or a human eye is done and measured:
+the two code defects that account for 39 of the 40 placements are fixed and re-measured against a
+reproduced baseline, the library gap is sized (`MISSING 36 of 72`, all `sitting` except `SCP-999`),
+and the figure-count guard that must exist before that fill runs is in and unit-tested.
+
+Two things this story cannot close unattended, both named in `Block If` before implementation began:
+
+1. **Story AC9, the rendered before/after.** This epic closes on frames a human judged, and the
+   measured legs above are inputs to that verdict rather than a substitute for it. Evidence package:
+   [`10-8-live-validation/`](10-8-live-validation/).
+2. **Story AC3/AC7, the library fill.** ComfyUI verified down; card approval is publication with no
+   downstream gate (`gotcha_standing-cards-have-no-approval-gate`), so nothing was generated.
+
+`followup_review_recommended: true` — the review pass applied 24 patches including three high-severity
+ones that change failure containment (`return_exceptions`), a diagnostic label, and what the AC8 guard
+refuses. That is enough behavioural change to deserve an independent second look.
