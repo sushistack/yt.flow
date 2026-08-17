@@ -103,8 +103,12 @@ async def lifespan(app: FastAPI):
     inject_relight_resolver(_precompute_relights)
 
     # Story 10.1c: regenerate each shot from plate + cards + a placement instruction.
-    # Gated off by default — the overlay path is untouched until the full-run viewing
-    # verdict lands. Injected unconditionally so flipping the flag needs no restart.
+    # ON BY DEFAULT since Story 10.1e (Jay's viewing verdict, 2026-08-17). Injected
+    # unconditionally, so every run now reaches `recompose_service._preflight` and
+    # REQUIRES ComfyUI started with `--lowvram --cache-lru <n>0`; a miss bails the whole
+    # run to the overlay with a `recompose_preflight_failed` warning. See
+    # `data/comfyui/README.md` — the launcher must pass those flags or the default is
+    # inert and every run files that warning.
     async def _recompose_shots(scenes: list, cast_cards: dict) -> tuple[dict, dict]:
         return await recompose_service.recompose_run_shots(scenes, cast_cards, settings)
 

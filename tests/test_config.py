@@ -237,3 +237,22 @@ def test_deepseek_settings_survive_the_split(monkeypatch):
     assert s.deepseek_model == "deepseek-v4-flash"
     assert s.deepseek_max_tokens == 32768
     assert s.deepseek_judge_model == "deepseek-v4-flash"
+
+def test_recompose_defaults(monkeypatch):
+    """Story 10.1e flipped `shot_recompose_enabled` to True on Jay's viewing verdict, and
+    nothing pinned it in either direction — a stale `.env` pin or a silent revert would be
+    invisible (`gotcha_env-file-beats-code-default`). The RAM floor is pinned with it
+    because the flip is what makes the preflight run on every production run.
+    """
+    _base_env(monkeypatch)
+    for key in (
+        "YTFLOW_SHOT_RECOMPOSE_ENABLED",
+        "YTFLOW_RECOMPOSE_PREFLIGHT_MIN_FREE_RAM_GB",
+        "YTFLOW_SHOT_RECOMPOSE_WORKFLOW_PATH",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    from yt_flow.config import Settings
+    s = Settings(_env_file=None)
+    assert s.shot_recompose_enabled is True
+    assert s.recompose_preflight_min_free_ram_gb == 12.0
+    assert s.shot_recompose_workflow_path.endswith("comfyui_shot_recompose_qwen_api.json")

@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-08-17T18:25:03+0900",
+  "purpose": "the human gate 10.1e's scored axis does not cover: grounding, the motion the ON arm removes by design, and per-shot identity drift",
+  "excluded": "11.5 depth parallax — needs the injected 2.5D renderer; both arms here are legacy Ken Burns, which understates the OFF arm",
+  "harmonization_tier": 1,
+  "clips": [
+    {
+      "shot_id": "S00101",
+      "seconds": 5.28,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/00_S00101.mp4",
+      "cast": [
+        "STOCK-d-class",
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00104",
+      "seconds": 2.04,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/01_S00104.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00202",
+      "seconds": 3.84,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/02_S00202.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00405",
+      "seconds": 4.0,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/03_S00405.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "fallback"
+    },
+    {
+      "shot_id": "S00501",
+      "seconds": 3.44,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/04_S00501.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00600",
+      "seconds": 3.0,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/05_S00600.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00800",
+      "seconds": 4.52,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/06_S00800.mp4",
+      "cast": [
+        "SCP-049-2"
+      ],
+      "duration_source": "shipped clip"
+    },
+    {
+      "shot_id": "S00903",
+      "seconds": 2.2,
+      "clip": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/07_S00903.mp4",
+      "cast": [
+        "SCP-049"
+      ],
+      "duration_source": "shipped clip"
+    }
+  ],
+  "identity_sheets": [
+    {
+      "card_key": "SCP-049",
+      "shots": [
+        "S00101",
+        "S00103",
+        "S00104",
+        "S00200",
+        "S00202",
+        "S00203",
+        "S00204",
+        "S00300",
+        "S00301",
+        "S00303",
+        "S00402",
+        "S00404",
+        "S00405",
+        "S00501",
+        "S00502",
+        "S00600",
+        "S00601",
+        "S00602",
+        "S00603",
+        "S00700",
+        "S00702",
+        "S00704",
+        "S00901",
+        "S00903"
+      ],
+      "sheet": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/identity_SCP-049.jpg"
+    },
+    {
+      "card_key": "SCP-049-2",
+      "shots": [
+        "S00503",
+        "S00504",
+        "S00505",
+        "S00800",
+        "S00801",
+        "S00802"
+      ],
+      "sheet": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/identity_SCP-049-2.jpg"
+    },
+    {
+      "card_key": "STOCK-researcher",
+      "shots": [
+        "S00203",
+        "S00302",
+        "S00601",
+        "S00702",
+        "S00703",
+        "S00802"
+      ],
+      "sheet": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/identity_STOCK-researcher.jpg"
+    },
+    {
+      "card_key": "STOCK-d-class",
+      "shots": [
+        "S00101",
+        "S00102",
+        "S00404",
+        "S00502"
+      ],
+      "sheet": "_bmad-output/implementation-artifacts/10-1e-live-validation/viewing/identity_STOCK-d-class.jpg"
+    }
+  ],
+  "read_once_observations": {
+    "status": "one pass by the implementing agent, NOT a viewing verdict. Jay's judgement is the gate.",
+    "grounding": "On every pair looked at, the ON arm places the figure on the floor with a cast shadow and in the room's own palette; the OFF arm's card keeps its blue tint against a monochrome room and is occluded by foreground furniture at the waist (S00600), or stands on top of a lab bench (S00501). Direction favours ON. This is the axis recompose was built for and the axis the blind score does not read.",
+    "motion_loss": "Both arms here are legacy Ken Burns, so what the clips show of the ON arm's loss is only 1.9c idle motion (off for ON by construction). 11.5 parallax is EXCLUDED from both arms, so the OFF arm is understated on motion.",
+    "identity": "Systematic, by design: OFF re-uses one card per character so the mask and robe are pixel-identical every shot; ON redraws the figure per shot, and mask brightness and robe rendering vary across shots. identity_*.jpg is the sheet to judge whether that variation is drift or acceptable.",
+    "what_this_does_to_the_scored_result": "It weakens b=2, which is the entire margin (b-c=1 is the rule's exact boundary). Both b shots look BETTER composited in the ON arm while scoring worse: on S00501 the OFF arm's readable `event` was a figure standing ON a bench next to a glowing sheet; on S00600 the two frames are near-identical in content -- a plague-masked figure standing in a room -- and OFF was called readable while ON got `event: unclear`. At reps=1 that is consistent with judge noise at the margin. It does NOT license re-deciding: the rule was committed before scoring. It does mean a reader should not read b=2 as composition damage. The cheap test is a reps=3 median rescore, reported ALONGSIDE the reps=1 pre-registered run, never instead of it."
+  }
+}

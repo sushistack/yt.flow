@@ -11,8 +11,9 @@
 #           ~2 minutes) against the committed pairs.json.
 #   on/     the treatment arm, re-framed copies of the recompose output. Rebuilt by
 #           `run_pairs.py render-on` — which needs ComfyUI started with
-#           `--lowvram --disable-smart-memory --cache-lru 10` and >=12 GiB free RAM, and
-#           costs roughly an hour of GPU time for 40 passes.
+#           `--lowvram --cache-lru 10` and >=12 GiB free RAM, and costs roughly 1.2 h of
+#           GPU time for 40 passes. Do NOT add `--disable-smart-memory`: 10.1e measured it
+#           at 385-677 s/pass against 108 without it, and REQUIRED_FLAGS dropped it.
 #   blind/  opaque-id copies of the two arms, rebuilt by `run_pairs.py score` in seconds
 #           from off/ + on/ + the committed pairs_key.json.
 #
@@ -27,3 +28,11 @@ off/
 on/
 blind/
 score_progress.jsonl
+
+# Viewing package (10.1e, for the human gate the scored axis does not cover).
+# COMMITTED: viewing.json (what was built, what is excluded, the read-once notes) and the
+#   identity_*.jpg sheets — those are adjudication images and survive at ~256px per cell.
+# IGNORED: the side-by-side motion clips. ~8 MB, and rebuilt in about a minute with
+#   `run_pairs.py viewing` (ffmpeg only, NO GPU) from off/ + on/, which are themselves
+#   rebuilt by `render-off` / `render-on`. Keep off/ and on/ before deleting these.
+viewing/*.mp4

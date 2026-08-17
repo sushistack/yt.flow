@@ -1,0 +1,402 @@
+{
+  "salt": "10-1e-recompose-verdict",
+  "id_rule": "sha256(f'{shot_id}|{arm}|{salt}').hexdigest()[:12]",
+  "frames": [
+    {
+      "blind_id": "01e1d86361e8",
+      "shot_id": "S00203",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00203.png"
+    },
+    {
+      "blind_id": "023e1621cdc7",
+      "shot_id": "S00104",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00104.png"
+    },
+    {
+      "blind_id": "0379a55bd77d",
+      "shot_id": "S00600",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00600.png"
+    },
+    {
+      "blind_id": "03df1c3242d5",
+      "shot_id": "S00501",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00501.png"
+    },
+    {
+      "blind_id": "06fbd7f848f1",
+      "shot_id": "S00103",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00103.png"
+    },
+    {
+      "blind_id": "0a85c9342a24",
+      "shot_id": "S00104",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00104.png"
+    },
+    {
+      "blind_id": "0d43c4ef608e",
+      "shot_id": "S00404",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00404.png"
+    },
+    {
+      "blind_id": "0e5ed1161cfd",
+      "shot_id": "S00103",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00103.png"
+    },
+    {
+      "blind_id": "11d4f6ab7844",
+      "shot_id": "S00801",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00801.png"
+    },
+    {
+      "blind_id": "12e14a6b311d",
+      "shot_id": "S00300",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00300.png"
+    },
+    {
+      "blind_id": "1434e0cf38f7",
+      "shot_id": "S00800",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00800.png"
+    },
+    {
+      "blind_id": "16159914989a",
+      "shot_id": "S00802",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00802.png"
+    },
+    {
+      "blind_id": "17110b68dca4",
+      "shot_id": "S00404",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00404.png"
+    },
+    {
+      "blind_id": "18fdd6d48705",
+      "shot_id": "S00501",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00501.png"
+    },
+    {
+      "blind_id": "1b7df79dbc3a",
+      "shot_id": "S00601",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00601.png"
+    },
+    {
+      "blind_id": "22645536d3af",
+      "shot_id": "S00402",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00402.png"
+    },
+    {
+      "blind_id": "26f212c7369a",
+      "shot_id": "S00504",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00504.png"
+    },
+    {
+      "blind_id": "2724943aa04d",
+      "shot_id": "S00303",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00303.png"
+    },
+    {
+      "blind_id": "2b2159b373c3",
+      "shot_id": "S00204",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00204.png"
+    },
+    {
+      "blind_id": "2b4b6517ac41",
+      "shot_id": "S00703",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00703.png"
+    },
+    {
+      "blind_id": "2f565ea43442",
+      "shot_id": "S00502",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00502.png"
+    },
+    {
+      "blind_id": "312bf4c1febb",
+      "shot_id": "S00202",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00202.png"
+    },
+    {
+      "blind_id": "346847647dad",
+      "shot_id": "S00901",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00901.png"
+    },
+    {
+      "blind_id": "35a2eb4809e2",
+      "shot_id": "S00502",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00502.png"
+    },
+    {
+      "blind_id": "35ffe9656efb",
+      "shot_id": "S00302",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00302.png"
+    },
+    {
+      "blind_id": "36250f7d7be2",
+      "shot_id": "S00700",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00700.png"
+    },
+    {
+      "blind_id": "36fd3e6a73d5",
+      "shot_id": "S00704",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00704.png"
+    },
+    {
+      "blind_id": "41a7696fa180",
+      "shot_id": "S00203",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00203.png"
+    },
+    {
+      "blind_id": "47796cc4949b",
+      "shot_id": "S00704",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00704.png"
+    },
+    {
+      "blind_id": "4baade98b62e",
+      "shot_id": "S00202",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00202.png"
+    },
+    {
+      "blind_id": "4caef8785f69",
+      "shot_id": "S00901",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00901.png"
+    },
+    {
+      "blind_id": "4eea04548db7",
+      "shot_id": "S00302",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00302.png"
+    },
+    {
+      "blind_id": "53411bf7f68b",
+      "shot_id": "S00602",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00602.png"
+    },
+    {
+      "blind_id": "554288d61397",
+      "shot_id": "S00702",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00702.png"
+    },
+    {
+      "blind_id": "5835e702dbc0",
+      "shot_id": "S00405",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00405.png"
+    },
+    {
+      "blind_id": "5b7e5c536ef1",
+      "shot_id": "S00101",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00101.png"
+    },
+    {
+      "blind_id": "5d9baaef490f",
+      "shot_id": "S00505",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00505.png"
+    },
+    {
+      "blind_id": "5f668140c373",
+      "shot_id": "S00800",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00800.png"
+    },
+    {
+      "blind_id": "67fad9ed5e8a",
+      "shot_id": "S00603",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00603.png"
+    },
+    {
+      "blind_id": "814a85953889",
+      "shot_id": "S00602",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00602.png"
+    },
+    {
+      "blind_id": "835dd7346e6d",
+      "shot_id": "S00300",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00300.png"
+    },
+    {
+      "blind_id": "86abbb7444cd",
+      "shot_id": "S00301",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00301.png"
+    },
+    {
+      "blind_id": "92cc97dbd312",
+      "shot_id": "S00200",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00200.png"
+    },
+    {
+      "blind_id": "955a27562522",
+      "shot_id": "S00505",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00505.png"
+    },
+    {
+      "blind_id": "992b11396469",
+      "shot_id": "S00504",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00504.png"
+    },
+    {
+      "blind_id": "9f33a476e7f7",
+      "shot_id": "S00700",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00700.png"
+    },
+    {
+      "blind_id": "a009335abf28",
+      "shot_id": "S00303",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00303.png"
+    },
+    {
+      "blind_id": "a124c43f0a75",
+      "shot_id": "S00503",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00503.png"
+    },
+    {
+      "blind_id": "a15034198dc9",
+      "shot_id": "S00703",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00703.png"
+    },
+    {
+      "blind_id": "ab643d1f34b5",
+      "shot_id": "S00600",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00600.png"
+    },
+    {
+      "blind_id": "afc23befefe4",
+      "shot_id": "S00903",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00903.png"
+    },
+    {
+      "blind_id": "b311ee18aee7",
+      "shot_id": "S00204",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00204.png"
+    },
+    {
+      "blind_id": "c7fc57a34d91",
+      "shot_id": "S00405",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00405.png"
+    },
+    {
+      "blind_id": "c816c4be23c5",
+      "shot_id": "S00102",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00102.png"
+    },
+    {
+      "blind_id": "d1c4e70f350d",
+      "shot_id": "S00702",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00702.png"
+    },
+    {
+      "blind_id": "dc041c644816",
+      "shot_id": "S00102",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00102.png"
+    },
+    {
+      "blind_id": "dcca653833e7",
+      "shot_id": "S00601",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00601.png"
+    },
+    {
+      "blind_id": "e28beff1e214",
+      "shot_id": "S00200",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00200.png"
+    },
+    {
+      "blind_id": "e29afe47abe2",
+      "shot_id": "S00301",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00301.png"
+    },
+    {
+      "blind_id": "e9c2d3a6fc14",
+      "shot_id": "S00903",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00903.png"
+    },
+    {
+      "blind_id": "eae901672874",
+      "shot_id": "S00101",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00101.png"
+    },
+    {
+      "blind_id": "eaeb0f07c903",
+      "shot_id": "S00603",
+      "arm": "on",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00603.png"
+    },
+    {
+      "blind_id": "ecaf7b0e0321",
+      "shot_id": "S00802",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00802.png"
+    },
+    {
+      "blind_id": "eecc998521f3",
+      "shot_id": "S00503",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00503.png"
+    },
+    {
+      "blind_id": "f4750a723880",
+      "shot_id": "S00402",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00402.png"
+    },
+    {
+      "blind_id": "fe904056fad6",
+      "shot_id": "S00801",
+      "arm": "off",
+      "source": "_bmad-output/implementation-artifacts/10-1e-live-validation/off/S00801.png"
+    }
+  ]
+}

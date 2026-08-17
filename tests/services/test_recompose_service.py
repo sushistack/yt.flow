@@ -25,7 +25,7 @@ RECOMPOSED = PNG + b"recomposed"
 # tests that are about the shot loop never have to think about the preflight.
 PASSING_STATS = {
     "system": {
-        "argv": ["main.py", "--lowvram", "--disable-smart-memory", "--cache-lru", "10"],
+        "argv": ["main.py", "--lowvram", "--cache-lru", "10"],
         "ram_free": 20 * 2**30,
         "ram_total": 31 * 2**30,
     },
@@ -224,7 +224,7 @@ async def test_a_satisfied_preflight_is_invisible(env):
     assert env.client.submits == 1
 
 
-@pytest.mark.parametrize("flag", ["--lowvram", "--disable-smart-memory", "--cache-lru"])
+@pytest.mark.parametrize("flag", ["--lowvram", "--cache-lru"])
 async def test_each_missing_flag_is_named_alone(env, flag):
     """One absent flag must accuse itself and nothing else — a message that over-reports
     sends the operator to restart with settings that were already correct."""
@@ -242,7 +242,7 @@ async def test_each_missing_flag_is_named_alone(env, flag):
     # ADD, not replace: run.sh carries the venv activation and the ROCm gfx override, and
     # an operator who pastes a bare `python main.py …` over it loses both.
     assert ("add to ComfyUI's launcher (e.g. run.sh) and restart: "
-            "--lowvram --disable-smart-memory --cache-lru 10") in detail
+            "--lowvram --cache-lru 10") in detail
     assert remaining == env.cast
     assert env.client.submits == 0
 
@@ -258,8 +258,7 @@ async def test_a_value_taking_flag_present_but_inert_counts_as_missing(env, argv
     """`--cache-lru 0` IS the eviction behaviour the flag exists to prevent (490 s/shot),
     so presence alone must not satisfy the gate — the operator has to hear the value."""
     env.client.stats = {"system": {**PASSING_STATS["system"],
-                                   "argv": ["main.py", "--lowvram",
-                                            "--disable-smart-memory", *argv_tail]}}
+                                   "argv": ["main.py", "--lowvram", *argv_tail]}}
 
     remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
 
@@ -273,12 +272,12 @@ async def test_a_value_taking_flag_present_but_inert_counts_as_missing(env, argv
 async def test_missing_flags_are_reported_even_when_the_ram_reading_is_unreadable(env):
     """Flags are the half the operator can act on. Bailing `stats_unreadable` first told a
     doubly-broken box only about the field it can do nothing about."""
-    env.client.stats = {"system": {"argv": ["main.py", "--lowvram"], "ram_free": "?"}}
+    env.client.stats = {"system": {"argv": ["main.py"], "ram_free": "?"}}
 
     _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
 
     assert stats["preflight_failed"] == "missing_flags"
-    assert "missing --disable-smart-memory, --cache-lru" in stats["preflight_detail"]
+    assert "missing --lowvram, --cache-lru" in stats["preflight_detail"]
     assert "free RAM:" not in stats["preflight_detail"]   # nothing readable to report
 
 
@@ -311,8 +310,7 @@ async def test_a_flag_written_with_an_equals_sign_still_counts(env):
     """`--cache-lru=10` is what argparse accepts too; telling an operator who wrote the
     working spelling that it is missing would send them to fix a non-problem."""
     env.client.stats = {"system": {**PASSING_STATS["system"],
-                                   "argv": ["main.py", "--lowvram", "--disable-smart-memory",
-                                            "--cache-lru=10"]}}
+                                   "argv": ["main.py", "--lowvram", "--cache-lru=10"]}}
 
     _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
 
@@ -385,3 +383,30 @@ async def test_a_bailed_run_leaves_every_shot_on_the_overlay_path(env):
     assert remaining == env.cast
     assert stats["recomposed"] == stats["skipped"] == stats["failed"] == 0
     assert env.client.submits == 0
+
+
+async def test_a_forbidden_flag_is_refused_even_though_every_required_flag_is_present(env):
+    """`--disable-smart-memory` left REQUIRED_FLAGS in 10.1e; a launcher that still passes it
+    would otherwise sail through into the state that was measured at 385-677 s/pass against
+    108 without it. Slowness is the only symptom, so nothing downstream would surface it."""
+    env.client.stats = {"system": {**PASSING_STATS["system"],
+                                   "argv": [*PASSING_STATS["system"]["argv"],
+                                            "--disable-smart-memory"]}}
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "forbidden_flags"
+    assert "--disable-smart-memory" in stats["preflight_detail"]
+    assert remaining == env.cast
+    assert env.client.submits == 0
+
+
+async def test_a_forbidden_flag_beats_a_missing_one_in_the_message(env):
+    """Checked first on purpose: a missing flag announces itself as an error, a forbidden one
+    only as a slow run, so it must not be masked by the louder failure."""
+    env.client.stats = {"system": {**PASSING_STATS["system"],
+                                   "argv": ["main.py", "--disable-smart-memory"]}}
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["preflight_failed"] == "forbidden_flags"

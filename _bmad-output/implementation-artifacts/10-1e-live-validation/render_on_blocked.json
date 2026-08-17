@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-08-16T22:30:00+0900",
+  "arm": "on",
+  "status": "BLOCKED",
+  "block_reason": "comfyui_shared_with_another_session_and_ram_floor_breached_mid_run",
+  "headline": "The 10.1d preflight PASSED at entry (ram_free 19.35 GiB >= 12.0 floor) and the ON arm started, but under the flags REQUIRED_FLAGS mandates free RAM collapsed to 5.46 GiB with swap 8185/8191 MiB used, every recompose pass reloaded the 12.7 GB Qwen unet from disk, and the per-pass time went 385.66 s -> 677 s -> 609 s against a 900 s client budget. Halted after 2 of 33 shots (3 of 40 passes).",
+  "comfyui": {
+    "restart_preconditions_verified": {
+      "queue_running": 0,
+      "queue_pending": 0,
+      "checked_class_types": "none — the queue was empty, so nothing belonging to another session was killed"
+    },
+    "argv_before_restart": [
+      "main.py",
+      "--preview-method",
+      "auto",
+      "--cache-lru",
+      "10"
+    ],
+    "argv_during_render_on": [
+      "main.py",
+      "--lowvram",
+      "--disable-smart-memory",
+      "--preview-method",
+      "auto",
+      "--cache-lru",
+      "10"
+    ],
+    "argv_after_restore": [
+      "main.py",
+      "--preview-method",
+      "auto",
+      "--cache-lru",
+      "10"
+    ],
+    "launcher": "~/workspaces/ComfyUI/run.sh, sed-rewritten in place of a hand-typed command line so the venv activation and the HSA_OVERRIDE_GFX_VERSION / PYTORCH_HIP_ALLOC_CONF exports came from the same file; started with setsid from ~/workspaces/ComfyUI",
+    "required_flags_satisfied_at_entry": true
+  },
+  "ram": {
+    "floor_gib": 12.0,
+    "ram_free_gib_at_preflight": 19.35,
+    "ram_free_gib_at_halt": 5.46,
+    "ram_total_gib": 31.21,
+    "swap_mib_used_at_halt": 8185,
+    "swap_mib_total": 8191,
+    "ram_free_gib_after_restoring_original_argv": 23.1,
+    "note": "The last number is the finding: with --lowvram --disable-smart-memory removed, the same box came back to 23.1 GiB free and swap started draining. The flags REQUIRED_FLAGS mandates are what consumed the memory that then breached REQUIRED_FLAGS' own floor."
+  },
+  "passes": {
+    "attempted_total": 40,
+    "completed": 3,
+    "shots_completed": 2,
+    "shots_total": 33,
+    "failed": 0,
+    "my_pass_seconds": [
+      385.66,
+      677,
+      609
+    ],
+    "incumbent_estimate_from_10_1c": "90-120 s per pass",
+    "projection_at_measured_rate": "40 passes x ~557 s = ~6.2 h, versus the ~1.0 h line 10.1c item (c) is judged against",
+    "client_budget_seconds": 900,
+    "note": "No pass failed. The halt is pre-emptive: the third pass was already at 68% of the 900 s budget with the trend rising, and a pass that overruns it returns None, which the pre-registered >=5-failed-pass veto would then read as a property of the treatment."
+  },
+  "other_session": {
+    "detected": true,
+    "evidence": "4 prompts executed between this run's pass 1 and pass 2 whose graphs load `SDXL` / `SDXLClipModel` and print the InSPyReNet `Settings -> Mode=base` banner, not this run's Qwen recompose graph — comfyui_render_on.log, the four 'Prompt executed in 32.06/19.06/18.08/18.09 seconds' entries and the `Requested to load SDXL` lines that precede them. (An earlier version of this note cited 'Inspyrenet Rembg progress lines'; the only two Rembg strings in the log are startup node-import timings.)",
+    "consequence": "Their models and this run's 12.7 GB unet shared one --cache-lru 10 cache on a 31 GB box with --disable-smart-memory unloading after every prompt. The alternation is the same eviction pattern gotcha_comfyui-cache-classic-evicts-on-workflow-alternation records, with a competing session as the alternator rather than the depth graph.",
+    "queue_was_idle_when_restarted": true,
+    "ATTRIBUTION_CAVEAT": "The 385.66 -> 677 -> 609 s/pass figures are NOT cleanly attributable to the flag: comfyui_render_on.log shows four interleaved prompts from a concurrent session loading SDXLClipModel + SDXL (~4.9 GB) between pass 1 and passes 2-3, and each eviction forces the 12.7 GB Qwen unet to reload. The flag and the co-tenant are confounded in this reading. What is NOT confounded is the 2026-08-17 run without the flag: 107.9 s/pass over 40 passes."
+  },
+  "state_left_on_disk": {
+    "recomposed_frames_kept": [
+      "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00101_f5019fb0200b3ae3.png",
+      "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00102_0b98504bbb2833b0.png"
+    ],
+    "resume_is_free": "recompose_cache_path is content-addressed on (plate bytes, card paths, instructions) and recompose_run_shots skips a shot whose output already exists, so re-running `render-on` against the committed pairs.json re-does 38 passes, not 40.",
+    "checkpoint_untouched": "the harness builds its own scenes list from pairs.json and never writes the LangGraph checkpoint; run e5ed4b3a's stored shot['image_path'] values are unchanged."
+  },
+  "to_resume": [
+    "Confirm no other session is using ComfyUI (GET /queue, read the class_type lists).",
+    "Restart ComfyUI with `--lowvram --cache-lru 10` via setsid from ~/workspaces/ComfyUI. Do NOT pass --disable-smart-memory — that is what this file documents going wrong.",
+    "Close the memory competition first — on this box that means nothing else holding GB-scale RSS, since ram_free must stay above 12.0 GiB for the WHOLE run, not just at entry.",
+    "uv run python _bmad-output/implementation-artifacts/10-1e-live-validation/run_pairs.py render-on",
+    "uv run python .../run_pairs.py score && uv run python .../run_pairs.py report && uv run python .../run_pairs.py grid",
+    "Restore run.sh's original argv afterwards."
+  ],
+  "SUPERSEDED": "This file is the record of the 2026-08-16 BLOCKED attempt only. The run completed on 2026-08-17 after `--disable-smart-memory` was removed from REQUIRED_FLAGS (107.9 s/pass, 40/40 passes). Do not follow `to_resume` — step 2 recreates the fatal config. Restart with `--lowvram --cache-lru 10` and nothing else. See README.md."
+}

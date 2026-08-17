@@ -22,25 +22,27 @@ refuses the recompose path when any of it is missing (or, for `--cache-lru`,
 present with a non-positive value — ComfyUI's `main.py` enables the LRU cache only
 when it is `> 0`, so `--cache-lru 0` is the default behaviour wearing a flag).
 
-**Append these to the launcher you already use — do not replace it.** On this
-machine ComfyUI starts from `~/workspaces/ComfyUI/run.sh`, and a bare
-`python main.py …` pasted over it loses the venv, the ROCm override and
-`--preview-method auto`:
+**REQUIRED, not optional, since Story 10.1e flipped `shot_recompose_enabled` to
+`True` (2026-08-17).** Every run now reaches the recompose preflight, so a launcher
+without `--lowvram` makes the shipped default inert and files a
+`recompose_preflight_failed` warning on every run instead. `~/workspaces/ComfyUI/run.sh`
+on this machine was updated on 2026-08-17 to pass it; if you rebuild that file, keep it.
+Append to the launcher you already use — do not replace it, since a bare
+`python main.py …` loses the venv, the ROCm override and `--preview-method auto`:
 
 ```bash
 source venv/bin/activate                       # already in run.sh — keep it
 export HSA_OVERRIDE_GFX_VERSION=12.0.0         # RDNA 4 detection — keep it
 export PYTORCH_HIP_ALLOC_CONF=garbage_collection_threshold:0.8,max_split_size_mb:512
-python main.py --preview-method auto --cache-lru 10 \
-  --lowvram --disable-smart-memory             # <- what run.sh is still missing
+python main.py --preview-method auto --cache-lru 10 --lowvram
 ```
 
 | Flag | Why | Measured |
 |---|---|---|
-| `--lowvram` | weights stream instead of staying resident on the GPU | required by the Qwen recompose graph |
-| `--disable-smart-memory` | without it the Qwen recompose graph swap-deadlocks | Story 10.1c. It pays for that with **system** RAM, which is the scarce resource here — do **not** generalise it to the background path, where it was proposed on 2026-08-15 and was the wrong lever |
+| `--lowvram` | the recompose graph's weights total **22.6 GB** (12.6 unet + 8.95 fp8 encoder + 0.81 LoRA + 0.24 VAE) against 16 GB VRAM, so they must stream | ~90–150 s/pass warm on this box |
+| ~~`--disable-smart-memory`~~ | **REMOVED 2026-08-17 by Story 10.1e.** It was required on 10.1c's "the Qwen graph swap-deadlocks without it", observed on an older ComfyUI and never re-tested. On 0.12.3 the deadlock does not reproduce, and the flag was actively fatal here: with `--lowvram` already streaming 22.6 GB from system RAM, unloading after every prompt means re-reading all of it per pass | Same box, same shots — **with**: 385.66 → 677 → 609 s/pass, `ram_free` 19.35 → 5.46 GiB, swap 8185/8191 MiB. **Without**: 89.7 / 146.0 s/pass warm, `ram_free` stable ~17 GiB. The required flag is what breached the required RAM floor |
 | `--cache-lru 10` | the default `cache-classic` evicts the checkpoint on every graph alternation | run `e5ed4b3a`: **490 s vs 14.8 s** per shot. Recompose adds a third graph to the alternation. The value must be **> 0**: `--cache-lru 0` is ComfyUI's own default and the preflight rejects it |
-| free system RAM ≥ 12 GiB | not a flag — `Settings.recompose_preflight_min_free_ram_gb` | 2026-08-15: 0 free / 4 GB swap on a 31 GB box was already thrashing a lighter path. Calibrated against that failure only — no healthy-run reading exists yet, so a false-bail rate is unmeasured |
+| free system RAM ≥ 12 GiB | not a flag — `Settings.recompose_preflight_min_free_ram_gb` | 2026-08-15: 0 free / 4 GB swap on a 31 GB box was already thrashing a lighter path. 2026-08-17 first healthy-run readings: entry 19.35 GiB, steady ~17 GiB — no false bail. Note the floor is an **entry** check on a value the run can consume; see `deferred-work.md` |
 
 `--cache-lru` is **pipeline-wide** operational advice: every path that alternates
 graphs pays the eviction cost, and the ordinary background path in `image_node`

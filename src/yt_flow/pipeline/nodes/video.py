@@ -2555,6 +2555,14 @@ async def video_node(state: PipelineState) -> dict:
         # getattr, not attribute access: Settings stubs in tests are SimpleNamespaces built
         # per test, so a hard reference makes every unrelated video test fail on a field they
         # never opted into. Absent == off, which is also the production default.
+        if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is None and cast_cards:
+            # Ships True since 10.1e, and only `api/main.py`'s lifespan injects the
+            # resolver — a CLI or test entry point would silently render the overlay while
+            # the config says recompose is on. Ground and relight warn on their own
+            # failures; this path had no equivalent.
+            warnings.append(make_warning("recompose_shots_degraded",
+                                          reason="resolver_not_injected",
+                                          detail="no recompose resolver was injected"))
         if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is not None and cast_cards:
             try:
                 cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
@@ -2575,6 +2583,19 @@ async def video_node(state: PipelineState) -> dict:
                         reason=recompose_stats["preflight_failed"],
                         detail=next(iter(
                             str(recompose_stats.get("preflight_detail") or "").splitlines()), None),
+                    ))
+                elif recompose_stats.get("failed") or recompose_stats.get("skipped"):
+                    # Story 10.1e: the flag now ships True, so a run where the preflight
+                    # passes and then SOME shots fall back is a production state, not a
+                    # lab one — ComfyUI dying mid-sweep, an unreadable plate, or a
+                    # card_key outside CARD_LOOKS. Those shots render on the overlay while
+                    # their neighbours are recomposed, and until this row existed the only
+                    # reported recompose outcome was the all-or-nothing preflight bail.
+                    warnings.append(make_warning(
+                        "recompose_shots_degraded",
+                        reason=f"failed={recompose_stats.get('failed', 0)}"
+                               f" skipped={recompose_stats.get('skipped', 0)}",
+                        detail=f"recomposed={recompose_stats.get('recomposed', 0)}",
                     ))
             except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
                 # Warns, not just logs: a raising resolver (or a non-dict stats payload) is

@@ -1,0 +1,363 @@
+🚀 Starting ComfyUI for RX 9060 XT (RDNA 4)...
+[ComfyUI-Manager] Using `uv` as Python module for pip operations.
+Using Python 3.12.3 environment at: venv
+[START] Security scan
+[DONE] Security scan
+## ComfyUI-Manager: installing dependencies done.
+** ComfyUI startup time: 2026-08-16 21:55:28.634
+** Platform: Linux
+** Python version: 3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]
+** Python executable: /home/jay/workspaces/ComfyUI/venv/bin/python
+** ComfyUI Path: /home/jay/workspaces/ComfyUI
+** ComfyUI Base Folder Path: /home/jay/workspaces/ComfyUI
+** User directory: /home/jay/workspaces/ComfyUI/user
+** ComfyUI-Manager config path: /home/jay/workspaces/ComfyUI/user/__manager/config.ini
+** Log path: /home/jay/workspaces/ComfyUI/user/comfyui.log
+Using Python 3.12.3 environment at: venv
+Using Python 3.12.3 environment at: venv
+
+Prestartup times for custom nodes:
+   0.5 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-Manager
+
+Checkpoint files will always be loaded safely.
+/opt/amdgpu/share/libdrm/amdgpu.ids: No such file or directory
+Found comfy_kitchen backend cuda: {'available': True, 'disabled': True, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8']}
+Found comfy_kitchen backend eager: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'scaled_mm_nvfp4']}
+Found comfy_kitchen backend triton: {'available': True, 'disabled': True, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8']}
+Total VRAM 16304 MB, total RAM 31960 MB
+pytorch version: 2.11.0.dev20260206+rocm7.1
+Set: torch.backends.cudnn.enabled = False for better AMD performance.
+AMD arch: gfx1200
+ROCm version: (7, 1)
+Set vram state to: LOW_VRAM
+Disabling smart memory management
+Device: cuda:0 AMD Radeon Graphics : native
+Using async weight offloading with 2 streams
+Enabled pinned memory 30362.0
+Using pytorch attention
+Python version: 3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]
+ComfyUI version: 0.12.3
+ComfyUI frontend version: 1.38.13
+[Prompt Server] web root: /home/jay/workspaces/ComfyUI/venv/lib/python3.12/site-packages/comfyui_frontend_package/static
+Total VRAM 16304 MB, total RAM 31960 MB
+pytorch version: 2.11.0.dev20260206+rocm7.1
+Set: torch.backends.cudnn.enabled = False for better AMD performance.
+AMD arch: gfx1200
+ROCm version: (7, 1)
+Set vram state to: LOW_VRAM
+Disabling smart memory management
+Device: cuda:0 AMD Radeon Graphics : native
+Using async weight offloading with 2 streams
+Enabled pinned memory 30362.0
+### Loading: ComfyUI-Impact-Pack (V8.28.2)
+[Impact Pack] Wildcard total size (0.00 MB) is within cache limit (50.00 MB). Using full cache mode.
+[Impact Pack] Wildcards loading done.
+/home/jay/workspaces/ComfyUI/venv/lib/python3.12/site-packages/transparent_background/gui.py:24: UserWarning: Failed to import flet. Ignore this message when you do not need GUI mode.
+  warnings.warn('Failed to import flet. Ignore this message when you do not need GUI mode.')
+[36;20m[/home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux] | INFO -> Using ckpts path: /home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux/ckpts[0m
+[36;20m[/home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux] | INFO -> Using symlinks: False[0m
+[36;20m[/home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux] | INFO -> Using ort providers: ['CUDAExecutionProvider', 'DirectMLExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'CPUExecutionProvider', 'CoreMLExecutionProvider'][0m
+/home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux/node_wrappers/dwpose.py:26: UserWarning: DWPose: Onnxruntime not found or doesn't come with acceleration providers, switch to OpenCV with CPU device. DWPose might run very slowly
+  warnings.warn("DWPose: Onnxruntime not found or doesn't come with acceleration providers, switch to OpenCV with CPU device. DWPose might run very slowly")
+### Loading: ComfyUI-Manager (V3.39.2)
+[ComfyUI-Manager] network_mode: public
+[ComfyUI-Manager] ComfyUI per-queue preview override detected (PR #11261). Manager's preview method feature is disabled. Use ComfyUI's --preview-method CLI option or 'Settings > Execution > Live preview method'.
+### ComfyUI Version: v0.12.3-16-gf350a842 | Released on '2026-02-07'
+ComfyUI-GGUF: Allowing full torch compile
+[ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/model-list.json
+[ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/alter-list.json
+[ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/github-stats.json
+[ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json
+[ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json
+
+Import times for custom nodes:
+   0.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/websocket_image_save.py
+   0.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-IC-Light
+   0.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-Custom-Scripts
+   0.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus
+   0.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-GGUF
+   0.1 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-Manager
+   0.3 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/comfyui_controlnet_aux
+   0.4 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/comfyui-impact-pack
+   0.5 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/ComfyUI-Inspyrenet-Rembg
+   1.0 seconds: /home/jay/workspaces/ComfyUI/custom_nodes/rembg-comfyui-node
+
+Context impl SQLiteImpl.
+Will assume non-transactional DDL.
+Assets scan(roots=['models']) completed in 0.029s (created=0, skipped_existing=47, orphans_pruned=0, total_seen=47)
+Using LRU cache
+Starting server
+
+To see the GUI go to: http://127.0.0.1:8188
+got prompt
+Using split attention in VAE
+Using split attention in VAE
+VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+Requested to load WanVAE
+loaded completely; 12390.88 MB usable, 242.03 MB loaded, full load: True
+Found quantization metadata version 1
+Using MixedPrecisionOps for text encoder
+Requested to load QwenImageTEModel_
+loaded completely;  7910.28 MB loaded, full load: True
+CLIP/text encoder model load device: cpu, offload device: cpu, current: cpu, dtype: torch.float16
+got prompt
+got prompt
+got prompt
+got prompt
+gguf qtypes: F32 (1088), BF16 (6), Q6_K (258), Q8_0 (2), Q5_K (20), Q4_K (560)
+model weight dtype torch.bfloat16, manual cast: None
+model_type FLUX
+Requested to load QwenImage
+[ComfyUI-Manager] default cache updated: https://api.comfy.org/nodes
+FETCH DATA from: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json [DONE]
+[ComfyUI-Manager] All startup tasks have been completed.
+loaded completely; 12873.76 MB usable, 12738.98 MB loaded, full load: True
+
+  [progress] 0/4 [00:00<?, ?it/s]
+  [progress] 1/4 [02:52<08:36, 172.18s/it]
+  [progress] 2/4 [03:17<02:52, 86.02s/it]
+  [progress] 3/4 [03:43<00:58, 58.52s/it]
+  [progress] 4/4 [04:09<00:00, 45.63s/it]
+  [progress] 4/4 [04:09<00:00, 62.39s/it]
+Requested to load WanVAE
+0 models unloaded.
+loaded completely; 1224.00 MB usable, 242.03 MB loaded, full load: True
+Prompt executed in 385.66 seconds
+got prompt
+model weight dtype torch.float16, manual cast: None
+model_type EPS
+Using split attention in VAE
+Using split attention in VAE
+VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+Requested to load SDXLClipModel
+loaded completely;  1560.80 MB loaded, full load: True
+CLIP/text encoder model load device: cpu, offload device: cpu, current: cpu, dtype: torch.float16
+Requested to load SDXLClipModel
+loaded completely;  1560.80 MB loaded, full load: True
+Requested to load SDXL
+loaded completely; 13962.80 MB usable, 4897.05 MB loaded, full load: True
+
+  [progress] 0/30 [00:00<?, ?it/s]
+  [progress] 1/30 [00:03<01:47,  3.69s/it]
+  [progress] 2/30 [00:05<01:08,  2.46s/it]
+  [progress] 3/30 [00:05<00:41,  1.52s/it]
+  [progress] 4/30 [00:06<00:28,  1.08s/it]
+  [progress] 5/30 [00:06<00:20,  1.19it/s]
+  [progress] 6/30 [00:06<00:16,  1.45it/s]
+  [progress] 7/30 [00:07<00:13,  1.67it/s]
+  [progress] 8/30 [00:07<00:11,  1.86it/s]
+  [progress] 9/30 [00:08<00:10,  2.01it/s]
+  [progress] 10/30 [00:08<00:09,  2.13it/s]
+  [progress] 11/30 [00:08<00:08,  2.21it/s]
+  [progress] 12/30 [00:09<00:07,  2.28it/s]
+  [progress] 13/30 [00:09<00:07,  2.33it/s]
+  [progress] 14/30 [00:10<00:06,  2.36it/s]
+  [progress] 15/30 [00:10<00:06,  2.39it/s]
+  [progress] 16/30 [00:11<00:05,  2.41it/s]
+  [progress] 17/30 [00:11<00:05,  2.42it/s]
+  [progress] 18/30 [00:11<00:04,  2.42it/s]
+  [progress] 19/30 [00:12<00:04,  2.43it/s]
+  [progress] 20/30 [00:12<00:04,  2.43it/s]
+  [progress] 21/30 [00:13<00:03,  2.44it/s]
+  [progress] 22/30 [00:13<00:03,  2.44it/s]
+  [progress] 23/30 [00:13<00:02,  2.43it/s]
+  [progress] 24/30 [00:14<00:02,  2.44it/s]
+  [progress] 25/30 [00:14<00:02,  2.44it/s]
+  [progress] 26/30 [00:15<00:01,  2.44it/s]
+  [progress] 27/30 [00:15<00:01,  2.44it/s]
+  [progress] 28/30 [00:15<00:00,  2.44it/s]
+  [progress] 29/30 [00:16<00:00,  2.44it/s]
+  [progress] 30/30 [00:16<00:00,  2.44it/s]
+  [progress] 30/30 [00:16<00:00,  1.79it/s]
+Requested to load AutoencoderKL
+loaded completely; 5992.80 MB usable, 159.56 MB loaded, full load: True
+/home/jay/workspaces/ComfyUI/venv/lib/python3.12/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4381.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+
+  [progress] 0/1 [00:00<?, ?it/s]
+  [progress] 1/1 [00:04<00:00,  4.03s/it]
+  [progress] 1/1 [00:04<00:00,  4.03s/it]
+Prompt executed in 32.06 seconds
+Requested to load SDXL
+loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+
+  [progress] 0/30 [00:00<?, ?it/s]
+  [progress] 1/30 [00:00<00:11,  2.44it/s]
+  [progress] 2/30 [00:00<00:11,  2.46it/s]
+  [progress] 3/30 [00:01<00:10,  2.47it/s]
+  [progress] 4/30 [00:01<00:10,  2.47it/s]
+  [progress] 5/30 [00:02<00:10,  2.47it/s]
+  [progress] 6/30 [00:02<00:09,  2.47it/s]
+  [progress] 7/30 [00:02<00:09,  2.47it/s]
+  [progress] 8/30 [00:03<00:08,  2.47it/s]
+  [progress] 9/30 [00:03<00:08,  2.47it/s]
+  [progress] 10/30 [00:04<00:08,  2.47it/s]
+  [progress] 11/30 [00:04<00:07,  2.47it/s]
+  [progress] 12/30 [00:04<00:07,  2.47it/s]
+  [progress] 13/30 [00:05<00:06,  2.47it/s]
+  [progress] 14/30 [00:05<00:06,  2.47it/s]
+  [progress] 15/30 [00:06<00:06,  2.47it/s]
+  [progress] 16/30 [00:06<00:05,  2.47it/s]
+  [progress] 17/30 [00:06<00:05,  2.47it/s]
+  [progress] 18/30 [00:07<00:04,  2.47it/s]
+  [progress] 19/30 [00:07<00:04,  2.47it/s]
+  [progress] 20/30 [00:08<00:04,  2.47it/s]
+  [progress] 21/30 [00:08<00:03,  2.46it/s]
+  [progress] 22/30 [00:08<00:03,  2.46it/s]
+  [progress] 23/30 [00:09<00:02,  2.46it/s]
+  [progress] 24/30 [00:09<00:02,  2.46it/s]
+  [progress] 25/30 [00:10<00:02,  2.46it/s]
+  [progress] 26/30 [00:10<00:01,  2.46it/s]
+  [progress] 27/30 [00:10<00:01,  2.47it/s]
+  [progress] 28/30 [00:11<00:00,  2.47it/s]
+  [progress] 29/30 [00:11<00:00,  2.46it/s]
+  [progress] 30/30 [00:12<00:00,  2.45it/s]
+  [progress] 30/30 [00:12<00:00,  2.47it/s]
+Requested to load AutoencoderKL
+loaded completely; 5980.00 MB usable, 159.56 MB loaded, full load: True
+Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+
+  [progress] 0/1 [00:00<?, ?it/s]
+  [progress] 1/1 [00:02<00:00,  2.63s/it]
+  [progress] 1/1 [00:02<00:00,  2.63s/it]
+Prompt executed in 19.06 seconds
+Requested to load SDXL
+loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+
+  [progress] 0/30 [00:00<?, ?it/s]
+  [progress] 1/30 [00:00<00:12,  2.39it/s]
+  [progress] 2/30 [00:00<00:11,  2.42it/s]
+  [progress] 3/30 [00:01<00:11,  2.43it/s]
+  [progress] 4/30 [00:01<00:10,  2.44it/s]
+  [progress] 5/30 [00:02<00:10,  2.44it/s]
+  [progress] 6/30 [00:02<00:09,  2.44it/s]
+  [progress] 7/30 [00:02<00:09,  2.43it/s]
+  [progress] 8/30 [00:03<00:09,  2.43it/s]
+  [progress] 9/30 [00:03<00:08,  2.44it/s]
+  [progress] 10/30 [00:04<00:08,  2.44it/s]
+  [progress] 11/30 [00:04<00:07,  2.42it/s]
+  [progress] 12/30 [00:04<00:07,  2.43it/s]
+  [progress] 13/30 [00:05<00:07,  2.43it/s]
+  [progress] 14/30 [00:05<00:06,  2.43it/s]
+  [progress] 15/30 [00:06<00:06,  2.43it/s]
+  [progress] 16/30 [00:06<00:05,  2.43it/s]
+  [progress] 17/30 [00:06<00:05,  2.43it/s]
+  [progress] 18/30 [00:07<00:04,  2.43it/s]
+  [progress] 19/30 [00:07<00:04,  2.43it/s]
+  [progress] 20/30 [00:08<00:04,  2.43it/s]
+  [progress] 21/30 [00:08<00:03,  2.43it/s]
+  [progress] 22/30 [00:09<00:03,  2.43it/s]
+  [progress] 23/30 [00:09<00:02,  2.43it/s]
+  [progress] 24/30 [00:09<00:02,  2.43it/s]
+  [progress] 25/30 [00:10<00:02,  2.43it/s]
+  [progress] 26/30 [00:10<00:01,  2.43it/s]
+  [progress] 27/30 [00:11<00:01,  2.43it/s]
+  [progress] 28/30 [00:11<00:00,  2.43it/s]
+  [progress] 29/30 [00:11<00:00,  2.43it/s]
+  [progress] 30/30 [00:12<00:00,  2.43it/s]
+  [progress] 30/30 [00:12<00:00,  2.43it/s]
+Requested to load AutoencoderKL
+loaded completely; 5980.80 MB usable, 159.56 MB loaded, full load: True
+Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+
+  [progress] 0/1 [00:00<?, ?it/s]
+  [progress] 1/1 [00:02<00:00,  2.39s/it]
+  [progress] 1/1 [00:02<00:00,  2.39s/it]
+Prompt executed in 18.08 seconds
+Requested to load SDXL
+loaded completely; 13730.80 MB usable, 4897.05 MB loaded, full load: True
+
+  [progress] 0/30 [00:00<?, ?it/s]
+  [progress] 1/30 [00:00<00:11,  2.43it/s]
+  [progress] 2/30 [00:00<00:11,  2.46it/s]
+  [progress] 3/30 [00:01<00:10,  2.46it/s]
+  [progress] 4/30 [00:01<00:10,  2.47it/s]
+  [progress] 5/30 [00:02<00:10,  2.47it/s]
+  [progress] 6/30 [00:02<00:09,  2.47it/s]
+  [progress] 7/30 [00:02<00:09,  2.47it/s]
+  [progress] 8/30 [00:03<00:08,  2.47it/s]
+  [progress] 9/30 [00:03<00:08,  2.47it/s]
+  [progress] 10/30 [00:04<00:08,  2.47it/s]
+  [progress] 11/30 [00:04<00:07,  2.47it/s]
+  [progress] 12/30 [00:04<00:07,  2.47it/s]
+  [progress] 13/30 [00:05<00:06,  2.47it/s]
+  [progress] 14/30 [00:05<00:06,  2.47it/s]
+  [progress] 15/30 [00:06<00:06,  2.47it/s]
+  [progress] 16/30 [00:06<00:05,  2.46it/s]
+  [progress] 17/30 [00:06<00:05,  2.47it/s]
+  [progress] 18/30 [00:07<00:04,  2.46it/s]
+  [progress] 19/30 [00:07<00:04,  2.46it/s]
+  [progress] 20/30 [00:08<00:04,  2.46it/s]
+  [progress] 21/30 [00:08<00:03,  2.47it/s]
+  [progress] 22/30 [00:08<00:03,  2.47it/s]
+  [progress] 23/30 [00:09<00:02,  2.46it/s]
+  [progress] 24/30 [00:09<00:02,  2.47it/s]
+  [progress] 25/30 [00:10<00:02,  2.47it/s]
+  [progress] 26/30 [00:10<00:01,  2.47it/s]
+  [progress] 27/30 [00:10<00:01,  2.47it/s]
+  [progress] 28/30 [00:11<00:00,  2.46it/s]
+  [progress] 29/30 [00:11<00:00,  2.46it/s]
+  [progress] 30/30 [00:12<00:00,  2.47it/s]
+  [progress] 30/30 [00:12<00:00,  2.47it/s]
+Requested to load AutoencoderKL
+loaded completely; 5980.80 MB usable, 159.56 MB loaded, full load: True
+Settings -> Mode=base, Device=cuda:0, Torchscript=disabled
+
+  [progress] 0/1 [00:00<?, ?it/s]
+  [progress] 1/1 [00:02<00:00,  2.67s/it]
+  [progress] 1/1 [00:02<00:00,  2.67s/it]
+Prompt executed in 18.09 seconds
+Using split attention in VAE
+Using split attention in VAE
+VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+Requested to load WanVAE
+loaded completely; 11598.88 MB usable, 242.03 MB loaded, full load: True
+Found quantization metadata version 1
+Using MixedPrecisionOps for text encoder
+Requested to load QwenImageTEModel_
+loaded completely;  7910.28 MB loaded, full load: True
+CLIP/text encoder model load device: cpu, offload device: cpu, current: cpu, dtype: torch.float16
+gguf qtypes: F32 (1088), BF16 (6), Q6_K (258), Q8_0 (2), Q5_K (20), Q4_K (560)
+model weight dtype torch.bfloat16, manual cast: None
+model_type FLUX
+Requested to load QwenImage
+loaded completely; 12783.76 MB usable, 12738.98 MB loaded, full load: True
+
+  [progress] 0/4 [00:00<?, ?it/s]
+  [progress] 1/4 [04:32<13:36, 272.07s/it]
+  [progress] 2/4 [05:16<04:36, 138.39s/it]
+  [progress] 3/4 [06:14<01:41, 101.57s/it]
+  [progress] 4/4 [07:01<00:00, 80.09s/it]
+  [progress] 4/4 [07:01<00:00, 105.45s/it]
+Requested to load WanVAE
+loaded completely; 2928.00 MB usable, 242.03 MB loaded, full load: True
+Prompt executed in 00:11:17
+got prompt
+Requested to load WanVAE
+loaded completely; 11596.88 MB usable, 242.03 MB loaded, full load: True
+Requested to load QwenImage
+loaded completely; 12783.76 MB usable, 12738.98 MB loaded, full load: True
+
+  [progress] 0/4 [00:00<?, ?it/s]
+  [progress] 1/4 [01:44<05:12, 104.16s/it]
+  [progress] 2/4 [03:49<03:53, 116.74s/it]
+  [progress] 3/4 [06:43<02:22, 142.98s/it]
+  [progress] 4/4 [08:54<00:00, 138.02s/it]
+  [progress] 4/4 [08:54<00:00, 133.58s/it]
+Requested to load WanVAE
+0 models unloaded.
+loaded completely; 1220.00 MB usable, 242.03 MB loaded, full load: True
+Prompt executed in 00:10:09
+got prompt
+Requested to load WanVAE
+loaded completely; 11598.88 MB usable, 242.03 MB loaded, full load: True
+Requested to load QwenImage
+loaded completely; 12783.76 MB usable, 12738.98 MB loaded, full load: True
+
+  [progress] 0/4 [00:00<?, ?it/s]Global interrupt (no prompt_id specified)
+
+  [progress] 0/4 [00:55<?, ?it/s]
+Processing interrupted
+Prompt executed in 108.37 seconds
+Terminated

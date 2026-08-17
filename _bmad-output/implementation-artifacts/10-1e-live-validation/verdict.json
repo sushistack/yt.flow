@@ -1,0 +1,32 @@
+{
+  "paired_n": 33,
+  "b": 2,
+  "c": 1,
+  "b_minus_c": 1,
+  "b_shots": [
+    "S00501",
+    "S00600"
+  ],
+  "c_shots": [
+    "S00405"
+  ],
+  "both_readable": 28,
+  "neither_readable": 2,
+  "exact_mcnemar_p_two_sided": 1.0,
+  "unreadable_difference_pp": 3.0,
+  "unreadable_difference_ci95_pp": [
+    -7.2,
+    13.3
+  ],
+  "power_note": "computed from b/c/n by `report`. n=33 with 3 discordant pairs rules out a catastrophe and nothing finer; the CI contains the incumbent's own 7 pp claim, so this measurement does not refute the figures it withdrew — the collinearity arithmetic does.",
+  "failed_passes": 0,
+  "veto_triggered": false,
+  "deciding_axis_verdict": "FLIP",
+  "seconds_per_pass": 107.9,
+  "seconds_per_pass_source": "mtime deltas over 32 shots / 39 passes",
+  "projected_hours_43_shot_run": 1.2,
+  "cost_blocks": true,
+  "verdict": "(a) closed PASS, (c) still blocks",
+  "shot_recompose_enabled_per_rule": false,
+  "human_override": "# Human override of the pre-registered verdict — 2026-08-17\n\n`verdict.json` records what the **rule** concluded: `\"(a) closed PASS, (c) still blocks\"`,\ni.e. `shot_recompose_enabled_per_rule = false`. The shipped default is `true`.\n\n**What overrode it.** Jay watched `viewing/all_pairs.mp4` — the paired OFF|ON motion clips\nbuilt for the axis the score never read — and ruled: *\"recompose 무조건 해야하고\"*\n(\"recompose is a must\"). The epic's closure standard authorises this: *\"a viewing verdict\noverrides a favorable measurement\"*, and symmetrically an unfavorable one. The override is\nagainst the **cost line only**; the deciding legibility axis had already resolved to FLIP.\n\n**What is therefore now paid on every run:** the measured 1.2 h, over the pre-registered\n1.0 h line.\n\n**What the override does NOT do.** It does not make the measurement stronger. The deciding\naxis resolved FLIP on 3 discordant pairs (exact McNemar p = 1.00; 95% CI on the unreadable\ndifference [-7.2, +13.3] pp, which contains the incumbent's own 7 pp claim). n=33 rules out\na catastrophe and nothing finer. And `b=2` does not survive looking at the frames — see\n`viewing.json:read_once_observations`.\n\n**Known limits of the evidence the override was formed on** — recorded because they were\nfound in review, after the verdict:\n\n1. **The first build of the viewing clips handicapped the incumbent.** It hardcoded\n   `composite_harmonization_tier=0`, which switches off `build_sprite_tint` AND\n   `build_contact_shadow` (`video.py:1577` / `:1650`, both gated on `tier >= 1`) — exactly\n   the two features the flip rationale cites as the ON arm's advantage — while the *scored*\n   OFF arm used production tier 1. `cmd_viewing` now reads\n   `Settings().composite_harmonization_tier`, and the clips were re-rendered at tier 1 on\n   2026-08-17. **Jay's verdict was formed on the tier-0 build.** Re-watching the tier-1\n   clips is the cheap confirmation; the override stands until he says otherwise.\n2. **11.5 depth parallax is excluded from both arms** (it needs the injected 2.5D renderer;\n   without it `build_motion_source` falls back to legacy Ken Burns). Parallax is an\n   OFF-arm-only motion layer, so the clips still understate the incumbent on motion.\n3. **`S00405` — the one `c` shot in the package — has no shipped clip**, so it plays at the\n   4.0 s fallback duration rather than production zoom velocity, and velocity is what a\n   \"does it float\" judgement reads.\n\n**Consequence that follows from the flip and is owed as a separate story:** under the\ndefault, the card-compositing machinery is exercised by **no** shot of run `e5ed4b3a` — the\n10 ineligible shots are ineligible for having an *empty cast*, and `_build_card_chain` is\nonly entered for a non-empty card list. See `deferred-work.md`."
+}

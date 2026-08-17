@@ -1,0 +1,487 @@
+{
+  "generated_at": "2026-08-17T15:00:19+0900",
+  "arm": "on",
+  "renderer": "recompose_service.recompose_run_shots (one call, production entry)",
+  "stats": {
+    "recomposed": 33,
+    "skipped": 0,
+    "failed": 0
+  },
+  "remaining_cast_shots": [],
+  "total_seconds": 312.5,
+  "passes_attempted": 40,
+  "passes_completed": 40,
+  "passes_failed": 0,
+  "seconds_per_pass_mean": 7.8,
+  "per_shot_from_mtime": [
+    {
+      "shot_id": "S00104",
+      "seconds": 239.5,
+      "passes": 1,
+      "seconds_per_pass": 239.5
+    },
+    {
+      "shot_id": "S00200",
+      "seconds": 137.0,
+      "passes": 1,
+      "seconds_per_pass": 137.0
+    },
+    {
+      "shot_id": "S00202",
+      "seconds": 154.0,
+      "passes": 1,
+      "seconds_per_pass": 154.0
+    },
+    {
+      "shot_id": "S00203",
+      "seconds": 258.9,
+      "passes": 2,
+      "seconds_per_pass": 129.4
+    },
+    {
+      "shot_id": "S00204",
+      "seconds": 91.7,
+      "passes": 1,
+      "seconds_per_pass": 91.7
+    },
+    {
+      "shot_id": "S00300",
+      "seconds": 90.7,
+      "passes": 1,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00301",
+      "seconds": 90.7,
+      "passes": 1,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00302",
+      "seconds": 96.7,
+      "passes": 1,
+      "seconds_per_pass": 96.7
+    },
+    {
+      "shot_id": "S00303",
+      "seconds": 91.7,
+      "passes": 1,
+      "seconds_per_pass": 91.7
+    },
+    {
+      "shot_id": "S00402",
+      "seconds": 88.7,
+      "passes": 1,
+      "seconds_per_pass": 88.7
+    },
+    {
+      "shot_id": "S00404",
+      "seconds": 181.5,
+      "passes": 2,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00405",
+      "seconds": 169.2,
+      "passes": 1,
+      "seconds_per_pass": 169.2
+    },
+    {
+      "shot_id": "S00501",
+      "seconds": 90.7,
+      "passes": 1,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00502",
+      "seconds": 182.4,
+      "passes": 2,
+      "seconds_per_pass": 91.2
+    },
+    {
+      "shot_id": "S00503",
+      "seconds": 90.8,
+      "passes": 1,
+      "seconds_per_pass": 90.8
+    },
+    {
+      "shot_id": "S00504",
+      "seconds": 96.7,
+      "passes": 1,
+      "seconds_per_pass": 96.7
+    },
+    {
+      "shot_id": "S00505",
+      "seconds": 86.7,
+      "passes": 1,
+      "seconds_per_pass": 86.7
+    },
+    {
+      "shot_id": "S00600",
+      "seconds": 89.7,
+      "passes": 1,
+      "seconds_per_pass": 89.7
+    },
+    {
+      "shot_id": "S00601",
+      "seconds": 174.3,
+      "passes": 2,
+      "seconds_per_pass": 87.1
+    },
+    {
+      "shot_id": "S00602",
+      "seconds": 90.7,
+      "passes": 1,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00603",
+      "seconds": 90.7,
+      "passes": 1,
+      "seconds_per_pass": 90.7
+    },
+    {
+      "shot_id": "S00700",
+      "seconds": 89.7,
+      "passes": 1,
+      "seconds_per_pass": 89.7
+    },
+    {
+      "shot_id": "S00702",
+      "seconds": 276.9,
+      "passes": 2,
+      "seconds_per_pass": 138.5
+    },
+    {
+      "shot_id": "S00703",
+      "seconds": 93.8,
+      "passes": 1,
+      "seconds_per_pass": 93.8
+    },
+    {
+      "shot_id": "S00704",
+      "seconds": 87.7,
+      "passes": 1,
+      "seconds_per_pass": 87.7
+    },
+    {
+      "shot_id": "S00800",
+      "seconds": 89.8,
+      "passes": 1,
+      "seconds_per_pass": 89.8
+    },
+    {
+      "shot_id": "S00801",
+      "seconds": 87.7,
+      "passes": 1,
+      "seconds_per_pass": 87.7
+    },
+    {
+      "shot_id": "S00802",
+      "seconds": 177.6,
+      "passes": 2,
+      "seconds_per_pass": 88.8
+    },
+    {
+      "shot_id": "S00901",
+      "seconds": 137.9,
+      "passes": 1,
+      "seconds_per_pass": 137.9
+    },
+    {
+      "shot_id": "S00903",
+      "seconds": 125.9,
+      "passes": 1,
+      "seconds_per_pass": 125.9
+    },
+    {
+      "shot_id": "S00101",
+      "seconds": 227.6,
+      "passes": 2,
+      "seconds_per_pass": 113.8
+    },
+    {
+      "shot_id": "S00102",
+      "seconds": 130.9,
+      "passes": 1,
+      "seconds_per_pass": 130.9
+    }
+  ],
+  "comfyui_argv": [
+    "main.py",
+    "--preview-method",
+    "auto",
+    "--cache-lru",
+    "10",
+    "--lowvram"
+  ],
+  "rendered": 33,
+  "failed": [],
+  "frames": [
+    {
+      "shot_id": "S00101",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00101.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00101_f5019fb0200b3ae3.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00102",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00102.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00102_0b98504bbb2833b0.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00103",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00103.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00103_db5cc06dd5689611.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00104",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00104.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00104_a738c4c708763213.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00200",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00200.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00200_242f53d97f892dbb.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00202",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00202.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00202_d1b14f2a99016fbd.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00203",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00203.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00203_a312324808719ab9.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00204",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00204.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00204_aac3e1caf6a1eb99.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00300",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00300.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00300_63d283954602878c.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00301",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00301.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00301_7dc1ecfbacf2b931.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00302",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00302.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00302_7180090e633e335b.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00303",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00303.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00303_ebbb1f1843b49e6f.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00402",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00402.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00402_0c5ea2fc2205923a.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00404",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00404.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00404_f17aeb0903d4de13.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00405",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00405.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00405_7e0616f9c62fe80a.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00501",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00501.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00501_9f7f6bd7a0e7c91c.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00502",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00502.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00502_3f08b0393e2e0509.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00503",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00503.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00503_255a0b4ee8eca16c.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00504",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00504.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00504_5490f7c6e988b9cb.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00505",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00505.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00505_fb06c59391690415.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00600",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00600.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00600_065afd39f5acc558.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00601",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00601.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00601_728edcea76db0f1f.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00602",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00602.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00602_198a82124ba7c2fb.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00603",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00603.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00603_34d470d2d16603bf.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00700",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00700.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00700_f5f0058dd511ed30.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00702",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00702.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00702_89fe60a44a646cc9.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00703",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00703.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00703_4d77abfe60c1a20e.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00704",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00704.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00704_1a9db964e9f484a9.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00800",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00800.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00800_66bb6933e153b95d.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00801",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00801.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00801_bc5a6a846c011e2d.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00802",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00802.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00802_5c3b9d4a00dbc42a.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 2
+    },
+    {
+      "shot_id": "S00901",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00901.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00901_c4472d9f685663c2.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    },
+    {
+      "shot_id": "S00903",
+      "path": "_bmad-output/implementation-artifacts/10-1e-live-validation/on/S00903.png",
+      "source": "workspace/e5ed4b3a-fabb-46e6-8adb-5c1c0fc68889/recomposed/S00903_00b3b25c41a15fef.png",
+      "source_size": "1344x768",
+      "size": "1920x1080",
+      "passes": 1
+    }
+  ],
+  "note": "per_shot_from_mtime omits the first completed shot: its start is the service call, not a previous file's mtime. seconds_per_pass_mean uses the whole call and is the number the cost line quotes."
+}

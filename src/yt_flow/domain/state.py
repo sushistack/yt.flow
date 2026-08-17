@@ -579,6 +579,7 @@ RunWarningCode = Literal[
     "relight_failed",
     "relit_sprite_invalid",
     "recompose_preflight_failed",       # Story 10.1d — ComfyUI misconfigured, whole run on overlay
+    "recompose_shots_degraded",          # Story 10.1e — preflight passed but some shots fell back
 ]
 
 

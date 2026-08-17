@@ -316,9 +316,8 @@ class Settings(BaseSettings):
     # VERDICT (10.1c close-out): stays OFF, despite the live run passing. For: 51 passes /
     # 0 errors, Jay's motion verdict on the 3:06 render PASS (findings 3·11 gone), 0
     # composition collapses across the 42-plate sweep. Against, and decisive for the
-    # *default*: (a) 10.4's post-hoc audit scored recomposed frames WORSE on blind
-    # legibility than the plates they replaced — unreadable 20% vs 13%, misread-as-corridor
-    # 57% vs 27% — on this epic's largest defect cluster; (b) CLOSED by Story 10.1d — the
+    # *default*: (a) MEASURED AND PASSED by Story 10.1e — see below; the original
+    # numbers are WITHDRAWN; (b) CLOSED by Story 10.1d — the
     # path needs ComfyUI started with specific flags and free system RAM, and that is now
     # declared once in `recompose_service.REQUIRED_FLAGS` and read off the RUNNING server's
     # argv at recompose entry: a miss bails the whole run out to the overlay with a
@@ -327,14 +326,142 @@ class Settings(BaseSettings):
     # is the fp8 text encoder: it is pinned in the workflow JSON's `clip` node rather than
     # in argv, and a missing file fails fast at that node with ComfyUI's own error naming
     # it, so it is out of the preflight's reach by design and not an unchecked gap;
-    # (c) 90–120s x 51 passes adds 1.3–1.7h to a
-    # 2h E2E budget. So (a) and (c) are still open and this stays False. UNBLOCK: when
-    # 13-2's rebuilt evaluation axes score a paired recompose-on/off set, flip if legibility
-    # is neutral-or-better — the runtime-prerequisite guard half of that condition now exists.
-    # That commit is also what retires the overlay-only machinery (ground placement,
-    # _GROUND_Y_MAX, occlusion, contact shadow, 11.5 parallax, 1.9c idle motion) — while
-    # this stays False they are the production path, not dead code.
-    shot_recompose_enabled: bool = False
+    # (c) MEASURED by Story 10.1e at 1.2h and STILL over the pre-registered 1.0h
+    # line — this is now the ONLY reason the default is False.
+    #
+    # ── items (a) and (c), REWRITTEN by Story 10.1e, 2026-08-17 ───────────────
+    # (a) IS NOW MEASURED, AND IT PASSED. Legibility is neutral-or-better under
+    # recompose. What kept this False is (c), the time budget — measured, not
+    # inherited. Read `10-1e-live-validation/README.md`; every number re-derives
+    # with `run_pairs.py report`.
+    #
+    # (a)'s OLD NUMBERS ARE WITHDRAWN — do not cite them again. "unreadable 20%
+    # vs 13%, misread-as-corridor 57% vs 27%" was never a treatment measurement.
+    # `screening.json` re-reads the same committed `baseline_v2.json` those
+    # figures came from: its 51 `recomposed/` rows and its 15 `images/` rows are
+    # DISJOINT shot sets (0 shot_id overlap), and splitting the same 66 rows by
+    # CAST-PRESENCE instead of by arm selects byte-identical sets and reproduces
+    # every count (unreadable 10/2, corridor 29/4). Arm and cast-presence are
+    # 100% collinear there — all 15 plate rows are shots with `cast == []` — so
+    # the figures cannot separate "recompose hurt legibility" from "shots that
+    # contain characters read as corridors". Free to establish: no GPU, no
+    # network, from data already in the repo.
+    #
+    # THE PAIRED MEASUREMENT (2026-08-17, run e5ed4b3a, n=33 shots / 40 passes):
+    # the same shots, same plates, one cast-card resolution shared by both arms,
+    # rendered once through the overlay (`video.render_composite_still`, the
+    # production `_build_card_chain`) and once through `recompose_run_shots`,
+    # then scored by 13-2's instrument with the blind axis first. The decision
+    # rule was committed in 82de77e BEFORE any score existed
+    # (`PREREGISTRATION.md`), and `report` applies it mechanically:
+    #   deciding axis, blind `readable`, paired:  b=2, c=1, b-c=1 <= slack 1  -> FLIP
+    #   veto, >=5 of 40 passes failed:            0 failed                    -> not triggered
+    #   cost line, >1.0 h added to a 43-shot run: 107.9 s/pass x 40 = 1.2 h    -> BLOCKS
+    # => "(a) closed PASS, (c) still blocks", which is the pre-registered wording
+    # for exactly this outcome, so this stays False.
+    #   OFF  unreadable 3/33 (9.1%)   corridor 27.3%   mean DSG 0.4443
+    #   ON   unreadable 4/33 (12.1%)  corridor 30.3%   mean DSG 0.4615
+    # 28 of 33 shots readable in BOTH arms, 2 in NEITHER, 3 discordant. All three
+    # discordant shots split on `event: unclear`, never on an unreadable `place` —
+    # the same axis as 10.4b's surviving `visible_event` defect. (Do NOT say the arms
+    # name the place "correctly": on S00501 they name DIFFERENT rooms, OFF "a sterile
+    # laboratory" vs ON "a tiled examination room", and no artifact holds a ground
+    # truth to score that against.)
+    #
+    # HOW THIN THIS IS, stated because the rule was fixed in advance and cannot
+    # be re-chosen now: b-c=1 is the rule's exact boundary. One shot the other
+    # way would have read STAY OFF. Three discordant pairs carry no statistical
+    # power. The honest claim is "no evidence recompose is worse on legibility",
+    # NOT "recompose is better".
+    #
+    # (c) IS NOW MEASURED TOO, and it is SMALLER than the recorded 1.3-1.7 h:
+    # 107.9 s/pass (mtime deltas over 32 shots / 39 passes) x 40 passes = 1.2 h.
+    # Two things made that possible and both are now shipped:
+    #   - Story 10.1d's preflight passed live for the first time (ram_free 19.35
+    #     GiB at entry, steady ~17 GiB through the run, 0 failed passes).
+    #   - `--disable-smart-memory` was REMOVED from `REQUIRED_FLAGS`. It was
+    #     required on 10.1c's older-ComfyUI observation, does not reproduce over
+    #     the 40 passes of the 2026-08-17 sweep on 0.12.3, and was the whole cost problem: the graph's weights total
+    #     22.6 GB against 16 GB VRAM, so `--lowvram` streams them from system RAM
+    #     and that flag then unloaded them after every prompt. With it: 385.66 ->
+    #     677 -> 609 s/pass, ram_free 19.35 -> 5.46 GiB, swap 8185/8191 MiB — CONFOUNDED,
+    #     a concurrent session ran four SDXL prompts between pass 1 and passes 2-3
+    #     (`render_on_blocked.json:other_session.ATTRIBUTION_CAVEAT`). Unconfounded:
+    #     107.9 s/pass over 40 passes without the flag. See
+    #     `recompose_service.REQUIRED_FLAGS`.
+    # BEWARE ONE NUMBER: `on.json`'s `seconds_per_pass_mean` is wall-clock over
+    # passes PUBLISHED, and recompose output is content-addressed, so a re-run
+    # publishes 40 having rendered 3 and reports 7.8 s/pass. That value produced a
+    # FLIP verdict for one report run before it was caught. The cost figure must
+    # come from `per_shot_from_mtime`; `run_pairs.py report` now enforces that.
+    #
+    # FLIPPED 2026-08-17 ON JAY'S VIEWING VERDICT: "recompose 무조건 해야하고"
+    # ("recompose is a must"). This is a HUMAN OVERRIDE of the pre-registered cost
+    # line, not a measurement result, and the epic's closure standard is what
+    # authorises it: "a viewing verdict overrides a favorable measurement" — and
+    # symmetrically an unfavorable one. Recording the shape honestly so nobody
+    # later reads this as the numbers having said yes:
+    #   - the deciding legibility axis said FLIP, but weakly. `verdict.json` now
+    #     carries the numbers that say so, computed by `report`, not asserted here:
+    #     `exact_mcnemar_p_two_sided` 1.0, `unreadable_difference_pp` +3.0,
+    #     `unreadable_difference_ci95_pp` [-7.2, +13.3] — a CI that CONTAINS the
+    #     incumbent's own 7 pp claim, so this run does not refute the figures it
+    #     withdrew; the collinearity arithmetic does. n=33 rules out a catastrophe
+    #     and nothing finer.
+    #   - the pre-registered cost line said BLOCK at 1.2 h vs 1.0 h. Jay accepted
+    #     the 1.2 h. THAT IS THE PRICE NOW PAID ON EVERY RUN.
+    #   - what actually decided it is the axis the score never read: on the paired
+    #     motion clips (`10-1e-live-validation/viewing/`) the ON arm puts figures on
+    #     the floor with a contact shadow in the room's own palette, while the OFF
+    #     arm's card is cut at the waist by foreground furniture (S00600) or stands
+    #     on top of a lab bench (S00501). That is the "floating" complaint recompose
+    #     was built for.
+    #   - CAVEAT ON THAT EVIDENCE, found in review AFTER the verdict: the clip build
+    #     Jay watched hardcoded `composite_harmonization_tier=0`, which switches off
+    #     `build_sprite_tint` AND `build_contact_shadow` (video.py:1577/:1650, both
+    #     gated on tier >= 1) — i.e. it handicapped the incumbent on two of the three
+    #     things just cited, while the SCORED OFF arm used production tier 1. The
+    #     harness now reads the setting and the clips were re-rendered at tier 1;
+    #     the override stands until Jay says otherwise. 11.5 parallax is still
+    #     excluded from both arms, which understates the incumbent on motion.
+    #     Full list: `10-1e-live-validation/VERDICT_OVERRIDE.md`.
+    #   - b=2 does NOT survive looking at the frames: both b shots are better
+    #     composited in the ON arm and scored worse, and at reps=1 that is
+    #     indistinguishable from judge noise at the margin. See
+    #     `viewing.json:read_once_observations`.
+    # ALSO SHIPPED, and previously unstated: recompose pops `depth_map_path`
+    # (`recompose_service.py`), so Story 11.5's 2.5D parallax degrades to NO_DEPTH for
+    # every recomposed shot — 33 of 43 on run e5ed4b3a — while `parallax_25d_enabled`
+    # is still True. Card idle motion (1.9c) likewise cannot apply to a shot with no
+    # cards. Both are intended consequences of recreation-over-overlay, not bugs, but
+    # they are now the shipped behaviour rather than a hypothetical.
+    #
+    # KNOWN DEFECT SHIPPED WITH THIS FLIP, raised by Jay on the same viewing:
+    # `depth: "near"` figures are drawn oversized for the room. `_DEPTH_PHRASE["near"]`
+    # asks for "in the foreground close to camera, his whole body from head to feet
+    # visible in frame" — two clauses that fight, since a 1.9 m figure truly close to
+    # camera cannot be head-to-feet in a 16:9 frame, so the model satisfies both by
+    # oversizing the figure against the room's own scale cues. Recorded in
+    # `deferred-work.md`; NOT fixed here, because changing that phrase invalidates
+    # the 43-plate sweep and the slate this path was verified on.
+    # RETIREMENT IS NOW OWED (10.1e AC7). While this was False the overlay-only
+    # machinery (ground placement, _GROUND_Y_MAX, occlusion, contact shadow, 11.5
+    # parallax, 1.9c idle motion) is a FOLLOW-UP story, NEVER the flip commit —
+    # see `deferred-work.md`, "Deferred from Story 10.1e". `render_composite_still`
+    # must survive any such deletion: it is the only way to re-measure the
+    # decision that retired the overlay.
+    #   CORRECTED IN REVIEW: an earlier version of this note argued the overlay stays
+    #   live because 10 of 43 shots are ineligible. It does not. All 10 are ineligible
+    #   for having an EMPTY CAST (`pairs.json.dropped`, 10/10 — none for a missing
+    #   CARD_LOOKS key), and `_build_card_chain` is only entered for a non-empty card
+    #   list (video.py:1508/:1563). So under this flip **0 of 43 shots exercise the
+    #   card-compositing machinery** — ground placement, _GROUND_Y_MAX, occlusion,
+    #   contact shadow, 11.5 parallax and 1.9c idle motion are dead on this run's
+    #   shape, not merely demoted. The retirement story is therefore MORE owed than
+    #   the earlier wording implied. What still keeps that code from being deletable
+    #   is a shot with cast whose card_key is outside CARD_LOOKS (5 keys, hand-written
+    #   prose) — reachable, and unreached on this run.
+    shot_recompose_enabled: bool = True
     shot_recompose_workflow_path: str = "data/workflows/comfyui_shot_recompose_qwen_api.json"
     # Story 10.1d — the free-system-RAM floor the recompose preflight enforces. NOT a
     # model-footprint calculation: it is the floor that catches the known-fatal state
@@ -347,6 +474,17 @@ class Settings(BaseSettings):
     # `--disable-smart-memory` parks weights in system RAM precisely so a working box may
     # sit lower than intuition suggests, so a false-bail rate is possible and unmeasured —
     # 10.1e's paired recompose-on/off scoring is where it would show up.
+    # 10.1e, 2026-08-17: first live readings, and the false-bail rate is now measured at
+    # ZERO across a full 33-shot / 40-pass run — entry 19.35 GiB, steady ~17 GiB, 0 bails.
+    # The floor is vindicated at 12.0; leave it. What the run DID expose is that the floor
+    # is an ENTRY check on a value a run can itself destroy: under the then-required
+    # `--disable-smart-memory` the same box went 19.35 -> 5.46 GiB free with swap
+    # 8185/8191 MiB and 385s -> 677s -> 609s per pass, i.e. below the floor its own
+    # preflight had just cleared. That flag is gone from `REQUIRED_FLAGS` (see
+    # `recompose_service`) and RAM has been flat since, so the entry-check gap is no longer
+    # reachable by any shipped configuration — but it is a property of the mechanism, not of
+    # the number. Do not raise 12.0 to "fix" it and do not lower it to get past a bail.
+    # (`10-1e-live-validation/render_on_blocked.json` + `README.md`.)
     recompose_preflight_min_free_ram_gb: float = Field(12.0, gt=0)
 
     # Composite harmonization (Story 8.7): tiered collage-look resolution ladder.

@@ -73,6 +73,10 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "video", "리라이트 결과가 잘못돼 원본 스프라이트로 합성했습니다"),
     "recompose_preflight_failed": (
         "video", "ComfyUI 실행 전제가 맞지 않아 샷 재구성을 건너뛰고 오버레이로 렌더했습니다"),
+    "recompose_shots_degraded": (
+        "video",
+        "일부 샷의 재구성이 실패하거나 건너뛰어져 오버레이로 렌더했습니다",
+    ),
 }
 if set(RUN_WARNING_CATALOG) != set(get_args(RunWarningCode)):
     # `raise`, not `assert`: the docstring promises import-time failure, and `python -O`

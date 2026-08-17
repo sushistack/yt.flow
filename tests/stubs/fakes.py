@@ -150,7 +150,7 @@ async def fake_get_system_stats(base_url) -> dict:
     return {
         "system": {
             "comfyui_version": "stub-0.0.0", "pytorch_version": "stub-torch",
-            "argv": ["main.py", "--lowvram", "--disable-smart-memory", "--cache-lru", "10"],
+            "argv": ["main.py", "--lowvram", "--cache-lru", "10"],
             "ram_free": 24 * 2**30, "ram_total": 32 * 2**30,
         },
         "devices": [{"name": "stub-device"}],

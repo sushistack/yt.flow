@@ -763,9 +763,10 @@ async def test_a_raising_recompose_resolver_files_a_warning_too(monkeypatch, tmp
 
 
 async def test_recompose_resolver_is_untouched_while_the_flag_is_off(monkeypatch, tmp_path, assets):
-    """`shot_recompose_enabled` ships False and the test Settings stubs omit it entirely
-    (absent == off). Neither may reach the resolver — which is also what keeps the
-    preflight's `/system_stats` request off every run that never asked for recompose."""
+    """The test Settings stubs omit `shot_recompose_enabled` entirely, and absent == off
+    via `getattr(s, ..., False)`. That must keep holding now that the shipped default is
+    True (10.1e): this asserts the GATE, not the default, and it is also what keeps the
+    preflight's `/system_stats` request off any run that never asked for recompose."""
     monkeypatch.setattr(video, "_settings", lambda: _settings_ns(tmp_path))
     calls = []
 
@@ -824,3 +825,52 @@ async def test_a_clean_tier3_run_is_warning_free(monkeypatch, tmp_path, assets):
         return {("STOCK-d-class__standing__front", "corridor"): relit_path}, {"computed": 1, "failed": 0}
 
     assert await _relight_warnings_for(monkeypatch, tmp_path, assets, resolver=_resolver) == []
+
+
+async def test_partial_recompose_degradation_files_its_own_warning(monkeypatch, tmp_path, assets):
+    """Story 10.1e ships the flag True, so "preflight passed and then some shots fell back"
+    is a production state. Until this row existed the only reported recompose outcome was
+    the all-or-nothing preflight bail, so a half-recomposed run read as a clean one."""
+    settings = _settings_ns(tmp_path)
+    settings.shot_recompose_enabled = True
+    monkeypatch.setattr(video, "_settings", lambda: settings)
+
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {"recomposed": 12, "skipped": 3, "failed": 2}
+
+    monkeypatch.setattr(video, "_recompose_resolver", _resolver)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    codes = [w["code"] for w in out["run_warnings"]]
+    assert codes.count("recompose_shots_degraded") == 1
+    row = next(w for w in out["run_warnings"] if w["code"] == "recompose_shots_degraded")
+    assert row["context"]["reason"] == "failed=2 skipped=3"
+
+
+async def test_flag_on_without_an_injected_resolver_is_not_silent(monkeypatch, tmp_path, assets):
+    """Only `api/main.py`'s lifespan injects the resolver. With the flag now True by default,
+    any other entry point would render the overlay while the config says recompose is on."""
+    settings = _settings_ns(tmp_path)
+    settings.shot_recompose_enabled = True
+    monkeypatch.setattr(video, "_settings", lambda: settings)
+    monkeypatch.setattr(video, "_recompose_resolver", None)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    row = next(w for w in out["run_warnings"] if w["code"] == "recompose_shots_degraded")
+    assert row["context"]["reason"] == "resolver_not_injected"

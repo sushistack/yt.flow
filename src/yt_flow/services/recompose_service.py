@@ -51,9 +51,26 @@ CARD_LOOKS: dict[str, str] = {
 # (main.py), so `--cache-lru 0` in argv is byte-for-byte the eviction behaviour this
 # table exists to prevent. An empty value means presence is the whole requirement.
 #
-# The fourth prerequisite is not a flag: free system RAM >= `recompose_preflight_min_free_ram_gb`.
-# It is listed with the flags on purpose — `--disable-smart-memory` buys its deadlock fix by
-# offloading to system RAM, so the two conditions are one decision.
+# The third prerequisite is not a flag: free system RAM >= `recompose_preflight_min_free_ram_gb`.
+#
+# REMOVED 2026-08-17 by Story 10.1e, on measurement: `--disable-smart-memory`. It was here
+# on 10.1c's report that "without it the Qwen graph swap-deadlocks", observed on an older
+# ComfyUI and never re-tested — `gotcha_qwen-image-edit-rejection-was-version-specific` is
+# about exactly this class of inherited claim. On ComfyUI 0.12.3 the deadlock does not
+# reproduce over the 40 passes of the 2026-08-17 sweep, and requiring the flag was
+# ACTIVELY FATAL on this box:
+# the graph's weights total 22.6 GB (12.6 unet + 8.95 fp8 encoder + 0.81 LoRA + 0.24 VAE)
+# against 16 GB VRAM, so `--lowvram` streams them from system RAM and
+# `--disable-smart-memory` then unloads them after every prompt — 22.6 GB re-read per
+# pass on a 31 GB box. Measured, same hardware, same shots:
+#     with the flag     385.66 -> 677 -> 609 s/pass, ram_free 19.35 -> 5.46 GiB, swap 8185/8191 MiB
+#     without the flag  107.9 s/pass over 40 passes, ram_free flat ~17-13 GiB, 0 failures
+#                       (the with-flag column is CONFOUNDED: a concurrent session ran four
+#                        SDXL prompts between pass 1 and passes 2-3 — see
+#                        `10-1e-live-validation/render_on_blocked.json`)
+# i.e. the flag this table required is what breached this table's own RAM floor. The
+# preflight was refusing the only configuration that works. Keep watching for the original
+# deadlock: if it ever returns, it belongs here WITH the version it was seen on.
 #
 # DELIBERATELY NOT CHECKED: the fp8 text encoder. `qwen_2.5_vl_7b_fp8_scaled.safetensors`
 # is pinned in the workflow JSON's `clip` node — a property of the graph file, absent from
@@ -61,12 +78,23 @@ CARD_LOOKS: dict[str, str] = {
 # own error naming the file. Synthesising a worse version of that message here would need a
 # second HTTP endpoint (`/object_info`) for no added information.
 REQUIRED_FLAGS: dict[str, tuple[str, str]] = {
-    "--lowvram": ("", "weights stream instead of staying resident on the GPU"),
-    "--disable-smart-memory": (
-        "", "10.1c: without it the Qwen graph swap-deadlocks — it pays for that with system RAM"),
+    "--lowvram": ("", "the graph's 22.6 GB of weights do not fit 16 GB VRAM; they stream"),
     "--cache-lru": (
         "10", "run e5ed4b3a: the default cache-classic evicts the checkpoint on every graph "
               "alternation (490s vs 14.8s per shot), and recompose adds a third graph to it"),
+}
+
+
+# The mirror of REQUIRED_FLAGS: a flag whose PRESENCE is disqualifying. Removing
+# `--disable-smart-memory` from the required table is not enough — a launcher that still
+# passes it (this box's run.sh did until 2026-08-17, and another host may) now sails through
+# a preflight that has nothing to say about it, into the state 10.1e measured at 385-677
+# s/pass against 108 without it. Refusing loudly is the same contract as a missing flag.
+FORBIDDEN_FLAGS: dict[str, str] = {
+    "--disable-smart-memory": (
+        "10.1e: with --lowvram already streaming the graph's 22.6 GB from system RAM, this "
+        "unloads it after every prompt — 385-677 s/pass vs 108, and it drove free RAM below "
+        "this preflight's own floor mid-run"),
 }
 
 
@@ -127,7 +155,8 @@ async def _preflight(s: Settings) -> tuple[str, str] | None:
     """Check the RUNNING server against REQUIRED_FLAGS + the RAM floor, once per run.
 
     ``None`` when the path may proceed, else ``(reason, message)`` where ``reason`` is one
-    of ``missing_flags`` / ``low_ram`` / ``stats_unavailable`` / ``stats_unreadable`` and
+    of ``forbidden_flags`` / ``missing_flags`` / ``low_ram`` / ``stats_unavailable`` /
+    ``stats_unreadable`` and
     ``message`` is headline-first (see ``_message``).
 
     The *server* is asked — never ``.env``, ``run.sh`` or our own ``Settings`` — because
@@ -170,6 +199,16 @@ async def _preflight(s: Settings) -> tuple[str, str] | None:
     ram = None if free_gb is None else (
         f"{free_gb:.1f} / {total_gb:.1f} GiB (threshold {floor:.1f})" if total_gb is not None
         else f"{free_gb:.1f} GiB free (threshold {floor:.1f})")
+
+    # A disqualifying flag is checked FIRST: it is the one failure whose symptom is slowness
+    # rather than an error, so nothing downstream would ever surface it. See FORBIDDEN_FLAGS.
+    banned = [f"{flag} ({why})" for flag, why in FORBIDDEN_FLAGS.items()
+              if _flag_value(flag, argv) is not None]
+    if banned:
+        return "forbidden_flags", _message(
+            "ComfyUI was started with a flag this path must not run under: "
+            + "; ".join(banned) + ". Remove it from the launcher and restart.",
+            argv=argv, ram=ram)
 
     # Flags BEFORE the RAM read: they are the actionable half. A box with flags absent and
     # an unreadable `ram_free` used to be told only "payload unreadable", which names the

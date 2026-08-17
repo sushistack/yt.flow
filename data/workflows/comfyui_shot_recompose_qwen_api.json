@@ -13,7 +13,7 @@
     "clip": {
         "class_type": "CLIPLoader",
         "_meta": {
-            "title": "fp8 text encoder (8.7GB) — REQUIRED, not a size choice. Qwen-Image-Edit needs the Qwen2.5-VL VISION tower to read image1/image2; the Q4 GGUF text encoder ships text-only and its vision weights live in a separate mmproj file. Loading it logged 'Can't find mmproj file ... Qwen-Image-Edit will be broken', dropped every visual.* weight, and every prompt died on 'mat1 and mat2 shapes cannot be multiplied (720x1280 and 3840x1280)'. The memory cost is paid with --lowvram --disable-smart-memory instead."
+            "title": "fp8 text encoder (8.7GB) — REQUIRED, not a size choice. Qwen-Image-Edit needs the Qwen2.5-VL VISION tower to read image1/image2; the Q4 GGUF text encoder ships text-only and its vision weights live in a separate mmproj file. Loading it logged 'Can't find mmproj file ... Qwen-Image-Edit will be broken', dropped every visual.* weight, and every prompt died on 'mat1 and mat2 shapes cannot be multiplied (720x1280 and 3840x1280)'. The memory cost is paid with --lowvram (10.1e removed --disable-smart-memory: it re-read all 22.6 GB per pass, 385-677 s/pass vs 108 without it)."
         },
         "inputs": {
             "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",

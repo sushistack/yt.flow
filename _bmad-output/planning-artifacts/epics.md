@@ -1489,7 +1489,7 @@ GGUF(13.24GB)로 카드+포즈가이드에서 새 카드를 만드는 완전히 
   → **순차 삽입(far→mid→near, 인물당 1패스)** 으로 해결. `Keep the room and everyone already in it
   exactly as they are`가 앞 패스 인물을 보존한다.
 - **속도**: 90~120초/패스. 모델 첫 로딩만 500초대(1회성).
-- **필수 환경**: ComfyUI를 `--lowvram --disable-smart-memory`로 기동해야 한다(기본 모드에서는 unet 12.3GB +
+- **필수 환경**: ComfyUI를 `--lowvram`으로 기동해야 한다(10.1e가 `--disable-smart-memory` 요구를 실측으로 철회: 패스당 385~677초 대 108초)(기본 모드에서는 unet 12.3GB +
   텍스트 인코더 8.7GB ≈ 21GB가 VRAM 16GB를 넘겨 스왑 교착 — 12분에 0건). 또한 `run.sh`는 `"$@"`를 전달하지
   않으므로 `main.py`를 직접 호출해야 플래그가 먹는다.
 - **텍스트 인코더는 fp8 필수.** GGUF Q4는 비전 타워가 별도 `mmproj`에 있어 `image1/2`를 못 읽고
@@ -1557,7 +1557,7 @@ near+mid 두 조건을 캐시 없이 재생성해 **양쪽 모두 중복 없음*
 지적 3·11 소멸, 42장 스윕 구도 붕괴 0). 그럼에도 **기본값**으로는 이르다: (a) 하루 뒤 10.4 사후 감사가
 재창조본을 원본 플레이트보다 **블라인드 판독성에서 더 나쁘게** 측정했고(unreadable 20% vs 13%,
 'corridor' 오독 57% vs 27%) 그 축은 이 에픽 최대 결함군이며 13.2에서 재구축 중이다 — 즉 지금 켜면
-한 축의 승리를 다른 축의 회귀와 맞바꾼다. (b) ComfyUI를 `--lowvram --disable-smart-memory`로 띄우고
+한 축의 승리를 다른 축의 회귀와 맞바꾼다. (b) ComfyUI를 `--lowvram`으로 띄우고(10.1e에서 `--disable-smart-memory`는 철회됨)
 텍스트 인코더를 fp8로 유지해야 하는데 **코드가 이를 검출하지도 강제하지도 않는다** — 기본 설치에서는
 스왑 교착(12분 0건)이고 이건 예외가 아니라 정지라 `try/except` 폴백이 발동하지 않는다. (c) 51패스 ×
 90~120초 = 2시간 E2E 예산에 1.3~1.7시간 추가. (d) 에픽 규정 "신규 경로는 기본 off로 들어간다".
@@ -1675,7 +1675,7 @@ Jay 지적: "이상한 싸이렌 소리 좀 없애줘 (다른 걸로 대체하�
 
 ### Story 10.1d: Recompose 런타임 전제 프리플라이트 (backlog, 2026-08-15 초안)
 
-10.1c 해제 조건 **(b)**. recompose 경로는 ComfyUI를 `--lowvram --disable-smart-memory` + fp8 인코더로 띄워야 하는데 그걸 감지·강제하는 코드가 없어, 기본 설치에서 ~12분 스왑 데드락에 빠지고 try/except fallback도 안 걸린다(10.1c 판정 주석). `/system_stats`의 `argv`·RAM으로 진입 시 1회 프리플라이트하고, 실패는 크게·이름 있게·조치 가능하게 낸다. 코드만이고 GPU 불필요하며 **기본값은 건드리지 않는다**. 2026-08-15 라이브 런 e5ed4b3a가 같은 부류를 실증했다 — 플래그 없이 샷당 491초(샘플링은 11초), RSS 14GB+스왑 4GB, yt.flow는 살아 있는 서버를 "죽었다"고 오판. 파일: `10-1d-recompose-runtime-preflight.md`.
+10.1c 해제 조건 **(b)**. recompose 경로는 ComfyUI를 `--lowvram` + fp8 인코더로 띄워야 하는데(10.1e가 `--disable-smart-memory`를 철회) 그걸 감지·강제하는 코드가 없어, 기본 설치에서 ~12분 스왑 데드락에 빠지고 try/except fallback도 안 걸린다(10.1c 판정 주석). `/system_stats`의 `argv`·RAM으로 진입 시 1회 프리플라이트하고, 실패는 크게·이름 있게·조치 가능하게 낸다. 코드만이고 GPU 불필요하며 **기본값은 건드리지 않는다**. 2026-08-15 라이브 런 e5ed4b3a가 같은 부류를 실증했다 — 플래그 없이 샷당 491초(샘플링은 11초), RSS 14GB+스왑 4GB, yt.flow는 살아 있는 서버를 "죽었다"고 오판. 파일: `10-1d-recompose-runtime-preflight.md`.
 
 ### Story 10.1e: Recompose on/off 페어 채점과 기본값 판정 (backlog, 2026-08-15 초안)
 

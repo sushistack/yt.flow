@@ -31,6 +31,7 @@ import json
 import os
 import shutil
 import statistics
+from math import comb
 import subprocess
 import sys
 import time
@@ -71,6 +72,13 @@ def _axis():
 def _write(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"  -> {path.relative_to(ROOT)}", flush=True)
+
+
+def _rel(p: Path) -> str:
+    """Repo-relative string. cwd is ROOT, so manifest paths arrive relative already and
+    `Path.relative_to(ROOT)` raises on them — this crashed `render-on`'s publish step
+    after all 33 renders were paid for."""
+    return str(p.relative_to(ROOT) if p.is_absolute() else p)
 
 
 def _blind_id(shot_id: str, arm: str) -> str:
@@ -399,6 +407,7 @@ async def cmd_render_on(args) -> int:
     passes = manifest["totals"]["recompose_passes"]
     print(f"render-on: {sum(len(s['shots']) for s in scenes)} shots, {passes} passes")
     t0 = time.monotonic()
+    call_started = time.time()
     remaining, stats = await recompose_service.recompose_run_shots(scenes, cast_cards, settings)
     total = round(time.monotonic() - t0, 1)
     print(f"  stats={stats}  total={total}s", flush=True)
@@ -436,8 +445,9 @@ async def cmd_render_on(args) -> int:
              "-i", str(src), "-vf", chain, "-frames:v", "1", "-update", "1", str(out)],
             check=True, capture_output=True)
         mtimes.append((shot["shot_id"], src.stat().st_mtime, len(shot["cast"])))
-        rows.append({"shot_id": shot["shot_id"], "path": str(out.relative_to(ROOT)),
-                     "source": str(src.relative_to(ROOT)), "source_size": _dimensions(src),
+        # cwd is ROOT, so the plate/recomposed paths off the manifest are already relative.
+        rows.append({"shot_id": shot["shot_id"], "path": _rel(out),
+                     "source": _rel(src), "source_size": _dimensions(src),
                      "size": _dimensions(out), "passes": len(shot["cast"])})
         print(f"  ✓ {shot['shot_id']}  {rows[-1]['source_size']} -> {rows[-1]['size']}", flush=True)
 
@@ -445,6 +455,8 @@ async def cmd_render_on(args) -> int:
     # writes each frame as its shot completes, so the deltas are the render, measured
     # rather than instrumented (and the service is called once, exactly as production
     # calls it — a per-shot loop would run the preflight 33 times instead of once).
+    # A shot whose file predates this call was served from cache, not rendered now.
+    rendered_now = sum(n for _, m, n in mtimes if m >= call_started)
     mtimes.sort(key=lambda t: t[1])
     per_shot: list[dict] = []
     prev_t = None
@@ -455,6 +467,11 @@ async def cmd_render_on(args) -> int:
                              "seconds_per_pass": round((mtime - prev_t) / max(1, n_passes), 1)})
         prev_t = mtime
     done_passes = sum(r["passes"] for r in rows)
+    # PUBLISHED, not rendered — a cache hit publishes without rendering. `passes_failed`
+    # feeds the pre-registered veto, which `report` applies BEFORE anything else, so the
+    # same cache-blindness that faked the cost figure would have made the veto unfireable
+    # on any warm-cache re-run. Failure means a shot the service could not produce a frame
+    # for, which is exactly `stats["failed"]` plus anything absent from `rows`.
     failed_passes = passes - done_passes
     _write(HERE / "on.json", {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -465,7 +482,13 @@ async def cmd_render_on(args) -> int:
         "total_seconds": total,
         "passes_attempted": passes, "passes_completed": done_passes,
         "passes_failed": failed_passes,
-        "seconds_per_pass_mean": round(total / max(1, done_passes), 1),
+        # Passes this CALL actually rendered — the rest were content-addressed cache hits.
+        # Dividing wall clock by all published passes reported 7.8 s/pass for a re-run that
+        # rendered 3 of 40, and `report` cited it as the cost figure until this was fixed.
+        "passes_rendered_this_call": rendered_now,
+        "seconds_per_pass_mean": round(total / rendered_now, 1) if rendered_now else None,
+        "seconds_per_pass_mean_note": (
+            "None means every pass was a cache hit; use per_shot_from_mtime instead"),
         "per_shot_from_mtime": per_shot,
         "comfyui_argv": (await _stats_argv(settings)),
         "rendered": len(rows), "failed": failed, "frames": rows,
@@ -474,6 +497,63 @@ async def cmd_render_on(args) -> int:
                  "the whole call and is the number the cost line quotes."),
     })
     return 0 if not failed else 4
+
+
+def cmd_publish_on(args) -> int:
+    """Publish whatever recomposed frames exist, without calling the service.
+
+    `render-on` publishes at the end of one `recompose_run_shots` call, so a run killed
+    mid-sweep leaves its finished frames stranded in the run's `recomposed/` dir — which
+    is exactly what happened on 2026-08-16 (2 of 33 shots). The cache path is
+    content-addressed, so the frames are findable from the committed manifest alone.
+    """
+    from yt_flow.pipeline.nodes import shot_recompose, video as video_node
+
+    manifest = _manifest()
+    ON_DIR.mkdir(parents=True, exist_ok=True)
+    chain = video_node._zoompan_filter(video_node._FUSION_STILL_SPEC, 1.0)
+    rows, missing = [], []
+    for shot in manifest["shots"]:
+        plate = Path(shot["plate"])
+        cast = [dict(c) for c in shot["cast"]]
+        # The three digest inputs are copied verbatim from recompose_service's loop
+        # (manifest order, NOT order_cast) — a different digest here would silently
+        # look for a file the service never wrote.
+        digest = shot_recompose.recompose_digest(
+            plate.read_bytes(),
+            [str(c["path"]) for c in cast],
+            [f"{c.get('card_key')}|{c.get('position')}|{c.get('depth')}|{c.get('pose')}"
+             for c in cast])
+        run_dir = plate.parent.parent if plate.parent.name == "images" else Path(Settings().workspace_path)
+        src = shot_recompose.recompose_cache_path(run_dir, shot["shot_id"], digest)
+        if not src.is_file():
+            missing.append(shot["shot_id"])
+            continue
+        out = ON_DIR / f"{shot['shot_id']}.png"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-framerate", str(video_node.FPS),
+             "-i", str(src), "-vf", chain, "-frames:v", "1", "-update", "1", str(out)],
+            check=True, capture_output=True)
+        # cwd is ROOT, so a plate path out of the manifest is already repo-relative.
+        rows.append({"shot_id": shot["shot_id"], "path": _rel(out),
+                     "source": _rel(src), "source_size": _dimensions(src),
+                     "size": _dimensions(out), "passes": len(shot["cast"])})
+        print(f"  ✓ {shot['shot_id']}  {rows[-1]['source_size']} -> {rows[-1]['size']}", flush=True)
+    print(f"publish-on: {len(rows)} published, {len(missing)} not rendered yet")
+    _write(HERE / "on_partial.json", {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "arm": "on", "source": "publish-on (recovered from a killed render-on)",
+        "published": len(rows), "not_rendered": missing, "frames": rows,
+        "note": ("`report` reads on.json, NOT this file. A recovered partial arm is not a "
+                 "measured sweep — it has no single-call wall clock and its pass accounting "
+                 "is unknown, so publish-on deliberately does not overwrite on.json. Run "
+                 "`render-on` to completion before `report`."),
+    })
+    if missing:
+        print(f"NOTE: {len(missing)} shots not rendered. `report` will read the LAST "
+              "complete on.json, which does not describe this partial state — finish "
+              "`render-on` first.")
+    return 0
 
 
 async def _stats_argv(settings) -> list | None:
@@ -609,6 +689,13 @@ def cmd_report(args) -> int:
     manifest = _manifest()
     on_meta = json.loads((HERE / "on.json").read_text(encoding="utf-8"))
     screening = json.loads((HERE / "screening.json").read_text(encoding="utf-8"))
+    if on_meta.get("preflight_failed"):
+        # A preflight bail writes an on.json with zero frames and no cost data. Reading it
+        # applies the veto to 0 and the cost line to nothing, i.e. prints FLIP for a run
+        # that rendered nothing at all.
+        print(f"STOP: on.json is a preflight bail ({on_meta['preflight_failed']}) — no cost "
+              "or pass data. Fix ComfyUI's launcher and re-run `render-on`.")
+        return 2
 
     rows = {(r["shot_id"], r["arm"]): r for r in results["rows"]}
     shot_ids = sorted({s for s, _ in rows})
@@ -626,7 +713,51 @@ def cmd_report(args) -> int:
     delta = len(b) - len(c)
     vetoed = failed_passes >= VETO_FAILED_PASSES
     axis_verdict = "FLIP" if delta <= FLIP_SLACK else "STAY OFF"
-    per_pass = on_meta.get("seconds_per_pass_mean") or 0
+    # NOT `seconds_per_pass_mean`: that is total-wall-clock / passes-PUBLISHED, and
+    # `recompose_run_shots` skips a shot whose content-addressed output already exists, so
+    # a re-run publishes 40 passes having rendered 3 and reports 7.8 s/pass. The per-shot
+    # mtime deltas are written by the render itself and a cache hit leaves its file (and
+    # therefore its delta) untouched, so they survive re-runs. Weighted by passes/shot.
+    mt = on_meta.get("per_shot_from_mtime") or []
+    # A delta that spans two `recompose_run_shots` invocations is wall clock between runs,
+    # not render time — it includes whatever a human did in between. On this run S00101 and
+    # S00102 were re-rendered ~4 min after the sweep ended, contributing 227.6 s and 130.9 s
+    # deltas for 3 passes. Drop any row above 3x the median s/pass. MEASURED ON THIS RUN:
+    # the filter drops NOTHING — S00101/S00102 are 113.8 and 130.9 s/pass against a 91.0
+    # median, so the contamination is 107.9 vs 106.9 s/pass (1.199 h vs 1.188 h, both over
+    # the 1.0 h line). The guard is here for the case it was written for: a run resumed the
+    # next day, where one delta is hours of idle time.
+    if len(mt) >= 5:
+        med = statistics.median(e["seconds_per_pass"] for e in mt)
+        kept = [e for e in mt if e["seconds_per_pass"] <= 3 * med]
+        dropped = [e["shot_id"] for e in mt if e["seconds_per_pass"] > 3 * med]
+    else:
+        kept, dropped, med = mt, [], None
+    secs = sum(e["seconds"] for e in kept)
+    npass = sum(e["passes"] for e in kept)
+    # The power of the deciding axis, computed rather than asserted: config.py and the
+    # override record both quote these, and "every number re-derives with `report`" has to
+    # include the ones that weaken the result.
+    npaired = len(paired)
+    disc = len(b) + len(c)
+    p_two_sided = min(1.0, 2 * sum(comb(disc, k) for k in range(min(len(b), len(c)) + 1)) / 2**disc) \
+        if disc else 1.0
+    _d = (len(b) - len(c)) / npaired if npaired else 0.0
+    _se = (((len(b) + len(c)) - ((len(b) - len(c)) ** 2) / npaired) ** 0.5) / npaired \
+        if npaired else 0.0
+    ci = [round(100 * (_d - 1.96 * _se), 1), round(100 * (_d + 1.96 * _se), 1)]
+
+    if not npass:
+        # REFUSE, do not default. `seconds_per_pass_mean` is None on an all-cache-hit
+        # re-run, and `None or 0` made projected_h 0.0 -> cost_blocks False -> FLIP. An
+        # unmeasured cost must never be the reason a gate opens.
+        print("STOP: no per-shot mtime data in on.json — cost is unmeasured and the "
+              "pre-registered cost line cannot be applied. Re-run `render-on`.")
+        return 2
+    per_pass = round(secs / npass, 1)
+    per_pass_source = (f"mtime deltas over {len(kept)} shots / {npass} passes"
+                       + (f"; dropped {dropped} as cross-invocation gaps (>3x median "
+                          f"{med:.1f}s/pass)" if dropped else ""))
     projected_h = round(per_pass * manifest["totals"]["recompose_passes"] / 3600, 2)
     cost_blocks = projected_h > COST_BUDGET_HOURS
 
@@ -639,19 +770,40 @@ def cmd_report(args) -> int:
     else:
         verdict, flag = "FLIP", True
 
+    override = None
+    ovr = HERE / "VERDICT_OVERRIDE.md"
+    if ovr.is_file():
+        override = ovr.read_text(encoding="utf-8").strip()
+        print("  (a VERDICT_OVERRIDE.md is present — recorded alongside, never merged in)")
+
     off, on = results["arms"]["off"], results["arms"]["on"]
     lines = _readme(screening, manifest, on_meta, results, off, on, paired,
                     b, c, both, neither, delta, failed_passes, vetoed, axis_verdict,
-                    per_pass, projected_h, cost_blocks, verdict, flag, rows)
+                    per_pass, per_pass_source, projected_h, cost_blocks, verdict, flag, rows)
+    if override:
+        lines += "\n\n## HUMAN OVERRIDE\n\n" + override + "\n"
     (HERE / "README.md").write_text(lines, encoding="utf-8")
     print(f"  -> {(HERE / 'README.md').relative_to(ROOT)}")
     _write(HERE / "verdict.json", {
         "paired_n": len(paired), "b": len(b), "c": len(c), "b_minus_c": delta,
         "b_shots": b, "c_shots": c, "both_readable": len(both), "neither_readable": len(neither),
+        "exact_mcnemar_p_two_sided": round(p_two_sided, 4),
+        "unreadable_difference_pp": round(100 * _d, 1),
+        "unreadable_difference_ci95_pp": ci,
+        "power_note": ("computed from b/c/n by `report`. n=33 with 3 discordant pairs rules "
+                       "out a catastrophe and nothing finer; the CI contains the incumbent's "
+                       "own 7 pp claim, so this measurement does not refute the figures it "
+                       "withdrew — the collinearity arithmetic does."),
         "failed_passes": failed_passes, "veto_triggered": vetoed,
         "deciding_axis_verdict": axis_verdict,
-        "seconds_per_pass": per_pass, "projected_hours_43_shot_run": projected_h,
-        "cost_blocks": cost_blocks, "verdict": verdict, "shot_recompose_enabled": flag,
+        "seconds_per_pass": per_pass, "seconds_per_pass_source": per_pass_source,
+        "projected_hours_43_shot_run": projected_h,
+        "cost_blocks": cost_blocks, "verdict": verdict,
+        # What the RULE yields. The shipped flag can differ: a human viewing verdict may
+        # override, and that is recorded in VERDICT_OVERRIDE.md rather than folded in here,
+        # so this file always shows what the pre-registered rule alone concluded.
+        "shot_recompose_enabled_per_rule": flag,
+        "human_override": override,
     })
     print(f"\nVERDICT: {verdict}   (b={len(b)}, c={len(c)}, b-c={delta}, n={len(paired)}, "
           f"failed passes={failed_passes})")
@@ -664,8 +816,8 @@ def _pct(n, d):
 
 
 def _readme(screening, manifest, on_meta, results, off, on, paired, b, c, both, neither,
-            delta, failed_passes, vetoed, axis_verdict, per_pass, projected_h, cost_blocks,
-            verdict, flag, rows) -> str:
+            delta, failed_passes, vetoed, axis_verdict, per_pass, per_pass_source,
+            projected_h, cost_blocks, verdict, flag, rows) -> str:
     arm = screening["by_arm"]
     cast = screening["by_cast_presence"]
     n = len(paired)
@@ -681,7 +833,8 @@ def _readme(screening, manifest, on_meta, results, off, on, paired, b, c, both, 
         f"b−c={delta}** against the pre-registered `b−c ≤ {FLIP_SLACK}` ⇒ {axis_verdict}.  ",
         f"Veto (≥{VETO_FAILED_PASSES} of {manifest['totals']['recompose_passes']} passes fail): "
         f"{failed_passes} failed ⇒ {'TRIGGERED' if vetoed else 'not triggered'}.  ",
-        f"Cost: {per_pass}s/pass × {manifest['totals']['recompose_passes']} passes = "
+        f"Cost: {per_pass}s/pass ({per_pass_source}) × "
+        f"{manifest['totals']['recompose_passes']} passes = "
         f"{projected_h} h added to a {RUN_SHOTS}-shot run ⇒ "
         f"{'over' if cost_blocks else 'within'} the 1.0 h line in 10.1c item (c).",
         "",
@@ -716,7 +869,7 @@ def _readme(screening, manifest, on_meta, results, off, on, paired, b, c, both, 
         f"{manifest['totals']['recompose_eligible']} recompose-eligible, "
         f"**{manifest['totals']['paired']} paired**, "
         f"{manifest['totals']['recompose_passes']} recompose passes.",
-        f"- Cast cards resolved **once** (`pairs.json`) and consumed by both arms, so angle "
+        "- Cast cards resolved **once** (`pairs.json`) and consumed by both arms, so angle "
         "selection is held constant.",
         f"- OFF: `render_composite_still` → `_build_card_chain` "
         f"(harmonization tier {manifest['settings_snapshot']['composite_harmonization_tier']}, "
@@ -827,12 +980,18 @@ def cmd_grid(args) -> int:
     from PIL import Image, ImageDraw
 
     manifest = _manifest()
-    verdict = json.loads((HERE / "verdict.json").read_text(encoding="utf-8"))
-    key = {(f["shot_id"], f["arm"]): f["blind_id"]
-           for f in json.loads((HERE / "pairs_key.json").read_text(encoding="utf-8"))["frames"]}
+    # Blocked-run mode: no scoring happened, so there is no verdict to cite and no blind
+    # package to protect. The sheet is then labelled by shot_id and answers a different,
+    # still-necessary question — did the two renderers produce sane frames at all.
+    partial = not (HERE / "verdict.json").is_file()
+    verdict = {"b_shots": [], "c_shots": []} if partial else \
+        json.loads((HERE / "verdict.json").read_text(encoding="utf-8"))
+    key = {} if partial else {
+        (f["shot_id"], f["arm"]): f["blind_id"]
+        for f in json.loads((HERE / "pairs_key.json").read_text(encoding="utf-8"))["frames"]}
     shots = [s["shot_id"] for s in manifest["shots"]
              if (OFF_DIR / f"{s['shot_id']}.png").is_file()
-             and (ON_DIR / f"{s['shot_id']}.png").is_file()]
+             and (partial or (ON_DIR / f"{s['shot_id']}.png").is_file())]
 
     tw, th = 256, 144   # 512px per pair on the long edge
     cols = 6
@@ -845,21 +1004,30 @@ def cmd_grid(args) -> int:
         y = 8 + cy * (th + 20)
         for j, arm in enumerate(("off", "on")):
             src = (OFF_DIR if arm == "off" else ON_DIR) / f"{shot_id}.png"
+            if not src.is_file():   # partial mode: the ON arm stopped after 2 shots
+                draw.rectangle([x + j * tw, y, x + j * tw + tw - 1, y + th - 1], fill="#222222")
+                draw.text((x + j * tw + 6, y + th // 2 - 6), "not rendered", fill="#777777")
+                continue
             with Image.open(src) as im:
                 sheet.paste(im.convert("RGB").resize((tw, th)), (x + j * tw, y))
         # The blind ids, NOT the arm: the grid is the human-blind package.
-        draw.text((x, y + th + 4),
-                  f"{key[(shot_id, 'off')][:6]} | {key[(shot_id, 'on')][:6]}", fill="white")
-    sheet.save(HERE / "pairs_grid.jpg", quality=88)
-    print(f"  -> {(HERE / 'pairs_grid.jpg').relative_to(ROOT)}  {sheet.size}")
+        label = shot_id if partial else \
+            f"{key[(shot_id, 'off')][:6]} | {key[(shot_id, 'on')][:6]}"
+        draw.text((x, y + th + 4), label, fill="white")
+    out_name = "partial_grid.jpg" if partial else "pairs_grid.jpg"
+    sheet.save(HERE / out_name, quality=88)
+    print(f"  -> {(HERE / out_name).relative_to(ROOT)}  {sheet.size}")
 
     # Pair sheets for every discordant shot — these are what the verdict cites, so they
     # are labelled with the arm (the reveal comes after the grid above is read blind).
     pair_dir = HERE / "pair_sheets"
     pair_dir.mkdir(exist_ok=True)
-    for shot_id in verdict["b_shots"] + verdict["c_shots"]:
-        which = "b_readable-OFF_unreadable-ON" if shot_id in verdict["b_shots"] \
-            else "c_unreadable-OFF_readable-ON"
+    cited = verdict["b_shots"] + verdict["c_shots"] if not partial else \
+        [s for s in shots if (ON_DIR / f"{s}.png").is_file()]
+    for shot_id in cited:
+        which = ("unscored_both-arms-rendered" if partial
+                 else "b_readable-OFF_unreadable-ON" if shot_id in verdict["b_shots"]
+                 else "c_unreadable-OFF_readable-ON")
         pw, ph = 512, 288
         sheet = Image.new("RGB", (pw * 2 + 24, ph + 34), "black")
         draw = ImageDraw.Draw(sheet)
@@ -867,11 +1035,154 @@ def cmd_grid(args) -> int:
             src = (OFF_DIR if arm == "off" else ON_DIR) / f"{shot_id}.png"
             with Image.open(src) as im:
                 sheet.paste(im.convert("RGB").resize((pw, ph)), (8 + j * (pw + 8), 26))
-            draw.text((8 + j * (pw + 8), 8), f"{arm.upper()}  {key[(shot_id, arm)]}", fill="white")
+            draw.text((8 + j * (pw + 8), 8),
+                      f"{arm.upper()}  {key.get((shot_id, arm), '')}", fill="white")
         draw.text((8, ph + 30 - 12), f"{shot_id}  {which}", fill="#ffcc00")
         sheet.save(pair_dir / f"{shot_id}_{which}.jpg", quality=88)
-    print(f"  -> {(pair_dir).relative_to(ROOT)}/  "
-          f"{len(verdict['b_shots']) + len(verdict['c_shots'])} pair sheet(s)")
+    print(f"  -> {(pair_dir).relative_to(ROOT)}/  {len(cited)} pair sheet(s)")
+    return 0
+
+
+# ── viewing (the human gate the scored axis does not cover) ──────────────────
+
+VIEW_DIR = HERE / "viewing"
+# Shots chosen to exercise the three questions the blind axis cannot answer:
+# grounding (near/mid cast with feet in frame), the motion the ON arm removes
+# (movement_mode set), and the 3 shots the deciding axis split on.
+VIEW_SHOTS = ["S00101", "S00104", "S00202", "S00405", "S00501", "S00600", "S00800", "S00903"]
+VIEW_FALLBACK_SEC = 4.0
+
+
+def _clip_duration(scene_num: int, shot_id: str) -> float:
+    """The shipped clip's own duration, so the Ken Burns runs at production speed.
+
+    A fixed duration would change zoom velocity, and velocity is exactly what a
+    'does it float' judgement reads. Falls back only where the run has no clip.
+    """
+    src = Path(f"workspace/{RUN}/shots/scene_{scene_num:03d}_{shot_id}.mp4")
+    if not src.is_file():
+        return VIEW_FALLBACK_SEC
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                          "-of", "csv=p=0", str(src)], capture_output=True, text=True)
+    try:
+        return round(float(out.stdout.strip()), 2)
+    except ValueError:
+        return VIEW_FALLBACK_SEC
+
+
+async def cmd_viewing(args) -> int:
+    """Side-by-side OFF|ON motion clips + a per-character identity sheet. No GPU.
+
+    Both arms go through the SHIPPED `_compose_shot_clip`, so the OFF arm keeps card
+    scale, ground_y, occlusion, contact shadow, z-order and 1.9c idle motion, and the
+    ON arm takes the recomposed frame with no cards — the production fork, exactly.
+
+    EXCLUDED, and stated rather than hidden: 11.5 depth parallax. It needs the injected
+    2.5D renderer; with none injected `build_motion_source` falls back to legacy, so
+    BOTH arms here are legacy Ken Burns. Parallax is an OFF-arm-only motion layer, so
+    its absence understates the incumbent on exactly the axis being judged.
+    """
+    from yt_flow.pipeline.nodes import video as video_node
+
+    manifest = _manifest()
+    by_id = {s["shot_id"]: s for s in manifest["shots"]}
+    # PRODUCTION tier, never a literal. This was hardcoded 0 for one build, which switched
+    # off `build_sprite_tint` AND `build_contact_shadow` (video.py:1577/1650, gated on
+    # tier >= 1) — i.e. it handicapped the OFF arm on exactly the two things the flip
+    # rationale cites as the ON arm's advantage, and the scored OFF arm used tier 1.
+    tier = Settings().composite_harmonization_tier
+    VIEW_DIR.mkdir(parents=True, exist_ok=True)
+    made = []
+    for i, shot_id in enumerate(VIEW_SHOTS):
+        shot = by_id.get(shot_id)
+        on_png = ON_DIR / f"{shot_id}.png"
+        if not shot or not on_png.is_file():
+            print(f"  - {shot_id}: skipped (manifest={bool(shot)} on={on_png.is_file()})")
+            continue
+        dur = _clip_duration(shot["scene_num"], shot_id)
+        spec = video_node.select_effect({"shot_id": shot_id, "camera_movement": None},
+                                        shot["scene_num"] - 1)
+        legs = {}
+        for arm, bg, cards in (("off", shot["plate"], [dict(c) for c in shot["cast"]]),
+                               ("on", str(on_png), [])):
+            sd = {"shot_id": shot_id, "image_path": bg}
+            motion = video_node._legacy_motion(
+                sd, spec, dur, parallax_enabled=False, camera_shake="")
+            out = VIEW_DIR / f"_{arm}_{shot_id}.mp4"
+            await video_node._compose_shot_clip(
+                sd, motion, dur, out, cards=cards, mood=shot.get("mood"),
+                composite_harmonization_tier=tier, idle_motion_enabled=(arm == "off"))
+            legs[arm] = out
+        pair = VIEW_DIR / f"{i:02d}_{shot_id}.mp4"
+        lbl = ("drawtext=text='OFF overlay':x=16:y=16:fontsize=34:fontcolor=white:"
+               "box=1:boxcolor=black@0.6[l];")
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(legs["off"]), "-i", str(legs["on"]),
+             "-filter_complex",
+             f"[0:v]{lbl}"
+             "[1:v]drawtext=text='ON recompose':x=16:y=16:fontsize=34:fontcolor=white:"
+             "box=1:boxcolor=black@0.6[r];[l][r]hstack=inputs=2,scale=1920:-2[v]",
+             "-map", "[v]", "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+             str(pair)], check=True, capture_output=True)
+        legs["off"].unlink()
+        legs["on"].unlink()
+        made.append({"shot_id": shot_id, "seconds": dur, "clip": _rel(pair),
+                     "cast": [c["card_key"] for c in shot["cast"]],
+                     "duration_source": "shipped clip" if dur != VIEW_FALLBACK_SEC else "fallback"})
+        print(f"  ✓ {shot_id}  {dur}s  {_rel(pair)}", flush=True)
+
+    if made:
+        lst = VIEW_DIR / "_concat.txt"
+        lst.write_text("".join(f"file '{Path(m['clip']).name}'\n" for m in made))
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+                        "-i", str(lst), "-c", "copy", str(VIEW_DIR / "all_pairs.mp4")],
+                       check=True, capture_output=True)
+        lst.unlink()
+        print(f"  -> {_rel(VIEW_DIR / 'all_pairs.mp4')}")
+
+    # Identity drift: recompose redraws every figure per shot, so the same character can
+    # wander across shots. Full frames, not crops — the ON arm's figure position is the
+    # model's choice, so there is no reliable box to crop to.
+    from PIL import Image, ImageDraw
+    sheets = []
+    for key in ("SCP-049", "SCP-049-2", "STOCK-researcher", "STOCK-d-class"):
+        shots = [s["shot_id"] for s in manifest["shots"]
+                 if any(c["card_key"] == key for c in s["cast"])
+                 and (ON_DIR / f"{s['shot_id']}.png").is_file()]
+        if len(shots) < 3:
+            continue
+        tw, th, cols = 256, 144, 8
+        rows = -(-len(shots) // cols)
+        sheet = Image.new("RGB", (cols * tw + 8, rows * 2 * (th + 16) + 8), "black")
+        d = ImageDraw.Draw(sheet)
+        for j, sid in enumerate(shots):
+            cx, cy = j % cols, j // cols
+            for k, arm in enumerate(("off", "on")):
+                y = 4 + (cy * 2 + k) * (th + 16)
+                with Image.open((OFF_DIR if arm == "off" else ON_DIR) / f"{sid}.png") as im:
+                    sheet.paste(im.convert("RGB").resize((tw, th)), (4 + cx * tw, y))
+                d.text((8 + cx * tw, y + th + 2), f"{arm.upper()} {sid}",
+                       fill="#ffcc00" if arm == "on" else "#88ccff")
+        out = VIEW_DIR / f"identity_{key}.jpg"
+        sheet.save(out, quality=88)
+        sheets.append({"card_key": key, "shots": shots, "sheet": _rel(out)})
+        print(f"  -> {_rel(out)}  ({len(shots)} shots, OFF row over ON row)")
+
+    prev = {}
+    if (HERE / "viewing.json").is_file():   # a human's read-once notes outlive a re-render
+        prev = json.loads((HERE / "viewing.json").read_text(encoding="utf-8"))
+    payload = {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "purpose": ("the human gate 10.1e's scored axis does not cover: grounding, the "
+                    "motion the ON arm removes by design, and per-shot identity drift"),
+        "excluded": ("11.5 depth parallax — needs the injected 2.5D renderer; both arms "
+                     "here are legacy Ken Burns, which understates the OFF arm"),
+        "harmonization_tier": tier,
+        "clips": made, "identity_sheets": sheets,
+    }
+    if "read_once_observations" in prev:
+        payload["read_once_observations"] = prev["read_once_observations"]
+    _write(HERE / "viewing.json", payload)
     return 0
 
 
@@ -886,15 +1197,19 @@ def main() -> int:
     m.add_argument("--allow-depth-inference", action="store_true")
     sub.add_parser("render-off")
     sub.add_parser("render-on")
+    sub.add_parser("publish-on")
     s = sub.add_parser("score")
     s.add_argument("--fresh", action="store_true", help="ignore score_progress.jsonl")
     sub.add_parser("report")
     sub.add_parser("grid")
+    sub.add_parser("viewing")
     args = parser.parse_args()
 
     handlers = {
         "screen": cmd_screen, "manifest": cmd_manifest, "render-off": cmd_render_off,
-        "render-on": cmd_render_on, "score": cmd_score, "report": cmd_report, "grid": cmd_grid,
+        "render-on": cmd_render_on, "publish-on": cmd_publish_on,
+        "score": cmd_score, "report": cmd_report, "grid": cmd_grid,
+        "viewing": cmd_viewing,
     }
     handler = handlers[args.cmd]
     return asyncio.run(handler(args)) if asyncio.iscoroutinefunction(handler) else handler(args)
