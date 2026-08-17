@@ -49,3 +49,17 @@ tmp/
 .claude/.story-automator-active
 .serena
 .agents/.story-automator-active
+
+# Live-validation raw renders (2026-08-17). CLAUDE.md has said "ignore the raw renders" since
+# Epic 10, but 12 of the *-live-validation dirs never got a .gitignore and 293 MB of raw PNG
+# reached the index anyway — 10-4 alone tracked 162 files. Enforced here so a new dir cannot
+# repeat it. The DOWNSCALED .jpg adjudication sheets a story's verdict cites stay committed:
+# they are the evidence, and they total 29 MB against the PNGs' 293 MB.
+_bmad-output/implementation-artifacts/*-live-validation/**/*.png
+_bmad-output/implementation-artifacts/*-live-validation/**/*.mp4
+_bmad-output/implementation-artifacts/*-live-validation/**/*.wav
+_bmad-output/implementation-artifacts/*-live-validation/**/*.mp3
+# EXCEPTION, do not untrack: CLAUDE.md records these as the only surviving copy — the
+# pre-8.16 render Jay watched, and `video.py` unlinks shot clips on re-render.
+!_bmad-output/implementation-artifacts/10-1-live-validation/off/**
+!_bmad-output/implementation-artifacts/10-1-live-validation/on/**

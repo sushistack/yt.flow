@@ -164,7 +164,11 @@ class Settings(BaseSettings):
     qwen_tts_clone_model: str = "qwen3-tts-vc-2026-01-22"
     qwen_tts_clone_voice_path: str = "data/voices/sutak.mp3"
     qwen_tts_clone_voice_id: str = ""
-    qwen_tts_speed: float = Field(1.2, ge=0.5, le=2.0)
+    # 1.1 since 2026-08-17 on Jay's viewing verdict of run 4b35c0ed (SCP-049, 3:20):
+    # "말이 아직 너무 빠른것 같음. 지금이 1.2라면 1.1 정도로 줄이도록". 1.2 was itself a
+    # tuning value, never a measured one. NOTE the .env pin must move with this or it
+    # wins (gotcha_env-file-beats-code-default) — both were changed together.
+    qwen_tts_speed: float = Field(1.1, ge=0.5, le=2.0)
     qwen_tts_mock: bool = False
 
     # Forced alignment for subtitles + shot cuts (Story 1.8; always-on Story 11.4).

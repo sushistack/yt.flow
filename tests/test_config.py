@@ -124,9 +124,11 @@ def test_qwen_tts_clone_and_speed_defaults(monkeypatch):
     # 침묵이 Story 13.6의 발단이다.
     assert s.qwen_tts_clone_enabled is True
     assert s.qwen_tts_clone_model == "qwen3-tts-vc-2026-01-22"
+    # 2026-08-17: Jay 판정으로 1.2 -> 1.1 ("말이 아직 너무 빠른것 같음"). 1.2도 실측이
+    # 아니라 튜닝값이었다. .env 핀도 같이 옮겼다 — 한쪽만 고치면 .env가 이긴다.
+    assert s.qwen_tts_speed == 1.1
     assert s.qwen_tts_clone_voice_path == "data/voices/sutak.mp3"
     assert s.qwen_tts_clone_voice_id == ""
-    assert s.qwen_tts_speed == 1.2
 
 
 def test_qwen_tts_speed_out_of_range_raises(monkeypatch):

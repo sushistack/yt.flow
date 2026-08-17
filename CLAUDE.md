@@ -45,11 +45,14 @@ Any change to a runtime prompt (human or AI session) follows `docs/PROMPT_POLICY
 
 ## Live-validation artifacts (`_bmad-output/implementation-artifacts/*-live-validation/`)
 
-Stories in this project close on **rendered frames a human judged**, so those directories are evidence and not scratch. They are also the largest thing in the repo, so each one carries its own `.gitignore` and splits its contents in two — `10-1b-live-validation/.gitignore` is the model to copy:
+Stories in this project close on **rendered frames a human judged**, so those directories are evidence and not scratch. They are also the largest thing in the repo, so their contents split in two.
+
+**Enforcement is the repo-root `.gitignore`, not per-directory files.** Per-directory `.gitignore`s were the model until 2026-08-17, and they failed the way opt-in rules fail: **12 of the `*-live-validation` dirs never got one**, and 293 MB of raw PNG reached the index anyway — 10-4 alone tracked 162 files. The root file now globs `*-live-validation/**/*.{png,mp4,wav,mp3}` so a NEW directory is covered without anyone remembering. 229 files / 273 MB were untracked that day (left on disk). Write a per-directory `.gitignore` only to record an **exception** or a warning about an irreplaceable payload.
 
 - **Commit the adjudication images** — the side-by-side grids, pair sheets and single frames a story's verdict actually cites — plus every script and report that re-derives a number. Downscale to ~512 px on the long edge unless the judging criterion needs more; the criteria used so far (which way is the body facing, how many figures, is there a pupil) all survive it.
 - **Ignore the raw renders those were built from** (per-plate sweeps, probe frames, extracted stills, full videos). They are regenerable from the committed scripts against the same run.
-- **Never blanket-delete an ignored payload.** Read the directory's `.gitignore` header first: some hold the only surviving copy of something (`*/off/` is the pre-8.16 render Jay watched, and `video.py` unlinks shot clips on re-render, so it cannot be rebuilt). Delete with an explicit exclusion, not with `git clean`.
+- **Never blanket-delete an ignored payload.** Read the directory's `.gitignore` header first: some hold the only surviving copy of something. `10-1-live-validation/off|on` is the pre-8.16 render Jay watched and `video.py` unlinks shot clips on re-render, so it cannot be rebuilt — it is **deliberately still tracked** as the root `.gitignore`'s only negation, precisely because untracking it would put it one `git clean -xdf` away from gone. Delete with an explicit exclusion, never with `git clean`.
+- **Untracking is not reclaiming.** `git rm --cached` + ignore stops the growth; the 273 MB already in history stays there. Shrinking that needs a history rewrite, which is a separate decision nobody has made.
 - `git status --porcelain <dir>` proves nothing here — these paths are ignored by design. Assert file state with `find` plus dates.
 
 ---

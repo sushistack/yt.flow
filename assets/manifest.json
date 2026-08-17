@@ -98,6 +98,21 @@
       },
       "status": "approved"
     },
+    "SCP-049/hint:fa04528c05_front": {
+      "angle": "front",
+      "approved_at": "2026-08-17T10:20:00.972933+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-08-17T10:20:00.971020+00:00",
+      "path": "characters/SCP-049/epoch_2/hint_fa04528c05_front.png",
+      "pose": "hint:fa04528c05",
+      "sha256": "b90a46154bc19ed41c17d3b91af9d858594eafaf044a83328264acd90944a4a1",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "pose_guide": null,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
     "SCP-049/sitting_back": {
       "angle": "back",
       "approved_at": "2026-07-08T14:04:04.442724+00:00",
@@ -446,6 +461,36 @@
         "type": "comfyui_generation"
       },
       "status": "retired"
+    },
+    "STOCK-d-class/hint:b0f00082b3_front": {
+      "angle": "front",
+      "approved_at": "2026-08-17T10:19:36.097362+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-17T10:19:36.094907+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/hint_b0f00082b3_front.png",
+      "pose": "hint:b0f00082b3",
+      "sha256": "c89310bd8d234a24838750516754fa93e02368a3c45177efa7c8b3a7b18a457a",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "pose_guide": "humanoid_lying_supine",
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "STOCK-d-class/hint:f5a7540b92_front": {
+      "angle": "front",
+      "approved_at": "2026-08-17T10:19:07.149250+00:00",
+      "card_key": "STOCK-d-class",
+      "created_at": "2026-08-17T10:19:07.146220+00:00",
+      "path": "characters/STOCK-d-class/epoch_2/hint_f5a7540b92_front.png",
+      "pose": "hint:f5a7540b92",
+      "sha256": "22999161451eb36667cd3d9db97b1cf08275f48570a0142f1065f2369f903687",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "pose_guide": "humanoid_collapsed",
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
     },
     "STOCK-d-class/sitting_back": {
       "angle": "back",
