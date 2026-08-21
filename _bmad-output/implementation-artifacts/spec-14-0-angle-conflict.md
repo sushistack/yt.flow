@@ -3,6 +3,7 @@ title: 'Story 14.0 §4-4: 앵글 충돌 확인 — 필드↔프롬프트는 일�
 type: 'bugfix'
 created: '2026-08-21'
 baseline_revision: '40868d6'
+final_revision: 'fb72654'
 status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
