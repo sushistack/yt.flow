@@ -305,7 +305,14 @@ class ShotData(TypedDict):
     sentence_indices: list[int]  # 0-based narration sentence indices; the image-gen unit [AD-5]
     image_prompt: str
     negative_prompt: str
-    camera_angle: str | None
+    camera_angle: str | None   # one of prompts/scenario/visual_breakdown.md:215's 7 `camera_type`
+                               # values, normalized to that spelling (`POV` is uppercase) by
+                               # scenario_chain._resolve_camera_angle; None == off-vocabulary or
+                               # absent. Story 14.0: a label of image_prompt's slot 1. It never
+                               # reaches the background renderer's prompt (image.py assigns
+                               # image_prompt only) but DOES feed cast-card angle selection
+                               # (character_service._select_entity_angles -> angle_*_path PNG),
+                               # so it is not render-inert.
     camera_movement: str | None  # one of CAMERA_ARCHETYPES (Story 11.2) | legacy free-text hint | None
     image_path: str | None       # background-only render (Story 8.3); character overlays live in `cast`
     depth_map_path: NotRequired[str | None]  # Story 11.5: monocular depth companion of THIS

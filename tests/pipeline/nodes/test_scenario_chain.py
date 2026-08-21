@@ -4147,6 +4147,102 @@ def test_build_scenes_camera_movement_absent_no_warning(caplog):
     assert not caplog.records
 
 
+# ── camera_angle (Story 14.0: the one sibling field with no validation) ─────────
+#
+# AC numbering below is ``_bmad-output/implementation-artifacts/spec-14-0-angle-conflict.md``.
+#
+# §4-4 of the 2026-08-17 research claimed the ``image_prompt`` body overwrites this
+# field. Measured false — run 4b35c0ed agrees on 43/43 shots (see
+# ``_bmad-output/implementation-artifacts/14-0-angle-conflict/``). What the code read
+# did surface is that ``camera_type`` was an unvalidated passthrough, so a mis-cased
+# value walked past R3's case-sensitive comparisons without a sound.
+
+
+def test_camera_angles_constant_matches_the_prompt_vocabulary_line():
+    """The vocabulary lives in the prompt file; the constant is a copy of it.
+
+    ``gotcha_pinned-ffmpeg-arg-string-is-not-a-test``: every other test here
+    parametrizes over ``chain._CAMERA_ANGLES``, so all of them stay green if the
+    prompt adds/renames a value. This is the only test that can see that drift.
+    Read-only on the prompt file.
+    """
+    prompt_path = Path(__file__).parents[3] / "prompts" / "scenario" / "visual_breakdown.md"
+    if not prompt_path.exists():  # prompts live in the repo, not the installed package
+        pytest.skip(f"{prompt_path} not present")
+    lines = [
+        line for line in prompt_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("One of: ")
+    ]
+    assert len(lines) == 1, f"expected exactly one `One of:` vocabulary line, got {lines}"
+    assert {v.strip() for v in lines[0].removeprefix("One of: ").split(",")} == set(chain._CAMERA_ANGLES)
+
+
+@pytest.mark.parametrize("value", chain._CAMERA_ANGLES)
+def test_build_scenes_camera_angle_documented_spelling_round_trips(value):
+    """AC4: the 43 measured values are all documented spellings, so normalization
+    must be byte-identical to no normalization on this run — no regression."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    scenes = chain.build_scenes(writing, _one_shot_visual(camera_type=value), [{}])
+    assert scenes[0]["shots"][0]["camera_angle"] == value
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("Wide", "wide"), (" pov ", "POV"), ("Close-Up", "close-up"), ("MEDIUM", "medium")],
+)
+def test_build_scenes_camera_angle_miscasing_normalizes_silently(raw, expected, caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _one_shot_visual(camera_type=raw), [{"mood": "clinical"}])
+    assert scenes[0]["shots"][0]["camera_angle"] == expected
+    assert not caplog.records  # normalization handled it; nothing for a human to act on
+
+
+@pytest.mark.parametrize("raw", ["dutch angle", "bird's eye", "extreme close-up"])
+def test_build_scenes_camera_angle_off_vocabulary_drops_with_one_warning(raw, caplog):
+    """resolve_mood philosophy (AD-10): the stage never fails on a vocabulary
+    violation, and the violation never passes silently either."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _one_shot_visual(camera_type=raw), [{}])
+    assert scenes[0]["shots"][0]["camera_angle"] is None
+    assert len([r for r in caplog.records if raw in r.message]) == 1
+
+
+@pytest.mark.parametrize("raw", [None, 3, ["wide"], ""])
+def test_build_scenes_camera_angle_absent_is_silent(raw, caplog):
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    with caplog.at_level(logging.WARNING):
+        scenes = chain.build_scenes(writing, _one_shot_visual(camera_type=raw), [{"mood": "clinical"}])
+    assert scenes[0]["shots"][0]["camera_angle"] is None
+    assert not caplog.records  # absence is model variance, not a defect
+
+
+def test_build_scenes_miscased_camera_angle_now_reaches_r3():
+    """AC3: ``"Over-The-Shoulder"`` used to skip R3's exact-match comparison, so a
+    lone ``far`` member kept a depth the vocabulary calls a never-pairing."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "문장."}]}
+    cast = [{"card_key": "SCP-049", "position": "center", "depth": "far", "pose": "standing"}]
+    scenes = chain.build_scenes(
+        writing, _one_shot_visual(camera_type="Over-The-Shoulder", cast=cast), [{}]
+    )
+    shot = scenes[0]["shots"][0]
+    assert shot["camera_angle"] == "over-the-shoulder"
+    assert shot["cast"][0]["depth"] == "mid"  # R3 fired
+
+
+def test_build_scenes_fallback_prompt_shot_declares_the_angle_it_hardcodes():
+    """``_fallback_prompt`` opens with "static wide shot", so the field it ships
+    with must say ``wide`` — this path was the pipeline's only guaranteed
+    field↔body disagreement, and it is the LLM's value that gets dropped."""
+    writing = {"scenes": [{"scene_num": 1, "narration": "(정적)", "location": "vault", "atmosphere": "silence"}]}
+    visual_by_scene = {0: [{"image_prompt": "", "negative_prompt": "", "sentence_start": 1,
+                            "sentence_end": 1, "camera_type": "close-up"}]}
+    shot = chain.build_scenes(writing, visual_by_scene, [{}])[0]["shots"][0]
+    assert shot["image_prompt"].startswith("static wide shot")
+    assert shot["camera_angle"] == "wide"
+
+
 # ── _enforce_camera_variety (Story 11.2 AC4: adjacent-duplicate ban) ────────────
 
 

@@ -81,6 +81,20 @@ _VALID_MOVEMENT_MODES = {"anchored", "drift", "enter", "exit", "cross", "approac
 _VALID_MOVEMENT_DIRECTIONS = {"none", "left", "right", "in", "out"}
 _VALID_MOVEMENT_PACES = {"slow", "medium", "fast"}
 _LOCATION_KEY_CANONICAL = {key.lower(): key for key in LOCATION_KEYS}
+# Story 14.0: the closed `camera_type` vocabulary, byte-identical to
+# `prompts/scenario/visual_breakdown.md:215` — `POV` is uppercase there, so a
+# plain `.lower()` does not round-trip and the canonical map is not optional.
+# `camera_angle` was the one sibling field with no validation at all (a raw
+# `isinstance(str)` passthrough), which let a mis-cased value slip past R3's
+# case-sensitive exact-match comparisons below without a sound.
+# ponytail: module-private here, unlike CAMERA_ARCHETYPES in domain.state. The
+# one comparing consumer, R3 below, lives in this module and deliberately
+# hardcodes the 3-of-7 subset the depth rules cover; the only out-of-module
+# reader (`character_service`'s angle-selection catalogue) passes the string
+# through without branching, so it needs the value, not the vocabulary. Promote
+# only when a consumer outside this module has to compare.
+_CAMERA_ANGLES = ("wide", "medium", "close-up", "low-angle", "high-angle", "over-the-shoulder", "POV")
+_CAMERA_ANGLE_CANONICAL = {angle.lower(): angle for angle in _CAMERA_ANGLES}
 # Stand-in when a writing scene reaches image work without a `location`. Both
 # consumers (visual_breakdown's prompt variable, _fallback_prompt) share it so
 # they can't disagree: the strict one used to hard-index and killed live run
@@ -327,6 +341,36 @@ def _resolve_camera_movement(raw: object, mood: str) -> str:
     return CAMERA_PREFERENCES[mood][0]
 
 
+def _resolve_camera_angle(raw: object) -> str | None:
+    """Story 14.0: normalize `camera_type` to the documented spelling, or None.
+
+    Shares `resolve_mood`'s rule that no vocabulary violation ever fails the
+    scenario stage (AD-10), but deliberately NOT
+    `_resolve_camera_movement`'s warning surface: that sibling warns on ANY
+    non-None raw (so `3`, `["wide"]` and `""` all log), because it always has a
+    mood default to substitute and the substitution is worth announcing. Here
+    the degraded value is None, and None is what an absent field produces
+    anyway — warning on a blank/absent field would fire on ordinary model
+    variance and on every `_fallback_prompt`-adjacent shot. So the warning is
+    reserved for the one case a human can act on: present AND off-vocabulary.
+
+    Cost of dropping to None instead of passing the raw string through: the
+    reader census is exactly two, and neither branches on the vocabulary — R3
+    below (case-sensitive exact match, which never matched off-vocabulary text
+    to begin with) and `character_service.py:1500`'s angle-selection catalogue,
+    which now receives `""` where it used to receive the model's free text
+    (e.g. `"dutch angle"`). That catalogue feeds an LLM prompt, so the free text
+    was weak signal, not none. Occurrences in run 4b35c0ed: 0, so live impact
+    is 0 — but the cost is a lost hint, not nothing.
+    """
+    if isinstance(raw, str) and raw.strip():
+        canonical = _CAMERA_ANGLE_CANONICAL.get(raw.strip().lower())
+        if canonical:
+            return canonical
+        logger.warning("scenario: camera_type %r not in %s; dropping angle", raw, _CAMERA_ANGLES)
+    return None
+
+
 def _enforce_camera_variety(shots: list, mood: str) -> None:
     """Story 11.2 AC4: within a scene, no two adjacent shots may share a
     ``camera_movement`` value — the later shot is deterministically reassigned
@@ -472,8 +516,18 @@ def _enforce_cast_diversity(shots: list) -> None:
     R3 — the two explicit "never" camera↔depth pairings (visual_breakdown.md):
     ``wide`` + strict-majority ``near`` demotes those members to ``mid``;
     ``close-up``/``over-the-shoulder`` + a lone ``far`` member promotes it to
-    ``mid``. Depth side only — ``camera_angle`` is baked into the rendered
-    background and entity angle selection.
+    ``mid``. Depth side only — Story 14.0 sharpened the reason recorded here.
+    ``camera_angle`` is NOT "baked into the rendered background": ``image.py:212``
+    assigns ``shot["image_prompt"]`` and nothing else, so the field never reaches
+    the background renderer's prompt. It is *not* render-inert either:
+    ``character_service.py:1500`` copies it into the per-shot catalogue
+    ``_select_entity_angles`` picks from, and that pick maps through
+    ``_ANGLE_FIELD_NAMES`` to the ``angle_*_path`` card PNG composited into the
+    frame. So rewriting the field would move pixels through the cast cards while
+    also desyncing a label measured to agree with the prompt text (run 4b35c0ed:
+    43/43 shots agree with their slot-1 phrasing at vocabulary-bucket
+    granularity, 0 conflicts). Depth is the side code owns, bounded by the
+    8.12-calibrated "mostly mid" distribution (R2's ponytail note below).
     R2 — a card_key repeating an identical (position, depth) for more than
     ``_MAX_CONSECUTIVE_SAME_PLACEMENT`` consecutive shots gets its position
     moved to a free slot (respecting R1 occupancy). Position-only.
@@ -3276,7 +3330,12 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                 image_prompt = _fallback_prompt(writing_scene)
                 # "no visible subject" backfill prompt — cast is always empty here,
                 # regardless of what the LLM emitted for this transition sentence.
-                raw_shot = {**raw_shot, "negative_prompt": raw_shot.get("negative_prompt") or "", "cast": []}
+                # Story 14.0: `camera_type` is overridden too. `_fallback_prompt`
+                # hardcodes "static wide shot" as slot 1, so keeping the LLM's angle
+                # here was the one place in the pipeline where the field and the
+                # prompt body were guaranteed to disagree — the measured run
+                # 4b35c0ed agrees on 43/43 shots, none of which took this path.
+                raw_shot = {**raw_shot, "negative_prompt": raw_shot.get("negative_prompt") or "", "cast": [], "camera_type": "wide"}
 
             shots.append(
                 ShotData(
@@ -3284,7 +3343,7 @@ def build_scenes(writing: dict, visual_by_scene: dict, structure: list[dict]) ->
                     sentence_indices=sentence_idxs,
                     image_prompt=image_prompt,
                     negative_prompt=str(raw_shot.get("negative_prompt") or ""),
-                    camera_angle=raw_shot.get("camera_type") if isinstance(raw_shot.get("camera_type"), str) else None,
+                    camera_angle=_resolve_camera_angle(raw_shot.get("camera_type")),
                     camera_movement=_resolve_camera_movement(raw_shot.get("camera_movement"), mood),
                     image_path=None,
                     cast=parse_cast(raw_shot.get("cast")),

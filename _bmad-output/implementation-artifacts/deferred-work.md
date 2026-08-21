@@ -809,3 +809,11 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1e-recompose-default-verdict.md`
   summary: The recompose preflight is still a one-shot entry check on free RAM, and with the default now True that check runs on every production run.
   evidence: Recorded once before in this file as a 10.1e finding when `--disable-smart-memory` was the mechanism that consumed the floor mid-run; that mechanism is gone from `REQUIRED_FLAGS` and now actively refused by `FORBIDDEN_FLAGS`, so no shipped configuration reaches it. What remains is the general case, and the flip makes it a production concern rather than a lab one: `_preflight` runs once per `recompose_run_shots` call, before the first shot, and throughput for the remaining 40 passes depends on the 12.7 GB unet surviving in page cache — which a co-tenant can evict at any point. `render_on_blocked.json` documents exactly that happening (four concurrent SDXL prompts), and nothing detects it. 10.1d explicitly rejected turning the preflight into a watchdog, so the decision is whether that rejection still holds now that the path is on by default. Cheapest candidate: sample `/system_stats` between shots and file `recompose_shots_degraded` with a `low_ram_midrun` reason, which reuses the row this story just added rather than inventing a second one.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-0-angle-conflict.md`
+  summary: `camera_angle`에는 인접-중복 금지 강제가 없다 — `_enforce_camera_variety`는 `camera_movement`만 다루는데 `visual_breakdown.md`의 셀프체크는 `camera_type`도 연속 샷 간 달라야 한다고 요구한다.
+  evidence: `scenario_chain.py:_enforce_camera_variety`는 `camera_movement` 축만 재배정한다. run 4b35c0ed에서는 LLM이 스스로 준수해 위반 0건이라 실측 결함은 없다. 다만 14.0이 `_fallback_prompt` 백필 샷의 `camera_type`을 결정론적으로 `"wide"`로 덮어쓰게 만들었으므로, 그 샷이 `wide` 샷과 인접하면 코드가 위반을 만들어내는 경로가 새로 생겼다(이 런에서는 백필 발동 0건).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-0-angle-conflict.md`
+  summary: 14.0 이전 체크포인트에서 resume하면 `camera_angle`이 정규화되지 않은 채로 살아 있어, `state.py`가 새로 선언한 "7값 중 하나 또는 None" 불변식이 거짓이 되고 R3의 대소문자 민감 비교도 여전히 건너뛴다.
+  evidence: 정규화는 `build_scenes` 생산 지점에만 있고 소비 지점(`_enforce_cast_diversity`의 R3, `character_service`의 카탈로그)은 체크포인트 값을 그대로 읽는다. `run_service`의 resume 경로는 저장된 `scenes`를 재생산하지 않는다.
