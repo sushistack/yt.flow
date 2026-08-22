@@ -1,0 +1,48 @@
+# §4-4 (a)/(b) 판별용 시점 판정 — PREREGISTRATION-4-4-hypotheses.md 규칙, 프롬프트 비열람, shot_id 순.
+# y_h = 소실점/지평선의 프레임 세로 위치(0=상단,1=하단), 0.00 = 상단 밖. 판정 보조선 0.40/0.50/0.60은 sheet_*.jpg에 그려져 있다.
+# verdict: HIGH(y_h<0.40 또는 바닥면이 프레임을 채움) / EYE(0.40~0.60) / LOW(y_h>0.60 또는 천장지배+바닥<=0.25) / UNREADABLE
+# marginal=1: y_h가 경계에서 ±0.05 안 (민감도 분석용). rule: 어느 절로 판정했는지.
+shot,y_h,ceiling_visible,floor_share,verdict,marginal,rule
+S00100,0.15,N,0.85,HIGH,0,y_h
+S00101,0.00,N,1.00,HIGH,0,y_h
+S00102,0.25,Y,0.65,HIGH,0,y_h
+S00103,0.75,Y,0.05,LOW,0,y_h
+S00104,0.00,N,1.00,HIGH,0,y_h
+S00105,0.47,Y,0.20,LOW,0,dominance
+S00200,0.36,Y,0.56,HIGH,1,y_h
+S00201,0.50,N,0.15,EYE,0,y_h
+S00202,0.60,Y,0.25,EYE,1,y_h
+S00203,0.45,N,0.00,EYE,0,y_h
+S00300,0.42,Y,0.45,EYE,1,y_h
+S00301,0.35,Y,0.45,HIGH,1,y_h
+S00302,0.45,N,0.00,EYE,0,y_h
+S00303,0.10,N,0.70,HIGH,0,y_h
+S00400,0.42,Y,0.35,EYE,1,y_h
+S00401,0.47,Y,0.45,EYE,0,y_h
+S00402,0.82,Y,0.15,LOW,0,y_h
+S00403,0.55,N,0.20,EYE,0,y_h
+S00404,0.20,N,0.40,HIGH,0,y_h
+S00500,0.40,Y,0.40,EYE,1,y_h
+S00501,0.60,Y,0.10,LOW,1,dominance
+S00502,0.00,N,0.75,HIGH,0,y_h
+S00503,,,,UNREADABLE,0,no-ground-plane
+S00504,0.00,N,0.80,HIGH,0,y_h
+S00600,0.45,Y,0.30,EYE,0,y_h
+S00601,0.45,N,0.10,EYE,1,y_h
+S00602,0.10,N,0.70,HIGH,0,y_h
+S00603,0.45,Y,0.38,EYE,0,y_h
+S00604,0.20,N,0.65,HIGH,0,y_h
+S00605,0.30,Y,0.55,HIGH,0,y_h
+S00700,0.42,Y,0.45,EYE,1,y_h
+S00701,0.35,N,0.45,HIGH,1,y_h
+S00702,0.25,N,0.60,HIGH,0,y_h
+S00703,0.47,Y,0.30,EYE,0,y_h
+S00800,0.55,Y,0.30,EYE,1,y_h
+S00801,0.30,N,0.35,HIGH,1,y_h
+S00802,0.45,Y,0.15,EYE,0,y_h
+S00803,0.52,Y,0.25,EYE,1,y_h
+S00900,0.45,Y,0.38,EYE,0,y_h
+S00901,0.45,N,0.15,EYE,0,y_h
+S00902,0.50,Y,0.25,EYE,0,y_h
+S00903,,,,UNREADABLE,0,no-ground-plane
+S00904,0.15,N,0.55,HIGH,0,y_h

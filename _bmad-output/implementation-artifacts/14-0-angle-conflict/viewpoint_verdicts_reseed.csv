@@ -1,0 +1,10 @@
+# 같은 프롬프트 · 다른 시드 대조군. Story 10.2 people-guard가 재렌더한 5샷 = 시드 래더 rung 0 vs rung 1.
+# 가드는 KSampler 시드만 올리고 image_prompt는 건드리지 않는다(image.py `_seed_ladder`) — 따라서 이 5쌍은
+# "프롬프트 텍스트가 시점을 결정하는가"의 유일한 within-prompt 대조군이다.
+# 판정 규칙은 viewpoint_verdicts.csv와 동일. 근거 이미지: sheet_same_prompt_reseed.jpg
+shot,rung0,rung1_shipped,flipped,note
+S00103,LOW,LOW,0,둘 다 천장 앙각
+S00202,LOW,EYE,1,rung0 = 원형 수직 샤프트 앙각 / rung1 = 수평 복도
+S00203,EYE,EYE,0,내용은 완전히 다르나(인물 얼굴 -> 추상 창) 시점 범주는 같음
+S00301,EYE,HIGH,1,rung0 = 데스크 눈높이 / rung1 = 크레이트·바닥 부감
+S00400,EYE,EYE,0,둘 다 복도 눈높이
