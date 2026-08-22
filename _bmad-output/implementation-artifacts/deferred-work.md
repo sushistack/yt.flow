@@ -833,3 +833,19 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-4-people-free-background-default.md`
   summary: `background_guard_unscreened` now carries FIVE distinct reasons behind one Korean operator message, and the `reason` slug renders as raw English. An operator at the gate cannot rank "the detector hiccupped on one shot" (`detector_undecidable_shot`) against "the guard KNEW this frame was populated and shipped it" (`ladder_exhausted`) without reading the slug.
   evidence: `domain/warnings.py:56` maps the code to one message ("배경 인물 검사를 마치지 못했습니다 — 배경에 사람이 남아 있을 수 있습니다"); the five reasons are `vision_api_key_missing`, `detector_undecidable`, `detector_undecidable_shot`, `ladder_exhausted`, `ladder_exhausted_earlier_run` (+ `detector_undecidable_earlier_run` = six). `frontend/src/components/ArtifactPanel.tsx` renders `reason` through the identifier table as an untranslated slug. Pre-existing (10.2 shipped four reasons on one message) and made worse by 14.4, which added two. Not fixed here because the fix is either per-reason catalog copy — a schema question about whether `reason` should be part of the catalog key rather than context — or Korean copy for six slugs in the frontend, and neither is a background-guard decision. 14.4's `cap_samples` change already fixed the ORDERING half of this (per (code, reason), so the severest reason cannot be capped out); what remains is the wording.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-7-scenario-reviewer-recompose-alignment.md`
+  summary: `prompts/scenario/review.md:58`은 "no consecutive same `camera_type`"를 검사하지만 리뷰어가 받는 샷에 그 이름의 필드가 없다 — 영속 필드는 `camera_angle`(`domain/state.py:308`, `scenario_chain.py:3346`에서 설정).
+  evidence: run `4b35c0ed` 체크포인트의 샷 키 실측 = `camera_angle, camera_movement, cast, image_path, image_prompt, location_key, negative_prompt, sentence_indices, shot_id`. `camera_type`은 없다. 14.7이 고친 두 줄에서 세 줄 위에 있는, 정확히 같은 부류(리뷰어가 존재하지 않는 필드명을 검사)의 선행 결함이고 이 스토리가 유발하지 않았다. 카메라 다양성 검사는 그동안 평가 불가였을 가능성이 높다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-7-scenario-reviewer-recompose-alignment.md`
+  summary: `descriptor_violation` 하나가 세 가지를 겸한다 — 금지 일반어, `image_prompt`에 개체 누출(14.7 신설), 나레이션↔frozen descriptor 모순. 게이트의 `warning.categories`는 이 셋을 구분할 수 없다.
+  evidence: run `4b35c0ed`의 경고 4건이 전부 `descriptor_violation`이었고(오탐 2 + 진성 2), 14.7의 스크리닝은 이들을 가르려고 전용 6버킷 분류기를 만들어야 했다. 사람이 게이트에서 보는 라벨은 여전히 한 단어다. 해법은 `ReviewIssueType`(`domain/state.py:130`)에 축을 나누는 것이지만 그 상수는 14.7 스펙이 명시적으로 범위 밖으로 뒀다(프롬프트 열거 줄과 테스트로 양방향 고정돼 있어 세 파일 동시 변경).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-7-scenario-reviewer-recompose-alignment.md`
+  summary: `issues[]`에는 스키마·증거 검증이 없다 — 증거-아니면-생략은 `grounded_contradictions`에만 코드로 존재한다(`_validate_grounded_contradictions`, `scenario_chain.py:2809`).
+  evidence: `domain/state.py:124`가 미검증을 명시하고 있다. 14.7이 추가한 규칙은 "인용 없이 단정하지 말라"를 프롬프트 산문으로만 요구하는데, 그 규칙의 오탐 비용은 repair 범위에 씬 하나가 추가되는 것이다. 인접 필드에서 이미 한 번 값을 치르고 코드 검증을 넣은 실패 모드와 같다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-7-scenario-reviewer-recompose-alignment.md`
+  summary: `scripts/migrate_prompts.py:86`의 `.strip()` 때문에 출하된 프롬프트 본문은 리포 파일과 **영원히 바이트 동일이 될 수 없다**(말미 개행 1바이트). 프롬프트 스토리마다 검증이 걸려 넘어질 함정이다.
+  evidence: 14.7이 v10에서 "byte-equal"을 보고했는데 사실이 아니었고(`rstrip("\n")`을 해야 같다), v11에서 원인을 특정했다. 더불어 REST 검증 URL은 이름의 슬래시를 `%2F`로 인코딩해야 하며 생슬래시는 404다 — 출하 성공을 실패로 오독시키는, `gotcha_langfuse-prompt-name-families-differ`의 거울상.

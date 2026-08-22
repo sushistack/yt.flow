@@ -6520,3 +6520,125 @@ def test_the_judging_prompts_were_not_loosened(name, pin):
     the wrong floor. Nothing here may be weakened to make the attribution look better,
     so every criterion, evidence requirement, threshold and issue type is pinned."""
     assert pin in _prompt_text(name), f"{name} no longer carries: {pin}"
+
+
+# --- Story 14.7: the reviewer must agree with the generator about recompose -----
+# `review.md` (Stage 4) and `visual_breakdown.md` (Stage 3.5) ran live for weeks
+# giving the model directly opposite instructions about `image_prompt`. The
+# generator was right; the reviewer was stale, and 2 of run 4b35c0ed's 4 gate
+# warnings were that staleness — each one billing a full pass-2 scene rewrite via
+# `scenario._retry_scope`. Evidence:
+# `_bmad-output/implementation-artifacts/14-7-prompt-screening/report.md`.
+
+# The rule the reviewer must now carry (background-only), the exemption it must
+# grant (`negative_prompt` person tokens), and the type token the gate reads.
+_RECOMPOSE_ALIGNED = (
+    "**`image_prompt` is background-only.**",
+    "descriptor_violation",
+    "`negative_prompt`",
+    "silhouette of a person",
+    "**Do NOT report either of the following as an issue.**",
+    "`entity_visible` is a **scene-level narration** field",
+)
+# The reverse pin. A story whose thesis is "this rule points the wrong way" cannot
+# be guarded by presence assertions alone — the stale sentence has to be gone.
+_STALE_REVIEWER_RULE = "the SCP frozen descriptor from Visual Identity Profile is present"
+
+
+@pytest.mark.parametrize("pin", _RECOMPOSE_ALIGNED, ids=lambda v: v[:44])
+def test_review_prompt_carries_the_background_only_contract(pin):
+    assert pin in _prompt_text("review.md"), f"review.md no longer carries: {pin}"
+
+
+def test_review_prompt_dropped_the_pre_recompose_descriptor_rule():
+    """The stale rule is what produced the false positive, so absence is the assertion.
+
+    Under recompose (10.1e) + people-free backgrounds (10.2) a plate that omits the
+    frozen descriptor is the CONTRACT, not a defect. Re-adding this sentence
+    re-opens a spurious pass-2 rewrite per affected scene.
+    """
+    assert _STALE_REVIEWER_RULE not in _prompt_text("review.md")
+
+
+# The stale rule as a SHAPE, not a string: "entity_visible therefore the descriptor
+# must/should be present". An exact-string pin passes against any paraphrase, and a
+# prompt is prose — the next author will not re-type the sentence verbatim.
+_STALE_SHAPE = re.compile(
+    r"(?:must|required?|should|shall|needs?\s+to|verify|ensure|confirm|check)"
+    r"[^.]{0,80}(?:frozen|descriptor)"
+    r"|(?:frozen|descriptor)[^.]{0,80}(?:is|are|be)\s+(?:present|included|required)",
+    re.IGNORECASE,
+)
+
+
+def test_review_prompt_has_no_paraphrase_of_the_stale_descriptor_rule():
+    """Shape guard: wherever `review.md` mentions `entity_visible` near the frozen
+    descriptor, it must not be DEMANDING the descriptor's presence.
+
+    The exemption clause legitimately names both in one sentence ("carries **no**
+    frozen descriptor ... even when `entity_visible` is true"), so co-occurrence
+    cannot be the assertion — the requirement phrasing is.
+    """
+    text = _prompt_text("review.md")
+    for match in re.finditer(r"entity_visible", text, re.IGNORECASE):
+        window = text[max(0, match.start() - 120):match.end() + 120]
+        if not re.search(r"frozen|descriptor", window, re.IGNORECASE):
+            continue
+        offender = _STALE_SHAPE.search(window)
+        assert offender is None, (
+            "review.md pairs `entity_visible` with a REQUIREMENT for the frozen "
+            f"descriptor ({offender.group(0)!r}) — the pre-recompose rule looks "
+            f"paraphrased back in:\n...{window}..."
+        )
+
+
+# The generator side of the same contract. The reviewer now enforces a rule only
+# `visual_breakdown.md` produces; deleting it there would leave the reviewer
+# policing an instruction nothing issues, and no test would notice.
+_GENERATOR_CONTRACT = (
+    "**`image_prompt` is background-only.**",
+    "person, human figure, character, silhouette of a person",
+)
+
+
+@pytest.mark.parametrize("pin", _GENERATOR_CONTRACT, ids=lambda v: v[:44])
+def test_visual_breakdown_still_issues_the_contract_the_reviewer_enforces(pin):
+    assert pin in _prompt_text("visual_breakdown.md"), (
+        f"visual_breakdown.md no longer carries: {pin}"
+    )
+
+
+def _forbidden_terms(name: str, marker: str) -> set[str]:
+    """The quoted forbidden-term list on the one line of ``name`` carrying ``marker``.
+
+    Any quoted run, not `[a-z][a-z ]*`: that pattern made a hyphenated, capitalised
+    or non-ASCII term invisible to the set comparison, so the exact drift this test
+    exists for could recur in a 12th term and still pass.
+    """
+    line = next(
+        (line for line in _prompt_text(name).splitlines() if marker in line), None
+    )
+    assert line is not None, f"{name} no longer has a forbidden-term line ({marker!r})"
+    return {term.strip() for term in re.findall(r'"([^"]+)"', line)}
+
+
+def test_the_two_prompts_forbid_the_same_generic_terms():
+    """Both files hand-carry the same vocabulary as a literal, and it drifted: the
+    reviewer's list was 5 terms shorter than the generator's, so the generator
+    forbade `ominous`/`sinister`/`menacing`/`foreboding`/`unsettling` while the
+    reviewer silently passed them. Two hand-copied literals are self-certifying —
+    same failure `_CAMERA_ANGLES` was pinned against in Story 14.0. Set equality,
+    parsed from each file, is the laziest thing that would have caught it.
+
+    A missing file FAILS rather than skips (and the path comes from `_prompt_text`,
+    not a second hand-rolled copy of it): a rename that turns the story's only
+    cross-file guard green is the same defect class as the drift itself.
+    """
+    reviewer = _forbidden_terms("review.md", "No forbidden generic terms in image_prompts")
+    generator = _forbidden_terms("visual_breakdown.md", "NEVER use in `image_prompt`")
+    assert reviewer == generator, (
+        f"forbidden-term lists drifted — only in review.md: {sorted(reviewer - generator)}; "
+        f"only in visual_breakdown.md: {sorted(generator - reviewer)}"
+    )
+    # A floor, not an equality: an honest 12th term added to BOTH files must not fail.
+    assert len(generator) >= 11, f"expected at least the 11-term list, got {sorted(generator)}"

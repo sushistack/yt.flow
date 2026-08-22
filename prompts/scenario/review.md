@@ -43,9 +43,11 @@ Use the following format guide as the evaluation criteria for storytelling quali
 - Security protocols must be accurately described
 
 ### 4. Visual Identity Consistency
-- Every scene where the entity appears must use the Frozen Descriptor
-- No physical description should contradict the Visual Identity Profile
-- Verify visual descriptions don't add non-canonical features
+
+Everything in this section is judged on the **narration** and on a shot's `cast` array — the one place a shot declares a figure. It is **never** judged on `image_prompt` or `negative_prompt`, which are background-only render text (see §6).
+
+- No narration statement and no `cast` entry may contradict the Visual Identity Profile
+- Verify the narration and the `cast` roster add no non-canonical features to a figure
 
 ### 5. Fact Coverage Check
 - List each source fact and whether it appears in the narration
@@ -57,8 +59,16 @@ Use the following format guide as the evaluation criteria for storytelling quali
 - Shot count approximately matches sentence count (1:1 mapping)
 - Camera type variety within each scene (no consecutive same camera_type)
 - Character visual consistency across scenes (same descriptors for same character)
-- No forbidden generic terms in image_prompts ("dark", "scary", "horror", "creepy", "mysterious", "eerie")
-- When entity_visible is true, the SCP frozen descriptor from Visual Identity Profile is present
+- No forbidden generic terms in image_prompts ("dark", "scary", "horror", "creepy", "mysterious", "eerie", "ominous", "sinister", "menacing", "foreboding", "unsettling")
+- **`image_prompt` is background-only.** The plate is rendered people-free and every figure in the shot arrives later, as an approved pre-made character card the video stage composites on top of this background. So report `descriptor_violation` when an `image_prompt` **DOES** name the entity or a real person present in the scene — any body, face, pose or clothing detail, or a bare SCP designator token (e.g. "SCP-049", "SCP-049-2") — and correct it to environment/atmosphere prose only. Quote the offending phrase; never assert this without the quote.
+- **Exempt from that rule** (none of these can collide with a composited card, so none is a defect): a *depicted or inanimate* human — a person in a photograph, poster, painting, mural, warning pictogram or anatomical diagram, a mannequin, dummy, statue or bust; an **unworn** garment used as a prop (a lab coat on a hook, a discarded orange jumpsuit, an empty gurney's restraints); and **camera vocabulary** that only implies a viewpoint (`over-the-shoulder view`, `POV`, `eye-level`, `from behind`, `hand-held`), which the generator prompt actively teaches.
+
+**Do NOT report either of the following as an issue.** Both are states this architecture *requires*, not defects — the figures come from the composited cards, not from the plate:
+
+- (a) An `image_prompt` that carries **no** frozen descriptor and shows no entity, even when `entity_visible` is true. `entity_visible` is a **scene-level narration** field ("the SCP entity is mentioned or appears in this scene's narration"); it is not a render instruction for the background plate, and shots carry no such field at all.
+- (b) **Any** person-exclusion term in `negative_prompt` — `person`, `human figure`, `character`, `silhouette of a person` are the common examples, not the boundary of the exemption. These are **mandatory**: they are what keeps the generated plate empty so the approved cards are the only figures in frame. Never ask for their removal. The anatomy prefix the generator mandates (`extra limbs`, `extra arms`, `extra fingers`, `deformed hands`, `mutated`, `bad anatomy`) is likewise never a defect.
+
+**How to carry an `image_prompt` correction.** `corrections[].field` accepts only `narration` or `visual_description`, so an `image_prompt` defect has no channel there: put the replacement prose in that issue's own `correction` field and emit **no** `corrections[]` entry for it.
 
 ### 7. Storytelling Quality
 Evaluate the narration's storytelling effectiveness:
