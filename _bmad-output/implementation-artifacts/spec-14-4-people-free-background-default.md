@@ -3,7 +3,8 @@ title: 'Story 14.4: 무인 배경을 출하 기본값으로 — 가드 승격 + 
 type: 'feature'
 created: '2026-08-22'
 baseline_revision: '003045c'
-status: 'in-review'
+final_revision: '7673ce9'
+status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
 context: []
