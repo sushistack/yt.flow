@@ -40,8 +40,12 @@ class FakeSettings:
         self, *, mock, workflow_path,
         health_poll_every_n_shots=20, crash_recovery_poll_sec=15.0, crash_recovery_timeout_sec=300.0,
         stock_plate_substitution=False,  # mirrors the real Settings default
-        # Story 10.2: guard OFF by default here so pre-10.2 tests keep asserting
-        # exactly one render per shot; the guard tests below opt in explicitly.
+        # DELIBERATELY DIVERGES FROM THE SHIPPED DEFAULT, which is 2 since Story 14.4.
+        # 0 here keeps the ~25 pre-10.2 tests below asserting exactly one render per
+        # shot, which is what they are actually about; raising it to 2 would rewrite
+        # their render-count expectations for no gain. The guard tests opt in through
+        # `_guard_settings`, and the shipped value is pinned where it belongs —
+        # `tests/test_config.py::test_background_person_guard_default_ships_the_decision`.
         guard_attempts=0, vision_api_key="",
     ):
         self.stock_plate_substitution_enabled = stock_plate_substitution
@@ -1671,11 +1675,15 @@ async def test_warnings_merge_with_the_checkpoint_and_do_not_duplicate(monkeypat
     assert again == first
 
 
-# ── Story 13.1: the background-person guard's four unscreened outcomes ────────
+# ── Story 13.1: the background-person guard's unscreened outcomes ─────────────
 #
-# `attempts = 0` (the shipped default) is deliberately NOT here: an operator-set knob
-# at its shipped value is AC2's "intentionally non-applicable", not a degradation.
-# What warns is the guard being ASKED for and not delivered.
+# `attempts = 0` still does not warn, but the REASON changed with Story 14.4: it is no
+# longer the shipped default (that is 2 now), it is an OPERATOR OVERRIDE. 13.1 AC2's
+# "intentionally non-applicable" still covers it — the operator asked for no guard and
+# got no guard, which is not a runtime degradation — and the place a knob deviating
+# from a recorded decision becomes visible is `scripts/report_decision_drift.py`, not
+# the run's warning list. What warns here is the guard being ASKED for and not
+# delivered: no key, a single undecidable verdict, the breaker, an exhausted ladder.
 
 
 async def test_guard_without_a_vision_key_warns_once_for_the_run(monkeypatch, tmp_path):
@@ -1692,8 +1700,12 @@ async def test_guard_without_a_vision_key_warns_once_for_the_run(monkeypatch, tm
     assert out["run_warnings"][0]["context"] == {"reason": "vision_api_key_missing", "attempts": 2}
 
 
-async def test_guard_disabled_by_config_is_warning_free(monkeypatch, tmp_path):
-    """`background_person_guard_attempts = 0` is the shipped default (AC2)."""
+async def test_an_operator_override_to_zero_is_still_warning_free(monkeypatch, tmp_path):
+    """An operator who sets `background_person_guard_attempts = 0` gets no guard and no
+    warning — that is 13.1 AC2's "intentionally non-applicable", and it is the SAME
+    policy as before Story 14.4 even though 0 is no longer the shipped default (2 is).
+    The deviation from the recorded decision surfaces in the drift report instead.
+    """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
         tmp_path, guard_attempts=0, vision_api_key=""))
@@ -1701,6 +1713,28 @@ async def test_guard_disabled_by_config_is_warning_free(monkeypatch, tmp_path):
 
     out = await img.image_node(_one_shot_state())
     assert out["run_warnings"] == []
+
+
+async def test_a_single_undecidable_verdict_warns_for_that_shot(monkeypatch, tmp_path):
+    """Story 14.4. Run 4b35c0ed had exactly ONE undecidable verdict, well below the
+    breaker, and it produced zero warnings — so one unscreened frame was
+    indistinguishable in the UI from 42 verified-clean ones. The frame is still
+    ACCEPTED and still consumes no rung (re-rendering on no information spends ~17s to
+    learn nothing); only its visibility changes.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [None, False])
+
+    out = await img.image_node(_one_shot_state())
+
+    assert out.get("error") is None
+    assert len(seeds) == 1  # accepted on rung 0: no rung consumed
+    assert [w["code"] for w in out["run_warnings"]] == ["background_guard_unscreened"]
+    assert out["run_warnings"][0]["stage"] == "image"
+    assert out["run_warnings"][0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "reason": "detector_undecidable_shot"}
 
 
 async def test_guard_breaker_warns_once_and_carries_its_tallies(monkeypatch, tmp_path):
@@ -1717,6 +1751,12 @@ async def test_guard_breaker_warns_once_and_carries_its_tallies(monkeypatch, tmp
     assert len(breaker) == 1  # the closure short-circuits after it trips
     assert breaker[0]["context"]["undecidable_streak"] == STREAK
     assert breaker[0]["context"]["undecidable_total"] == STREAK
+    # Story 14.4: the per-shot rows ride ALONGSIDE it and do not multiply it. One per
+    # detector call, and the breaker is what bounds how many calls there can be — so a
+    # dead detector over 6 shots still yields STREAK named shots, not 6.
+    per_shot = [w for w in out["run_warnings"]
+                if w["context"].get("reason") == "detector_undecidable_shot"]
+    assert [w["context"]["shot_id"] for w in per_shot] == ["S000", "S001", "S002"]
 
 
 async def test_exhausted_ladder_warns_per_shot_with_scene_and_shot(monkeypatch, tmp_path):
@@ -1796,8 +1836,86 @@ async def test_per_shot_warnings_are_bounded_by_the_shared_sample_cap(monkeypatc
 
     named = [w for w in out["run_warnings"] if "shot_id" in w["context"]]
     assert len(named) == MAX_SAMPLE_RECORDS
-    # …and the true total is still on screen, on one aggregate row.
-    assert {"total_count": n} in [w["context"] for w in out["run_warnings"]]
+    # …and the true total is still on screen, on one aggregate row that NAMES the reason
+    # it counted — the cap is per (code, reason), so a bare tally would be ambiguous.
+    assert {"reason": "ladder_exhausted", "total_count": n} in [
+        w["context"] for w in out["run_warnings"]]
+
+
+async def test_an_undecidable_frame_is_recorded_in_the_sidecar_and_refires_on_resume(
+        monkeypatch, tmp_path):
+    """The warning alone is not durable: `run_warnings` ride the LangGraph checkpoint and
+    `full_restart_run` deletes the checkpoint while leaving the images, so a restarted
+    pass skips every shot. Without the sidecar flag the never-screened frame comes back
+    indistinguishable from a verified-clean one — the exact defect this story removes.
+    Mirrors `guard_exhausted`'s contract, which already survives this.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [None])
+
+    first = await img.image_node(_one_shot_state())
+    assert [w["context"]["reason"] for w in first["run_warnings"]] == [
+        "detector_undecidable_shot"]
+    assert _read_sidecar(tmp_path)["guard_undecidable"] is True
+
+    # Second pass: the shot resumes off disk, nothing is re-rendered, and the row returns.
+    seeds = _counting_fetch(monkeypatch)
+    again = await img.image_node(_one_shot_state())
+    assert seeds == []
+    assert [w["context"]["reason"] for w in again["run_warnings"]] == [
+        "detector_undecidable_earlier_run"]
+
+
+async def test_a_clean_frame_is_not_marked_undecidable(monkeypatch, tmp_path):
+    """The flag has to be per shot, not per run: one undecidable verdict must not stamp
+    every later frame as unscreened."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [None, False])
+
+    out = await img.image_node(_many_shots_state(2))
+
+    assert out.get("error") is None
+    # `_many_shots_state` numbers from S000.
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["guard_undecidable"] is True
+    assert _read_sidecar(tmp_path, base="scene_001_S001")["guard_undecidable"] is False
+
+
+async def test_undecidable_rows_cannot_evict_the_exhausted_ones(monkeypatch, tmp_path):
+    """`gotcha_summary-from-a-capped-list-drops-the-severest-item`. Both reasons ride the
+    code `background_guard_unscreened`, and "the guard KNEW this frame was populated and
+    shipped it" is the severest of the family. Capping per CODE let the cheap undecidable
+    rows eat slots the exhausted rows needed (5 + 7 named instead of 5 + 12); capping per
+    (code, reason) gives each failure mode its own MAX_SAMPLE_RECORDS.
+
+    The verdict script alternates one undecidable shot with one exhausted shot, so the
+    streak resets every time and the running total stops one short of the breaker — the
+    only shape in which both reasons can coexist in one run at all.
+    """
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_TOTAL as TOTAL
+    from yt_flow.domain.warnings import MAX_SAMPLE_RECORDS
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    undecidable_shots = TOTAL - 1  # 5: one short of tripping the breaker
+    # An undecidable shot costs 1 detector call, an exhausted shot exactly 3 (attempts=2).
+    _fake_detector(monkeypatch, [None, True, True, True] * undecidable_shots + [True])
+    shots = undecidable_shots * 2 + 10  # 5 undecidable + 15 exhausted
+
+    out = await img.image_node(_many_shots_state(shots))
+
+    # Named rows only: the aggregate row now carries `reason` too, so counting every row
+    # with that reason would count the tally as a sample.
+    named = [w["context"].get("reason") for w in out["run_warnings"] if "shot_id" in w["context"]]
+    assert named.count("detector_undecidable_shot") == undecidable_shots
+    assert named.count("ladder_exhausted") == MAX_SAMPLE_RECORDS
+    assert "detector_undecidable" not in named  # the breaker never tripped
+    # The aggregate names the reason it counted, so `총 N건` cannot span two failure modes.
+    assert {"reason": "ladder_exhausted", "total_count": shots - undecidable_shots} in [
+        w["context"] for w in out["run_warnings"]]
 
 
 # ── Render provenance (Story 13.3 AC7, AC8) ─────────────────────────────────

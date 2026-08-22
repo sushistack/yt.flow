@@ -141,8 +141,24 @@ def _identity(warning: RunWarning) -> tuple:
     )
 
 
+def _cap_key(warning: RunWarning) -> tuple[str, str | None]:
+    """Cap per (code, reason), not per code.
+
+    One code can carry reasons of very different severity — `background_guard_unscreened`
+    now spans five, from "the detector hiccupped on one shot" to "the guard KNEW this
+    frame was populated and shipped it". Capping the code as a whole let the cheap,
+    numerous reason consume the 12 slots and push the severest rows into the aggregate,
+    which is `gotcha_summary-from-a-capped-list-drops-the-severest-item` exactly. Per
+    reason, each failure mode is still bounded at MAX_SAMPLE_RECORDS, so the flood the
+    cap exists to stop is still stopped. Codes that carry no `reason` behave as before.
+    """
+    context = warning.get("context") or {}
+    reason = context.get("reason")
+    return (warning["code"], reason if isinstance(reason, str) else None)
+
+
 def cap_samples(warnings: list[RunWarning]) -> list[RunWarning]:
-    """Bound each code's named rows, keeping the true total on one extra aggregate row.
+    """Bound each code's named rows per reason, keeping the true total on one aggregate row.
 
     Same policy the relight diagnostics already apply at the source (they can only
     sample, because the pairs they skipped are never materialised). A code whose
@@ -150,17 +166,21 @@ def cap_samples(warnings: list[RunWarning]) -> list[RunWarning]:
     alone: it counted rows it deliberately never emitted, so re-counting here would
     understate it. Order is preserved, aggregates land last in first-seen code order.
     """
-    rolled = {w["code"] for w in warnings if any(k.endswith("_count") for k in (w.get("context") or ()))}
-    seen: Counter[str] = Counter()
+    rolled = {_cap_key(w) for w in warnings
+              if any(k.endswith("_count") for k in (w.get("context") or ()))}
+    seen: Counter[tuple[str, str | None]] = Counter()
     kept: list[RunWarning] = []
     for warning in warnings:
-        seen[warning["code"]] += 1
-        if warning["code"] in rolled or seen[warning["code"]] <= MAX_SAMPLE_RECORDS:
+        key = _cap_key(warning)
+        seen[key] += 1
+        if key in rolled or seen[key] <= MAX_SAMPLE_RECORDS:
             kept.append(warning)
+    # The aggregate carries the reason it counted, or the tally would say `총 26건` over
+    # two failure modes and name neither.
     kept.extend(
-        make_warning(cast(RunWarningCode, code), total_count=total)
-        for code, total in seen.items()
-        if total > MAX_SAMPLE_RECORDS and code not in rolled
+        make_warning(cast(RunWarningCode, code), reason=reason, total_count=total)
+        for (code, reason), total in seen.items()
+        if total > MAX_SAMPLE_RECORDS and (code, reason) not in rolled
     )
     return kept
 

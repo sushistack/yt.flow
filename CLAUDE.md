@@ -43,6 +43,46 @@ Any change to a runtime prompt (human or AI session) follows `docs/PROMPT_POLICY
 
 **Seeding is only real if the name matches what the runtime fetches.** Langfuse prompt names are not derived uniformly from the file path: the scenario and evaluation families use slashes (`scenario/structure`), the character family uses hyphens (`character-generation`). `scripts/migrate_prompts.py` holds that mapping in `SOURCE_TO_NAME`, and `tests/test_prompt_migration.py::test_prompt_seeding_covers_runtime_names` fails if a `get_prompt("…")` literal in `src/` has no entry. Until 2026-08-16 the character entries were missing, so the command above printed `created` while writing to names nothing reads — a `character/generation.md` fix authored 2026-07-08 sat un-shipped for five weeks and three separate card defects were chased back to it. **After seeding, verify the name the runtime actually asks for**, e.g. `GET {langfuse_host}/api/public/v2/prompts/character-generation?label=production` — not the name the script printed. `scripts/seed_character_prompts.py` and `scripts/seed_eval_prompts.py` predate the mapping and target their own families directly; prefer the one documented command.
 
+## Decision-bearing settings (`scripts/report_decision_drift.py`)
+
+A setting whose value encodes a **product judgement** — motion on/off, voice source,
+compositing strategy, a guard budget — belongs in the **code default in `config.py`,
+with the dated verdict in the comment above it and `.env`/`.env.example` left
+unpinned**. That is the rule, and it exists because both halves have already failed:
+a decided value that only reached `.env` never shipped
+(`gotcha_a-decision-that-only-reaches-env-never-ships` — Story 10.2's people-free
+guard sat at `0` for 15 days and screened nothing), and a stale `.env` pin silently
+re-applies an old value over a new code default
+(`gotcha_env-file-beats-code-default`). `.env.example` is the sharper trap of the two,
+because a pin there is a **revert a fresh checkout performs on day one** — four of them
+were found and commented out in Story 14.4, plus a truthy `<YOUR_…>` credential
+placeholder that made a guard run against a bogus key instead of reporting a missing one.
+The fourth was found only by sweeping **every** assignment in `.env.example` against the
+code default; sweeping the declared fields alone is blind exactly where it has not
+already looked. `tests/test_report_decision_drift.py` now pins that sweep.
+
+`config.DECISIONS` declares each such field with its deciding story, date, decided
+value and a citation of the comment it was harvested from. It is an **index into the
+prose, never a second place a decision is made**: if a row and the comment disagree,
+the comment is right and the row is stale. A field with no *dated* verdict gets no row.
+
+```
+uv run python scripts/report_decision_drift.py
+```
+
+Prints, for every declared field: decided value, code default, effective value and the
+**winning source** (`os.environ` > `.env` > code default — `Settings()` keeps no
+provenance, so this is reconstructed and would start lying if `Settings` grew a third
+source). Three buckets: effective-vs-decided drift, env-sourced (reported even when
+the value matches), and latent `.env.example` pins.
+
+**A non-empty result is a finding for the story that owns the feature, never a build
+failure.** The report always exits 0 on a successful read; only a usage error exits
+non-zero. Do not wire it into CI as a gate and do not "fix" someone else's flag to
+empty it — half these flags are legitimately off pending live evidence. For the same
+reason no test asserts that every decided value equals its default: that would make
+the report a gate by proxy.
+
 ## Live-validation artifacts (`_bmad-output/implementation-artifacts/*-live-validation/`)
 
 Stories in this project close on **rendered frames a human judged**, so those directories are evidence and not scratch. They are also the largest thing in the repo, so their contents split in two.

@@ -258,3 +258,37 @@ def test_recompose_defaults(monkeypatch):
     assert s.shot_recompose_enabled is True
     assert s.recompose_preflight_min_free_ram_gb == 12.0
     assert s.shot_recompose_workflow_path.endswith("comfyui_shot_recompose_qwen_api.json")
+
+def test_background_person_guard_default_ships_the_decision(monkeypatch):
+    """Story 14.4 flipped `background_person_guard_attempts` 0 -> 2, and until now NOTHING
+    in the suite pinned it — `tests/pipeline/nodes/test_image.py`'s `FakeSettings` carries
+    its own literal, so the flip was invisible in either direction. That is what let a
+    working guard sit at 0 for 15 days and then run only through a `.env` pin
+    (`gotcha_a-decision-that-only-reaches-env-never-ships`).
+
+    `BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS` is pinned alongside it because it is a RESUME
+    CONTRACT, not a knob: it fixes the length of the seed ladder `_existing_complete_shot`
+    accepts, so shrinking it orphans every shot a previous run accepted on a now-missing
+    rung and regenerates them forever. It may only grow.
+    """
+    _base_env(monkeypatch)
+    monkeypatch.delenv("YTFLOW_BACKGROUND_PERSON_GUARD_ATTEMPTS", raising=False)
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS, Settings
+    s = Settings(_env_file=None)
+    assert s.background_person_guard_attempts == 2
+    assert BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS == 4
+
+
+def test_every_decision_names_a_real_settings_field():
+    """`DECISIONS` is an index into config.py's dated verdicts, and an index whose keys
+    have drifted from the fields is worse than none — `report_decision_drift.py` reports
+    such a row as STALE rather than crashing, so nothing else would fail loudly."""
+    from yt_flow.config import DECISIONS, Settings
+    assert set(DECISIONS) <= set(Settings.model_fields)
+    for name, decision in DECISIONS.items():
+        assert decision.story and decision.date and decision.citation, name
+    # Deliberately NOT asserted: that every `decided` equals its code default. Story
+    # 13.6 AC5 wants a decision the code has not caught up with to be RECORDED, and the
+    # Boundaries say the drift report is a report and never a gate — a test that failed
+    # on drift would make it one by proxy. `report_decision_drift.py` is where drift is
+    # read. This test only guarantees the index points at real fields.

@@ -106,6 +106,13 @@ async def background_has_person(image_bytes: bytes, settings: Settings) -> bool 
             # Never coerce: "yes"/1/None must not become a confident verdict.
             logger.warning("background person check: has_person=%r is not boolean", value)
             return None
+        # Story 14.4: the model's own one-sentence `notes` was already in the reply and
+        # thrown away. It is the only place the frame's actual content is described — on
+        # run 4b35c0ed's `S00201` the note named a framed anime portrait, i.e. the
+        # depicted-person case, and we had n=1 because we never logged it. Zero cost,
+        # no signature/return-type/CHECK_PROMPT change; a corpus for 14.1's plate gate.
+        logger.info("background person check: has_person=%r, notes=%.200r",
+                    value, verdict.get("notes"))
         return value
     except Exception as exc:  # noqa: BLE001 — undecidable is a valid outcome; raising is not
         logger.warning("background person check unavailable: %s", exc)

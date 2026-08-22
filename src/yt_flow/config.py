@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -166,8 +166,11 @@ class Settings(BaseSettings):
     qwen_tts_clone_voice_id: str = ""
     # 1.1 since 2026-08-17 on Jay's viewing verdict of run 4b35c0ed (SCP-049, 3:20):
     # "말이 아직 너무 빠른것 같음. 지금이 1.2라면 1.1 정도로 줄이도록". 1.2 was itself a
-    # tuning value, never a measured one. NOTE the .env pin must move with this or it
-    # wins (gotcha_env-file-beats-code-default) — both were changed together.
+    # tuning value, never a measured one. The 1.2 -> 1.1 change originally moved the code
+    # default AND a `.env` pin together, because a stale pin wins
+    # (gotcha_env-file-beats-code-default). Story 14.4 removed that pin instead: a
+    # decision-bearing value belongs HERE and nowhere else, so there is no second copy to
+    # keep in step. Do not re-add it — see CLAUDE.md "Decision-bearing settings".
     qwen_tts_speed: float = Field(1.1, ge=0.5, le=2.0)
     qwen_tts_mock: bool = False
 
@@ -308,13 +311,58 @@ class Settings(BaseSettings):
     stock_plate_substitution_enabled: bool = False
     # Story 10.2 — extra renders image_node may spend when Qwen-VL says the generated
     # background already contains a person (a card composited onto it would make two
-    # figures). 0 (default) disables the guard entirely; enable with
-    # YTFLOW_BACKGROUND_PERSON_GUARD_ATTEMPTS=2. Off by default like every other new
-    # path in this epic (stock_plate_substitution_enabled, shot_recompose_enabled):
-    # each rung costs a full ~17s render plus one vision call. The live evidence for
-    # turning it on is in `_bmad-output/implementation-artifacts/10-2-live-validation/`
-    # — its one hit needed attempt 2, so a budget of 1 would have kept a populated frame.
-    background_person_guard_attempts: int = Field(0, ge=0, le=BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS)
+    # figures). 0 disables the guard entirely; the detector is never called.
+    #
+    # ON AT 2 SINCE STORY 14.4, 2026-08-22. The previous rationale for 0 ("off by
+    # default like every other new path in this epic") is WITHDRAWN, not appended to:
+    # it shipped a working guard that never ran once in 15 days, and the run that
+    # finally needed it only got it through a `.env` pin — which is
+    # `gotcha_a-decision-that-only-reaches-env-never-ships` verbatim, since a fresh
+    # checkout reverts a judged decision silently.
+    #
+    # WHY 2 AND NOT 1, from the only two live samples that exist. They disagree, and
+    # the disagreement is the reason for the value:
+    #   - 10.2's single hit (`10-2-live-validation/`) needed rung **2** — rung 1 came
+    #     back populated too, so a budget of 1 would have shipped a populated frame.
+    #   - run 4b35c0ed (43 shots, guard pinned at 2) hit on **5** shots — S00103,
+    #     S00202, S00203, S00301, S00400 — and all five cleared on rung **1**;
+    #     38 shots were accepted on rung 0 and **0** exhausted the ladder.
+    #     Those 5 are DETECTOR hits, not confirmed contaminations: 3 are the plates
+    #     Jay's ⑤ named, S00202 was never eyeballed, and S00103 is contradicted by
+    #     `14-0-angle-conflict/report.md` §8-5 (no person visible in either render),
+    #     i.e. probably a false positive that cost a real render. A false positive is
+    #     a permanent tax, so if a later run keeps hitting on frames nobody can see a
+    #     person in, the threshold is the thing to look at, not the budget.
+    # So the observed modal need is 1 and the observed worst case is 2. `2` is the
+    # worst case seen, not a round number someone liked, and MAX_ATTEMPTS stays 4
+    # because nothing has ever needed a third rung.
+    #
+    # MEASURED COST, both halves. Per accepted shot: one vision call — 7 timed calls
+    # in `14-4-live-validation/` gave min 1.46s / mean 3.17s / max 10.11s, a ~7x spread
+    # on identical input because it is a hosted service (the first 4-call burst looked
+    # like a ~2s constant and was too narrow a sample —
+    # `gotcha_measure-densely-before-declaring-a-fix`). Per HIT only: one extra ~17s
+    # render. On this run's shape that is 43 vision calls (~2.3 min at the mean) and 5
+    # extra renders (~1.4 min), not 43 extra renders.
+    # THE WORST CASE IS BOUNDED BY CONSTRUCTION, not by a threshold: 2 extra renders
+    # per shot, i.e. at most 3x the image stage's render time, reached only if every
+    # shot hits twice. Nothing warns on the aggregate — `guard_counts["regenerated"]`
+    # goes to the Langfuse span only — so a checkpoint change that moves the hit rate
+    # from 12% to 60% would show up as a slow run rather than as a warning. Deferred
+    # deliberately: the threshold that would warn has no data behind it yet
+    # (`deferred-work.md`).
+    #
+    # FREE ON RESUME. `_seed_ladder` is fixed-length (MAX_ATTEMPTS + 1) and
+    # `_existing_complete_shot` compares the accepted seed against the WHOLE ladder,
+    # so raising or lowering this knob cannot invalidate a cached shot, and rung 0
+    # still hashes the pre-10.2 string byte-identically. Only newly-generated shots
+    # change.
+    #
+    # An undecidable verdict (no key, HTTP error, unparseable reply) accepts the
+    # frame and consumes NO rung — re-rendering on no information spends ~17s to
+    # learn nothing — but Story 14.4 makes it visible per shot
+    # (`background_guard_unscreened` / `detector_undecidable_shot`).
+    background_person_guard_attempts: int = Field(2, ge=0, le=BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS)
     # Story 10.1c — regenerate each shot from plate + cards + a placement instruction
     # instead of compositing cards onto the plate. The overlay path stays intact behind it.
     # VERDICT (10.1c close-out): stays OFF, despite the live run passing. For: 51 passes /
@@ -551,6 +599,88 @@ class Settings(BaseSettings):
     # merges into the previous shot's clip (first shot merges forward). 0.0
     # disables merging entirely.
     min_shot_clip_sec: float = Field(2.0, ge=0.0)
+
+
+class Decision(NamedTuple):
+    """One recorded product judgement about a setting above (Story 13.6 AC1).
+
+    ``decided`` is what the verdict said the value should be; the *code default*
+    is read separately from ``Settings.model_fields`` so the two can be compared.
+    ``citation`` quotes the comment this row was harvested FROM — this table is
+    an index into the prose, never a second place a decision is made. If the two
+    ever disagree, the comment is right and this row is stale.
+    """
+
+    story: str
+    date: str
+    decided: object
+    citation: str
+
+
+# field name -> Decision. Seeded ONLY from verdicts already dated in the comments
+# above (Story 13.6 Task 1: "Harvest those rather than re-deciding"), which is why
+# it is short: a decision-bearing flag with no dated verdict gets NO row, because
+# inventing a date here would make this table the deciding authority instead of an
+# index. The absences are recorded here so the gap reads as a decision rather than
+# an oversight — every one of them is a candidate 13.6 Task 1 named:
+#   - NO DATE, so no row: `stock_plate_substitution_enabled` (False, story 8.17, a
+#     measured rationale but undated), `post_fx_enabled` (True, story 7.2),
+#     `qwen_tts_voice` ("Cherry", coupled to `content_language`). These want a dated
+#     verdict from whoever owns them next — 14.1 for the plate flag.
+#   - DATED but outside Story 14.4's seed set: `depth_placement_enabled` ("ON after
+#     live verification (2026-08-03)", story 8.16) and `composite_harmonization_tier`
+#     ("Default 1 since Story 11.1", research dated 2026-08-01). Both look eligible;
+#     14.4's spec fixed the seed set to the verdicts it had read, and growing this
+#     table is a separate, cheap, deliberate act rather than a side effect.
+# Six of the rows below share one byte-identical stamp — `# 2026-08-15 Jay 라이브
+# 판정으로 확정 (v4)` — which is a v4-rebuild viewing session, not a story, so that
+# is what `story` says for them. `scripts/report_decision_drift.py` is the reader.
+DECISIONS: dict[str, Decision] = {
+    "qwen_tts_clone_enabled": Decision(
+        "Jay 라이브 판정 (v4)", "2026-08-15", True,
+        "qwen_tts_clone_enabled: `# 2026-08-15 Jay 라이브 판정으로 확정 (v4)`",
+    ),
+    "qwen_tts_speed": Decision(
+        "Jay 시청 판정 (run 4b35c0ed)", "2026-08-17", 1.1,
+        "qwen_tts_speed: \"말이 아직 너무 빠른것 같음. 지금이 1.2라면 1.1 정도로 줄이도록\"",
+    ),
+    "pose_guide_conditioning_enabled": Decision(
+        "10.5", "2026-08-14", True,
+        "pose_guide_conditioning_enabled: `flipped ON by Jay's promotion decision`",
+    ),
+    "parallax_enabled": Decision(
+        "Jay 라이브 판정 (v4)", "2026-08-15", False,
+        "parallax_enabled: `# 2026-08-15 Jay 라이브 판정으로 확정 (v4)`",
+    ),
+    "camera_noise_enabled": Decision(
+        "Jay 라이브 판정 (v4)", "2026-08-15", False,
+        "camera_noise_enabled: `# 2026-08-15 Jay 라이브 판정으로 확정 (v4)`",
+    ),
+    "character_idle_motion_enabled": Decision(
+        "Jay 라이브 판정 (v4)", "2026-08-15", False,
+        "character_idle_motion_enabled: `# 2026-08-15 Jay 라이브 판정으로 확정 (v4)`",
+    ),
+    "background_camera_motion_enabled": Decision(
+        "Jay 라이브 판정 (v4)", "2026-08-15", False,
+        "background_camera_motion_enabled: `# 2026-08-15 Jay 라이브 판정으로 확정 (v4)`",
+    ),
+    "shot_recompose_enabled": Decision(
+        "10.1e", "2026-08-17", True,
+        "shot_recompose_enabled: `FLIPPED 2026-08-17 ON JAY'S VIEWING VERDICT`",
+    ),
+    "background_person_guard_attempts": Decision(
+        "14.4", "2026-08-22", 2,
+        "background_person_guard_attempts: `ON AT 2 SINCE STORY 14.4, 2026-08-22`",
+    ),
+    # Not a flag and not a Jay verdict — a MEASURED value, which is the other shape a
+    # product judgement takes. Added in 14.4's review pass after a full sweep of every
+    # `.env.example` assignment found it pinned at the measured-failing 16384: the row
+    # exists so the report can see that class of revert, not just the flags.
+    "deepseek_max_tokens": Decision(
+        "6.9 truncation measurement", "2026-08-05", 32768,
+        "deepseek_max_tokens: `Measured 2026-08-05 ... 16384 truncates scenario/structure 4/4`",
+    ),
+}
 
 
 # One mechanism per value, never both fields: reasoning_effort for a depth,

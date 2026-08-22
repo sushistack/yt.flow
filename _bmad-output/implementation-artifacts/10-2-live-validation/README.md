@@ -23,9 +23,11 @@ uv run python _bmad-output/implementation-artifacts/10-2-live-validation/run_pro
 sidecars of the 2026-07-12 full E2E run, which live on the machine that produced
 them and are not in the repo. Without that directory nothing below can be
 re-derived; the recorded prompts inside `before_verdict.json` / `gate_log.json`
-are the only portable copy. The guard knob also ships as **0 (off)**, so both
-scripts set the attempt budget themselves (`--attempts`, default 2) rather than
-reading `background_person_guard_attempts`.
+are the only portable copy. ~~The guard knob also ships as **0 (off)**~~ (SUPERSEDED
+2026-08-22 by Story 14.4: it ships at **2**), so both scripts set the attempt budget
+themselves (`--attempts`, default 2) rather than reading
+`background_person_guard_attempts` — which now happens to agree with the default, and
+is still passed explicitly so these scripts stay independent of it.
 
 ## Where the probe prompts come from (the sample band)
 
@@ -57,7 +59,14 @@ first populated frame.
 
 A budget of `background_person_guard_attempts = 2` is exactly what this shot
 needed; a budget of 1 would have kept a populated frame. That is the recommended
-value when enabling the knob — it is **not** the shipped default, which is 0.
+value when enabling the knob — ~~it is **not** the shipped default, which is 0~~.
+
+> **SUPERSEDED 2026-08-22 by Story 14.4.** The struck sentence was true when written
+> and is now false: `2` **is** the shipped code default. The original text is kept
+> rather than deleted because a stale sentence in the guard's own evidence directory
+> is the sentence the next reader quotes (`gotcha_recorded-root-cause-can-be-inverted`).
+> See `../14-4-live-validation/README.md` — and note that this directory's hit is
+> still the *only* evidence a second rung is ever needed.
 
 ## Confirmation re-run — 2026-08-10, iteration 2's re-derived guard
 
@@ -162,12 +171,25 @@ part sceptically, it is weaker than it looks:
   the verdict still comes from a hosted model: a replay can accept a different
   rung and ship a different image even though the renders themselves are
   seed-deterministic (Story 11.1).
-- **The guard ships OFF** (`background_person_guard_attempts=0`, like
+- ~~**The guard ships OFF** (`background_person_guard_attempts=0`, like
   `stock_plate_substitution_enabled` and `shot_recompose_enabled`). This
   directory is the evidence an operator should read before setting
   `YTFLOW_BACKGROUND_PERSON_GUARD_ATTEMPTS=2`; with the knob at 0 every generated
   background is counted as `guard_unscreened` and the run logs one warning saying
-  so, which is the intended "a dead guard is not a clean pass" signal.
+  so, which is the intended "a dead guard is not a clean pass" signal.~~
+
+  **SUPERSEDED 2026-08-22 by Story 14.4: the guard ships ON at 2.** Kept verbatim
+  above because it was the sample's honest caveat at the time, and because the reason
+  it stopped being true matters — shipping at 0 meant the guard never screened a
+  single shot for 15 days (`never screened` 43/43 on run `4b35c0ed`), which is what
+  promoted it. `shot_recompose_enabled` also ships True now (10.1e). Only
+  `stock_plate_substitution_enabled` is still off. Operators no longer need to set
+  `YTFLOW_BACKGROUND_PERSON_GUARD_ATTEMPTS` at all — and should not, since a `.env`
+  pin beats the code default and hides the next change to it
+  (`gotcha_env-file-beats-code-default`). Setting it to `0` is now an override
+  deviating from a recorded decision, visible in
+  `uv run python scripts/report_decision_drift.py`, and still deliberately not a run
+  warning (13.1 AC2).
 
 ## Removed evidence (iteration 1's cancelled text-scrub arm)
 

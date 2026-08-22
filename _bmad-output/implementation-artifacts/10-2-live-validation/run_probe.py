@@ -187,6 +187,7 @@ if __name__ == "__main__":
     p.add_argument("--offset", type=int, default=0, help="skip this many corpus shots first")
     p.add_argument("--limit", type=int, default=40, help="max backgrounds to render while scanning")
     p.add_argument("--attempts", type=int, default=2,
-                   help="ladder rungs to try after a hit — explicit, NOT the config "
-                        "default (background_person_guard_attempts ships as 0 = off)")
+                   help="ladder rungs to try after a hit — explicit, NOT read from "
+                        "background_person_guard_attempts (which ships as 2 since Story "
+                        "14.4; it shipped as 0 when this probe was written)")
     raise SystemExit(asyncio.run(main(p.parse_args())))

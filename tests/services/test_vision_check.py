@@ -157,3 +157,23 @@ def test_endpoint_matches_character_services_definition():
     pipeline/), so a test — not an import — keeps the two copies equal."""
     from yt_flow.services.character_service import _DASHSCOPE_VISION_ENDPOINT as ANCHOR
     assert vision_check._DASHSCOPE_VISION_ENDPOINT == ANCHOR
+
+
+@pytest.mark.asyncio
+async def test_the_models_note_is_logged_beside_the_verdict(caplog):
+    """Story 14.4. `notes` was already in every reply and thrown away at the parse, so
+    the one description of what is actually IN the frame never reached a log line — run
+    4b35c0ed's `S00201` framed anime portrait was in the detector's own note and we had
+    n=1 as a result. The verdict and the signature are unchanged; only the log grew.
+    """
+    with caplog.at_level("INFO", logger=vision_check.__name__):
+        assert await _check('{"has_person": false, "notes": "a framed anime portrait"}') is False
+    assert "a framed anime portrait" in caplog.text
+    assert "has_person=False" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_reply_without_notes_still_returns_its_verdict():
+    """The note is a log line, never a required field: a reply that omits it must not
+    become undecidable (`None` means "not checked" and costs the caller a warning)."""
+    assert await _check('{"has_person": true}') is True

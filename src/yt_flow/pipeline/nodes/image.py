@@ -307,7 +307,7 @@ def _build_provenance(
 
 def _write_sidecar(
     out_dir: Path, scene_num: int, shot: ShotData, seed: int, provenance: dict,
-    guard_exhausted: bool = False,
+    guard_exhausted: bool = False, guard_undecidable: bool = False,
 ) -> None:
     """Completion sentinel, written last after the shot's image file.
 
@@ -321,6 +321,14 @@ def _write_sidecar(
     ``guard_exhausted`` (Story 10.2) marks a frame the guard KNOWS is populated
     and kept anyway. It is deliberately NOT part of the resume equality check:
     sidecars written before this key existed must keep matching.
+
+    ``guard_undecidable`` (Story 14.4) is the same idea for the opposite outcome —
+    a frame the detector could not judge, i.e. one that was never screened. It has
+    to be on disk rather than only in ``run_warnings`` because those live in the
+    LangGraph checkpoint and ``full_restart_run`` deletes the checkpoint while
+    leaving the images: without this key a restarted pass skips every shot and the
+    frame comes back looking verified-clean, which is the exact defect this story
+    exists to remove. Additive and uncompared, for the reasons above.
 
     ``provenance`` (Story 13.3) is additive for exactly the same reason, and more
     sharply: it changes whenever ComfyUI is upgraded or the env snapshot is
@@ -336,21 +344,25 @@ def _write_sidecar(
             "negative_prompt": _effective_negative_prompt(shot["negative_prompt"]),
             "seed": seed,
             "guard_exhausted": guard_exhausted,
+            "guard_undecidable": guard_undecidable,
             "provenance": provenance,
         }),
         encoding="utf-8",
     )
 
 
-def _sidecar_guard_exhausted(out_dir: Path, scene_num: int, shot: ShotData) -> bool:
-    """Did a previous run keep this shot with a background it knew was populated?
+def _sidecar_guard_flag(out_dir: Path, scene_num: int, shot: ShotData, key: str) -> bool:
+    """Did a previous run leave this shot unverified, and how?
 
-    Read on the resume path so the run-level warning still fires for a resumed
-    run — otherwise a second pass over the same workspace reports a clean guard.
+    ``guard_exhausted`` = kept a background it KNEW was populated;
+    ``guard_undecidable`` = could not judge it at all. Read on the resume path so both
+    warnings still fire for a resumed run — otherwise a second pass over the same
+    workspace reports a clean guard. Absent key / malformed sidecar / unreadable file
+    all mean False: this runs inside image_node's AD-10 boundary.
     """
     try:
         sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
-        return bool(sidecar.get("guard_exhausted")) if isinstance(sidecar, dict) else False
+        return bool(sidecar.get(key)) if isinstance(sidecar, dict) else False
     except (OSError, ValueError):
         return False
 
@@ -526,6 +538,10 @@ async def image_node(state: PipelineState) -> dict:
         guard_off = s.background_person_guard_attempts < 1 or not s.character_vision_api_key
         undecidable_streak = 0
         undecidable_total = 0
+        # Per-shot, reset by the generation loop before each ladder: the sidecar has to
+        # record whether THIS frame went out unjudged, and `_populated` is the only place
+        # that knows. A counter delta would be equivalent and less obvious.
+        undecidable_frame = False
         if s.background_person_guard_attempts >= 1 and not s.character_vision_api_key:
             # One warning per run, not per shot — the key is a run-level fact.
             logger.warning(
@@ -533,23 +549,31 @@ async def image_node(state: PipelineState) -> dict:
                 "generated backgrounds are NOT screened for people this run",
             )
             # Story 13.1: run-level cause -> run-level warning. `attempts < 1` is NOT
-            # warned: that is the operator's own config choice (the shipped default),
-            # i.e. AC2's "intentionally non-applicable", whereas asking for the guard and
-            # not getting it is a runtime degradation.
+            # warned: that is the operator's own config choice, i.e. AC2's "intentionally
+            # non-applicable", whereas asking for the guard and not getting it is a
+            # runtime degradation. Story 14.4 kept that policy but changed what 0 MEANS:
+            # the shipped default is 2 now, so 0 is an operator override deviating from a
+            # recorded decision — visible in `scripts/report_decision_drift.py`, which is
+            # the right layer for it, and still not a run warning.
             warnings.append(make_warning(
                 "background_guard_unscreened", reason="vision_api_key_missing",
                 attempts=s.background_person_guard_attempts,
             ))
 
-        async def _populated(image_bytes: bytes) -> bool:
+        async def _populated(image_bytes: bytes, scene_num: int, shot_id: str) -> bool:
             """True only when the detector positively says a person is in frame.
 
             Wraps the detector so nothing it does — including an unexpected
             raise — can reach image_node's AD-10 boundary and fail the stage.
             An undecidable verdict is counted and treated as "accept", never as
-            "clean": the run-level warning below is what says it wasn't checked.
+            "clean": the warnings below are what say it wasn't checked.
+
+            ``scene_num``/``shot_id`` are threaded in from the generation loop
+            (Story 14.4) purely to name the shot on the per-shot warning — the
+            closure is defined out here because it owns the run-level breaker
+            state, and a single undecidable verdict is a SHOT-level fact.
             """
-            nonlocal guard_off, undecidable_streak, undecidable_total
+            nonlocal guard_off, undecidable_streak, undecidable_total, undecidable_frame
             if guard_off:
                 return False
             try:
@@ -558,9 +582,20 @@ async def image_node(state: PipelineState) -> dict:
                 logger.warning("background person guard: detector raised, accepting frame: %s", exc)
                 verdict = None
             if verdict is None:
+                undecidable_frame = True
                 guard_counts["unavailable"] += 1
                 undecidable_streak += 1
                 undecidable_total += 1
+                # Story 14.4: name the shot. Run 4b35c0ed had exactly ONE undecidable
+                # verdict and it produced zero warnings — below the breaker, the only
+                # trace was a counter on the image span, so an unscreened frame was
+                # indistinguishable in the UI from a verified-clean one, which is the
+                # defect 13.1 exists to remove. Bounded by the breaker (6 total) and
+                # then by `cap_samples`, so an undecidable storm cannot flood the gate.
+                warnings.append(make_warning(
+                    "background_guard_unscreened", scene_num=scene_num, shot_id=shot_id,
+                    reason="detector_undecidable_shot",
+                ))
                 # Total as well as streak: an intermittent detector (fail, ok, fail…)
                 # resets the streak every other call and would never trip the breaker,
                 # which is exactly the 120s-per-call cost it exists to bound.
@@ -630,14 +665,19 @@ async def image_node(state: PipelineState) -> dict:
                 if existing is not None:
                     skipped_count += 1
                     image_count += 1
-                    if _sidecar_guard_exhausted(out_dir, scene["scene_num"], shot):
-                        # A frame a previous run kept while knowing it was populated
-                        # stays unverified on resume — the warning must still fire.
-                        guard_counts["exhausted"] += 1
-                        warnings.append(make_warning(
-                            "background_guard_unscreened", scene_num=scene["scene_num"],
-                            shot_id=shot["shot_id"], reason="ladder_exhausted_earlier_run",
-                        ))
+                    for key, counter, reason in (
+                        ("guard_exhausted", "exhausted", "ladder_exhausted_earlier_run"),
+                        ("guard_undecidable", "unavailable", "detector_undecidable_earlier_run"),
+                    ):
+                        # A frame a previous run kept while knowing it was populated, or
+                        # never managed to judge, stays unverified on resume — the warning
+                        # must still fire. Both flags can be set on the same shot.
+                        if _sidecar_guard_flag(out_dir, scene["scene_num"], shot, key):
+                            guard_counts[counter] += 1
+                            warnings.append(make_warning(
+                                "background_guard_unscreened", scene_num=scene["scene_num"],
+                                shot_id=shot["shot_id"], reason=reason,
+                            ))
                     new_shots.append(await _with_depth(shot, existing))
                     continue
 
@@ -719,6 +759,7 @@ async def image_node(state: PipelineState) -> dict:
 
                 dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                 exhausted = False
+                undecidable_frame = False
                 if s.comfyui_mock:
                     shutil.copyfile(_mock_source(), dest)
                 else:
@@ -741,7 +782,7 @@ async def image_node(state: PipelineState) -> dict:
                             image_bytes = await comfyui_client.submit_and_fetch(s.comfyui_url, workflow)
                         request_count += 1
                         requests_since_health_check += 1
-                        if not await _populated(image_bytes):
+                        if not await _populated(image_bytes, scene["scene_num"], shot["shot_id"]):
                             break
                         if rung + 1 < len(ladder):
                             # Only a rung another render actually follows is a
@@ -771,7 +812,8 @@ async def image_node(state: PipelineState) -> dict:
                 generated_count += 1
                 image_count += 1
                 _write_sidecar(out_dir, scene["scene_num"], shot, seed, provenance,
-                               guard_exhausted=exhausted)
+                               guard_exhausted=exhausted,
+                               guard_undecidable=undecidable_frame)
                 # Copy the shot; set only image_path/depth_map_path — never mutate the
                 # input state. [AD-4]
                 new_shots.append(await _with_depth(shot, str(dest)))
