@@ -3,6 +3,7 @@ title: 'Story 14.7: scenario 리뷰어를 recompose 이후 규칙에 맞춘다 �
 type: 'bugfix'
 created: '2026-08-22'
 baseline_revision: '003045c'
+final_revision: '7485e57'
 status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: true
