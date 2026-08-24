@@ -1,0 +1,78 @@
+{
+  "note": "Spec: ``_bmad-output/implementation-artifacts/spec-14-5-narration-plate-pose-match.md``",
+  "visible_event": {
+    "pairs": 28,
+    "up": 8,
+    "down": 4,
+    "ties": 16,
+    "moved": 12,
+    "p_two_sided": 0.3877,
+    "cells_dropped_unpaired": 0,
+    "cells_with_unequal_rep_counts": 0,
+    "mean_old": 0.8357,
+    "mean_new": 0.8643,
+    "mean_delta": 0.0286
+  },
+  "no_event_visible_event": {
+    "pairs": 15,
+    "up": 2,
+    "down": 6,
+    "ties": 7,
+    "moved": 8,
+    "p_two_sided": 0.2891,
+    "cells_dropped_unpaired": 0,
+    "cells_with_unequal_rep_counts": 0,
+    "mean_old": 0.8267,
+    "mean_new": 0.6933,
+    "mean_delta": -0.1334
+  },
+  "present_subject": {
+    "pairs": 43,
+    "up": 0,
+    "down": 0,
+    "ties": 43,
+    "p_two_sided": 1.0,
+    "cells_dropped_unpaired": 0,
+    "cells_with_unequal_rep_counts": 0,
+    "mean_old": 1.0,
+    "mean_new": 1.0,
+    "mean_delta": 0.0
+  },
+  "per_rep_spread": {
+    "old": {
+      "min": 0.75,
+      "max": 0.8929,
+      "mean": 0.8357
+    },
+    "new": {
+      "min": 0.7857,
+      "max": 0.9286,
+      "mean": 0.8643
+    }
+  },
+  "pooled_event_bearing": {
+    "old": {
+      "n": 140,
+      "hits": 117,
+      "rate": 0.8357
+    },
+    "new": {
+      "n": 140,
+      "hits": 121,
+      "rate": 0.8643
+    }
+  },
+  "pooled_all_rows": {
+    "old": {
+      "n": 214,
+      "hits": 178,
+      "rate": 0.8318
+    },
+    "new": {
+      "n": 214,
+      "hits": 172,
+      "rate": 0.8037
+    }
+  },
+  "power_note": "Sign test over movable pairs only. A non-significant p here means the design cannot resolve an effect of this size, NOT that the effect is zero."
+}

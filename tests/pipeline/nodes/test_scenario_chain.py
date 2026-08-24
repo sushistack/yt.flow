@@ -6642,3 +6642,62 @@ def test_the_two_prompts_forbid_the_same_generic_terms():
     )
     # A floor, not an equality: an honest 12th term added to BOTH files must not fail.
     assert len(generator) >= 11, f"expected at least the 11-term list, got {sorted(generator)}"
+
+
+# --- Story 14.5: the background-only contract survived a measured attack ------
+#
+# 14.5 edited slot 3 to demand "THIS sentence's event, as a visible trace", with the
+# clause "when the event's agent is a person or the entity, the trace is what they
+# left — never their body". Screened before any render (report:
+# `_bmad-output/implementation-artifacts/14-5-prompt-screening/`), the edit was
+# REJECTED and reverted:
+#
+#   * target axis: +2.86 pp, paired sign test p=0.3877 over 12 movable cells — the
+#     design cannot resolve an effect of that size, so no gain was shown;
+#   * the pre-registered rejection condition fired: run through the shipped reviewer
+#     (`scenario/review` v11) at 5 generation reps, typed `descriptor_violation` went
+#     22 -> 31 and the entity-in-prompt bucket 3 -> 8, and the new leg's findings are
+#     genuine body references — "where a body had just risen", "the collapsed form",
+#     "where a tall figure stands", "around the doctor's finished work".
+#
+# The mechanism is the reason this test exists: asking slot 3 for the *trace* of an
+# event whose agent is a person invites the body back as a LOCATION reference, and
+# the edit's own example ("a slumped-empty floor position") is one paraphrase from
+# naming it. An earlier 2-rep read of the same measurement showed 5 -> 0 and would
+# have shipped it; the direction reversed at 5 reps.
+#
+# So the pin below is not a record of a shipped feature. It guards the contract that
+# 10.1e / 10.2 / 14.7 built and that this attack measurably eroded.
+
+
+def test_visual_breakdown_keeps_the_background_only_contract():
+    """The clause 14.5 measured an edit eroding. `image_prompt` is background-only."""
+    text = _prompt_text("visual_breakdown.md")
+    # Whitespace- and blockquote-insensitive: the CRITICAL RULE is a wrapped `>` block,
+    # so pinning its wrap position would make reflowing the paragraph — a no-op edit —
+    # turn this red, and a naive flatten leaves the `>` markers mid-sentence.
+    flat = " ".join(re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE).split())
+    for pin in ("`image_prompt` is a BACKGROUND-ONLY prompt",
+                "no cast member's body/face/pose/clothing"):
+        assert pin in flat, f"visual_breakdown.md no longer carries: {pin!r}"
+
+
+def test_visual_breakdown_slot3_does_not_name_a_body_as_a_location():
+    """The specific failure 14.5 measured: a body smuggled in as a place.
+
+    Not a general body-word scan of the whole prompt — slot 3's own text is where the
+    invitation lived, and phrases of the shape "where a <body> ..." / "the collapsed
+    form" are what the reviewer flagged in the rejected candidate's output.
+    """
+    text = _prompt_text("visual_breakdown.md")
+    marker = text.find("### `image_prompt` Structure (8 Slots)")
+    assert marker != -1, "visual_breakdown.md no longer has the 8-slot structure section"
+    slot3 = re.search(r"^3\. \*\*(.+?)$(.*?)^4\. \*\*", text[marker:], re.MULTILINE | re.DOTALL)
+    assert slot3 is not None, "visual_breakdown.md no longer has an 8-slot list with a slot 3"
+    offender = re.search(r"\b(?:body|figure|form|corpse|silhouette)\b", slot3.group(0),
+                         re.IGNORECASE)
+    assert offender is None or "never their body" in slot3.group(0), (
+        f"slot 3 names a body ({offender.group(0)!r} at offset {offender.start()}) — "
+        "14.5 measured this exact shape putting bodies back into background plates:\n"
+        + slot3.group(0)[:400]
+    )
