@@ -3,7 +3,7 @@ title: 'Story 14.5: 나레이션 ↔ 배경 정합 — 생성기를 바꾸는 �
 type: 'feature'
 created: '2026-08-22'
 baseline_revision: '7485e57'
-final_revision: ''  # uncommitted
+final_revision: 'cebda27'
 status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: false
