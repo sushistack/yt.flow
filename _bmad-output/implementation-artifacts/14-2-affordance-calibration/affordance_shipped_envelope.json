@@ -1,0 +1,172 @@
+{
+  "run_id": "4b35c0ed-8a1e-4448-8594-11bd9997376d",
+  "passes": 3,
+  "envelope": "vision_check.plate_has_standing_room",
+  "verdicts": {
+    "S00100": [
+      true,
+      true,
+      true
+    ],
+    "S00102": [
+      true,
+      true,
+      true
+    ],
+    "S00103": [
+      true,
+      true,
+      true
+    ],
+    "S00104": [
+      true,
+      true,
+      true
+    ],
+    "S00105": [
+      true,
+      true,
+      true
+    ],
+    "S00200": [
+      true,
+      true,
+      true
+    ],
+    "S00201": [
+      false,
+      false,
+      false
+    ],
+    "S00202": [
+      true,
+      true,
+      true
+    ],
+    "S00300": [
+      true,
+      true,
+      true
+    ],
+    "S00301": [
+      true,
+      true,
+      true
+    ],
+    "S00302": [
+      false,
+      false,
+      false
+    ],
+    "S00303": [
+      true,
+      true,
+      true
+    ],
+    "S00400": [
+      true,
+      true,
+      true
+    ],
+    "S00402": [
+      true,
+      true,
+      true
+    ],
+    "S00500": [
+      true,
+      true,
+      true
+    ],
+    "S00501": [
+      false,
+      false,
+      false
+    ],
+    "S00502": [
+      true,
+      true,
+      true
+    ],
+    "S00504": [
+      true,
+      true,
+      true
+    ],
+    "S00600": [
+      true,
+      true,
+      true
+    ],
+    "S00601": [
+      null,
+      null,
+      null
+    ],
+    "S00602": [
+      false,
+      false,
+      false
+    ],
+    "S00603": [
+      true,
+      true,
+      true
+    ],
+    "S00605": [
+      true,
+      true,
+      true
+    ],
+    "S00701": [
+      true,
+      true,
+      true
+    ],
+    "S00702": [
+      true,
+      true,
+      true
+    ],
+    "S00703": [
+      true,
+      true,
+      true
+    ],
+    "S00800": [
+      true,
+      true,
+      true
+    ],
+    "S00802": [
+      true,
+      true,
+      true
+    ],
+    "S00803": [
+      true,
+      true,
+      true
+    ],
+    "S00900": [
+      true,
+      true,
+      true
+    ],
+    "S00901": [
+      true,
+      true,
+      true
+    ],
+    "S00902": [
+      true,
+      true,
+      true
+    ],
+    "S00904": [
+      true,
+      true,
+      true
+    ]
+  }
+}

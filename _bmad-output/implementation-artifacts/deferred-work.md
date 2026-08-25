@@ -849,3 +849,11 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-7-scenario-reviewer-recompose-alignment.md`
   summary: `scripts/migrate_prompts.py:86`의 `.strip()` 때문에 출하된 프롬프트 본문은 리포 파일과 **영원히 바이트 동일이 될 수 없다**(말미 개행 1바이트). 프롬프트 스토리마다 검증이 걸려 넘어질 함정이다.
   evidence: 14.7이 v10에서 "byte-equal"을 보고했는데 사실이 아니었고(`rstrip("\n")`을 해야 같다), v11에서 원인을 특정했다. 더불어 REST 검증 URL은 이름의 슬래시를 `%2F`로 인코딩해야 하며 생슬래시는 404다 — 출하 성공을 실패로 오독시키는, `gotcha_langfuse-prompt-name-families-differ`의 거울상.
+
+- source_spec: `spec-14-2-plate-affordance-gate.md`
+  summary: 10.2 배경-인물 가드(`vision_check.background_has_person`)도 `[text, image]` 순서로 묻는데, 14.2가 그 순서가 어포던스 질문에서 재현 3/7 ↔ 5/7 을 가른다고 실측했다 — 가드 질문에 대한 순서 효과는 측정된 적이 없다.
+  evidence: 14.2 리뷰 루프 1, 33 플레이트 × 각 봉투 2~3회 반복, 뒤집힘 0. 같은 엔드포인트·같은 모델·같은 파싱이므로 가드에도 적용될 수 있고, 14.4가 실측한 rung 0 38 / rung 1 5 는 `[text, image]` 로 얻은 수치다. 근거·재산출: `14-2-affordance-calibration/recheck_shipped_envelope.py`.
+
+- source_spec: `spec-14-2-plate-affordance-gate.md`
+  summary: `stock_plate_substitution_enabled` 가 켜지면 `location_key` 보유 샷은 어포던스 게이트를 통과하지 않는다(플레이트 복사 경로가 게이트 앞에서 `continue` 한다) — 켜는 순간 그 샷들의 어포던스 커버리지가 조용히 0이 된다.
+  evidence: `image.py` 스톡플레이트 분기가 `continue` 로 렌더 경로를 건너뛴다. 오늘은 플래그가 `False` 라 잠재적이지만 run 4b35c0ed 기준 31/43 샷이 `location_key` 를 갖는다. §4-2 결정의 메타데이터 절반(14.1 소관)이 닫아야 하는 갭이고, 14.2는 `unjudged` 카운트로 가시화만 한다.

@@ -575,6 +575,7 @@ RunWarningCode = Literal[
     "stock_plate_missing",
     "stock_plate_resolution_failed",
     "background_guard_unscreened",      # Story 10.2 — guard wanted but not applied
+    "plate_affordance_unusable",        # Story 14.2 — the plate's standing room (or the lack of a verdict on it)
     # subtitle_node
     "subtitle_alignment_fallback",
     # video_node (+ relight diagnostics)

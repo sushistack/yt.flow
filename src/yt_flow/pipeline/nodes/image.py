@@ -26,6 +26,13 @@ background is shown to Qwen-VL and, if it already contains a person, re-rendered
 on the next rung of a fixed-length seed ladder. Bounded, fail-open, and never
 able to fail the stage — an undecidable verdict accepts the frame and is counted.
 
+Story 14.2 asks a SECOND pixel question, once, about the render that ladder
+already accepted: can a whole body stand in this plate? A `false` verdict does not
+re-render — it empties that shot's ``cast``, so the compositor never puts a card on
+a frame with nowhere to put it (7/33 of run 4b35c0ed's cast-bearing shots). It sits
+OUTSIDE the ladder on purpose: the terminal action is not regeneration, so one
+verdict per shot is enough and rung accounting stays a single predicate's business.
+
 Mock mode (``YTFLOW_COMFYUI_MOCK=true``) never instantiates the HTTP client: a
 fixture image from ``tests/fixtures/images/`` is materialized into the run
 workspace so downstream code sees an identical artifact layout in mock and real
@@ -41,6 +48,7 @@ import os
 import shutil
 import time
 from pathlib import Path
+import typing
 from typing import Any
 
 from yt_flow.observability import get_client, observe
@@ -234,6 +242,18 @@ def _sidecar_path(out_dir: Path, scene_num: int, shot: ShotData) -> Path:
     return out_dir / f"{_shot_base(scene_num, shot)}_done.json"
 
 
+def _card_keys(shot: ShotData) -> str:
+    """The shot's cast as a comma-joined key list, for Story 14.2's warning context.
+
+    ``len(cast)`` says a card was dropped; it does not say WHICH character left the
+    frame, which is the only part an operator can act on. A joined string rather than a
+    list: ``make_warning`` stringifies non-scalars anyway, and the value is part of the
+    row identity, so a stable rendering is what lets a resumed pass converge on the row
+    already in the checkpoint.
+    """
+    return ",".join(str(member.get("card_key")) for member in (shot.get("cast") or []))
+
+
 def _env_snapshot_sha256() -> str | None:
     """sha256 of the committed ComfyUI-Manager snapshot, ``None`` if absent. [AD-10]
 
@@ -308,6 +328,7 @@ def _build_provenance(
 def _write_sidecar(
     out_dir: Path, scene_num: int, shot: ShotData, seed: int, provenance: dict,
     guard_exhausted: bool = False, guard_undecidable: bool = False,
+    affordance_unusable: bool = False, affordance_undecidable: bool = False,
 ) -> None:
     """Completion sentinel, written last after the shot's image file.
 
@@ -325,10 +346,25 @@ def _write_sidecar(
     ``guard_undecidable`` (Story 14.4) is the same idea for the opposite outcome —
     a frame the detector could not judge, i.e. one that was never screened. It has
     to be on disk rather than only in ``run_warnings`` because those live in the
-    LangGraph checkpoint and ``full_restart_run`` deletes the checkpoint while
-    leaving the images: without this key a restarted pass skips every shot and the
-    frame comes back looking verified-clean, which is the exact defect this story
-    exists to remove. Additive and uncompared, for the reasons above.
+    LangGraph checkpoint, and a crash inside ``image_node`` (or a resume after its
+    error path) comes back with the images on disk and the accounting gone: without
+    this key the second pass skips every shot and the frame comes back looking
+    verified-clean, which is the exact defect this story exists to remove. Additive
+    and uncompared, for the reasons above.
+
+    ``affordance_unusable`` (Story 14.2) is the third of the same shape: this shot's
+    ``cast`` was emptied because the plate has no standing room. It has to be on disk
+    because the resume path returns before any verdict is asked for, and without it the
+    card comes back on the next pass — the frame is cached, the emptied cast is not.
+    Additive and uncompared, like the two above.
+
+    ``affordance_undecidable`` (Story 14.2) is its counterpart, and exists for the same
+    reason ``guard_undecidable`` does: a cast-bearing shot that shipped WITHOUT a verdict
+    — refused by the endpoint, breaker tripped, no API key, mock fixture, stock plate —
+    must not resume looking like a plate the gate approved. A clean affordance tally on a
+    frame nobody judged is the defect Story 13.1 exists to remove. Written on every path
+    (a cast-free shot is a legitimate `False`: there was nothing to judge). Additive and
+    uncompared.
 
     ``provenance`` (Story 13.3) is additive for exactly the same reason, and more
     sharply: it changes whenever ComfyUI is upgraded or the env snapshot is
@@ -345,6 +381,8 @@ def _write_sidecar(
             "seed": seed,
             "guard_exhausted": guard_exhausted,
             "guard_undecidable": guard_undecidable,
+            "affordance_unusable": affordance_unusable,
+            "affordance_undecidable": affordance_undecidable,
             "provenance": provenance,
         }),
         encoding="utf-8",
@@ -355,9 +393,12 @@ def _sidecar_guard_flag(out_dir: Path, scene_num: int, shot: ShotData, key: str)
     """Did a previous run leave this shot unverified, and how?
 
     ``guard_exhausted`` = kept a background it KNEW was populated;
-    ``guard_undecidable`` = could not judge it at all. Read on the resume path so both
-    warnings still fire for a resumed run — otherwise a second pass over the same
-    workspace reports a clean guard. Absent key / malformed sidecar / unreadable file
+    ``guard_undecidable`` = could not judge it at all;
+    ``affordance_unusable`` = the plate had no standing room and the cast was dropped;
+    ``affordance_undecidable`` = the shot carried a cast and shipped with no verdict at all
+    (Story 14.2 — generic by key already, so no new reader was needed). Read on the
+    resume path so the warnings still fire for a resumed run — otherwise a second
+    pass over the same workspace reports a clean guard. Absent key / malformed sidecar / unreadable file
     all mean False: this runs inside image_node's AD-10 boundary.
     """
     try:
@@ -409,6 +450,7 @@ def _record_trace(
     stock_plate_count=0,
     depth_counts=None,
     guard_counts=None,
+    affordance_counts=None,
     error=None,
 ) -> None:
     """Best-effort enrich the current ``image`` span. [AD-10 — tracing is non-fatal]"""
@@ -430,6 +472,10 @@ def _record_trace(
                 # the frame was NOT verified unpopulated — it must be visible in the
                 # trace, otherwise a dead guard reads exactly like a clean pass.
                 **({f"guard_{k}": v for k, v in guard_counts.items()} if guard_counts else {}),
+                # Story 14.2: same argument, one question over. A shot that lost its
+                # cast, or whose plate was never judged, is invisible otherwise.
+                **({f"affordance_{k}": v for k, v in affordance_counts.items()}
+                   if affordance_counts else {}),
                 **({"error": repr(error)} if error is not None else {}),
             },
         )
@@ -493,6 +539,10 @@ async def image_node(state: PipelineState) -> dict:
     # Declared before the try so the error path can report them too: a stage that
     # fails mid-run must not lose its guard/depth accounting.
     guard_counts = {"regenerated": 0, "exhausted": 0, "unavailable": 0, "unscreened": 0}
+    # Story 14.2, its own tallies rather than more keys on `guard_counts`: these count a
+    # different predicate on a different loop, and folding them in would make the 10.2
+    # summary log line below read about two guards at once.
+    affordance_counts = {"unusable": 0, "undecidable": 0, "unjudged": 0}
     depth_counts = {"hit": 0, "miss": 0, "unavailable": 0}
     # Story 13.1: same reason they are declared out here — a stage that fails mid-run
     # must not lose the degradations it already accumulated.
@@ -617,6 +667,90 @@ async def image_node(state: PipelineState) -> dict:
             undecidable_streak = 0
             return verdict
 
+        # ── Story 14.2: plate affordance gate ──────────────────────────────
+        # The knob, kept separate from `affordance_off`: the knob being down is the
+        # operator's own choice, while a missing key or a tripped breaker is a
+        # degradation of a gate that was asked for. Only the latter goes in the sidecar
+        # (same policy 10.2 applies to `attempts < 1` vs a missing key).
+        affordance_enabled = s.plate_affordance_gate_enabled
+        # No key is a CONFIG state, not a dead detector: without this the gate would fire
+        # 33 doomed calls, file an undecidable row per shot and then a breaker row, all
+        # describing one run-level fact. 10.2 folds the same condition into `guard_off`.
+        affordance_off = not affordance_enabled or not s.character_vision_api_key
+        affordance_streak = 0
+        affordance_total = 0
+        # Per shot, reset by the generation loop: did THIS cast-bearing frame ship with
+        # no verdict? The sidecar has to carry it or a resume reports a clean tally.
+        affordance_unjudged_frame = False
+        if affordance_enabled and not s.character_vision_api_key:
+            logger.warning(
+                "plate affordance gate disabled: YTFLOW_CHARACTER_VISION_API_KEY is unset; "
+                "cast-bearing shots are NOT screened for standing room this run",
+            )
+            # One row for the run, like 10.2's — a run-level cause gets a run-level
+            # warning (Story 13.1 AC2). The knob being off files nothing at all.
+            warnings.append(make_warning(
+                "plate_affordance_unusable", reason="vision_api_key_missing"))
+
+        async def _no_standing_room(image_bytes: bytes, scene_num: int, shot_id: str) -> bool:
+            """True only when the detector positively says nothing can stand here.
+
+            Same fail-open posture as ``_populated``, and the same belt to the
+            detector's braces: nothing in here — including an unexpected raise —
+            may reach image_node's AD-10 boundary. Takes the render's ``image_bytes``,
+            the same object ``_populated`` is handed: they are already in memory,
+            and re-reading ``dest`` would judge a different read of the same file.
+
+            Undecidable is NOT "no standing room" and never will be. The endpoint
+            refuses corpse/medical plates deterministically (`data_inspection_failed`,
+            reproduced twice on `S00601`, which is also `None` for the 10.2 guard), and
+            SCP shots of exactly that kind are standing output — reading a refusal as
+            failure would delete their cast on every run, forever.
+            """
+            nonlocal affordance_off, affordance_streak, affordance_total
+            nonlocal affordance_unjudged_frame
+            if affordance_off:
+                # The knob is off, no key, or the breaker tripped. Counted, never silent:
+                # an unjudged cast-bearing shot must not read like a plate that passed.
+                affordance_counts["unjudged"] += 1
+                # …and it has to survive a resume, unless the knob itself is down: then
+                # nothing was asked for and there is nothing to re-fire.
+                affordance_unjudged_frame = affordance_enabled
+                return False
+            try:
+                verdict = await vision_check.plate_has_standing_room(image_bytes, s)
+            except Exception as exc:  # noqa: BLE001 — the detector's contract is not to raise; belt to its braces
+                logger.warning("plate affordance gate: detector raised, keeping the cast: %s", exc)
+                verdict = None
+            if verdict is None:
+                affordance_counts["undecidable"] += 1
+                affordance_unjudged_frame = True
+                affordance_streak += 1
+                affordance_total += 1
+                warnings.append(make_warning(
+                    "plate_affordance_unusable", scene_num=scene_num, shot_id=shot_id,
+                    reason="detector_undecidable",
+                ))
+                # Reuses 10.2's thresholds rather than inventing a second pair — same
+                # endpoint, same key, same 120s-per-call worst case. Its own streak /
+                # total / off-switch, though: an affordance refusal must not silence the
+                # person guard, which is a different question that may still be answerable.
+                if affordance_streak >= BACKGROUND_PERSON_GUARD_BREAKER_STREAK \
+                        or affordance_total >= BACKGROUND_PERSON_GUARD_BREAKER_TOTAL:
+                    affordance_off = True
+                    logger.warning(
+                        "plate affordance gate disabled for the rest of the run after %d "
+                        "consecutive / %d total undecidable verdicts",
+                        affordance_streak, affordance_total,
+                    )
+                    warnings.append(make_warning(
+                        "plate_affordance_unusable", reason="detector_undecidable_run",
+                        undecidable_streak=affordance_streak, undecidable_total=affordance_total,
+                    ))
+                return False
+            affordance_streak = 0
+            return verdict is False
+
         plate_cache: dict[str, list[dict]] = {}  # one lookup per location_key per run, not per shot
         depth_memo: dict[str, str | None] = {}  # one resolve per distinct image path per run
 
@@ -678,7 +812,44 @@ async def image_node(state: PipelineState) -> dict:
                                 "background_guard_unscreened", scene_num=scene["scene_num"],
                                 shot_id=shot["shot_id"], reason=reason,
                             ))
-                    new_shots.append(await _with_depth(shot, existing))
+                    resumed = shot
+                    # Story 14.2. Guarded on the shot ACTUALLY having a cast: a shot whose
+                    # cast is already `[]` (8.19's marker, an edited checkpoint) has nothing
+                    # to drop, and a warning claiming a drop would be false.
+                    if shot.get("cast"):
+                        if affordance_enabled and _sidecar_guard_flag(
+                                out_dir, scene["scene_num"], shot, "affordance_unusable"):
+                            # The frame is cached, the emptied cast is not — it lives in the
+                            # checkpoint, which a crash inside this node (or a resume after
+                            # its error path) comes back without while the images survive.
+                            # Re-apply from disk or the card comes back on this pass.
+                            #
+                            # The knob condition is what makes the measured 1/25 false
+                            # positive RECOVERABLE: the drop is re-applied only while the
+                            # gate is on, so an operator who disagrees with a verdict flips
+                            # the knob down and the card returns on the next pass without
+                            # re-rendering anything. The KNOB, not `affordance_off` — a
+                            # missing key or a tripped breaker says the detector is
+                            # unreachable now, not that its earlier verdict was wrong.
+                            affordance_counts["unusable"] += 1
+                            warnings.append(make_warning(
+                                "plate_affordance_unusable", scene_num=scene["scene_num"],
+                                shot_id=shot["shot_id"], reason="no_standing_room_earlier_run",
+                                card_keys=_card_keys(shot),
+                            ))
+                            resumed = typing.cast(ShotData, {**shot, "cast": []})
+                        else:
+                            # Cached frame, no verdict asked on THIS pass (the gate sits after
+                            # the render). Counted so the tally cannot read as coverage, and
+                            # if the earlier pass could not judge it either, that says so.
+                            affordance_counts["unjudged"] += 1
+                            if _sidecar_guard_flag(out_dir, scene["scene_num"], shot,
+                                                   "affordance_undecidable"):
+                                warnings.append(make_warning(
+                                    "plate_affordance_unusable", scene_num=scene["scene_num"],
+                                    shot_id=shot["shot_id"], reason="unjudged_earlier_run",
+                                ))
+                    new_shots.append(await _with_depth(resumed, existing))
                     continue
 
                 location_key = shot.get("location_key")
@@ -691,6 +862,12 @@ async def image_node(state: PipelineState) -> dict:
                             plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
                             dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                             shutil.copyfile(plate["path"], dest)
+                            # Story 14.2: a copied plate is 14.1's job to pre-judge, so this
+                            # path asks nothing — but a cast-bearing shot that was not judged
+                            # is still not a shot that passed, on this run or on a resume.
+                            plate_unjudged = bool(shot.get("cast"))
+                            if plate_unjudged:
+                                affordance_counts["unjudged"] += 1
                             _write_sidecar(out_dir, scene["scene_num"], shot, seed, {
                                 **plate_provenance,
                                 "stock_plate": {
@@ -698,7 +875,7 @@ async def image_node(state: PipelineState) -> dict:
                                     "variant": plate["variant"],
                                     "path": plate["path"],
                                 },
-                            })
+                            }, affordance_undecidable=plate_unjudged and affordance_enabled)
                             image_count += 1
                             stock_plate_count += 1
                             logger.info(
@@ -759,7 +936,13 @@ async def image_node(state: PipelineState) -> dict:
 
                 dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                 exhausted = False
+                # ponytail: 빈 사다리는 `attempts >= 0` 로 불가능하고 mock 경로는 14.2 게이트에
+                # 닿지 않지만, 바인딩이 rung 루프 안에서만 일어나므로 타입체커는 둘 다 모른다.
+                # 리더가 둘(`dest.write_bytes` + 어포던스 게이트)이라 사전 바인딩 한 줄이
+                # 리더마다 assert 를 붙이는 것보다 짧다.
+                image_bytes = b""
                 undecidable_frame = False
+                affordance_unjudged_frame = False
                 if s.comfyui_mock:
                     shutil.copyfile(_mock_source(), dest)
                 else:
@@ -809,14 +992,45 @@ async def image_node(state: PipelineState) -> dict:
                         # trace from a background the guard verified as unpopulated.
                         guard_counts["unscreened"] += 1
                     dest.write_bytes(image_bytes)
+                # Story 14.2: ONE verdict on the render the ladder settled on, and only
+                # when a card is actually going to land here — affordance is not a
+                # question about a background-only shot, so an empty `cast` costs 0 calls.
+                # Skipped in mock mode for the same reason the 10.2 guard is: the fixture
+                # PNG is not this shot's plate, and judging it would drop a real cast.
+                # `.get`, like every other cast reader (run_service, video, character_service):
+                # a pre-8.x checkpoint shot without the key must not fail the whole stage here.
+                cast = shot.get("cast") or []
+                affordance_unusable = False
+                if cast and s.comfyui_mock:
+                    # Counted, not asked: the fixture is not this shot's plate. Same
+                    # accounting a knob-off shot gets — never judged, never clean.
+                    affordance_counts["unjudged"] += 1
+                    affordance_unjudged_frame = affordance_enabled
+                elif cast:
+                    affordance_unusable = await _no_standing_room(
+                        image_bytes, scene["scene_num"], shot["shot_id"])
+                if affordance_unusable:
+                    affordance_counts["unusable"] += 1
+                    logger.warning(
+                        "shot %s: plate has no standing room, dropping cast %s",
+                        shot["shot_id"], _card_keys(shot),
+                    )
+                    warnings.append(make_warning(
+                        "plate_affordance_unusable", scene_num=scene["scene_num"],
+                        shot_id=shot["shot_id"], reason="no_standing_room",
+                        card_keys=_card_keys(shot),
+                    ))
                 generated_count += 1
                 image_count += 1
                 _write_sidecar(out_dir, scene["scene_num"], shot, seed, provenance,
                                guard_exhausted=exhausted,
-                               guard_undecidable=undecidable_frame)
-                # Copy the shot; set only image_path/depth_map_path — never mutate the
-                # input state. [AD-4]
-                new_shots.append(await _with_depth(shot, str(dest)))
+                               guard_undecidable=undecidable_frame,
+                               affordance_unusable=affordance_unusable,
+                               affordance_undecidable=affordance_unjudged_frame)
+                # Copy the shot; set only image_path/depth_map_path (and, when the gate
+                # fired, an emptied `cast`) — never mutate the input state. [AD-4]
+                done = typing.cast(ShotData, {**shot, "cast": []}) if affordance_unusable else shot
+                new_shots.append(await _with_depth(done, str(dest)))
             new_scenes.append({**scene, "shots": new_shots})
 
         if skipped_count > 0:
@@ -831,11 +1045,21 @@ async def image_node(state: PipelineState) -> dict:
                 "%d shot(s) never screened — those backgrounds were NOT verified unpopulated",
                 guard_counts["exhausted"], guard_counts["unavailable"], guard_counts["unscreened"],
             )
+        if any(affordance_counts.values()):
+            # Its own line, beside 10.2's: a dropped cast is a visible change to the
+            # screen and an unjudged plate must not read as one that passed. [Story 14.2]
+            logger.warning(
+                "plate affordance gate: %d shot(s) lost their cast (no standing room), "
+                "%d undecidable verdict(s), %d cast-bearing shot(s) never judged",
+                affordance_counts["unusable"], affordance_counts["undecidable"],
+                affordance_counts["unjudged"],
+            )
         _record_trace(
             comfyui_url=s.comfyui_url, workflow_path=s.comfyui_workflow_path,
             request_count=request_count, image_count=image_count,
             skipped_count=skipped_count, stock_plate_count=stock_plate_count,
-            depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0),
+            depth_counts=depth_counts, guard_counts=guard_counts,
+            affordance_counts=affordance_counts, latency_ms=_ms(t0),
         )
         return {"scenes": new_scenes, "current_stage": "image", "error": None,
                 # Whole-field replacement, merged against what the checkpoint already
@@ -850,7 +1074,8 @@ async def image_node(state: PipelineState) -> dict:
             workflow_path=s.comfyui_workflow_path if s else "?",
             request_count=request_count, image_count=image_count,
             skipped_count=skipped_count, stock_plate_count=stock_plate_count,
-            depth_counts=depth_counts, guard_counts=guard_counts, latency_ms=_ms(t0), error=exc,
+            depth_counts=depth_counts, guard_counts=guard_counts,
+            affordance_counts=affordance_counts, latency_ms=_ms(t0), error=exc,
         )
         return {"current_stage": "image", "error": f"stage=image run_id={run_id}: {exc}",
                 "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}

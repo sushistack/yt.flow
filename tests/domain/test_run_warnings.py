@@ -148,3 +148,75 @@ def test_cap_samples_output_merges_to_itself_across_attempts():
     produced = [make_warning("cast_card_missing", shot_id=f"S{i}") for i in range(30)]
     once = merge([], cap_samples(produced))
     assert merge(once, cap_samples(produced)) == once
+
+
+# ── Story 14.2: the affordance code's own contract ──────────────────────────
+
+def test_plate_affordance_unusable_is_an_image_stage_code():
+    """The gate lives in image_node and the human gate that reviews the frame is
+    image's, so the row must not file itself against video's (where the card would
+    otherwise have been composited)."""
+    stage, message = RUN_WARNING_CATALOG["plate_affordance_unusable"]
+    assert stage == "image"
+    # The copy has to be honest for EVERY reason the code carries, and it carries six:
+    # `no_standing_room` (+ its `_earlier_run` twin) drops the cast, while
+    # `detector_undecidable`, `detector_undecidable_run`, `vision_api_key_missing` and
+    # `unjudged_earlier_run` all KEEP it. So the row may not state the destructive
+    # outcome as fact — it states the condition and both outcomes conditionally.
+    assert "설 자리" in message
+    assert "뺐습니다" not in message  # no unconditional "the cast was removed"
+    assert "판정하지 못한 샷은 배역을 그대로" in message
+
+
+def test_the_two_affordance_reasons_are_capped_and_counted_separately():
+    """"no standing room" (a card was deleted) and "the detector could not judge this"
+    are of very different severity, and per-CODE capping would let the numerous one push
+    the severe one into the aggregate — `gotcha_summary-from-a-capped-list-drops-the-
+    severest-item`, which is why `_cap_key` is (code, reason)."""
+    dropped = [make_warning("plate_affordance_unusable", scene_num=1, shot_id=f"S{i:03d}",
+                            reason="no_standing_room")
+               for i in range(MAX_SAMPLE_RECORDS + 3)]
+    undecidable = [make_warning("plate_affordance_unusable", scene_num=1, shot_id=f"U{i:03d}",
+                                reason="detector_undecidable")
+                   for i in range(2)]
+    capped = cap_samples([*dropped, *undecidable])
+
+    reasons = [w["context"]["reason"] for w in capped if "shot_id" in w["context"]]
+    assert reasons.count("no_standing_room") == MAX_SAMPLE_RECORDS
+    assert reasons.count("detector_undecidable") == 2
+    assert {"reason": "no_standing_room", "total_count": len(dropped)} in [
+        w["context"] for w in capped]
+
+
+def test_a_re_derived_affordance_row_merges_to_the_one_in_the_checkpoint():
+    """A RETRY of the same pass re-derives the identical row and must converge on the
+    checkpoint's, not append a second one — including the breaker row, whose tallies are
+    per-attempt counters and therefore outside identity (AC1/AC6)."""
+    shot = make_warning("plate_affordance_unusable", scene_num=1, shot_id="S001",
+                        reason="no_standing_room", card_keys="SCP-049")
+    assert merge([shot], [shot]) == [shot]
+    breaker = make_warning("plate_affordance_unusable", reason="detector_undecidable_run",
+                           undecidable_streak=3, undecidable_total=3)
+    later = make_warning("plate_affordance_unusable", reason="detector_undecidable_run",
+                         undecidable_streak=3, undecidable_total=6)
+    assert merge([breaker], [later]) == [breaker]
+    # A different shot is different evidence and must survive the merge.
+    other = make_warning("plate_affordance_unusable", scene_num=1, shot_id="S002",
+                         reason="no_standing_room", card_keys="SCP-049")
+    assert merge([shot], [other]) == [shot, other]
+
+
+def test_the_resume_row_is_a_second_row_by_design_not_a_convergence():
+    """The RESUME path does not re-derive the same row: `image_node` files
+    `no_standing_room` when it judges the frame and `no_standing_room_earlier_run` when it
+    re-applies the verdict from the sidecar, and `reason` is inside `_identity`. So the two
+    genuinely coexist — one row saying the gate dropped this card, one saying a later pass
+    honoured that. Asserting convergence here would have been a test that never touched
+    the resume path at all."""
+    judged = make_warning("plate_affordance_unusable", scene_num=1, shot_id="S001",
+                          reason="no_standing_room", card_keys="SCP-049")
+    resumed = make_warning("plate_affordance_unusable", scene_num=1, shot_id="S001",
+                           reason="no_standing_room_earlier_run", card_keys="SCP-049")
+    assert merge([judged], [resumed]) == [judged, resumed]
+    # And a THIRD resume adds nothing: the resumed row is stable across passes.
+    assert merge([judged, resumed], [resumed]) == [judged, resumed]

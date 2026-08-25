@@ -1,0 +1,390 @@
+[
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00102.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.7,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The center of the frame shows a large, open floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00100.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a wall with no visible floor.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00103.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a window, showing only the upper body of a figure.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_002_S00201.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_002_S00200.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "A significant portion of the frame shows a flat floor suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00105.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_002_S00202.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is mostly visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_003_S00300.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.5,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is mostly visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_003_S00301.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a wall with no visible floor.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_003_S00302.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The room has a large open floor area in the center suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_003_S00303.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The center of the frame shows a large, open floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_004_S00400.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "A wide shot shows a large expanse of floor suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_004_S00402.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "A large, flat floor area is visible in the center of the frame.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_005_S00500.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of walls and ceiling with no visible floor.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_005_S00501.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.85,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The center of the frame shows a large, mostly flat floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_005_S00502.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The center of the room has a large, clear floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_006_S00600.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The central area of the frame shows a large, flat surface suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_005_S00504.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_006_S00601.png",
+    "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/W"
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a metallic cart with no visible floor.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_006_S00602.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_006_S00603.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The center of the room has a large, unobstructed floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_007_S00701.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_007_S00702.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "close-up",
+    "best_spot": "none",
+    "reason": "The frame is a close-up of a table and lacks visible floor space for a standing person.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_006_S00605.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.85,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The floor is mostly visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00104.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.3,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "The center of the frame shows a visible floor area large enough for a standing human.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00802.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The center of the room has a clear, open floor space large enough for a full-body adult.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_007_S00703.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "medium",
+    "best_spot": "left",
+    "reason": "The left side of the frame shows a large, open floor area suitable for standing.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00800.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_009_S00900.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": false,
+    "floor_fraction": 0.0,
+    "camera_distance": "medium",
+    "best_spot": "none",
+    "reason": "The frame focuses on a wall of monitors with no visible floor.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_009_S00901.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "medium",
+    "best_spot": "center",
+    "reason": "A significant portion of the frame shows a reflective floor suitable for a standing figure.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_009_S00902.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.4,
+    "camera_distance": "wide",
+    "best_spot": "center",
+    "reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00803.png",
+    "size": [
+      1344,
+      768
+    ]
+  },
+  {
+    "standing_room": true,
+    "floor_fraction": 0.6,
+    "camera_distance": "medium",
+    "best_spot": "left",
+    "reason": "There is a visible floor area large enough for a person to stand, with the left side offering the most open space.",
+    "path": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_009_S00904.png",
+    "size": [
+      1344,
+      768
+    ]
+  }
+]

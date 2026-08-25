@@ -24,7 +24,9 @@ Two pixel heuristics were tried first and BOTH failed, which is why this asks a 
   case cannot support a threshold; that would be fitting the threshold to the sample.
 
 Offline curation, same posture as `label_location_plates.py`: a module constant prompt, not
-a Langfuse runtime prompt. Writes a JSON report; changes no asset state.
+a Langfuse runtime prompt. Since Story 14.2 that constant lives in
+`yt_flow.services.vision_check` and the runtime affordance gate asks it too — ONE prompt,
+ONE output contract, two callers. Writes a JSON report; changes no asset state.
 """
 
 import argparse
@@ -40,23 +42,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.services.character_service import _DASHSCOPE_VISION_ENDPOINT  # noqa: E402
 from yt_flow.domain.png import dimensions  # noqa: E402
+from yt_flow.services.vision_check import STANDING_ROOM_PROMPT as PROMPT  # noqa: E402
 
-# ponytail: module constant, not a Langfuse prompt — offline curation, not runtime.
-PROMPT = """You are assessing whether a background plate can accept a standing human figure.
-
-Answer ONLY about the room as photographed. Do not imagine changing the camera.
-
-Reply with strict JSON, no prose:
-{
-  "standing_room": true/false,     // is there visible floor a full-body adult could stand on?
-  "floor_fraction": 0.0-1.0,       // roughly how much of the frame is usable standing floor
-  "camera_distance": "close-up" | "medium" | "wide",
-  "best_spot": "left" | "center" | "right" | "none",
-  "reason": "one short sentence"
-}
-
-standing_room is false when the frame is a close-up of an object or surface with no floor,
-or when the only floor is too small/occluded for a whole person."""
+# ponytail: the prompt moved to `yt_flow.services.vision_check.STANDING_ROOM_PROMPT` and is
+# imported above, unchanged byte-for-byte, so this script and Story 14.2's runtime gate ask
+# ONE question with ONE output contract (Jay's §4-2 decision). It stays a module constant
+# rather than a Langfuse prompt — the runtime caller is a pixel guard, not an authored
+# prompt, and neither side wants a Prompt Hub round trip. The dependency points src <- scripts
+# because `scripts/` is not an importable package and `src/` must not reach into it.
 
 
 async def assess(settings: Settings, image_path: Path, client: httpx.AsyncClient) -> dict:
@@ -73,6 +66,14 @@ async def assess(settings: Settings, image_path: Path, client: httpx.AsyncClient
                 {"type": "text", "text": PROMPT},
             ]}],
             "max_tokens": settings.character_vision_max_tokens,
+            # ponytail: the ONE line that makes this the runtime's envelope, not just its
+            # prompt. `vision_check.plate_has_standing_room` sends `[image, text]` +
+            # `temperature: 0`; this script already sent image-first and left temperature
+            # to the endpoint's default. Review loop 1 measured the part order at 3/7 vs
+            # 5/7 recall, so a split envelope makes the recalibration numbers describe a
+            # request nobody ships. Not folded into a call of the runtime function: that
+            # returns `bool | None` and the report needs all five fields.
+            "temperature": 0,
         },
         timeout=120,
     )

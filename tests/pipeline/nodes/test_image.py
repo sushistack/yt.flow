@@ -47,8 +47,15 @@ class FakeSettings:
         # `_guard_settings`, and the shipped value is pinned where it belongs —
         # `tests/test_config.py::test_background_person_guard_default_ships_the_decision`.
         guard_attempts=0, vision_api_key="",
+        # MATCHES the shipped default, which Story 14.2's review loop 1 settled at OFF
+        # (unreachable pre-registration bar + Jay's 33-pair adjudication still open). The
+        # 14.2 tests opt in through `_affordance_settings`, exactly as the guard tests opt
+        # into `guard_attempts`; the shipped value is pinned where it belongs,
+        # `tests/test_config.py::test_plate_affordance_gate_default_ships_the_decision`.
+        plate_affordance_gate=False,
     ):
         self.stock_plate_substitution_enabled = stock_plate_substitution
+        self.plate_affordance_gate_enabled = plate_affordance_gate
         self.background_person_guard_attempts = guard_attempts
         self.character_vision_api_key = vision_api_key
         self.workspace_path = "workspace"  # relative → isolated by monkeypatch.chdir(tmp_path)
@@ -1844,10 +1851,13 @@ async def test_per_shot_warnings_are_bounded_by_the_shared_sample_cap(monkeypatc
 
 async def test_an_undecidable_frame_is_recorded_in_the_sidecar_and_refires_on_resume(
         monkeypatch, tmp_path):
-    """The warning alone is not durable: `run_warnings` ride the LangGraph checkpoint and
-    `full_restart_run` deletes the checkpoint while leaving the images, so a restarted
-    pass skips every shot. Without the sidecar flag the never-screened frame comes back
-    indistinguishable from a verified-clean one — the exact defect this story removes.
+    """The warning alone is not durable: `run_warnings` ride the LangGraph checkpoint, and
+    a crash inside `image_node` (or a resume after its error path) comes back with the
+    images on disk and the accounting gone, so the second pass skips every completed shot.
+    Without the sidecar flag the never-screened frame comes back indistinguishable from a
+    verified-clean one — the exact defect this story removes. NOT `full_restart_run`: that
+    restarts from `scenario` and regenerates `scenes`, so the new `image_prompt` misses the
+    resume cache anyway and the frame is re-rendered and re-screened.
     Mirrors `guard_exhausted`'s contract, which already survives this.
     """
     monkeypatch.chdir(tmp_path)
@@ -2196,3 +2206,592 @@ def test_an_unreachable_comfyui_is_the_only_null_comfyui_block():
     ``get_system_stats`` returns when it could not read the server at all — records
     a null block."""
     assert img._build_provenance("wf.json", GOOD_WF, GOOD_NODES, None, "sha")["comfyui"] is None
+
+
+# ── Story 14.2: plate affordance gate ───────────────────────────────────────
+#
+# The gate asks ONE question — can a whole body stand in this plate? — once, about
+# the render the 10.2 ladder already accepted, and only when a card is going to land
+# on it. A `false` verdict empties that shot's `cast`; undecidable keeps both the
+# frame and the cast, because the endpoint refuses corpse/medical plates
+# deterministically and that class of shot is standing output of this pipeline.
+
+CAST = [{"card_key": "SCP-049", "position": "center", "depth": "mid", "pose": "standing"}]
+
+
+def _cast_state(run_id="run-img-1", cast=CAST, shots=1):
+    """One scene of `shots` shots, every one carrying a card — the only shape the gate asks about."""
+    state = _many_shots_state(shots)
+    state["run_id"] = run_id
+    state["scenes"] = [{
+        **state["scenes"][0],
+        "shots": [{**shot, "cast": list(cast)} for shot in state["scenes"][0]["shots"]],
+    }]
+    return state
+
+
+def _fake_affordance(monkeypatch, verdicts, *, calls=None):
+    """Affordance detector returning `verdicts` in order, then its last value forever."""
+    seq = list(verdicts)
+
+    async def detector(image_bytes, settings):
+        if calls is not None:
+            calls.append(image_bytes)
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+    monkeypatch.setattr(img.vision_check, "plate_has_standing_room", detector)
+
+
+def _no_affordance_calls(monkeypatch):
+    async def boom(image_bytes, settings):
+        raise AssertionError("the affordance gate must not be called here")
+    monkeypatch.setattr(img.vision_check, "plate_has_standing_room", boom)
+
+
+def _affordance_settings(tmp_path, **over):
+    """Real mode, affordance gate ON (opt-in — the shipped default is off), 10.2's ladder
+    OFF unless a test asks for it.
+
+    The two guards are deliberately isolated: a test about the affordance verdict
+    must not also depend on how many rungs the person guard burned.
+    """
+    over.setdefault("guard_attempts", 0)
+    over.setdefault("plate_affordance_gate", True)
+    return _guard_settings(tmp_path, **over)
+
+
+async def test_a_cast_free_shot_never_asks_the_affordance_question(monkeypatch, tmp_path):
+    """AC1 + matrix row 1: affordance is a question about a card that is about to land.
+    `cast == []` means downstream does no overlay work at all, so there is nothing to
+    ask about and the run must not pay a vision call for it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+
+    out = await img.image_node(_state())  # 3 shots, every one cast-free
+
+    assert out.get("error") is None
+    assert out["run_warnings"] == []
+
+
+async def test_standing_room_keeps_the_cast_and_costs_one_call(monkeypatch, tmp_path):
+    """Matrix row 2: a plate that passes is asked about exactly once — the gate lives
+    OUTSIDE the ladder, so the call count is per shot, never per rung."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    calls: list = []
+    _fake_affordance(monkeypatch, [True], calls=calls)
+
+    out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    assert out["scenes"][0]["shots"][0]["cast"] == CAST
+    assert len(calls) == 1
+    assert out["run_warnings"] == []
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_unusable"] is False
+
+
+async def test_no_standing_room_empties_the_cast_and_warns(monkeypatch, tmp_path, caplog):
+    """AC2: the shot in the RETURNED state loses its cast, the warning names scene and
+    shot, and the input state is untouched (AD-4)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+    state = _cast_state()
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(state)
+
+    assert out.get("error") is None
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["cast"] == []
+    assert shot["image_path"] and (tmp_path / shot["image_path"]).is_file()  # frame kept
+    assert state["scenes"][0]["shots"][0]["cast"] == CAST  # [AD-4] input not mutated
+    assert [w["context"] for w in out["run_warnings"]] == [
+        {"scene_num": 1, "shot_id": "S000", "reason": "no_standing_room",
+         "card_keys": "SCP-049"}]
+    assert out["run_warnings"][0]["code"] == "plate_affordance_unusable"
+    assert out["run_warnings"][0]["stage"] == "image"
+    assert captured["affordance_counts"]["unusable"] == 1
+    assert "no standing room" in caplog.text
+
+
+async def test_an_undecidable_verdict_keeps_the_frame_and_the_cast(monkeypatch, tmp_path):
+    """AC3 + matrix rows 5/6. `data_inspection_failed` is a REPRODUCIBLE refusal on
+    corpse/medical plates (report §5), so reading undecidable as "no standing room"
+    would delete the cast of that whole class of shot on every run. It is also not
+    counted clean: the row is the only thing that says the plate was never judged."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [None])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["cast"] == CAST
+    assert (tmp_path / shot["image_path"]).is_file()
+    assert [w["context"] for w in out["run_warnings"]] == [
+        {"scene_num": 1, "shot_id": "S000", "reason": "detector_undecidable"}]
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 1, "unjudged": 0}
+    # Never written as a verdict: the sidecar flag means "cast dropped", not "unjudged".
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_unusable"] is False
+
+
+async def test_a_raising_affordance_detector_cannot_fail_the_image_stage(monkeypatch, tmp_path):
+    """AD-10 boundary, same belt-and-braces as `_populated`: the detector's contract is
+    not to raise, and this survives it breaking that contract."""
+    async def boom(image_bytes, settings):
+        raise RuntimeError("data_inspection_failed leaked")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    monkeypatch.setattr(img.vision_check, "plate_has_standing_room", boom)
+
+    out = await img.image_node(_cast_state())
+
+    assert out["error"] is None
+    shot = out["scenes"][0]["shots"][0]
+    assert shot["cast"] == CAST  # a raise is undecidable, and undecidable keeps the cast
+    assert (tmp_path / shot["image_path"]).is_file()
+    assert [w["context"]["reason"] for w in out["run_warnings"]] == ["detector_undecidable"]
+
+
+async def test_a_dropped_cast_is_recorded_in_the_sidecar_and_refires_on_resume(
+        monkeypatch, tmp_path):
+    """AC4: the emptied cast rides the LangGraph checkpoint, and a crash inside `image_node`
+    (or a resume after its error path) comes back without it while the images survive, so
+    the second pass resumes off disk and returns the shot straight from the early-return
+    path. Without the sidecar flag the card comes BACK — the frame is cached, the deletion
+    was not. NOT `full_restart_run`: that restarts from `scenario`, regenerates `scenes`,
+    and the fresh `image_prompt` misses the resume cache entirely."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+
+    first = await img.image_node(_cast_state())
+    assert first["scenes"][0]["shots"][0]["cast"] == []
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_unusable"] is True
+
+    # Second pass: nothing re-renders, nothing is re-judged, and the card stays gone.
+    seeds = _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    again = await img.image_node(_cast_state())
+
+    assert again.get("error") is None
+    assert seeds == []
+    assert again["scenes"][0]["shots"][0]["cast"] == []
+    assert [w["context"] for w in again["run_warnings"]] == [
+        {"scene_num": 1, "shot_id": "S000", "reason": "no_standing_room_earlier_run",
+         "card_keys": "SCP-049"}]
+    assert captured["affordance_counts"]["unusable"] == 1
+
+
+async def test_a_resumed_shot_that_passed_the_gate_keeps_its_cast(monkeypatch, tmp_path):
+    """The mirror of the test above: the flag is per shot, so a plate that passed must
+    not be stamped by a neighbour that failed."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False, True])
+
+    first = await img.image_node(_cast_state(shots=2))
+    assert [s["cast"] for s in first["scenes"][0]["shots"]] == [[], CAST]
+
+    _no_affordance_calls(monkeypatch)
+    again = await img.image_node(_cast_state(shots=2))
+    assert [s["cast"] for s in again["scenes"][0]["shots"]] == [[], CAST]
+    assert [w["context"]["shot_id"] for w in again["run_warnings"]] == ["S000"]
+
+
+async def test_a_pre_14_2_sidecar_still_resumes_and_keeps_its_cast(monkeypatch, tmp_path):
+    """AC6: the flag is additive and uncompared. `_existing_complete_shot` still compares
+    exactly three keys, so every shot cached before this story existed is still a hit —
+    adding a compared key would regenerate every workspace on earth once."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    _write_complete_shot(d, "scene_001_S000", "prompt 0", "neg",
+                         seed=img._shot_seed("run-img-1", 1, "S000"))
+    sidecar = json.loads((d / "scene_001_S000_done.json").read_text())
+    assert "affordance_unusable" not in sidecar
+    seeds = _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+
+    out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    assert seeds == []  # resumed, not regenerated
+    assert out["scenes"][0]["shots"][0]["cast"] == CAST
+    assert out["run_warnings"] == []
+
+
+async def test_the_gate_knob_off_never_calls_the_detector(monkeypatch, tmp_path):
+    """AC5 + matrix: off is an operator choice, so it costs 0 calls and changes no cast.
+    It is still COUNTED — an unjudged cast-bearing shot must not read like one that
+    passed (`gotcha_a-decision-that-only-reaches-env-never-ships`'s sibling lesson)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, plate_affordance_gate=False))
+    _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state(shots=2))
+
+    assert out.get("error") is None
+    assert [s["cast"] for s in out["scenes"][0]["shots"]] == [CAST, CAST]
+    assert out["run_warnings"] == []
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 2}
+
+
+async def test_the_gate_is_not_invoked_in_mock_mode_but_the_shot_counts_as_unjudged(
+        monkeypatch, tmp_path):
+    """Mock mode materialises a FIXTURE, not this shot's plate. Judging it would drop a
+    real cast over an image the run never rendered — the same reason the 10.2 guard skips
+    mock mode. It is still an UNJUDGED cast-bearing shot, in the tally and in the sidecar:
+    a mock frame that a later real pass resumes off disk must not read as one that
+    passed."""
+    _mock_settings(monkeypatch, tmp_path, vision_api_key="vision-key",
+                   plate_affordance_gate=True)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    assert out["scenes"][0]["shots"][0]["cast"] == CAST
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_undecidable"] is True
+
+
+async def test_the_gate_is_not_invoked_on_the_stock_plate_path(monkeypatch, tmp_path):
+    """Matrix last row: a copied STOCK plate belongs to Story 14.1, which attaches the
+    verdict to the asset and picks from a filtered candidate pool. Re-judging it per shot
+    would pay a vision call for an answer the asset can carry."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, stock_plate_substitution=True))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [{"variant": "a", "path": str(plate_src)}]
+    img.inject_location_service(resolve)
+    _no_affordance_calls(monkeypatch)
+
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_stock_state(cast=CAST))
+
+    assert out.get("error") is None
+    assert out["scenes"][0]["shots"][0]["cast"] == CAST
+    # Not asked, therefore not clean: counted as unjudged and stamped on disk, so a
+    # resume of this workspace does not report full coverage either.
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
+    assert _read_sidecar(tmp_path, run_id="run-stock-1")["affordance_undecidable"] is True
+
+
+async def test_the_gate_asks_once_per_shot_not_once_per_rung(monkeypatch, tmp_path):
+    """The design note: the gate sits OUTSIDE the 10.2 ladder. Three renders for one
+    shot is still one affordance call, on the render the ladder settled on — and 10.2's
+    own accounting is untouched by it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, plate_affordance_gate=True))  # attempts=2
+    seeds = _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])  # every render is populated -> ladder exhausts
+    calls: list = []
+    _fake_affordance(monkeypatch, [True], calls=calls)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    assert len(seeds) == 3  # rungs 0,1,2 — unchanged by this story
+    assert len(calls) == 1
+    assert calls[0] == (tmp_path / out["scenes"][0]["shots"][0]["image_path"]).read_bytes()
+    assert captured["guard_counts"] == {
+        "regenerated": 2, "exhausted": 1, "unavailable": 0, "unscreened": 0}
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["seed"] == seeds[-1]
+
+
+async def test_an_affordance_undecidable_does_not_touch_the_10_2_breaker(monkeypatch, tmp_path):
+    """Two questions, two breakers, one set of thresholds. An affordance refusal must not
+    silence the person guard — that question may still be answerable on the same frame,
+    and 10.2's counters are how a populated background stays visible."""
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_STREAK as STREAK
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, guard_attempts=1, plate_affordance_gate=True))
+    _counting_fetch(monkeypatch)
+    person_calls: list = []
+    _fake_detector(monkeypatch, [False], calls=person_calls)
+    _fake_affordance(monkeypatch, [None])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state(shots=STREAK + 2))
+
+    assert out.get("error") is None
+    # The person guard answered for EVERY shot, including the ones after the affordance
+    # gate had switched itself off.
+    assert len(person_calls) == STREAK + 2
+    assert captured["guard_counts"]["unavailable"] == 0
+    assert captured["affordance_counts"] == {
+        "unusable": 0, "undecidable": STREAK, "unjudged": 2}
+
+
+async def test_the_gate_disables_itself_after_consecutive_undecidable_verdicts(
+        monkeypatch, tmp_path, caplog):
+    """Matrix row 8: 10.2's thresholds, reused rather than re-invented — a dead detector
+    costs a 120s timeout per call and the bound has to exist. The breaker's own row
+    carries the tallies, which are excluded from warning identity so a retry with a
+    different tally converges on the row already in the checkpoint."""
+    from yt_flow.config import BACKGROUND_PERSON_GUARD_BREAKER_STREAK as STREAK
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    calls: list = []
+    _fake_affordance(monkeypatch, [None], calls=calls)
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_cast_state(shots=STREAK + 2))
+
+    assert out.get("error") is None
+    assert len(calls) == STREAK  # then off — the remaining shots are never asked about
+    assert [w["context"] for w in out["run_warnings"]][-1] == {
+        "reason": "detector_undecidable_run",
+        "undecidable_streak": STREAK, "undecidable_total": STREAK,
+    }
+    assert "plate affordance gate disabled for the rest of the run" in caplog.text
+    # Every shot kept its cast: undecidable is not a verdict.
+    assert all(s["cast"] == CAST for s in out["scenes"][0]["shots"])
+
+
+async def test_the_summary_line_reads_for_both_guards(monkeypatch, tmp_path, caplog):
+    """The 10.2 summary WARNING is untouched and the affordance tally is its own line —
+    one line about two different predicates would say neither."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _guard_settings(
+        tmp_path, guard_attempts=1, plate_affordance_gate=True))
+    _counting_fetch(monkeypatch)
+    _fake_detector(monkeypatch, [True])   # populated on both rungs -> exhausted
+    _fake_affordance(monkeypatch, [False])
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_cast_state())
+
+    assert out.get("error") is None
+    assert "NOT verified unpopulated" in caplog.text          # Story 10.2's line
+    assert "1 shot(s) lost their cast (no standing room)" in caplog.text
+    assert {w["code"] for w in out["run_warnings"]} == {
+        "background_guard_unscreened", "plate_affordance_unusable"}
+
+
+async def test_error_path_still_reports_the_affordance_counts(monkeypatch, tmp_path):
+    """A stage that dies mid-run must not lose the casts it already dropped — the same
+    contract `guard_counts` and `depth_counts` have."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    calls = {"n": 0}
+
+    async def fetch_then_die(url, workflow):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise ValueError("comfyui exploded")
+        return RGB_PNG + b"\x00" * 1200
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fetch_then_die)
+    _fake_affordance(monkeypatch, [False])
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_cast_state(shots=2))
+
+    assert out["error"] and "stage=image" in out["error"]
+    assert captured["affordance_counts"]["unusable"] == 1
+    assert [w["context"]["reason"] for w in out["run_warnings"]] == ["no_standing_room"]
+
+
+async def test_dropped_cast_rows_are_bounded_by_the_shared_sample_cap(monkeypatch, tmp_path):
+    """A plate family that fails everywhere (a whole scene of table macros) must not put
+    a row per shot in front of the Approve button. The cap is per (code, reason), so the
+    aggregate names the reason it counted."""
+    from yt_flow.domain.warnings import MAX_SAMPLE_RECORDS
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+    n = MAX_SAMPLE_RECORDS + 4
+
+    out = await img.image_node(_cast_state(shots=n))
+
+    named = [w for w in out["run_warnings"] if "shot_id" in (w.get("context") or {})]
+    assert len(named) == MAX_SAMPLE_RECORDS
+    assert {"reason": "no_standing_room", "total_count": n} in [
+        w["context"] for w in out["run_warnings"]]
+    # The verdict still applied to EVERY shot — the cap bounds the rows, not the effect.
+    assert all(s["cast"] == [] for s in out["scenes"][0]["shots"])
+
+
+async def test_a_missing_vision_key_is_one_run_level_row_not_a_dead_detector(
+        monkeypatch, tmp_path, caplog):
+    """The key is a RUN-level fact, so it files one row and switches the gate off before
+    the first shot — not 33 doomed calls, 33 undecidable rows and then a breaker row all
+    describing the same missing environment variable. Exactly what 10.2 does with the same
+    condition, and the cast survives untouched."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, vision_api_key=""))
+    _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    with caplog.at_level("WARNING"):
+        out = await img.image_node(_cast_state(shots=3))
+
+    assert out.get("error") is None
+    assert [s["cast"] for s in out["scenes"][0]["shots"]] == [CAST, CAST, CAST]
+    affordance = [w for w in out["run_warnings"] if w["code"] == "plate_affordance_unusable"]
+    assert [w["context"] for w in affordance] == [{"reason": "vision_api_key_missing"}]
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 3}
+    assert "YTFLOW_CHARACTER_VISION_API_KEY is unset" in caplog.text
+    # The degradation rides the sidecar too: the frames shipped unscreened.
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_undecidable"] is True
+
+
+async def test_the_knob_being_off_leaves_nothing_on_disk_to_refire(monkeypatch, tmp_path):
+    """The mirror of the test above: a knob the operator turned down is a choice, not a
+    degradation (10.2's policy for `attempts < 1`), so it warns nothing and stamps nothing
+    — otherwise every resume of an off-gate workspace would file a row per cast-bearing
+    shot forever."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, plate_affordance_gate=False))
+    _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+
+    out = await img.image_node(_cast_state())
+
+    assert out["run_warnings"] == []
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_undecidable"] is False
+
+
+async def test_an_undecidable_shot_refires_as_unjudged_on_resume(monkeypatch, tmp_path):
+    """Story 13.1's defect, in this gate's shape: the frame is cached and the emptied
+    accounting is not, so without the sidecar flag a second pass over a shot nobody could
+    judge reports a perfectly clean affordance tally. The row's reason says WHICH pass
+    failed to judge it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [None])
+
+    first = await img.image_node(_cast_state())
+    assert first["scenes"][0]["shots"][0]["cast"] == CAST
+    assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_undecidable"] is True
+
+    seeds = _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    again = await img.image_node(_cast_state())
+
+    assert again.get("error") is None
+    assert seeds == []  # resumed off disk, nothing re-rendered and nothing re-judged
+    assert again["scenes"][0]["shots"][0]["cast"] == CAST
+    assert [w["context"] for w in again["run_warnings"]] == [
+        {"scene_num": 1, "shot_id": "S000", "reason": "unjudged_earlier_run"}]
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
+
+
+async def test_turning_the_knob_off_brings_a_dropped_card_back_on_the_next_pass(
+        monkeypatch, tmp_path):
+    """The recovery path for the measured 1/25 false positive. The drop is re-applied from
+    the sidecar only while the gate is ON, so an operator who looks at the frame and
+    disagrees flips the knob down and the card returns on the next pass — no re-render, no
+    hand-edited sidecar. Without this, one wrong verdict is permanent for that workspace."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+
+    first = await img.image_node(_cast_state())
+    assert first["scenes"][0]["shots"][0]["cast"] == []
+
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, plate_affordance_gate=False))
+    seeds = _counting_fetch(monkeypatch)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    again = await img.image_node(_cast_state())
+
+    assert again.get("error") is None
+    assert seeds == []  # the frame is still the cached one; only the cast came back
+    assert again["scenes"][0]["shots"][0]["cast"] == CAST
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
+
+
+async def test_a_resumed_shot_with_no_cast_left_is_not_warned_about(monkeypatch, tmp_path):
+    """A shot whose `cast` is already `[]` — 8.19's text marker fired, or the state was
+    edited — has nothing to drop, so a row claiming a card was removed would be false.
+    The unjudged tally stays out of it too: there was never a question to ask."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+
+    await img.image_node(_cast_state())  # stamps affordance_unusable on the sidecar
+
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    again = await img.image_node(_cast_state(cast=[]))
+
+    assert again.get("error") is None
+    assert again["scenes"][0]["shots"][0]["cast"] == []
+    assert again["run_warnings"] == []
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 0}
+
+
+async def test_the_warning_names_the_card_that_left_the_frame(monkeypatch, tmp_path):
+    """`len(cast)` in a log line does not tell an operator WHICH character vanished, which
+    is the only part of the row they can act on. The keys ride the context on both the
+    judged row and the resumed one, and stay stable so the resume converges."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [False])
+    cast = [*CAST, {"card_key": "Dr-Bright", "position": "left", "depth": "fg",
+                    "pose": "standing"}]
+
+    first = await img.image_node(_cast_state(cast=cast))
+    assert first["run_warnings"][0]["context"]["card_keys"] == "SCP-049,Dr-Bright"
+
+    _no_affordance_calls(monkeypatch)
+    again = await img.image_node(_cast_state(cast=cast))
+    assert again["run_warnings"][0]["context"] == {
+        "scene_num": 1, "shot_id": "S000", "reason": "no_standing_room_earlier_run",
+        "card_keys": "SCP-049,Dr-Bright",
+    }

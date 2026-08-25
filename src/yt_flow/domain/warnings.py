@@ -55,6 +55,8 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "image", "스톡 배경 조회에 실패해 배경을 생성했습니다"),
     "background_guard_unscreened": (
         "image", "배경 인물 검사를 마치지 못했습니다 — 배경에 사람이 남아 있을 수 있습니다"),
+    "plate_affordance_unusable": (
+        "image", "배경에 인물이 설 자리가 있는지 확인이 필요합니다 — 자리가 없다고 판정된 샷은 배역이 화면에서 빠지고, 판정하지 못한 샷은 배역을 그대로 둡니다"),
     "subtitle_alignment_fallback": (
         "subtitle", "WhisperX 정렬에 실패해 임시 단어 타이밍으로 자막을 만들었습니다"),
     "cast_resolution_failed": (

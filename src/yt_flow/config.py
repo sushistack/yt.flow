@@ -363,6 +363,42 @@ class Settings(BaseSettings):
     # learn nothing — but Story 14.4 makes it visible per shot
     # (`background_guard_unscreened` / `detector_undecidable_shot`).
     background_person_guard_attempts: int = Field(2, ge=0, le=BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS)
+
+    # ── Story 14.2: plate affordance gate ─────────────────────────────────────
+    # OFF BY CODE DEFAULT, 2026-08-24 (review loop 1 lowered it from ON). The second
+    # pixel predicate on the accepted render: "can a whole body stand in this plate at
+    # all?" — asked once per cast-bearing shot, and a `false` verdict empties that
+    # shot's `cast` so the card is never composited onto a frame with nowhere to put it.
+    #
+    # MEASURED, run 4b35c0ed, 33 cast-bearing shots
+    # (`_bmad-output/implementation-artifacts/14-2-affordance-calibration/`), on the
+    # SHIPPED envelope — `[image, text]` + `temperature: 0`:
+    #   * recall 5/7, false positives 1/25 (4%). Text-first is 3/7 · 0/25 on the same 33
+    #     plates with zero flips across repeated passes, which is why the envelope is
+    #     pinned in `vision_check` rather than left to the caller.
+    #   * base rate 7/33 (21%) — plates with no readable ground for a whole body. The
+    #     failure modes are the plate being re-framed away entirely, a floor being
+    #     INVENTED, and the card entering as a floating bust or a knee-cropped figure.
+    #   * the one false positive is `S00901`, a narrow real floor the card did land on.
+    #     The pre-registration forbade shipping "delete the cast" as the terminal action
+    #     above 3/25, and 1/25 clears that bar.
+    # WHY OFF ANYWAY. The pre-registered bar `recall >= 6/7` is UNREACHABLE BY
+    # CONSTRUCTION, so the FAIL is a property of the bar and not of the detector
+    # (`gotcha_a-screening-gate-can-fail-on-its-own-threshold`): of the two misses,
+    # `S00601` is a permanent `data_inspection_failed` refusal (reproduced; the 10.2
+    # guard is `None` on the same plate) and so can never be recalled by THIS gate —
+    # it is this gate's own class, not Story 14.3's — and `S00105` was a LABEL error
+    # where the detector was right. The corrected denominator is 5 and a new bar has to
+    # be RE-PRE-REGISTERED after Jay's 33-pair adjudication (AC1) and confirmed on a
+    # fresh sample; writing a bar after seeing the result is not a pre-registration.
+    # Until that human viewing verdict exists this stays off, the same posture 10.1c /
+    # 10.5 / 10.1e all shipped in: no default deletes what a person has not yet judged.
+    # An undecidable verdict keeps BOTH the frame and the cast: this endpoint refuses
+    # corpse/medical plates deterministically (`data_inspection_failed`, reproduced),
+    # and reading that as "no standing room" would delete the cast of a whole class of
+    # SCP shot forever. On costs one vision call (~3.2s) per cast-bearing shot,
+    # ~1.8 min on this run's 33.
+    plate_affordance_gate_enabled: bool = False
     # Story 10.1c — regenerate each shot from plate + cards + a placement instruction
     # instead of compositing cards onto the plate. The overlay path stays intact behind it.
     # VERDICT (10.1c close-out): stays OFF, despite the live run passing. For: 51 passes /
@@ -671,6 +707,13 @@ DECISIONS: dict[str, Decision] = {
     "background_person_guard_attempts": Decision(
         "14.4", "2026-08-22", 2,
         "background_person_guard_attempts: `ON AT 2 SINCE STORY 14.4, 2026-08-22`",
+    ),
+    "plate_affordance_gate_enabled": Decision(
+        "14.2", "2026-08-24", False,
+        "plate_affordance_gate_enabled: `OFF BY CODE DEFAULT, 2026-08-24 ... recall 5/7, "
+        "false positives 1/25 (4%) ... the pre-registered bar `recall >= 6/7` is "
+        "UNREACHABLE BY CONSTRUCTION ... has to be RE-PRE-REGISTERED after Jay's 33-pair "
+        "adjudication (AC1)`",
     ),
     # Not a flag and not a Jay verdict — a MEASURED value, which is the other shape a
     # product judgement takes. Added in 14.4's review pass after a full sweep of every

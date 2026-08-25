@@ -279,6 +279,25 @@ def test_background_person_guard_default_ships_the_decision(monkeypatch):
     assert BACKGROUND_PERSON_GUARD_MAX_ATTEMPTS == 4
 
 
+def test_plate_affordance_gate_default_ships_the_decision(monkeypatch):
+    """Story 14.2 ships this OFF in the code default (review loop 1 lowered it from ON),
+    with the dated verdict in the comment above it and NO `.env`/`.env.example` pin — the
+    shape the project settled on after a decision that only reached `.env` sat un-shipped
+    for 15 days (`gotcha_a-decision-that-only-reaches-env-never-ships`).
+
+    OFF because the pre-registered `recall >= 6/7` is unreachable by construction (one of
+    the two misses is a permanent endpoint refusal, the other a label error), so the bar
+    has to be re-pre-registered after Jay's 33-pair adjudication — and no default deletes
+    a card before a person has judged the frame (10.1c / 10.5 / 10.1e). `FakeSettings` in
+    `tests/pipeline/nodes/test_image.py` carries its own literal, so without this the flip
+    would be invisible in either direction.
+    """
+    _base_env(monkeypatch)
+    monkeypatch.delenv("YTFLOW_PLATE_AFFORDANCE_GATE_ENABLED", raising=False)
+    from yt_flow.config import Settings
+    assert Settings(_env_file=None).plate_affordance_gate_enabled is False
+
+
 def test_every_decision_names_a_real_settings_field():
     """`DECISIONS` is an index into config.py's dated verdicts, and an index whose keys
     have drifted from the fields is worse than none — `report_decision_drift.py` reports
