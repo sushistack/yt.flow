@@ -852,7 +852,6 @@ class CharacterService:
         asset_service = self._asset_service
         epoch = asset_service.style_epoch + (1 if stage else 0)
         chars_dir = assets_root / "characters" / safe_scp / f"epoch_{epoch}"
-        chars_dir.mkdir(parents=True, exist_ok=True)
 
         provider = self._get_image_provider()
         if not getattr(provider, "produces_alpha", True):
@@ -860,6 +859,36 @@ class CharacterService:
                 f"{provider.__class__.__name__} does not produce alpha sprites; use the ComfyUI character provider"
             )
         visual_desc = self._get_visual_descriptor(scp_id)
+        # Story 14.6 — the empty-descriptor guard, and it lives HERE because this is the
+        # funnel EVERY card producer passes through: `generate_cards_from_descriptor`
+        # (:991), `run_service._ensure_character_reference` (:510, the 5.8 auto-provision
+        # path that publishes `angle_*_path` itself at :517-519) and the Character
+        # Management UI's candidate batch (`api/routes/characters.py:324`). Review loop 1
+        # attached it to `generate_cards_from_descriptor` instead, which is unreachable
+        # with an empty descriptor because both of its callers supply one — so the guard
+        # was live in the code and absent from every path that had ever produced the
+        # defect. `report.md` §8 carries the producer census that establishes this.
+        #
+        # `_compile_generation_prompt` interpolates `visual_descriptor=""` happily and
+        # the checkpoint then draws whatever the angle description alone suggests. That
+        # is how SCP-1471 and SCP-682 got four RGB cards each, which `video.py:2537` now
+        # kills the run over. No raise: AD-10 says auxiliary provisioning degrades, it
+        # never fails the run — the caller sees an empty list, which is the same shape as
+        # "every angle failed" and is already handled everywhere.
+        if not (visual_desc or "").strip():
+            logger.warning(
+                "generate_candidates_from_reference: %s has no visual_descriptor; refusing to "
+                "generate pose=%s (a card drawn from an empty subject is the SCP-1471/682 defect)",
+                scp_id, pose,
+            )
+            self._warn("character_descriptor_missing", card_key=scp_id, pose=pose)
+            return []
+
+        # After the guard, never before it: an early mkdir left an EMPTY
+        # `epoch_{style_epoch + 1}` behind on the refusal path, and `approve_stock_cast`
+        # reads staging from disk — an empty epoch directory is a blocker there, so the
+        # refusal wedged promotion and rejection for every other key in the epoch.
+        chars_dir.mkdir(parents=True, exist_ok=True)
 
         saved_paths: list[str] = []
         failed_angles: list[str] = []
@@ -973,7 +1002,12 @@ class CharacterService:
             angles = ["front", *(angle for angle in angles if angle != "front")]
 
         character = self._ensure_character(card_key)
-        if descriptor and character.visual_descriptor != descriptor:
+        # `.strip()`, not truthiness: a `"   "` argument is falsy-adjacent but truthy to
+        # Python, and one of those permanently replaced a key's real descriptor with
+        # three spaces — which then read as "present" everywhere downstream while
+        # compiling to an empty subject. A blank argument means "no descriptor supplied",
+        # so the stored one stands.
+        if descriptor.strip() and character.visual_descriptor != descriptor:
             character = self.update_character(character.id, visual_descriptor=descriptor)
 
         saved: list[str] = []
@@ -1020,7 +1054,7 @@ class CharacterService:
                     # teal and the face changing person between angles. Keeping the
                     # authored text as the spine fixes that; the read-back still adds
                     # the outfit and material specifics it is good at (Story 8.15).
-                    merged = f"{descriptor}\n{enriched}" if descriptor else enriched
+                    merged = f"{descriptor}\n{enriched}" if descriptor.strip() else enriched
                     character = self.update_character(character.id, visual_descriptor=merged)
             if pose == "standing":
                 angle_paths[angle] = path
@@ -1081,8 +1115,16 @@ class CharacterService:
         as an openpose control. The hint had been reaching the model as **text only**,
         and text alone does not move this chain: at a shared seed triple the guided leg
         drew the requested supine pose 3/3 while the unguided control drew it 0/3 and
-        dropping the IPAdapter anchor to 0.0 also drew it 0/3. Off by default, and every
-        rejection path below degrades to exactly the pre-10.5 call.
+        dropping the IPAdapter anchor to 0.0 also drew it 0/3. Every rejection path below
+        degrades to exactly the pre-10.5 call.
+
+        This said "Off by default" until Story 14.6 corrected it: ``config.py``'s
+        ``pose_guide_conditioning_enabled`` has defaulted to ``True`` since Jay promoted
+        it on 2026-08-14, so the sentence had been false for two weeks in the docstring
+        of the function the flag gates. The promotion is **Story 10.5's** (executed in
+        `24b2932`, "feat(10-6,10-5): Jay 승격 결정 실행 … 포즈 가이드 on", together with
+        retiring the defective hint cards), which is what `config.DECISIONS` records; an
+        earlier draft of this correction credited 13.1 and made the two disagree.
         """
         hint_key = pose_hint_key(pose_hint)
         character = self.check_existing_character(card_key)
@@ -1105,6 +1147,20 @@ class CharacterService:
             return None
 
         visual_desc = character.visual_descriptor or self._get_visual_descriptor(card_key) or ""
+        # Story 14.6, the SECOND empty-descriptor guard. It cannot share the funnel one:
+        # this method does not go through `generate_candidates_from_reference` at all —
+        # it compiles its own prompt and writes its own manifest entry and card row. The
+        # producer census in `14-6-.../report.md` §8 is what surfaced it; a guard on the
+        # funnel alone would leave `SCP-1471`/`SCP-682` (which DO have an
+        # `angle_front_path`, so the check above passes) able to mint hint cards from an
+        # empty subject, which is the same defect under a different pose key.
+        if not visual_desc.strip():
+            logger.warning(
+                "generate_special_pose_card: %s has no visual_descriptor; refusing to generate %s",
+                card_key, hint_key,
+            )
+            self._warn("character_descriptor_missing", card_key=card_key, pose=hint_key)
+            return None
         prompt = self._compile_generation_prompt(
             visual_descriptor=f"{visual_desc}\nSpecial pose: {pose_hint.strip()}",
             angle="front",

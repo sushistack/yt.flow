@@ -30,6 +30,36 @@ TINY_PNG = bytes.fromhex(
 )
 
 
+def sprite_png(width: int = 64, height: int = 128, *, opaque: bool = False) -> bytes:
+    """A PNG that passes ``domain.png.sprite_contract`` — portrait, alpha, transparent.
+
+    ``TINY_PNG`` cannot stand in for a card anywhere the contract is enforced: it is
+    1x1, so its canvas is square (``landscape_canvas``) and it has no transparent pixel
+    at all (``opaque``). Story 14.6 put that contract on the approval gate, so the
+    fixtures that stage cards need a real sprite shape.
+
+    ``opaque=True`` fills the whole canvas — the fully opaque RGBA that ``has_alpha``
+    passes and the contract is there to catch.
+    """
+    import io
+
+    from PIL import Image
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 255 if opaque else 0))
+    if not opaque:
+        # A centred blob, so the alpha bbox is a real subject and not the whole canvas.
+        margin_x, margin_y = width // 4, height // 4
+        for x in range(margin_x, width - margin_x):
+            for y in range(margin_y, height - margin_y):
+                image.putpixel((x, y), (200, 180, 160, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+SPRITE_PNG = sprite_png()
+
+
 def load_cassette(name: str) -> dict:
     """Load a recorded response-shape cassette by filename (e.g. 'deepseek_scenario.json').
 

@@ -720,8 +720,16 @@ async def _ensure_derived_entity_cards(scp_id: str, scenes: list[dict]) -> list[
                         # protect, so this publishes on first provision exactly as 8.13
                         # did. Ceiling: an authored look no human has seen goes live
                         # (`_resolve_card_path` reads the columns with no status/epoch
-                        # filter). Gating it needs a promote path that accepts derived
-                        # keys, which `approve_stock_cast.py` does not have — deferred.
+                        # filter).
+                        # The reason recorded here until Story 14.6 — "gating it needs a
+                        # promote path that accepts derived keys, which
+                        # `approve_stock_cast.py` does not have" — is NO LONGER TRUE:
+                        # 14.6 widened that script to any key and any pose, discovered
+                        # from disk. What still holds is different and smaller: staging
+                        # here would leave the run with NO card for an entity it is
+                        # about to draw, until a human promotes, so the gate has to be
+                        # paired with a fallback decision nobody has made. Deferred on
+                        # that ground, not on the missing promote path.
                     )
                     character = svc.check_existing_character(card_key)
                     if character is None or not character.angle_front_path:

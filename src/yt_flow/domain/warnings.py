@@ -47,6 +47,12 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "scenario", "레퍼런스 조건화에 실패해 t2i로 생성했습니다 — 동일 인물 보장이 약해집니다"),
     "character_card_multi_figure": (
         "scenario", "렌더에 인물이 하나가 아니라 카드를 폐기했습니다 — 해당 앵글은 만들어지지 않았습니다"),
+    # Reason-neutral, like `stock_plate_unfit` above: the descriptor can be absent
+    # because enrichment failed, because a human never wrote one, or because a
+    # whitespace-only value was persisted. The one thing every case shares is what
+    # happened — no card was made — so that is what the line says.
+    "character_descriptor_missing": (
+        "scenario", "식별 묘사가 없어 카드를 만들지 않았습니다 — 이 배역은 화면에 나오지 않습니다"),
     "stock_plate_resolver_unavailable": (
         "image", "스톡 배경 조회기를 쓸 수 없어 배경을 생성했습니다"),
     "stock_plate_missing": (

@@ -31,6 +31,21 @@ from yt_flow.services.character_image_provider import (
 RGB_PNG_HEADER_ONLY = b"\x89PNG\r\n\x1a\n" + (b"\x00" * 17) + b"\x02"
 
 
+def _with_descriptor(service, scp_id, name, descriptor=None):
+    """Create a character that ``generate_candidates_from_reference`` will act on.
+
+    Story 14.6 put an empty-descriptor guard on that method — it is the funnel every
+    card producer passes through, and a card compiled from an empty subject is what
+    produced SCP-1471's and SCP-682's four RGB cards each. Tests that exercise the
+    generation path therefore have to supply the descriptor a real caller supplies;
+    the refusal itself is asserted separately in ``TestEmptyDescriptorGuard``.
+    """
+    character = service.create_character(scp_id, name)
+    return service.update_character(
+        character.id, visual_descriptor=descriptor or f"authored look for {scp_id}",
+    )
+
+
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -199,7 +214,7 @@ class TestMultiAngleGeneration:
         """AC3: Generate candidates saves files for all 4 angles."""
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -219,7 +234,7 @@ class TestMultiAngleGeneration:
         """Generate only specified angles."""
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-173", "The Sculpture")
+        _with_descriptor(service, "SCP-173", "The Sculpture")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -239,7 +254,7 @@ class TestMultiAngleGeneration:
         """AC3: One angle failing doesn't prevent others from generating."""
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -283,7 +298,7 @@ class TestMultiAngleGeneration:
         """Generated files go to assets/characters/{scp_id}/epoch_{n}/ (Story 8.6)."""
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-049", "Plague Doctor")
+        _with_descriptor(service, "SCP-049", "Plague Doctor")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -307,7 +322,7 @@ class TestMultiAngleGeneration:
     ):
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-049", "Plague Doctor")
+        _with_descriptor(service, "SCP-049", "Plague Doctor")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -328,7 +343,7 @@ class TestMultiAngleGeneration:
     ):
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-049", "Plague Doctor")
+        _with_descriptor(service, "SCP-049", "Plague Doctor")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -348,7 +363,7 @@ class TestMultiAngleGeneration:
     def test_generate_sitting_candidates_write_pose_rows(self, service, temp_ref_image, tmp_path):
         s = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
         service._settings = s
-        service.create_character("SCP-049", "Plague Doctor")
+        _with_descriptor(service, "SCP-049", "Plague Doctor")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -722,7 +737,7 @@ class TestMultiAngleGeneration:
     def test_generate_candidates_passes_negative_suffix_to_provider(self, service, temp_ref_image, tmp_path):
         """Story 8.15: STOCK-scoped mask suppression must reach the provider per call."""
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("STOCK-d-class", "D-class")
+        _with_descriptor(service, "STOCK-d-class", "D-class")
 
         mock_provider = MagicMock()
         mock_provider.supports_i2i = True
@@ -1279,7 +1294,63 @@ class TestReferenceImageInjectionAndFallback:
         rows = np.flatnonzero(out[:, :, 3].max(axis=1) > 10)
         assert 400 - (rows[-1] + 1) >= _BOTTOM_GUTTER - 1
 
+    def test_normalize_subject_scale_keeps_a_side_gutter_too(self, monkeypatch):
+        """Story 14.6, and pinned in BOTH directions through the real function.
 
+        A subject wide enough to hit the fit-to-width branch used to be scaled to the
+        FULL canvas width and centred at x=0, so its alpha bbox touched both edges — the
+        live `hint_475c8a9231_front.png` measured (0, 821, 832, 1208) and comes out
+        (8, 828, 824, 1208) after the fix. The "before" leg here sets the gutter to 0
+        rather than reimplementing the old arithmetic, so it exercises the shipped code
+        path and cannot drift away from it.
+
+        This fixes FRAMING only. A card whose hand was already rendered off-canvas is
+        not restored by rescaling what survived.
+        """
+        from yt_flow.services import character_image_provider as provider_module
+        from yt_flow.services.character_image_provider import _SIDE_GUTTER, _normalize_subject_scale
+
+        # Wider than it is tall relative to the canvas, so scaling to 94% height would
+        # overflow the width and the fit-to-width branch runs.
+        arr = np.zeros((400, 300, 4), dtype=np.uint8)
+        arr[150:250, 20:280, :3] = 255
+        arr[150:250, 20:280, 3] = 255
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+        card = buf.getvalue()
+
+        def bbox_cols(png):
+            a = np.array(Image.open(io.BytesIO(png)).convert("RGBA"))[:, :, 3]
+            cols = np.flatnonzero(a.max(axis=0) > 10)
+            return int(cols[0]), int(cols[-1]) + 1
+
+        left, right = bbox_cols(_normalize_subject_scale(card))
+        assert left == _SIDE_GUTTER and right == 300 - _SIDE_GUTTER
+
+        monkeypatch.setattr(provider_module, "_SIDE_GUTTER", 0)
+        assert bbox_cols(_normalize_subject_scale(card)) == (0, 300)
+
+    @pytest.mark.parametrize("offset", [0, 1, 8])
+    def test_normalize_subject_scale_survives_a_canvas_narrower_than_two_gutters(self, offset):
+        """Falling back to the full width is the honest answer on a tiny canvas.
+
+        Parametrised past the boundary on purpose: guarding on `max_w <= 0` covered only
+        `width == 2 * _SIDE_GUTTER`, and at width 17..24 the budget is a positive 1..8 px,
+        so the fallback did NOT fire and the subject was scaled down to a sliver
+        (measured: width 17 produced a 1x10 bbox).
+        """
+        from yt_flow.services.character_image_provider import _SIDE_GUTTER, _normalize_subject_scale
+
+        width = 2 * _SIDE_GUTTER + offset
+        arr = np.zeros((40, width, 4), dtype=np.uint8)
+        arr[10:30, 0:width, :3] = 255
+        arr[10:30, 0:width, 3] = 255
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, format="PNG")
+
+        out = np.array(Image.open(io.BytesIO(_normalize_subject_scale(buf.getvalue()))).convert("RGBA"))
+        cols = np.flatnonzero(out[:, :, 3].max(axis=0) > 10)
+        assert cols.size == width  # the full width, not a 1px collapse
 
     def test_clean_alpha_noise_drops_a_flanking_second_figure(self):
         """Story 8.15: the checkpoint likes to compose a character reference sheet,
@@ -1431,6 +1502,104 @@ class TestReferenceImageInjectionAndFallback:
 
         with pytest.raises(ValueError, match="empty alpha"):
             _clean_alpha_noise(buf.getvalue())
+
+
+class TestEmptyDescriptorGuard:
+    """Story 14.6 — a card is never compiled from an empty subject.
+
+    The guard sits on ``generate_candidates_from_reference`` because that is the funnel
+    every producer passes through. Review loop 1 attached it to
+    ``generate_cards_from_descriptor``, which is unreachable with an empty descriptor
+    (both callers supply one), while the path that actually produced SCP-1471 and
+    SCP-682 — 5.8 auto-provisioning, which calls the funnel directly and writes
+    ``angle_*_path`` itself — went straight through.
+    """
+
+    def _provider(self):
+        provider = MagicMock()
+        provider.supports_i2i = True
+        provider.produces_alpha = True
+        provider.generate = AsyncMock(return_value=TINY_PNG)
+        return provider
+
+    def test_a_character_with_no_descriptor_generates_nothing(self, session, temp_ref_image, tmp_path):
+        sink: list = []
+        service = CharacterService(
+            session, settings=Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path)), warnings=sink,
+        )
+        service.create_character("SCP-096", "Shy Guy")
+        provider = self._provider()
+
+        with patch.object(service, "_get_image_provider", return_value=provider):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert paths == []
+        assert provider.generate.await_count == 0
+        assert [w["code"] for w in sink] == ["character_descriptor_missing"]
+        assert sink[0]["stage"] == "scenario"
+        assert sink[0]["context"] == {"card_key": "SCP-096", "pose": "standing"}
+        assert list((tmp_path / "characters").rglob("*.png")) == []
+        # Not even the epoch directory (`characters/` itself is `AssetService.__init__`'s):
+        # the mkdir used to run before the guard, and `approve_stock_cast` reads staging
+        # from DISK — an empty epoch directory is a blocker there, so a refusal here
+        # wedged promotion AND rejection for every key in the epoch.
+        assert not (tmp_path / "characters" / "SCP-096").exists()
+
+    def test_a_whitespace_only_descriptor_is_treated_as_absent(self, session, temp_ref_image, tmp_path):
+        """`"   "` is truthy in Python, so a plain falsiness check let it through."""
+        sink: list = []
+        service = CharacterService(
+            session, settings=Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path)), warnings=sink,
+        )
+        character = service.create_character("SCP-096", "Shy Guy")
+        service.update_character(character.id, visual_descriptor="   \n\t ")
+
+        with patch.object(service, "_get_image_provider", return_value=self._provider()):
+            paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
+
+        assert paths == []
+        assert [w["code"] for w in sink] == ["character_descriptor_missing"]
+
+    def test_the_special_pose_producer_is_guarded_too(self, session, tmp_path):
+        """`generate_special_pose_card` does not pass through the funnel — it compiles
+        its own prompt and writes its own manifest entry and card row. `SCP-1471` and
+        `SCP-682` both HAVE an `angle_front_path`, so its front-card precondition passes
+        and only this guard stops them minting hint cards from an empty subject."""
+        sink: list = []
+        service = CharacterService(
+            session, settings=Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path)), warnings=sink,
+        )
+        character = service.create_character("SCP-1471", "MalO")
+        front = tmp_path / "characters" / "SCP-1471" / "epoch_1" / "front_candidate_1.png"
+        front.parent.mkdir(parents=True, exist_ok=True)
+        front.write_bytes(TINY_PNG)
+        service.update_character(
+            character.id, angle_front_path="characters/SCP-1471/epoch_1/front_candidate_1.png",
+        )
+        provider = self._provider()
+
+        with patch.object(service, "_get_image_provider", return_value=provider):
+            result = asyncio_run(service.generate_special_pose_card("SCP-1471", "lying on a table"))
+
+        assert result is None
+        assert provider.generate.await_count == 0
+        assert [w["code"] for w in sink] == ["character_descriptor_missing"]
+        assert sink[0]["context"]["pose"] == pose_hint_key("lying on a table")
+        assert service.get_card("SCP-1471", pose_hint_key("lying on a table"), "front") is None
+
+    def test_a_blank_descriptor_argument_never_overwrites_the_stored_one(self, session, tmp_path):
+        """A `"   "` argument permanently replaced a key's real descriptor with three
+        spaces, which then read as "present" everywhere while compiling to nothing."""
+        service = CharacterService(
+            session, settings=Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path)),
+        )
+        character = service.create_character("SCP-096", "Shy Guy")
+        service.update_character(character.id, visual_descriptor="the authored look")
+
+        with patch.object(service, "_get_image_provider", return_value=self._provider()):
+            asyncio_run(service.generate_cards_from_descriptor("SCP-096", "   ", angles=["front"]))
+
+        assert service.check_existing_character("SCP-096").visual_descriptor == "the authored look"
 
 
 # ── Candidate Tracking (AC4) ─────────────────────────────────────────────────
@@ -1649,7 +1818,7 @@ class TestProviderDegradationWarnings:
         """The UI, scripts and every pre-13.1 caller construct the service without a
         sink; `_warn` must be a no-op for them, not a crash."""
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
 
         with patch.object(service, "_get_image_provider", return_value=self._provider(i2i_fallback=True)):
             paths = asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
@@ -1660,7 +1829,7 @@ class TestProviderDegradationWarnings:
         """The identity anchor was lost, so these four angles are a different person."""
         service, sink = collected
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
 
         with patch.object(service, "_get_image_provider", return_value=self._provider(i2i_fallback=True)):
             asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
@@ -1673,7 +1842,7 @@ class TestProviderDegradationWarnings:
     def test_a_clean_i2i_generation_warns_nothing(self, collected, temp_ref_image, tmp_path):
         service, sink = collected
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
 
         with patch.object(service, "_get_image_provider", return_value=self._provider()):
             asyncio_run(service.generate_candidates_from_reference("SCP-096", temp_ref_image))
@@ -1686,7 +1855,7 @@ class TestProviderDegradationWarnings:
         and a rejected card must leave nothing behind — no file, no manifest, no row."""
         service, sink = collected
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
         provider = self._provider()
         provider.last_figure_count = 2
 
@@ -1711,7 +1880,7 @@ class TestProviderDegradationWarnings:
         `CharacterCard` as a card."""
         service, sink = collected
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
         provider = self._provider()
         provider.last_figure_count = 0
 
@@ -1727,7 +1896,7 @@ class TestProviderDegradationWarnings:
         """The guard's control leg: an honest count of 1 changes nothing."""
         service, _ = collected
         service._settings = Settings(workspace_path=str(tmp_path), assets_path=str(tmp_path))
-        service.create_character("SCP-096", "Shy Guy")
+        _with_descriptor(service, "SCP-096", "Shy Guy")
         provider = self._provider()
         provider.last_figure_count = 1
 

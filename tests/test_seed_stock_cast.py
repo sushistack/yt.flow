@@ -1,11 +1,15 @@
 import asyncio
 import importlib.util
 import re
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from yt_flow import db
 from yt_flow.config import Settings
 from yt_flow.services.character_service import CharacterService
-from tests.stubs.fakes import TINY_PNG
+from tests.stubs.fakes import SPRITE_PNG, TINY_PNG
 
 
 def _load_script():
@@ -336,22 +340,99 @@ def test_stock_negative_carries_the_prohibitions():
     assert len(text.split(",")) <= 15, "STOCK_NEGATIVE is drifting long; over-stuffing wrecks the render"
 
 
-def test_stage_rejects_targets_the_approve_script_cannot_promote():
-    """approve_stock_cast.py only ever looks for ``{angle}_candidate_1.png`` under a
-    stock key, so staging a non-standing pose (``{pose}_{angle}.png``) or a derived key
-    would produce files that can be neither promoted nor rejected."""
+def test_stage_accepts_any_key_and_pose_and_publishes_nothing(tmp_path, monkeypatch):
+    """Story 14.6 removed the standing-only / STOCK-only staging restriction.
+
+    Driven through ``run()``, not ``seed_key``: the restriction lived in ``run()``'s
+    entry check, so calling ``seed_key`` alone would leave the widened wiring untested.
+    The generation path is real — only the ComfyUI provider and the vision read-back are
+    stubbed — so this asserts the actual invariant the widening rests on: a staged set
+    creates NO manifest entry, NO ``character_cards`` row and NO ``angle_*_path`` write.
+    """
     seed = _load_script()
-    for argv in (
-        ["--stage", "--pose", "sitting"],
-        ["--stage", "--key", "SCP-049-2", "--descriptor", "reanimated human"],
-    ):
-        args = seed.build_parser().parse_args(argv)
-        try:
-            asyncio.run(seed.run(args))
-        except SystemExit as exc:
-            assert "--stage supports" in str(exc)
-        else:
-            raise AssertionError(f"expected SystemExit for {argv}")
+    assets = tmp_path / "assets"
+    monkeypatch.setenv("YTFLOW_DB_PATH", str(tmp_path / "stage.db"))
+    monkeypatch.setenv("YTFLOW_ASSETS_PATH", str(assets))
+    monkeypatch.setenv("YTFLOW_WORKSPACE_PATH", str(tmp_path / "workspace"))
+    db.init(f"sqlite:///{tmp_path / 'stage.db'}")
+
+    provider = SimpleNamespace(
+        produces_alpha=True, supports_i2i=True, last_i2i_fallback=False,
+        generate=AsyncMock(return_value=SPRITE_PNG),
+    )
+    monkeypatch.setattr(CharacterService, "_get_image_provider", lambda self: provider)
+
+    async def no_enrichment(self, scp_id, ref_image_paths):
+        return None
+
+    monkeypatch.setattr(CharacterService, "enrich_descriptor_from_references", no_enrichment)
+
+    args = seed.build_parser().parse_args(
+        ["--stage", "--key", "SCP-049-2", "--pose", "sitting", "--descriptor", "reanimated human"]
+    )
+    assert asyncio.run(seed.run(args)) == 0
+
+    staged = assets / "characters" / "SCP-049-2" / "epoch_2"
+    assert sorted(p.name for p in staged.iterdir()) == [
+        "_poststage_descriptor.txt",
+        "sitting_back.png", "sitting_front.png", "sitting_side.png", "sitting_three_quarter.png",
+    ]
+    # No `_prestage_descriptor.txt`: the key did not exist before this stage, so there
+    # was no descriptor to snapshot. The post-stage record is written regardless — it is
+    # what `--reject` compares the live column against before restoring anything.
+    assert (staged / "_poststage_descriptor.txt").read_text(encoding="utf-8") == "reanimated human"
+    from sqlmodel import Session
+
+    from yt_flow.db import _engine
+
+    with Session(_engine) as session:
+        service = CharacterService(
+            session, settings=Settings(workspace_path=str(tmp_path / "workspace"), assets_path=str(assets)),
+        )
+        assert service._asset_service.load_manifest()["assets"] == {}
+        assert service._asset_service.style_epoch == 1
+        for angle in ("front", "back", "side", "three_quarter"):
+            assert service.get_card("SCP-049-2", "sitting", angle) is None
+        character = service.check_existing_character("SCP-049-2")
+        assert character.angle_front_path is None
+        assert character.selected_image_path is None
+
+
+async def test_a_crashed_stage_still_records_the_descriptor_it_installed(tmp_path, monkeypatch):
+    """The `finally` leg, and it is the one that matters.
+
+    A ComfyUI crash mid-set (Story 5.23) raises AFTER the descriptor has been replaced,
+    and that is exactly when `approve_stock_cast.py --reject` is the only way back. With
+    no record written on this path the reject guard would refuse to restore precisely
+    when restoring is the recovery.
+    """
+    seed = _load_script()
+    db.init("sqlite://")
+    from sqlmodel import Session
+
+    from yt_flow.db import _engine
+
+    assets = tmp_path / "assets"
+    with Session(_engine) as session:
+        service = CharacterService(
+            session,
+            settings=Settings(workspace_path=str(tmp_path / "workspace"), assets_path=str(assets)),
+        )
+        character = service.create_character("STOCK-d-class", "D-class")
+        service.update_character(character.id, visual_descriptor="the descriptor before the stage")
+
+        async def half_a_set(scp_id, descriptor, **kwargs):
+            service.update_character(character.id, visual_descriptor="text the stage installed")
+            seed.staged_dir(assets, scp_id, 2).mkdir(parents=True, exist_ok=True)
+            return ["one card"]
+
+        monkeypatch.setattr(service, "generate_cards_from_descriptor", half_a_set)
+
+        with pytest.raises(RuntimeError, match="incomplete card set"):
+            await seed.seed_key(service, "STOCK-d-class", "descriptor", stage=True)
+
+    sidecar = seed.staged_dir(assets, "STOCK-d-class", 2) / seed.POSTSTAGE_DESCRIPTOR_FILE
+    assert sidecar.read_text(encoding="utf-8") == "text the stage installed"
 
 
 def test_parser_rejects_unknown_pose():

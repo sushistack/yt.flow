@@ -64,6 +64,19 @@ async def _fake_download(self, url, refs_dir, num):
     return "png"
 
 
+async def _fake_enrich(self, scp_id, ref_image_paths):
+    """A working vision read-back.
+
+    Story 14.6 made this a PRECONDITION of generation rather than a nicety: with no
+    `visual_descriptor` the funnel refuses to generate, because the prompt template
+    interpolates an empty subject and the checkpoint draws whatever the angle phrase
+    alone suggests. That is how SCP-1471 and SCP-682 got four alpha-less cards each.
+    Tests that want the generation path to run therefore have to make enrichment work,
+    exactly as the live path does.
+    """
+    return f"enriched descriptor for {scp_id}"
+
+
 def _get_character(scp_id: str) -> CharacterModel | None:
     with Session(db._engine) as session:
         return session.exec(
@@ -83,6 +96,7 @@ async def test_no_existing_character_triggers_search_and_generation_once(monkeyp
     monkeypatch.setattr(character_service.CharacterService, "_download_reference_image", _fake_download)
     provider = _FakeProvider()
     monkeypatch.setattr(character_service.CharacterService, "_get_image_provider", lambda self: provider)
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _fake_enrich)
 
     await run_service._ensure_character_reference("SCP-096")
 
@@ -147,9 +161,14 @@ async def test_generation_failure_is_non_fatal(monkeypatch, tmp_path):
     monkeypatch.setattr(character_service.CharacterService, "_download_reference_image", _fake_download)
     provider = _FakeProvider(generate_ok=False)
     monkeypatch.setattr(character_service.CharacterService, "_get_image_provider", lambda self: provider)
+    # Enrichment has to SUCCEED here or the 14.6 descriptor guard short-circuits before
+    # the provider is ever called, and this test would keep passing while measuring a
+    # different failure than the one it is named for.
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _fake_enrich)
 
     await run_service._ensure_character_reference("SCP-096")  # must not raise (AC3)
 
+    assert provider.calls == len(CANONICAL_ANGLES)  # the provider is what failed
     # Same rollback as a total search failure — all 4 angles failed, so nothing
     # usable was produced; the row is removed rather than left permanently empty.
     assert _get_character("SCP-096") is None
@@ -165,6 +184,7 @@ async def test_partial_generation_failure_keeps_only_successful_angles(monkeypat
     ])
     monkeypatch.setattr(character_service, "DuckDuckGoImageSearch", lambda: fake_search)
     monkeypatch.setattr(character_service.CharacterService, "_download_reference_image", _fake_download)
+    monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _fake_enrich)
 
     class _PartialProvider:
         supports_i2i = True
@@ -263,9 +283,20 @@ async def test_enrichment_success_persists_descriptor_before_generation(monkeypa
     assert all("a tall figure in a tattered lab coat" in p for p in provider.prompts)
 
 
-async def test_enrichment_failure_is_non_fatal_generation_still_proceeds(monkeypatch, tmp_path):
-    """AC2: a Vision LLM enrichment failure must not raise past _ensure_character_reference
-    and must not trigger the total-failure rollback — generation proceeds normally."""
+async def test_enrichment_failure_no_longer_generates_a_descriptorless_card_set(monkeypatch, tmp_path):
+    """Story 14.6 REVERSED this test's expectation, and the reversal is the story.
+
+    Until now a Vision LLM enrichment failure was non-fatal in the widest sense: the
+    run continued AND generation proceeded with `visual_descriptor is None`, so all four
+    angles were prompted from an empty subject. This is the production path that
+    produced SCP-1471's and SCP-682's four RGB cards each — cards that
+    `video.py:2537` now raises on, killing any run that casts those keys.
+
+    The AD-10 envelope is unchanged: still no raise, still a warning, still a run that
+    goes on without this card. What changed is that the run no longer PUBLISHES a card
+    drawn from nothing. The row is rolled back exactly as a total generation failure
+    rolls it back, so a later run retries once enrichment works.
+    """
     db.init("sqlite://")
     settings = _settings(tmp_path)
     monkeypatch.setattr(run_service, "_settings", lambda: settings)
@@ -283,12 +314,19 @@ async def test_enrichment_failure_is_non_fatal_generation_still_proceeds(monkeyp
 
     monkeypatch.setattr(character_service.CharacterService, "enrich_descriptor_from_references", _broken_enrich)
 
-    await run_service._ensure_character_reference("SCP-096")  # must not raise
+    warnings = await run_service._ensure_character_reference("SCP-096")  # must not raise
 
-    character = _get_character("SCP-096")
-    assert character is not None  # enrichment failure alone must not trigger rollback
-    assert character.visual_descriptor is None
-    assert provider.calls == len(CANONICAL_ANGLES)  # generation still ran for every angle
+    assert provider.calls == 0  # not one angle was rendered from an empty subject
+    assert _get_character("SCP-096") is None  # rolled back, so a later run retries
+    codes = [w["code"] for w in warnings]
+    # The guard's own warning has to actually FIRE — `_warn` is a silent no-op on a
+    # CharacterService built without `warnings=`, so "the guard exists" and "the
+    # operator is told" are two different claims. This asserts the second one.
+    assert "character_descriptor_missing" in codes
+    assert "character_provisioning_failed" in codes
+    missing = next(w for w in warnings if w["code"] == "character_descriptor_missing")
+    assert missing["stage"] == "scenario"
+    assert missing["context"]["card_key"] == "SCP-096"
 
 
 async def test_start_run_invokes_character_provisioning(monkeypatch, tmp_path):

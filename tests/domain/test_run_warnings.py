@@ -28,6 +28,26 @@ def test_catalog_covers_every_code_with_a_real_stage():
         assert message.strip(), code
 
 
+def test_descriptor_missing_rides_the_stage_its_producers_actually_fire_from():
+    """Story 14.6. The code is filed by `generate_candidates_from_reference`, whose
+    producers are `run_service._ensure_character_reference` (pre-graph, 5.8) and
+    `_ensure_derived_entity_cards` — the same two that already file
+    `character_provisioning_failed` and `derived_entity_generation_failed`, both
+    `scenario`. Attribution is taken from the call sites, not by analogy
+    (`gotcha_attribution-must-ride-the-channel-that-fires`), and both of those sites
+    construct CharacterService with `warnings=`, which is what makes `_warn` fire at all.
+
+    The copy is reason-neutral because the descriptor can be absent for several reasons
+    (enrichment failed, nobody wrote one, a whitespace value was persisted) and only the
+    consequence is common to all of them.
+    """
+    stage, message = RUN_WARNING_CATALOG["character_descriptor_missing"]
+    assert stage == RUN_WARNING_CATALOG["character_provisioning_failed"][0] == "scenario"
+    warning = make_warning("character_descriptor_missing", card_key="SCP-1471", pose="standing")
+    assert warning["message"] == message
+    assert warning["context"] == {"card_key": "SCP-1471", "pose": "standing"}
+
+
 def test_make_warning_fills_stage_and_korean_copy_from_the_catalog():
     warning = make_warning("stock_plate_missing", scene_num=3, shot_id="S002", location_key="corridor")
     assert warning["code"] == "stock_plate_missing"

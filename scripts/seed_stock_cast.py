@@ -122,6 +122,20 @@ VALID_POSES = ("standing", "sitting")
 # by name only, so it can never be mistaken for a card.
 PRESTAGE_DESCRIPTOR_FILE = "_prestage_descriptor.txt"
 
+# The descriptor as staging LEFT it, written after every `--stage` (and from a `finally`,
+# so a ComfyUI crash part-way through the four angles is covered too — Story 5.23 is that
+# crash). `approve_stock_cast.py --reject` puts the pre-stage text back only while the
+# live column still holds this; if it holds something else, the column has been edited
+# since the stage and restoring the sidecar would silently roll that edit away. Measured
+# case that motivated it (Story 14.6, read-only): `STOCK-d-class/epoch_3` was staged
+# 2026-08-16 21:11 and its sidecar diverges from the live descriptor from character 380
+# on — live carries the structured `build:/head:/clothing:/marks:` read-back, the sidecar
+# the older prose one. There it happens to be the same staging's own product (the row's
+# `updated_at` is 1.7 s after that stage's front card), but nothing in the directory says
+# so, and a reject was reaching for the descriptor on that evidence. Directories staged
+# before 14.6 carry no such record, so a reject warns there instead of restoring.
+POSTSTAGE_DESCRIPTOR_FILE = "_poststage_descriptor.txt"
+
 
 def staged_dir(assets_path: Path, key: str, epoch: int) -> Path:
     """Directory a ``--stage`` run writes into (also read by approve_stock_cast.py)."""
@@ -144,21 +158,17 @@ def _snapshot_prestage_descriptor(service: CharacterService, key: str, epoch: in
     sidecar.write_text(character.visual_descriptor, encoding="utf-8")
 
 
-def _validate_stage_target(pose: str, keys: list[str]) -> None:
-    """Refuse a ``--stage`` combination approve_stock_cast.py could not act on.
-
-    It only ever looks for ``{angle}_candidate_1.png`` under a ``STOCK_CAST_KEYS``
-    key, so a non-standing pose (files are named ``{pose}_{angle}.png``) or a derived
-    key would stage cards that can be neither promoted nor rejected — stranded in a
-    directory that the next epoch bump turns live.
-    """
-    if pose != "standing":
-        raise SystemExit("--stage supports --pose standing only (approve_stock_cast.py promotes standing cards)")
-    unsupported = [key for key in keys if key not in STOCK_DESCRIPTORS]
-    if unsupported:
-        raise SystemExit(
-            f"--stage supports stock keys only ({', '.join(STOCK_DESCRIPTORS)}); got {', '.join(unsupported)}"
-        )
+def _record_poststage_descriptor(service: CharacterService, key: str, epoch: int) -> None:
+    """Snapshot the descriptor staging installed. Rewritten by every stage, unlike the
+    write-once pre-stage sidecar — the question it answers is "is the live column still
+    what THIS stage left", and only the latest stage can answer it."""
+    directory = staged_dir(Path(service._settings.assets_path), key, epoch)
+    if not directory.is_dir():
+        return
+    character = service.check_existing_character(key)
+    if character is None or not character.visual_descriptor:
+        return
+    (directory / POSTSTAGE_DESCRIPTOR_FILE).write_text(character.visual_descriptor, encoding="utf-8")
 
 
 def _is_alpha_png_file(path: str | Path | None) -> bool:
@@ -226,23 +236,33 @@ async def seed_key(
     # seeded by hand came out different from the same key seeded by the pipeline, and
     # the hand path was the one a human was most likely to use.
     is_maskless = key in STOCK_DESCRIPTORS or key in DERIVED_DESCRIPTORS
+    staging_epoch = service._asset_service.style_epoch + 1
     if stage:
-        _snapshot_prestage_descriptor(service, key, service._asset_service.style_epoch + 1)
-    paths = await service.generate_cards_from_descriptor(
-        key,
-        descriptor=descriptor,
-        pose=pose,
-        anchor_path=anchor,
-        negative_suffix=STOCK_NEGATIVE if is_maskless else None,
-        # Vision enrichment describes the generated front back into visual_descriptor,
-        # and its prompt says "an SCP Foundation character" — the one token these
-        # descriptors were purged of, because it is what attracts the mask. Keep the
-        # enrichment (it is what holds the four angles to one face) and strip the
-        # token from its output. Authored derived looks are defined by the *absence* of
-        # a mask, so 10.6 stopped exempting them from the ban.
-        enrich_ban=BANNED_STOCK_TOKEN if is_maskless else None,
-        stage=stage,
-    )
+        _snapshot_prestage_descriptor(service, key, staging_epoch)
+    try:
+        paths = await service.generate_cards_from_descriptor(
+            key,
+            descriptor=descriptor,
+            pose=pose,
+            anchor_path=anchor,
+            negative_suffix=STOCK_NEGATIVE if is_maskless else None,
+            # Vision enrichment describes the generated front back into
+            # visual_descriptor, and its prompt says "an SCP Foundation character" — the
+            # one token these descriptors were purged of, because it is what attracts the
+            # mask. Keep the enrichment (it is what holds the four angles to one face) and
+            # strip the token from its output. Authored derived looks are defined by the
+            # *absence* of a mask, so 10.6 stopped exempting them from the ban.
+            enrich_ban=BANNED_STOCK_TOKEN if is_maskless else None,
+            stage=stage,
+        )
+    finally:
+        # In a `finally` on purpose: generation raises below on an incomplete set, and a
+        # ComfyUI crash mid-set is the case where the live descriptor has ALREADY been
+        # replaced and `--reject` is the only way back. Without the record written on
+        # that path, the reject guard would refuse to restore exactly when restoring is
+        # the recovery.
+        if stage:
+            _record_poststage_descriptor(service, key, staging_epoch)
     if len(paths) < 4:
         raise RuntimeError(f"generated incomplete card set for {key} ({pose}): {len(paths)}/4 cards")
     print(f"generated: {key} ({pose}) {len(paths)} cards")
@@ -253,8 +273,25 @@ async def seed_key(
 
 
 async def run(args) -> int:
-    if args.stage:
-        _validate_stage_target(args.pose, [args.key] if args.key else list(STOCK_CAST_KEYS))
+    # Story 14.6 removed `_validate_stage_target`, which had refused every `--stage`
+    # outside `standing` + `STOCK_CAST_KEYS`. That was never a policy — the service
+    # layer is already safe for any key and any pose (`character_service.py:918-920`'s
+    # `if not stage:` suppresses the manifest entry, the approval and the card row, and
+    # `:1027-1029` writes `angle_*_path` for `standing` only). The restriction existed
+    # because approve_stock_cast.py's `_staged_paths` looked up `{angle}_candidate_1.png`
+    # and nothing else, while non-standing cards are saved as `{pose}_{angle}.png`
+    # (`character_service.py:877-879`). That script is now pose-aware, so the reason is
+    # gone.
+    #
+    # THE WARNING IT CARRIED IS NOT GONE, and is restated rather than deleted: staging
+    # writes into `epoch_{style_epoch + 1}`, which is the SAME directory the next epoch
+    # bump turns live, so a staged set that no promotion ever covers is "stranded in a
+    # directory that the next epoch bump turns live". Review loop 1 of this story
+    # reproduced exactly that. What prevents it now is the promotion contract, not a
+    # narrow staging vocabulary: approve_stock_cast.py promotes an epoch ATOMICALLY —
+    # every key and every pose staged in it, together — and always closes with
+    # `bump_style_epoch()`, which is the only mechanism that separates the staging slot
+    # from the live slot. Narrow that contract again and this warning comes true again.
     settings = Settings()
     db.init(f"sqlite:///{settings.db_path}")
     with Session(db._engine) as session:

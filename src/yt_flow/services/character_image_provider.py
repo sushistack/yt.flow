@@ -86,6 +86,17 @@ _SUBJECT_HEIGHT_FRACTION = 0.94
 # feather to eat — so it eats the shoe line instead and the character reads as standing
 # on a softened stub.
 _BOTTOM_GUTTER = 8
+# The horizontal counterpart, added in Story 14.6. Without it a subject wide enough to
+# hit the `new_w > width` branch below was fitted to the FULL canvas width and then
+# centred at x=0, so its alpha bbox touched both edges: `hint_475c8a9231_front.png`
+# measured (0, 821, 832, 1208). CARD_EDGE_FEATHER eats a flush edge the same way it
+# ate the shoe line, and video.py's placement arithmetic reads the bbox. Same value as
+# the bottom gutter — there is no measurement separating them, only symmetry.
+#
+# LIMIT, stated because it is easy to over-claim: this changes FRAMING only. A card
+# whose anatomy was already cropped away by the generator (a hand rendered off-canvas)
+# is not restored by re-scaling what survived — it is the same pixels, smaller.
+_SIDE_GUTTER = 8
 
 
 def _normalize_subject_scale(png_bytes: bytes) -> bytes:
@@ -121,9 +132,18 @@ def _normalize_subject_scale(png_bytes: bytes) -> bytes:
     width, height = im.size
     scale = (height * _SUBJECT_HEIGHT_FRACTION) / subject_h
     new_w, new_h = max(1, round(subject_w * scale)), max(1, round(subject_h * scale))
-    if new_w > width:  # very wide subject: fit to width instead so nothing is clipped
-        new_h = max(1, round(new_h * width / new_w))
-        new_w = width
+    # On a canvas too narrow to spend two gutters AND still leave more room for the
+    # subject than the gutters take, the gutter is unaffordable and the pre-14.6
+    # full-width fit is the honest fallback. The test is `max_w < 2 * _SIDE_GUTTER`,
+    # not `max_w <= 0`: at width 17..24 the budget is a positive 1..8 px, so the `<= 0`
+    # form did not fire and a wide subject was scaled down to a sliver (measured:
+    # width 17 gave a 1x10 bbox). Below width 32 this branch is what runs.
+    max_w = width - 2 * _SIDE_GUTTER
+    if max_w < 2 * _SIDE_GUTTER:
+        max_w = width
+    if new_w > max_w:  # very wide subject: fit to the gutter budget so nothing is clipped
+        new_h = max(1, round(new_h * max_w / new_w))
+        new_w = max_w
     subject = im.crop((left, top, right, bottom)).resize((new_w, new_h), Image.LANCZOS)
 
     out = Image.new("RGBA", (width, height), (0, 0, 0, 0))

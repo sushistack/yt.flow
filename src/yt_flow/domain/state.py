@@ -577,6 +577,13 @@ RunWarningCode = Literal[
     "derived_entity_look_unauthored",   # Story 10.6 — no authored look, key skipped
     "character_card_i2i_fallback",      # provider i2i failed -> t2i, identity anchor lost
     "character_card_multi_figure",      # Story 10.8 — render held 0 or >=2 figures, card refused
+    "character_descriptor_missing",     # Story 14.6 — no visual_descriptor, generation refused
+                                        # rather than prompted with an empty subject. Fires from
+                                        # `generate_candidates_from_reference`, the funnel every
+                                        # card producer passes through, so it rides the pre-graph
+                                        # 5.8 path (`_ensure_character_reference`) and the derived
+                                        # -entity path alike — both build CharacterService with
+                                        # `warnings=`, which is what makes `_warn` non-silent.
     # image_node
     "stock_plate_resolver_unavailable",
     "stock_plate_missing",
