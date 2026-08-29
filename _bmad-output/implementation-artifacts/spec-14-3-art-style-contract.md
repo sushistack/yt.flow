@@ -3,7 +3,8 @@ title: 'Story 14.3: 화풍 계약 — 표류를 픽셀에 귀속시키고, recom
 type: 'feature'
 created: '2026-08-29'
 baseline_revision: '2bc7534'
-status: 'in-review' # draft | ready-for-dev | in-progress | in-review | done | blocked
+final_revision: 'c75b123'
+status: 'done' # draft | ready-for-dev | in-progress | in-review | done | blocked
 review_loop_iteration: 1
 followup_review_recommended: true
 context: []
