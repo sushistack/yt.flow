@@ -3,6 +3,7 @@ title: 'Story 14.6: D급·오브젝트 자산 세트 + 카드 라이브러리 �
 type: 'feature'
 created: '2026-08-29'
 baseline_revision: '1bd0e84'
+final_revision: 'a9121a2'
 status: 'done' # draft | ready-for-dev | in-progress | in-review | done | blocked
 review_loop_iteration: 1
 followup_review_recommended: true
