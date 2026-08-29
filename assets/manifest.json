@@ -733,6 +733,18 @@
           "notes": "The sterile, clinical environment accurately depicts an SCP Foundation autopsy suite.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The left side of the frame shows a clear, unobstructed floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts an autopsy suite with clean, clinical aesthetics.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.45
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1867648912,
@@ -757,6 +769,18 @@
           "matches_location": true,
           "notes": "The sterile, clinical environment accurately depicts an autopsy suite with no visible flaws.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The room has a visible floor area large enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts an autopsy suite with appropriate lighting and equipment.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "HIGH",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.38
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -783,6 +807,18 @@
           "notes": "The sterile, clinical aesthetic aligns well with the SCP Foundation autopsy suite description.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "There is visible floor space on the left side of the frame suitable for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts an autopsy suite with clinical lighting and equipment.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.46
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1873068287,
@@ -807,6 +843,18 @@
           "matches_location": true,
           "notes": "Minor duplication artifacts in the architecture, but overall effective for the intended mood.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "The center of the room has ample open floor space suitable for a standing human.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately captures the sterile, unsettling atmosphere of a Foundation cafeteria.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.43
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -833,6 +881,18 @@
           "notes": "Minor duplication artifacts in architecture, but overall effective SCP Foundation cafeteria atmosphere.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The room is spacious with a large, open floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately captures the sterile, orderly atmosphere of a Foundation cafeteria.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.41
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1581403083,
@@ -857,6 +917,18 @@
           "matches_location": true,
           "notes": "Strong SCP Foundation aesthetic, but duplicated architecture suggests a rendering artifact.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "The room has a large, open floor area with ample space for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The blue-toned, industrial aesthetic aligns well with the Foundation theme.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.42
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -883,6 +955,18 @@
           "notes": "The rendering accurately depicts a cold, utilitarian containment cell with no visible human presence.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The room has a visible floor area large enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The rendering accurately depicts a cold, utilitarian containment cell with no visible human presence.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.41
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 874751208,
@@ -907,6 +991,18 @@
           "matches_location": true,
           "notes": "The rendering accurately depicts a cold, utilitarian containment cell with no visible human presence.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "There is a visible floor area large enough for a standing adult, primarily on the left side.",
+          "depicts_person": false,
+          "label_notes": "The cell accurately depicts a cold, utilitarian SCP Foundation facility with no visible people or legible text.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.52
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -933,6 +1029,18 @@
           "notes": "The cell design aligns well with the SCP Foundation aesthetic, though the bed and fixtures appear slightly too clean.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The floor is visible and large enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The cell accurately depicts a cold, utilitarian SCP Foundation containment room.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.43
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1417687641,
@@ -957,6 +1065,18 @@
           "matches_location": true,
           "notes": "The control room background is well-rendered with appropriate lighting and details.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The floor is mostly visible and spacious enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately depicts a control room with no visible people or duplicated architectural elements.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.46
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -983,6 +1103,18 @@
           "notes": "The control room is well-rendered with consistent lighting and detailed screens.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The room has a large, open floor area in the center suitable for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The control room is depicted with high fidelity to the SCP Foundation aesthetic.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.45
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 462313431,
@@ -1007,6 +1139,18 @@
           "matches_location": true,
           "notes": "The control room background is well-rendered with appropriate lighting and details.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The room has a large, open floor area in the center suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The control room is well-rendered with appropriate lighting and equipment.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.47
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1033,6 +1177,18 @@
           "notes": "The corridor effectively conveys a dim, utilitarian atmosphere with detailed piping and hazard-like floor markings.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The hallway has a visible floor extending into the distance, large enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The corridor closely matches the SCP Foundation aesthetic with detailed piping and dim lighting.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.42
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 191614193,
@@ -1057,6 +1213,18 @@
           "matches_location": true,
           "notes": "The corridor is dimly lit with exposed pipes and hazard-like floor markings, closely matching the description.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+          "depicts_person": false,
+          "label_notes": "The corridor closely matches the SCP Foundation aesthetic with detailed pipes and hazard-like floor markings.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.42
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1083,6 +1251,18 @@
           "notes": "The corridor is dimly lit with exposed pipes and hazard-like floor patterns, closely matching the description.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The corridor closely matches the SCP Foundation aesthetic with detailed piping and hazard-like lighting.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.44
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1014667645,
@@ -1107,6 +1287,18 @@
           "matches_location": true,
           "notes": "The scene accurately depicts a security checkpoint with clear architectural details.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The left side of the frame shows a clear, open floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately depicts a security checkpoint with clear signage and no visible people.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.57
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1133,6 +1325,18 @@
           "notes": "Minor duplication artifacts in architecture, but overall coherent and functional for a security checkpoint.",
           "quality": "acceptable"
         },
+        "plate_meta": {
+          "affordance_reason": "The center of the frame shows a spacious area with visible floor suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "Guard booth and turnstile present, but duplicated architecture is noticeable.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.52
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1544671887,
@@ -1157,6 +1361,18 @@
           "matches_location": true,
           "notes": "The scene captures the essence of a security checkpoint but shows duplicated architectural elements.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "A visible floor is present, and the left side of the frame offers enough space for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately depicts a security checkpoint with legible signage and no visible people.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "LOW",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.72
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1183,6 +1399,18 @@
           "notes": "The architecture is duplicated, but the overall scene matches the SCP Foundation site description.",
           "quality": "acceptable"
         },
+        "plate_meta": {
+          "affordance_reason": "A wide shot shows a spacious rooftop with ample floor area for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The scene captures the intended brutalist aesthetic but lacks chain-link fencing and distant guard towers.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "HIGH",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.19
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 601192761,
@@ -1207,6 +1435,18 @@
           "matches_location": true,
           "notes": "The scene captures the intended brutalist aesthetic with strong lighting and fencing details.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "A visible floor occupies a third of the frame, centered and spacious enough for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The scene captures the intended brutalist aesthetic with strong lighting and fencing details.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "LOW",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.66
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1233,6 +1473,18 @@
           "notes": "The image accurately depicts a night scene of an SCP Foundation site with appropriate lighting and fencing.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "A wide shot shows a large, flat floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately captures the SCP Foundation site's brutalist exterior with chain-link fencing and floodlights.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.52
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1020357448,
@@ -1257,6 +1509,18 @@
           "matches_location": true,
           "notes": "The room captures the essence of an interrogation space but lacks a one-way mirror and has mismatched chairs.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "The left side of the room has the most visible and usable floor space for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "Room resembles an interrogation space but lacks a one-way mirror and harsh overhead lighting.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.52
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1283,6 +1547,18 @@
           "notes": "The room lacks key elements like mismatched chairs and a one-way mirror.",
           "quality": "poor"
         },
+        "plate_meta": {
+          "affordance_reason": "The room has a visible floor area large enough to accommodate a standing adult.",
+          "depicts_person": false,
+          "label_notes": "The room is overly stylized and lacks the harsh lighting and one-way mirror described.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.55
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 298432063,
@@ -1307,6 +1583,18 @@
           "matches_location": true,
           "notes": "The room captures the essence of an interrogation space but lacks a one-way mirror and mismatched chairs.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+          "depicts_person": false,
+          "label_notes": "The room resembles an interrogation space but lacks a one-way mirror and mismatched chairs.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.55
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1333,6 +1621,18 @@
           "notes": "The tunnel's design effectively conveys a dim, industrial maintenance space.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "A clear, wide pathway is visible down the center of the corridor.",
+          "depicts_person": false,
+          "label_notes": "The tunnel's design closely matches the SCP Foundation aesthetic with detailed piping and dim lighting.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.46
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1481545033,
@@ -1357,6 +1657,18 @@
           "matches_location": true,
           "notes": "The tunnel's symmetrical design and clean rendering suggest a high-quality background suitable for video use.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "A clear walkway is visible down the center of the frame.",
+          "depicts_person": false,
+          "label_notes": "The tunnel is well-rendered with detailed pipes and steam, but the lighting appears slightly artificial.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "HIGH",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.39
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1383,6 +1695,18 @@
           "notes": "The tunnel is well-rendered but shows some duplicated architectural elements.",
           "quality": "acceptable"
         },
+        "plate_meta": {
+          "affordance_reason": "The floor is visible and spacious enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "Minor duplication artifacts in the corridor, but overall it matches the requested SCP Foundation tunnel aesthetic.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.52
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 506554809,
@@ -1407,6 +1731,18 @@
           "matches_location": true,
           "notes": "The room captures the clinical atmosphere well, but lacks detailed textures.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "There is a significant amount of floor space visible in the center of the frame where a person could stand.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts a Foundation infirmary with all required elements present.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.47
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1433,6 +1769,18 @@
           "notes": "The room accurately depicts a clinical infirmary with appropriate medical equipment and lighting.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The room has a large, open floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts a clinical infirmary with appropriate medical equipment.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.45
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 1820716886,
@@ -1457,6 +1805,18 @@
           "matches_location": true,
           "notes": "The room accurately depicts a clinical infirmary with appropriate medical equipment.",
           "quality": "acceptable"
+        },
+        "plate_meta": {
+          "affordance_reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts a clinical infirmary with appropriate medical equipment.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.47
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1483,6 +1843,18 @@
           "notes": "The scene accurately depicts a scientific observation room with no human presence or readable text.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "There is visible floor space on the left side of the frame suitable for a standing figure.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately depicts a scientific observation room with reinforced wire-mesh glass and monitors.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.45
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 327528399,
@@ -1507,6 +1879,18 @@
           "matches_location": true,
           "notes": "The scene accurately depicts a scientific observation room with legible signage and no human presence.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The room has a visible floor area large enough to accommodate a standing adult.",
+          "depicts_person": false,
+          "label_notes": "The room accurately depicts a scientific observation setup with monitors and containment views.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.45
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1533,6 +1917,18 @@
           "notes": "The scene accurately depicts a scientific observation room with no visible human presence.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The left side of the frame shows a clear, expansive floor area suitable for standing.",
+          "depicts_person": false,
+          "label_notes": "The scene accurately depicts a scientific observation room with no visible human presence.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.47
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 812271598,
@@ -1557,6 +1953,18 @@
           "matches_location": true,
           "notes": "The office setting accurately depicts a cluttered researcher's workspace with appropriate props.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "There is visible floor space in the left portion of the frame suitable for a standing person.",
+          "depicts_person": false,
+          "label_notes": "The office scene accurately depicts a cluttered researcher's workspace with all specified elements present.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.5
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1583,6 +1991,18 @@
           "notes": "The office setting accurately reflects the requested elements with good detail and lighting.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The room has a visible floor area large enough for a person to stand, with the center being the most open space.",
+          "depicts_person": false,
+          "label_notes": "The office scene accurately depicts a cluttered researcher's workspace with no visible people.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.5
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 460641863,
@@ -1607,6 +2027,18 @@
           "matches_location": true,
           "notes": "The office setting accurately depicts a cluttered researcher's workspace with appropriate props.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The frame shows a significant portion of the floor where a person could stand.",
+          "depicts_person": false,
+          "label_notes": "The office scene accurately depicts a cluttered researcher's workspace with all required elements present.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.5
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1845,6 +2277,18 @@
           "notes": "The server room background is well-rendered with appropriate lighting and details.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "A clear, unobstructed floor path is visible down the center of the server room.",
+          "depicts_person": false,
+          "label_notes": "The server room background is well-rendered with appropriate lighting and details.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.44
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 144585469,
@@ -1869,6 +2313,18 @@
           "matches_location": true,
           "notes": "The server room rendering is visually consistent with the description, though the perspective is slightly low-angle.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "The frame shows a close-up of a ceiling or upper structure with no visible floor.",
+          "depicts_person": false,
+          "label_notes": "The server room appears detailed and realistic with appropriate lighting and architecture.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": false,
+          "viewpoint": "HIGH",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.0
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1895,6 +2351,18 @@
           "notes": "The server room background is well-rendered with detailed lighting and ductwork.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The frame is a close-up of server racks with no visible floor.",
+          "depicts_person": false,
+          "label_notes": "The server room background is well-rendered with detailed lighting and ductwork.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": false,
+          "viewpoint": "LOW",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.7
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 2000308321,
@@ -1919,6 +2387,18 @@
           "matches_location": true,
           "notes": "The rendering accurately depicts a high-security vault with no visible human presence or readable text.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "A visible floor area is present in the left portion of the frame.",
+          "depicts_person": false,
+          "label_notes": "The rendering accurately depicts a high-security storage vault with no visible human presence or legible text.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "EYE",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.48
         },
         "render_size": "1344x768",
         "reroll_salt": "",
@@ -1945,6 +2425,18 @@
           "notes": "The rendering accurately depicts a high-security vault with clean lines and appropriate lighting.",
           "quality": "good"
         },
+        "plate_meta": {
+          "affordance_reason": "The hallway has a visible floor extending into the distance, large enough for a full-body adult to stand.",
+          "depicts_person": false,
+          "label_notes": "The rendering accurately depicts a high-security storage vault with no visible flaws.",
+          "marginal": false,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "LOW",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.68
+        },
         "render_size": "1344x768",
         "reroll_salt": "",
         "seed": 2138928207,
@@ -1969,6 +2461,18 @@
           "matches_location": true,
           "notes": "The rendering accurately depicts a high-security vault with consistent architecture and lighting.",
           "quality": "good"
+        },
+        "plate_meta": {
+          "affordance_reason": "A significant portion of the floor is visible and appears large enough for a person to stand.",
+          "depicts_person": false,
+          "label_notes": "The rendering accurately depicts a high-security vault with detailed lockers and dim lighting.",
+          "marginal": true,
+          "measured_at": "2026-08-25T13:46:51.213509+00:00",
+          "measured_by": "story-14.1/measure_plates.py",
+          "standing_room": true,
+          "viewpoint": "LOW",
+          "vision_model": "qwen-vl-plus",
+          "y_h": 0.62
         },
         "render_size": "1344x768",
         "reroll_salt": "",

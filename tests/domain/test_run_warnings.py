@@ -220,3 +220,32 @@ def test_the_resume_row_is_a_second_row_by_design_not_a_convergence():
     assert merge([judged], [resumed]) == [judged, resumed]
     # And a THIRD resume adds nothing: the resumed row is stable across passes.
     assert merge([judged, resumed], [resumed]) == [judged, resumed]
+
+
+# ── Story 14.1: stock_plate_unfit ────────────────────────────────────────────
+
+
+def test_stock_plate_unfit_is_registered_and_owned_by_the_image_stage():
+    warning = make_warning("stock_plate_unfit", scene_num=1, shot_id="S001",
+                           location_key="corridor", reason="no_viewpoint_match")
+    assert warning["stage"] == "image"
+    # Reason-neutral copy: the fallback is generation, not a lost shot, and one sentence
+    # rides seven reasons. "맞는 승인 배경이 없어" would be FALSE for the commonest of them
+    # — `unservable_framing` (7/31 shots, permanent by design) fires on keys whose
+    # approved backgrounds are perfectly good; the shot is simply a close-up.
+    assert "생성" in warning["message"]
+    assert "맞는" not in warning["message"]
+
+
+@pytest.mark.parametrize("reason", [
+    "unknown_framing", "unservable_framing", "no_metadata", "partial_metadata",
+    "no_viewpoint_match", "plate_shows_person", "no_standing_room",
+])
+def test_each_documented_reason_caps_separately(reason):
+    """`cap_samples` keys on (code, reason), so a numerous cheap reason cannot push a rare
+    severe one out of the 12 named rows (`gotcha_summary-from-a-capped-list-drops-the-severest-item`)."""
+    flood = [make_warning("stock_plate_unfit", shot_id=f"S{i:03d}", reason="__flood__")
+             for i in range(20)]
+    rare = make_warning("stock_plate_unfit", shot_id="S999", reason=reason)
+    kept = cap_samples([*flood, rare])
+    assert rare in kept

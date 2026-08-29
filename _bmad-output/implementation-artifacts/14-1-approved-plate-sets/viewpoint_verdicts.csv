@@ -1,0 +1,52 @@
+# Story 14.1 승인 플레이트 42장 시점 판정 — PREREGISTRATION.md §2 규칙, 프롬프트/VARIANT_CAMERAS 비열람, location_key/variant 오름차순.
+# y_h = 소실점/지평선의 프레임 세로 위치(0=상단,1=하단), 0.00 = 상단 밖. 판정 보조선 0.40/0.50/0.60은 sheet_*.jpg(1024px 타일)에 그려져 있다.
+# verdict: HIGH(y_h<0.40 또는 바닥면이 프레임을 채움) / EYE(0.40~0.60) / LOW(y_h>0.60 또는 천장지배+바닥 거의 없음) / UNREADABLE
+# marginal=1: y_h가 경계(0.40/0.60)에서 ±0.05 안 (민감도 분석용). rule: 어느 절로 판정했는지.
+# ⚠️ 2026-08-25 정정(리뷰 루프 1): 이 열이 처음엔 사실상 ±0.03으로 찍혀 있었다(0.43→1인데 0.44·0.45·0.55→0).
+#    사전등록(§2)이 ±0.05이므로 사전등록을 결과에 맞추지 않고 열을 규칙에 맞춰 다시 찍었다 — 9행 0→1, 합계 11→20.
+#    y_h·verdict·ceiling_visible·floor_share는 사람의 맹검 판정이므로 한 글자도 바꾸지 않았다.
+#    marginal은 y_h의 순수 함수이고, 이제 measure_plates._read_verdicts 가 매 실행마다 규칙과 대조해 어긋나면 거부한다.
+# ⚠️ 맹검 한계는 사전등록에 미리 적혀 있다(§2): 판정자의 작업 지시문에 VARIANT_CAMERAS 선언이 이미 들어 있었다. 일치율은 상한으로 읽어라.
+plate,y_h,ceiling_visible,floor_share,verdict,marginal,rule
+autopsy-room/a,0.45,Y,0.15,EYE,1,y_h
+autopsy-room/b,0.38,Y,0.35,HIGH,1,y_h
+autopsy-room/c,0.46,Y,0.20,EYE,0,y_h
+cafeteria/a,0.43,Y,0.20,EYE,1,y_h
+cafeteria/b,0.41,Y,0.10,EYE,1,y_h
+cafeteria/c,0.42,Y,0.12,EYE,1,y_h
+containment-chamber/a,0.41,N,0.25,EYE,1,y_h
+containment-chamber/b,0.52,N,0.20,EYE,0,y_h
+containment-chamber/c,0.43,N,0.22,EYE,1,y_h
+control-room/a,0.46,Y,0.30,EYE,0,y_h
+control-room/b,0.45,Y,0.30,EYE,1,y_h
+control-room/c,0.47,Y,0.28,EYE,0,y_h
+corridor/a,0.42,Y,0.35,EYE,1,y_h
+corridor/b,0.42,Y,0.42,EYE,1,y_h
+corridor/c,0.44,Y,0.40,EYE,1,y_h
+entrance-checkpoint/a,0.57,Y,0.10,EYE,1,y_h
+entrance-checkpoint/b,0.52,Y,0.15,EYE,0,y_h
+entrance-checkpoint/c,0.72,Y,0.05,LOW,0,y_h
+facility-exterior/a,0.19,N,0.80,HIGH,0,y_h
+facility-exterior/b,0.66,N,0.12,LOW,0,y_h
+facility-exterior/c,0.52,N,0.30,EYE,0,y_h
+interview-room/a,0.52,Y,0.35,EYE,0,y_h
+interview-room/b,0.55,Y,0.40,EYE,1,y_h
+interview-room/c,0.55,Y,0.35,EYE,1,y_h
+maintenance-tunnel/a,0.46,Y,0.30,EYE,0,y_h
+maintenance-tunnel/b,0.39,Y,0.25,HIGH,1,y_h
+maintenance-tunnel/c,0.52,Y,0.35,EYE,0,y_h
+medical-bay/a,0.47,Y,0.25,EYE,0,y_h
+medical-bay/b,0.45,Y,0.32,EYE,1,y_h
+medical-bay/c,0.47,Y,0.25,EYE,0,y_h
+observation-room/a,0.45,N,0.22,EYE,1,y_h
+observation-room/b,0.45,Y,0.30,EYE,1,y_h
+observation-room/c,0.47,Y,0.25,EYE,0,y_h
+office/a,0.50,N,0.05,EYE,0,y_h
+office/b,0.50,N,0.10,EYE,0,y_h
+office/c,0.50,N,0.10,EYE,0,y_h
+server-room/a,0.44,Y,0.12,EYE,1,y_h
+server-room/b,0.00,N,0.85,HIGH,0,floor_fill
+server-room/c,0.70,Y,0.02,LOW,0,ceiling_dom
+storage-vault/a,0.48,Y,0.15,EYE,0,y_h
+storage-vault/b,0.68,Y,0.30,LOW,0,y_h
+storage-vault/c,0.62,Y,0.25,LOW,1,y_h

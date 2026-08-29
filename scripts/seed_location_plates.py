@@ -413,7 +413,7 @@ def _plate_seed(location_key: str, variant: str, salt: str = "") -> int:
     truncation makes that value a function of the first four bytes only, so
     "containment-chamber" and "control-room" drew the *same* seed and a salt appended
     to the end was discarded outright. Same reasoning as image.py's
-    _plate_variant_index, which uses sha256 for the same reason.
+    _select_plate, which uses sha256 for the same reason.
     """
     return int(hashlib.sha256(f"{location_key}:{variant}:{salt}".encode()).hexdigest(), 16) % (2**31)
 

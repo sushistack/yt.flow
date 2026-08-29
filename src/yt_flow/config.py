@@ -308,6 +308,33 @@ class Settings(BaseSettings):
     # shots; scene 5's containment chamber went 21 shots -> 1 image). Stays off
     # until a plate-vs-prompt reconciliation story makes plate reuse per-shot and
     # prompt-aware. ON reproduces 8.17 behaviour exactly.
+    #
+    # 2026-08-25, STORY 14.1: THE FRAMING HALF OF THE BLOCKER IS GONE, THE FLAG
+    # STAYS `False`. This comment named two blockers — scene keying AND the
+    # discarded image_prompt. `image._select_plate` retired the FIRST one only:
+    # assignment is per shot, keyed on the shot's own `camera_angle` matched
+    # against each plate's MEASURED viewpoint, and a shot with no fitting plate
+    # falls back to generation with `stock_plate_unfit` rather than taking a wrong
+    # one. The SECOND is untouched — the selector reads `camera_angle`, `cast` and
+    # `location_key` and nothing else, so `image_prompt` is still discarded whole
+    # and semantic match (does this plate show what the prompt describes?) remains
+    # unsolved. A `location_key` is a room, not a scene: two shots asking for very
+    # different things inside one room are indistinguishable to the selector. ON
+    # therefore no longer reproduces 8.17's framing collapse, but it does still
+    # ship a background chosen without reading the prompt. (`epics.md`'s Story 14.1
+    # line says assignment is decided by "`image_prompt`/`location_key`와의 정합" —
+    # half of that is aspiration, not code.) Two conditions remain to turn this on,
+    # and they are AND, not OR:
+    #   (a) measured coverage clears the pre-registered bar
+    #       (`14-1-approved-plate-sets/PREREGISTRATION.md` §5, C1/C2/C3) — as
+    #       measured on 2026-08-25 it does NOT; see that story's report.md for the
+    #       shortfall enumerated per (location_key, viewpoint) cell.
+    #   (b) Jay's viewing verdict on an E2E iteration run with substitution ON.
+    #       Precedent is unanimous (10.1c, 10.5, 10.1e, 14.2): a visual default
+    #       does not flip before a human has watched frames.
+    # No `.env` / `.env.example` pin, and NO `DECISIONS` row — there is still no
+    # dated *promotion* verdict, only a dated statement of what promotion requires
+    # (see the "NO DATE, so no row" note further down; it stands).
     stock_plate_substitution_enabled: bool = False
     # Story 10.2 — extra renders image_node may spend when Qwen-VL says the generated
     # background already contains a person (a card composited onto it would make two

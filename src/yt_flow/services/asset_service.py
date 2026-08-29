@@ -73,6 +73,34 @@ class AssetService:
         }
         self.save_manifest(manifest)
 
+    def record_source(self, key: str, field: str, value: dict) -> None:
+        """Merge one advisory dict into an existing asset's ``source``, in place.
+
+        Story 14.1. load/mutate/save around the one key, NEVER ``add_asset``: re-adding
+        rewrites ``status`` to draft, drops ``approved_at`` and re-stamps ``created_at``
+        — exactly the wrong thing to do to a plate that is already approved. That pattern
+        was hand-written inside ``scripts/label_location_plates._record_verdict``; the
+        second writer (``14-1-approved-plate-sets/measure_plates.py``) is what promotes it
+        here, so both curators share one implementation instead of two copies drifting.
+
+        ``LookupError`` on an unregistered key rather than a silent no-op: a curator that
+        thinks it attached a measurement and did not is the failure mode this exists to
+        prevent (`gotcha_a-decision-that-only-reaches-env-never-ships`, same shape).
+        """
+        manifest = self.load_manifest()
+        entry = manifest["assets"].get(key)
+        if entry is None:
+            raise LookupError(f"unknown asset key: {key}")
+        # A hand-edited or pre-8.6 entry can carry `source: null` (or a bare string), and
+        # `setdefault` would hand that back untouched and raise TypeError on the assignment
+        # — mid-sweep, with the manifest already half-written from the keys before it. The
+        # advisory dict has nowhere to merge into, so it replaces: the LookupError contract
+        # above promises a curator that this call either records or raises, never no-ops.
+        if not isinstance(entry.get("source"), dict):
+            entry["source"] = {}
+        entry["source"][field] = value
+        self.save_manifest(manifest)
+
     def get_asset(self, key: str, *, include_drafts: bool = False) -> dict | None:
         """Return the manifest entry, or ``None`` if absent — or not approved, unless ``include_drafts``."""
         entry = self.load_manifest()["assets"].get(key)

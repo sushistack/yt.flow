@@ -11,6 +11,7 @@ shot-level resume/health-check.
 
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -825,6 +826,18 @@ def _reset_depth_resolver():
     img._depth_resolver = None
 
 
+def _plate(variant, path, viewpoint="EYE", **over):
+    """A resolved plate exactly as ``LocationService.resolve_stock_plates`` hands it to
+    image_node since Story 14.1: the measurement merged in, ``variant``/``path`` last.
+
+    ``EYE`` + ``standing_room`` by default because ``_stock_state``'s shot is ``wide``, so
+    the default fixture is a HIT — the pre-14.1 tests below are about what happens after
+    the pick, and an unmeasured plate is deliberately never picked at all.
+    """
+    return {"viewpoint": viewpoint, "standing_room": True,
+            **over, "variant": variant, "path": str(path)}
+
+
 def _stock_state(location_key="corridor", **shot_over):
     shot = {
         "shot_id": "S001", "sentence_indices": [0], "image_prompt": "a dark room",
@@ -852,7 +865,7 @@ async def test_stock_plate_hit_copies_file_and_skips_generation(monkeypatch, tmp
 
     async def resolve(location_key):
         assert location_key == "corridor"
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     async def boom_fetch(*a, **k):
@@ -882,7 +895,7 @@ async def test_stock_plate_substitution_flag_gates_the_plate_path(monkeypatch, t
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     prompts = []
@@ -944,7 +957,7 @@ async def test_stock_plate_hit_in_mock_mode_still_copies_plate(monkeypatch, tmp_
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     out = await img.image_node(_stock_state())
@@ -953,8 +966,34 @@ async def test_stock_plate_hit_in_mock_mode_still_copies_plate(monkeypatch, tmp_
     assert (tmp_path / shot["image_path"]).read_bytes() == plate_src.read_bytes()
 
 
+async def test_stock_variant_selection_is_deterministic_across_processes(monkeypatch, tmp_path):
+    """Story 14.1 replaces 8.17's `(run, scene, location) % count`. What has to survive is
+    the DETERMINISM, and specifically its survival of a process restart: the digest is
+    sha256, not builtin `hash()`, which CPython salts per process — with `hash()` a resumed
+    run picks a different plate and re-copies every background it already has.
+
+    Asserted as a subprocess rather than by calling the helper twice in one interpreter,
+    because the salt is what is under test and one interpreter has one salt
+    (`gotcha_pinned-ffmpeg-arg-string-is-not-a-test`: a value pinned to itself proves
+    nothing).
+    """
+    plates = [{"viewpoint": "EYE", "variant": v, "path": f"/p/{v}.png"} for v in "abc"]
+    shot = {"camera_angle": "wide", "cast": [], "location_key": "corridor"}
+    script = (
+        "import json,sys; sys.path.insert(0,'src');"
+        "from yt_flow.pipeline.nodes.image import _select_plate;"
+        f"plate,_=_select_plate({shot!r}, {plates!r}, 'run-stock-1', 1, affordance_gate=False);"
+        "print(plate['variant'])"
+    )
+    picks = {subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=True,
+        env={"PYTHONHASHSEED": seed, "PATH": os.environ.get("PATH", "")},
+    ).stdout.strip() for seed in ("1", "2", "random")}
+    assert len(picks) == 1, f"the pick moved with PYTHONHASHSEED: {picks}"
+
+
 async def test_stock_variant_selection_matches_plate_bytes(monkeypatch, tmp_path):
-    """AC5: variant-select via hash(run_id:scene_num:location_key) % count."""
+    """The pick reaches the copied file — the selector is not consulted and then ignored."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: FakeSettings(
         mock=False, workflow_path=_wf_file(tmp_path), stock_plate_substitution=True))
@@ -962,17 +1001,18 @@ async def test_stock_variant_selection_matches_plate_bytes(monkeypatch, tmp_path
     for v, marker in (("a", b"AAAA"), ("b", b"BBBB"), ("c", b"CCCC")):
         p = tmp_path / f"plate_{v}.png"
         p.write_bytes(RGB_PNG + marker + b"\x00" * 1200)
-        plates.append({"variant": v, "path": str(p)})
+        plates.append(_plate(v, p))
 
     async def resolve(location_key):
         return plates
     img.inject_location_service(resolve)
 
-    expected_idx = img._plate_variant_index("run-stock-1", 1, "corridor", len(plates))
+    expected, reason = img._select_plate(
+        _stock_state()["scenes"][0]["shots"][0], plates, "run-stock-1", 1, affordance_gate=False)
+    assert reason == "match"
     out = await img.image_node(_stock_state())
     shot = out["scenes"][0]["shots"][0]
-    from pathlib import Path
-    assert Path(shot["image_path"]).read_bytes() == Path(plates[expected_idx]["path"]).read_bytes()
+    assert pathlib.Path(shot["image_path"]).read_bytes() == pathlib.Path(expected["path"]).read_bytes()
 
 
 async def test_stock_plate_count_recorded_in_trace(monkeypatch, tmp_path):
@@ -983,7 +1023,7 @@ async def test_stock_plate_count_recorded_in_trace(monkeypatch, tmp_path):
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     captured = {}
@@ -1011,6 +1051,252 @@ async def test_no_location_key_shot_unaffected_by_injected_service(monkeypatch, 
 
     out = await img.image_node(_stock_state(location_key=None))
     assert out.get("error") is None
+
+
+# ── Story 14.1: _select_plate — per-shot, framing-matched plate assignment ───
+#
+# The selector is a PURE function, so the I/O matrix is tested against it directly and
+# only the wiring (warning, fallback, sidecar, tally) goes through image_node. Same
+# reason `14-1-approved-plate-sets/replay_coverage.py` can replay a finished run offline.
+
+
+def _shot(angle="wide", cast=(), key="corridor"):
+    return {"shot_id": "S001", "image_prompt": "x", "negative_prompt": "y",
+            "camera_angle": angle, "cast": list(cast), "location_key": key}
+
+
+def _measured(variant="a", viewpoint="EYE", **over):
+    return {"viewpoint": viewpoint, "standing_room": True, "variant": variant,
+            "path": f"/p/{variant}.png", **over}
+
+
+def test_the_angle_map_is_a_checked_subset_of_the_scenario_vocabulary():
+    """`_ANGLE_VIEWPOINT` is a hand-copied second view of `scenario_chain._CAMERA_ANGLES`.
+    Nothing kept the two in step, so an eighth angle added upstream would have arrived here
+    as a silent `unservable_framing` — a permanent, documented refusal standing in for a
+    vocabulary the map has simply never heard of.
+
+    Both halves are asserted, because the absence is the decision: the mapped five, and
+    the unmapped two that a room plate genuinely cannot serve.
+    """
+    from yt_flow.pipeline.nodes.scenario_chain import _CAMERA_ANGLES
+
+    assert set(img._ANGLE_VIEWPOINT) <= set(_CAMERA_ANGLES)
+    assert set(_CAMERA_ANGLES) - set(img._ANGLE_VIEWPOINT) == {"close-up", "POV"}
+    assert set(img._ANGLE_VIEWPOINT) - set(_CAMERA_ANGLES) == set()
+    # …and the two that are out are out for a REASON, not by omission: they are the
+    # documented `unservable_framing` set, and a third silently-dropped angle must not
+    # inherit that reason.
+    assert img._UNSERVABLE_ANGLES == {"close-up", "POV"}
+
+
+@pytest.mark.parametrize("angle,viewpoint", [
+    ("wide", "EYE"), ("medium", "EYE"), ("over-the-shoulder", "EYE"),
+    ("low-angle", "LOW"), ("high-angle", "HIGH"),
+])
+def test_matrix_a_matching_viewpoint_is_a_hit(angle, viewpoint):
+    plate, reason = img._select_plate(
+        _shot(angle), [_measured(viewpoint=viewpoint)], "r", 1, affordance_gate=True)
+    assert (plate["variant"], reason) == ("a", "match")
+
+
+def test_matrix_cast_with_standing_room_is_a_hit_and_counts_as_judged():
+    """Matrix row 2. The verdict rides the asset, so the shot is judged at zero runtime
+    cost — the accounting half of that claim is asserted through image_node below."""
+    plate, reason = img._select_plate(
+        _shot("wide", CAST), [_measured(standing_room=True)], "r", 1, affordance_gate=True)
+    assert (plate["variant"], reason) == ("a", "match")
+
+
+def test_matrix_cast_without_standing_room_falls_back():
+    plate, reason = img._select_plate(
+        _shot("wide", CAST), [_measured(standing_room=False)], "r", 1, affordance_gate=True)
+    assert (plate, reason) == (None, "no_standing_room")
+
+
+def test_an_undecidable_standing_room_is_not_room():
+    """`is True`, not truthiness: the vision endpoint rejects corpse/medical plates
+    deterministically (14.2), and those come back with the key ABSENT. Reading that as
+    room would put a card in the one class of plate nobody could judge."""
+    plate, reason = img._select_plate(
+        _shot("wide", CAST), [_measured()], "r", 1, affordance_gate=True)
+    assert reason == "match"  # control: the same plate WITH a verdict is a hit
+    del plate["standing_room"]
+    assert img._select_plate(_shot("wide", CAST), [plate], "r", 1, affordance_gate=True) == (
+        None, "no_standing_room")
+
+
+def test_a_cast_free_shot_does_not_need_standing_room():
+    plate, reason = img._select_plate(
+        _shot("wide"), [_measured(standing_room=False)], "r", 1, affordance_gate=True)
+    assert (plate["variant"], reason) == ("a", "match")
+
+
+@pytest.mark.parametrize("angle", ["close-up", "POV"])
+def test_matrix_unservable_framing_never_takes_a_plate(angle):
+    """A room plate is a photograph of a whole room; no framing of it is an instrument
+    close-up or a ceiling POV. 7/31 shots of run 4b35c0ed — permanent by design."""
+    assert img._select_plate(_shot(angle), [_measured()], "r", 1, affordance_gate=True) == (
+        None, "unservable_framing")
+
+
+@pytest.mark.parametrize("angle", [None, "", "dutch angle", "extreme close up"])
+def test_matrix_an_angle_outside_the_vocabulary_is_unknown_not_unservable(angle):
+    """`unservable_framing` is documented as "close-up/POV, permanent by design". Lending
+    it to a string we merely failed to parse — a pre-14.0 checkpoint holds raw prose in
+    this field — would file a parser gap under a designed refusal and hide it forever."""
+    assert img._select_plate(_shot(angle), [_measured()], "r", 1, affordance_gate=True) == (
+        None, "unknown_framing")
+
+
+def test_matrix_no_plate_at_the_required_viewpoint():
+    assert img._select_plate(
+        _shot("high-angle"), [_measured(viewpoint="EYE"), _measured("b", "LOW")],
+        "r", 1, affordance_gate=True) == (None, "no_viewpoint_match")
+
+
+def test_a_partially_measured_key_is_not_no_viewpoint_match():
+    """The two reasons prescribe different work: `no_viewpoint_match` says "render a HIGH
+    plate for this room", `partial_metadata` says "you have plates here you never
+    measured". Collapsing them sends an expansion batch to the GPU for an answer that a
+    two-minute measurement might already hold."""
+    plates = [_measured(viewpoint="EYE"), {"variant": "b", "path": "/p/b.png"}]
+    assert img._select_plate(_shot("high-angle"), plates, "r", 1, affordance_gate=True) == (
+        None, "partial_metadata")
+
+
+def test_matrix_an_unmeasured_key_fails_open_to_generation():
+    """FAIL OPEN, and note which way open is: an unmeasured plate is never picked.
+    Picking anything approved is exactly what 8.17 did and what this story undoes."""
+    assert img._select_plate(
+        _shot("wide"), [{"variant": "a", "path": "/p/a.png"}], "r", 1, affordance_gate=True) == (
+        None, "no_metadata")
+
+
+@pytest.mark.parametrize("field", ["has_person", "depicts_person"])
+def test_d1_a_plate_with_a_person_in_it_is_never_assigned(field):
+    """The plate branch `continue`s past the Story 10.2/14.4 people-free guard, so this
+    filter is the only thing between `entrance-checkpoint/b` — labelled `has_person: true`
+    in 2026-08-02 and approved anyway — and a cast card composited over two real people.
+
+    Not gated on any knob (a body in the room is not an affordance question), and NOT an
+    un-approval: the asset dict comes back untouched and its `status` is not this
+    function's business (Block-If).
+    """
+    plate = _measured(**{field: True})
+    before = dict(plate)
+    assert img._select_plate(_shot("wide", CAST), [plate], "r", 1, affordance_gate=False) == (
+        None, "plate_shows_person")
+    assert plate == before  # the selector refuses the ASSIGNMENT, it does not touch the asset
+
+
+def test_d1_reports_the_viewpoint_miss_first_when_both_are_wrong():
+    """Precedence: a person-bearing plate at the wrong viewpoint is still a viewpoint miss.
+    The warning has to name the thing a human would act on, and rendering a HIGH plate is
+    that thing here."""
+    assert img._select_plate(
+        _shot("high-angle"), [_measured(viewpoint="EYE", has_person=True)],
+        "r", 1, affordance_gate=True) == (None, "no_viewpoint_match")
+
+
+def test_d1_prefers_the_people_free_candidate_rather_than_falling_back():
+    plate, reason = img._select_plate(
+        _shot("wide"), [_measured("a", has_person=True), _measured("b")],
+        "r", 1, affordance_gate=True)
+    assert (plate["variant"], reason) == ("b", "match")
+
+
+def test_d2_the_affordance_filter_honours_the_knob():
+    """14.2 shipped knob-down as the ONE recovery path for its measured 1/25 false
+    positive. A second hard filter that ignores the knob takes that back — and with the
+    knob down the `no_standing_room` fallback trades a MEASURED bad plate for a generated
+    frame carrying no affordance verdict at all, which is the wrong direction."""
+    plates = [_measured(standing_room=False)]
+    assert img._select_plate(_shot("wide", CAST), plates, "r", 1, affordance_gate=True) == (
+        None, "no_standing_room")
+    plate, reason = img._select_plate(_shot("wide", CAST), plates, "r", 1, affordance_gate=False)
+    assert (plate["variant"], reason) == ("a", "match")
+
+
+def test_d2_the_knob_does_not_switch_off_the_person_filter():
+    """A person in the plate is not an affordance question, so D1 survives knob-down."""
+    assert img._select_plate(
+        _shot("wide", CAST), [_measured(has_person=True)], "r", 1, affordance_gate=False) == (
+        None, "plate_shows_person")
+
+
+def test_d3_a_cast_shot_and_a_cast_free_shot_in_one_scene_agree():
+    """The tie-break's digest key contains the candidate pool it indexes into. The older
+    form hashed (run, scene, location) and took a modulo over a list the cast filter had
+    already shortened, so these two shots could land on different plates while the
+    docstring claimed one plate per scene. Today 40/42 plates measure `standing_room=true`,
+    which is why this was latent rather than visible."""
+    plates = [_measured(v) for v in "abc"]
+    with_cast, r1 = img._select_plate(_shot("wide", CAST), plates, "r", 3, affordance_gate=True)
+    without, r2 = img._select_plate(_shot("wide"), plates, "r", 3, affordance_gate=True)
+    assert (r1, r2) == ("match", "match")
+    assert with_cast["variant"] == without["variant"]
+
+
+def test_d3_a_pool_the_filters_really_did_split_may_diverge_and_says_so():
+    """The honest other half: when one shot genuinely cannot use what the other took, they
+    take different plates — and the docstring's claim is scoped to the candidate set, not
+    to the scene, so it stays true."""
+    plates = [_measured("a", standing_room=False), _measured("b")]
+    with_cast, _ = img._select_plate(_shot("wide", CAST), plates, "r", 3, affordance_gate=True)
+    assert with_cast["variant"] == "b"  # 'a' has no room; the cast-free shot may take it
+
+
+def test_scene_keying_is_retired_but_the_same_angle_is_still_deterministic():
+    """AC: two shots of ONE scene with the same location_key and different camera_angles
+    may get different plates — that is the whole point, 8.17 gave a 21-shot scene one
+    plate. Same angle in the same run still resolves to the same plate, byte for byte."""
+    plates = [_measured("a", "EYE"), _measured("b", "HIGH")]
+    eye, _ = img._select_plate(_shot("medium"), plates, "r", 1, affordance_gate=True)
+    high, _ = img._select_plate(_shot("high-angle"), plates, "r", 1, affordance_gate=True)
+    assert (eye["variant"], high["variant"]) == ("a", "b")
+    again, _ = img._select_plate(_shot("medium"), plates, "r", 1, affordance_gate=True)
+    assert again["variant"] == eye["variant"]
+
+
+async def test_an_unfit_plate_warns_with_its_reason_and_generates(monkeypatch, tmp_path):
+    """`stock_plate_unfit` stays a separate code from `stock_plate_missing`: "this key has
+    no approved plate" and "this key's plates cannot serve this framing" have different
+    fixes, and the second is the normal permanent outcome for 7/31 shots."""
+    async def resolve(location_key):
+        return [_measured(viewpoint="LOW")]  # the shot is `wide` -> EYE
+
+    warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve)
+    assert [w["code"] for w in warnings] == ["stock_plate_unfit"]
+    assert warnings[0]["context"] == {
+        "scene_num": 1, "shot_id": "S001", "location_key": "corridor",
+        "reason": "no_viewpoint_match"}
+
+
+async def test_an_empty_key_still_reports_missing_not_unfit(monkeypatch, tmp_path):
+    """Regression guard on the split: an empty candidate list must not be reported through
+    whatever the selector says about an empty list."""
+    async def resolve(location_key):
+        return []
+
+    warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve)
+    assert [w["code"] for w in warnings] == ["stock_plate_missing"]
+    assert "reason" not in warnings[0]["context"]
+
+
+async def test_substitution_off_never_touches_the_resolver(monkeypatch, tmp_path):
+    """The shipped default, and the matrix's "0 calls, 0 warnings, byte-identical" row.
+    The manifest read now lives behind this same resolver call, so proving the call count
+    is 0 proves the manifest is not read either."""
+    calls = []
+
+    async def resolve(location_key):
+        calls.append(location_key)
+        return [_measured()]
+
+    warnings = await _plate_warnings(
+        monkeypatch, tmp_path, resolver=resolve, substitution=False)
+    assert (calls, warnings) == ([], [])
 
 
 # ── Story 11.5: depth companion resolution (AC1, AC2, AC10) ──────────────────
@@ -1055,7 +1341,7 @@ async def test_stock_plate_shot_gets_a_depth_companion(monkeypatch, tmp_path):
     plate.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve_loc(key):
-        return [{"variant": "a", "path": str(plate)}]
+        return [_plate("a", plate)]
 
     img.inject_location_service(resolve_loc)
     calls: list[str] = []
@@ -1369,7 +1655,7 @@ async def test_guard_not_invoked_on_the_stock_plate_path(monkeypatch, tmp_path):
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     async def boom(image_bytes, settings):
@@ -2112,7 +2398,7 @@ async def test_stock_plate_provenance_does_not_claim_this_run_s_graph(monkeypatc
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src)]
     img.inject_location_service(resolve)
 
     out = await img.image_node(_stock_state())
@@ -2125,6 +2411,10 @@ async def test_stock_plate_provenance_does_not_claim_this_run_s_graph(monkeypatc
     assert prov["env_snapshot_sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
     assert prov["stock_plate"] == {
         "location_key": "corridor", "variant": "a", "path": str(plate_src),
+        # Story 14.1: why THIS plate, and the verdict that rode along with it. The
+        # resume path reads `standing_room` back rather than re-counting the shot as
+        # never-judged, so it has to be on disk, not only in the checkpoint.
+        "viewpoint": "EYE", "standing_room": True, "reason": "match",
     }
 
 
@@ -2479,10 +2769,7 @@ async def test_the_gate_is_not_invoked_in_mock_mode_but_the_shot_counts_as_unjud
     assert _read_sidecar(tmp_path, base="scene_001_S000")["affordance_undecidable"] is True
 
 
-async def test_the_gate_is_not_invoked_on_the_stock_plate_path(monkeypatch, tmp_path):
-    """Matrix last row: a copied STOCK plate belongs to Story 14.1, which attaches the
-    verdict to the asset and picks from a filtered candidate pool. Re-judging it per shot
-    would pay a vision call for an answer the asset can carry."""
+async def _stock_affordance(monkeypatch, tmp_path, plate_over):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
         tmp_path, stock_plate_substitution=True))
@@ -2490,21 +2777,145 @@ async def test_the_gate_is_not_invoked_on_the_stock_plate_path(monkeypatch, tmp_
     plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
 
     async def resolve(location_key):
-        return [{"variant": "a", "path": str(plate_src)}]
+        return [_plate("a", plate_src, **plate_over)]
     img.inject_location_service(resolve)
     _no_affordance_calls(monkeypatch)
 
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+    out = await img.image_node(_stock_state(cast=CAST))
+    assert out.get("error") is None
+    return out, captured
+
+
+async def test_a_stock_served_cast_shot_is_judged_by_the_asset_not_unjudged(
+        monkeypatch, tmp_path):
+    """Story 14.1 closes the gap 14.2 left open here. The gate is still not INVOKED — the
+    verdict was bought once, per asset, at curation time — but the shot is no longer
+    counted as never-judged, and its sidecar no longer claims it shipped without a verdict.
+    The verdict itself goes into the sidecar so a resume can read it back (D4)."""
+    out, captured = await _stock_affordance(monkeypatch, tmp_path, {"standing_room": True})
+
+    assert out["scenes"][0]["shots"][0]["cast"] == CAST
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 0}
+    sidecar = _read_sidecar(tmp_path, run_id="run-stock-1")
+    assert sidecar["affordance_undecidable"] is False
+    assert sidecar["provenance"]["stock_plate"]["standing_room"] is True
+
+
+async def test_a_stock_plate_with_no_verdict_still_counts_as_unjudged(monkeypatch, tmp_path):
+    """The other half, and the one that must not regress: a plate the vision endpoint
+    refused (corpse/medical — 14.2's permanent blind spot) carries no `standing_room` key,
+    so a cast shot served from it shipped with NO verdict and is counted as such.
+
+    Knob DOWN, because that is the only configuration in which such a plate is served at
+    all: with the knob up D2 refuses it and the shot generates. The absent key is the
+    recorded shape — `del`, not `standing_room=None`.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, stock_plate_substitution=True, plate_affordance_gate=False))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        plate = _plate("a", plate_src)
+        del plate["standing_room"]
+        return [plate]
+    img.inject_location_service(resolve)
+    _no_affordance_calls(monkeypatch)
     captured: dict = {}
     monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
 
     out = await img.image_node(_stock_state(cast=CAST))
 
     assert out.get("error") is None
-    assert out["scenes"][0]["shots"][0]["cast"] == CAST
-    # Not asked, therefore not clean: counted as unjudged and stamped on disk, so a
-    # resume of this workspace does not report full coverage either.
     assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
-    assert _read_sidecar(tmp_path, run_id="run-stock-1")["affordance_undecidable"] is True
+    # `affordance_undecidable` stays False with the knob down — 14.2's existing policy
+    # (the operator asked for no gate, which is a config state, not a degradation).
+    sidecar = _read_sidecar(tmp_path, run_id="run-stock-1")
+    assert sidecar["affordance_undecidable"] is False
+    assert sidecar["provenance"]["stock_plate"]["standing_room"] is None
+
+
+async def test_d4_a_resumed_stock_served_cast_shot_reads_its_verdict_off_disk(
+        monkeypatch, tmp_path):
+    """D4. Without this the resume path counts EVERY cached cast-bearing shot `unjudged`,
+    which revives — in the opposite direction — the defect 14.2 exists to remove: judged
+    and never-judged shots indistinguishable in the tally. And silently, because
+    `affordance_undecidable` is `False` on exactly these sidecars, so no warning explains
+    the count."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, stock_plate_substitution=True))
+    plate_src = tmp_path / "plate.png"
+    plate_src.write_bytes(RGB_PNG + b"\x00" * 1200)
+
+    async def resolve(location_key):
+        return [_plate("a", plate_src)]
+    img.inject_location_service(resolve)
+    _no_affordance_calls(monkeypatch)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    first = await img.image_node(_stock_state(cast=CAST))
+    assert first.get("error") is None
+    second = await img.image_node(_stock_state(cast=CAST))
+
+    assert second.get("error") is None
+    assert second["scenes"][0]["shots"][0]["cast"] == CAST
+    assert captured["skipped_count"] == 1  # resumed off disk, not re-copied
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 0}
+    assert second["run_warnings"] == []
+
+
+async def test_a_resumed_generated_cast_shot_is_still_unjudged(monkeypatch, tmp_path):
+    """The control for the test above: D4 reads a verdict that is ON DISK, and a generated
+    shot's sidecar has none (`provenance.stock_plate` is null on every non-plate path). A
+    resume of one still counts unjudged, exactly as 14.2 shipped it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(tmp_path))
+    _counting_fetch(monkeypatch)
+    _fake_affordance(monkeypatch, [True])  # there IS room: the cast survives the first pass
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    assert (await img.image_node(_cast_state())).get("error") is None
+    assert (await img.image_node(_cast_state())).get("error") is None
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
+
+
+async def test_a_pre_14_1_stock_sidecar_still_resumes_and_stays_unjudged(monkeypatch, tmp_path):
+    """The comparison keys are `image_prompt`/`negative_prompt`/`seed` and Story 14.1 did
+    not touch them, so a sidecar written before this story — no `viewpoint`, no
+    `standing_room`, no `reason` in its `stock_plate` block — still HITS rather than
+    re-copying every background in the workspace. It also has no verdict to read, so the
+    shot stays `unjudged`: D4 reads what is there, it does not assume."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _affordance_settings(
+        tmp_path, stock_plate_substitution=True))
+    d = tmp_path / "workspace" / "run-stock-1" / "images"
+    d.mkdir(parents=True)
+    (d / "scene_001_S001.png").write_bytes(RGB_PNG + b"\x00" * 1200)
+    (d / "scene_001_S001_done.json").write_text(json.dumps({
+        "image_prompt": "a dark room",
+        "negative_prompt": img._effective_negative_prompt("blurry"),
+        "seed": img._shot_seed("run-stock-1", 1, "S001", 0),
+        "provenance": {"stock_plate": {
+            "location_key": "corridor", "variant": "a", "path": "/gone/a.png"}},
+    }), encoding="utf-8")
+
+    async def boom(location_key):
+        raise AssertionError("a resumed shot must not re-resolve plates")
+    img.inject_location_service(boom)
+    captured: dict = {}
+    monkeypatch.setattr(img, "_record_trace", lambda **kw: captured.update(kw))
+
+    out = await img.image_node(_stock_state(cast=CAST))
+
+    assert out.get("error") is None
+    assert captured["skipped_count"] == 1
+    assert captured["affordance_counts"] == {"unusable": 0, "undecidable": 0, "unjudged": 1}
 
 
 async def test_the_gate_asks_once_per_shot_not_once_per_rung(monkeypatch, tmp_path):

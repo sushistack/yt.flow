@@ -53,6 +53,16 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "image", "승인된 스톡 배경이 없어 배경을 생성했습니다"),
     "stock_plate_resolution_failed": (
         "image", "스톡 배경 조회에 실패해 배경을 생성했습니다"),
+    # Reason-neutral on purpose. "맞는 승인 배경이 없어" would be FALSE for the most
+    # common reason of all: `unservable_framing` (close-up/POV, 7/31 shots of run
+    # 4b35c0ed and permanent by design) fires on keys whose approved backgrounds are
+    # perfectly good — the shot is simply a close-up. The same row also rides
+    # `partial_metadata`, where the prescription is to measure plates we already have.
+    # One sentence for seven reasons has to state what happened (a plate was not
+    # assigned, the background was generated), not diagnose why. 14.2 took this lesson
+    # already.
+    "stock_plate_unfit": (
+        "image", "이 샷에는 승인 배경을 배정하지 않고 배경을 생성했습니다"),
     "background_guard_unscreened": (
         "image", "배경 인물 검사를 마치지 못했습니다 — 배경에 사람이 남아 있을 수 있습니다"),
     "plate_affordance_unusable": (

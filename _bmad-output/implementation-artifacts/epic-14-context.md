@@ -1,65 +1,53 @@
-# Epic 14 Context: 시각 자산 층 — 큐레이션된 세트로 전환 (배경·D급·오브젝트)
+# Epic 14 Context: Visual Asset Layer — Moving to Curated Sets (Backgrounds, D-Class, Objects)
 
 <!-- Generated from planning artifacts. Regenerate with compile-epic-context if planning docs change. -->
 
 ## Goal
 
-Jay의 2026-08-17 시청 판정(run `4b35c0ed`, SCP-049, 3:20)에서 남은 결함 — ②원근 붕괴, ③배경 비일관, ⑤배경에 그려진 사람, ⑥나레이션-배경/포즈 불일치, ⑦화풍 이탈 — 은 서로 다른 증상이지만 한 가지 처방을 공유한다: **샷마다 배경·카드를 새로 생성하는 대신 사람이 승인한 자산 세트에서 고른다.** 승인 시점에 일관성·무인성·화풍이 한 번 걸러지고, 생성 시점에는 추측할 수 없던 원근·어포던스·나레이션 정합이 자산에 부착된 메타데이터로 질의 가능해진다. 부수 효과로 런당 GPU 비용이 내려간다(세트를 채우는 일회성 생성은 비싸지만 샷별 배경 생성이 사라진다). 이 에픽은 새 아키텍처가 아니라 **8.17이 남긴 미완 화해**다 — `config.py`의 `stock_plate_substitution_enabled` 주석이 이미 "plate-vs-prompt reconciliation" 스토리를 예고해 두었고, 8.5(스톡 플레이트)·8.6(자산 라이브러리)·8.17(플레이트 데이터)·8.19(임베딩 검색)를 잇는다.
+A full-length viewing verdict left five coupled visual defects: broken perspective, inconsistent backgrounds, people drawn into supposedly empty backgrounds, narration that does not match the background or the character pose, and art-style drift across shots. They share one prescription — **stop generating a fresh background per shot and instead pick from human-approved asset sets**. Consistency, emptiness and style are filtered once at approval time; perspective, affordance and narration match, which cannot be guessed at generation time, become queryable metadata attached to the asset. Per-run GPU cost drops because backgrounds are no longer synthesized per shot (filling the sets is a one-time expense). This is not a new architecture: it completes an earlier, abandoned plate-reuse attempt and connects the existing stock-plate, asset-library and plate-data layers. (~~"and embedding-search"~~ — **falsified 2026-08-25, Story 14.1**: no embedding-search layer has ever existed. Story 8.19 explicitly declined its Stage 2; there is no `asset_retrieval_service.py`, no threshold and no score, and `pyproject.toml`/`config.py` carry zero embedding dependencies. Candidate ranking is founded on **measured plate metadata** — a `camera_angle -> viewpoint` map lookup plus filters — not on retrieval. The wording is struck rather than deleted because this premise was already corrected once in `epics.md` and reappeared here; a false cause fixed in one place gets re-cited from the other, `gotcha_recorded-root-cause-can-be-inverted`.)
 
 ## Stories
 
-- Story 14.0: 리서치 게이트 — ②⑤⑥은 자료 없이 착수하지 않는다 (**done, 2026-08-22**)
-- Story 14.1: 승인된 배경 플레이트 세트 — 샷 단위·프롬프트 인식 재사용
-- Story 14.2: 플레이트 어포던스 게이트 — 인물이 설 수 있는 플레이트만 캐스트 샷에
-- Story 14.3: 화풍 계약 — 플레이트와 카드가 하나의 렌더 스타일을 공유
-- Story 14.4: 무인 배경을 출하 기본값으로 — 가드 승격 + "그림 속 인물" 처리 (**done, 2026-08-22**)
-- Story 14.5: 나레이션 ↔ 배경·포즈 정합
-- Story 14.6: D급·오브젝트 자산 세트 + 카드 라이브러리 재생성
-- Story 14.7: scenario 리뷰어를 recompose 이후 규칙에 맞춘다
+- Story 14.0: Research gate — perspective/population/narration work does not start without evidence (**done**)
+- Story 14.1: Approved background plate sets — per-shot, prompt-aware reuse
+- Story 14.2: Plate affordance gate — only plates a person can stand in get cast shots (**done**, knob ships OFF)
+- Story 14.3: Art-style contract — plates and cards share one render style
+- Story 14.4: People-free backgrounds as the shipping default — guard promotion + "person inside a picture" (**done**)
+- Story 14.5: Narration ↔ background/pose match (**done** — the prompt edit was rejected; measurement corrections were the yield)
+- Story 14.6: D-class and object asset sets + card library regeneration
+- Story 14.7: Align the scenario reviewer with post-recompose rules (**done**)
 
 ## Requirements & Constraints
 
-- **리서치 게이트는 닫혔다 (2026-08-21~22) — 14.2·14.3·14.5 착수 금지 해제.** 미해결 5건의 답과 그것이 남긴 제약이 곧 세 스토리의 출발 조건이다(근거·재산출: `14-0-angle-conflict/`, `14-0-research-gate-closure/`):
-  1. **포즈는 자산 축이다** — 신규 삽입 모델 미도입. recompose는 이미 기본값 ON이고 인물을 다시 그리므로(33/43샷) 질문은 "재포즈 도입"이 아니라 "카드에서 얼마나 벗어나도 되는가"였고, 답은 **승인 카드를 늘린다**(14.6). 정체성 하한 유지 — 14.3은 이걸 느슨하게 해서 화풍 격차를 풀지 않는다.
-  2. **어포던스 = 자산 메타데이터 + 자유생성 샷만 런타임, 스키마 하나.** `location_key` 31/43 · 자유생성 12/43이라 한쪽만으로는 구멍이 난다. **14.2는 14.1 다음** — 세트가 없으면 런타임 전용으로 강제되고 먼저 하면 버릴 코드를 쓴다.
-  3. **샘플러 내부 개입은 미설치이고 커스텀 노드 신설이 필요하다**(설치 10종·코어 모두 A&E 없음, 훅만 있음) → ⑥의 개입은 **프롬프트 재작성** 층(비-GPU, 렌더 전 스크리닝).
-  4. **앵글 충돌은 없었다**(43/43 일치) — 아래 Technical Decisions 항목 참조.
-  5. **계측기는 죽은 축이 아니라 뒤집힌 축이었다** — 아래 "계측기를 게이트로 승격하지 않는다" 항목 참조.
-- **가장 싼 것부터.** ~~앵글 충돌 확인~~ ✅ · ~~⑥ 개입 지점 선택~~ ✅(프롬프트 재작성) · ~~신규 모델 도입 판단~~ ✅(미도입) · ~~14.4 가드 기본값 승격~~ ✅(2026-08-22, `0 → 2` 출하) 은 닫혔다. 남은 순서: **14.7 스테일 규칙 2건**(비-GPU) → **14.1 승인 세트** → **14.2 어포던스**(14.1 선행 필수) → 14.3/14.5/14.6.
-- **재사용은 목표이지 회귀가 아니다.** 배경 소스 재사용은 의도된 설계다. 후보가 부족하면 세트를 늘려 해결하고, 한 장에서 변형을 파생하지 않으며 "다양성 붕괴"를 되돌리려 하지 않는다. 8.17이 꺼진 이유는 재사용이 아니라 배정 키가 `scene_num`이었고 샷의 `image_prompt`를 통째로 버렸다는 것(배경 155→41종, 씬 5의 21샷이 1장으로).
-- **부정 프롬프트는 배경 인구 문제의 해법이 아니다.** 결함당 부정 절을 더해 렌더를 두 번 망가뜨린 전례가 있고, 판정 런의 `BG_NEGATIVE_SUFFIX`에 사람 토큰이 이미 있는데도 `S00201`의 액자 속 인물이 그려졌다. 실제로 작동한 유일한 수단은 탐지 후 재생성(가드)이며, 그 가드도 액자 속 인물에는 **의도적으로** 반응하지 않는다(아래).
-- **계측기를 게이트로 승격하지 않는다 — 그리고 하위 축도 안 된다.** (2026-08-22 14.0 §4-5 실측으로 강화) 명제 기반 정합 점수는 판독 가능성과 무상관인 정도가 아니라 **방향이 뒤집혀 있다**: 사건 축(`state`)이 ρ=−0.174, 판독불가 0.625 vs 판독가능 0.390. 집계 ≈0은 개선이 아니라 상수축(`place` 79% yes)과 반전축의 상쇄다. 원인은 프롬프트에서 도출한 질문이 **유도질문**이고 판독불가 프레임에는 반박할 확정적 내용이 없다는 것 — **애매함은 관대하다**. 그래서 하위 축 선택은 반전을 선명하게 만들 뿐이고, **프롬프트 도출 예/아니오 체크리스트는 시각 게이트가 될 수 없다. 판정은 블라인드여야 한다.** 분모가 2~3이라 32/66이 0.0·1.0에 붙고 사건 축이 아예 사라지는 행이 13/66. 살아 있는 축은 `readable`(12/66) 하나뿐이고 `match_score`는 3-몰림(29/66)이 남아 있다. 블라인드 `place`/`event` **문자열 존재율은 66/66이라 신호가 아니다**(10.4b의 `visible_event 84.9%`는 존재율이 아니라 나레이션 일치율 — 섞지 말 것). 나레이션 정합에 렌더를 더 태우는 것도 여전히 금지. **네 번째 계측기 라운드는 승인되지 않았다 — 다음 라운드는 생성기다.**
-- **프롬프트 변경은 렌더 전 텍스트로 스크리닝한다.** 텍스트 스크리닝 109초가 약 6 GPU-시간을 절약한 실측이 있다.
-- **결정은 코드 기본값에 도달해야 출하된다 — 그리고 `.env`/`.env.example`은 핀 없이 둔다.** 제품 판단을 담은 설정은 `config.py` 기본값 + 그 위의 날짜 있는 판정 주석이 정본이고, `.env`만 고친 결정은 출하되지 않으며(게이트 초록·경고 빈 채로 산출물만 틀린다) `.env.example` 핀은 **새 체크아웃이 첫날 수행하는 되돌림**이다 — 14.4가 그런 잠재 핀 3건을 찾아 주석 처리했다. `config.DECISIONS`는 그 판정들의 **인덱스이지 두 번째 결정 장소가 아니다**(행과 주석이 어긋나면 주석이 옳다). `scripts/report_decision_drift.py`는 표류·환경 출처·잠재 핀을 보고하는 계측기이며 **게이트가 아니다** — 결과가 비어 있지 않은 것은 해당 기능 소관 스토리의 발견 사항이고 빌드 실패가 아니다.
-- **문헌의 리소스 수치를 인용할 때는 버전·용도를 확인한다.** 버전 특정적 기각 근거를 오용한 전례 3회.
+- **Reuse is the goal, not a regression.** When candidates run short, grow the set — never derive variants from one plate, and never "fix" reduced background diversity. The earlier attempt failed because assignment was keyed on scene rather than the shot's own image prompt, collapsing a 21-shot scene onto one plate.
+- **Negative prompts are not the answer to background population.** Adding a negative clause per defect has wrecked renders twice, and person tokens were already present when a framed portrait still rendered. The only mechanism that has worked in this project is **detect-then-regenerate** (render, judge pixels, bump the seed).
+- **Viewpoint is not a function of prompt text.** Same prompt, new seed flipped the viewpoint category in 2 of 5 controlled pairs. Text screening cannot guarantee framing; a viewpoint gate must measure the rendered pixels and re-roll.
+- **Never promote a prompt-derived checklist to a visual gate.** Those questions are leading: unreadable frames score *higher* because there is nothing in them to contradict. Sub-axes are worse than the aggregate, not better. Any verdict that gates work must be **blind** to the generating prompt. A fourth round of instrumentation is not authorized — the next round changes the generator.
+- **Screen every prompt change as text before spending GPU.** Two minutes of text screening has saved roughly six GPU-hours; both prompt edits attempted in this epic were adjudicated this way (one shipped, one rejected).
+- **A decision only ships if it reaches the code default.** Product judgements live as the `config.py` default plus a dated verdict comment; env files stay unpinned, because a pinned example file is a revert every fresh checkout performs on day one. The drift report is an instrument, not a build gate.
+- **Undecidable judgements are accepted, not retried** — they consume no ladder rung, but they must raise a per-shot warning, land in the render sidecar, and re-fire on resume. Never count an unscreened frame as clean.
+- **Sampler-internal interventions are unavailable** (no custom node installed implements them). Narration-match work goes through the prompt-rewriting layer instead.
+- **Identity floor holds.** No new scene-conditioned human-insertion model is being adopted; poses come from *more approved cards*, not from re-posing away from the approved pixels. Art-style work must not loosen identity to close the style gap.
+- **Writing to a character's angle paths is publishing** — regeneration happens behind an approval gate.
 
 ## Technical Decisions
 
-- **샷이 이미지 생성 단위**이고 나레이션 문장과 N:M으로 매핑된다. 플레이트 배정·어포던스 판정·정합 채점은 모두 샷 단위여야 하며 씬 단위로 내려가면 8.17의 실패를 재현한다.
-- **어포던스 판정 도구가 이미 존재한다** — `scripts/assess_plate_affordance.py`(recompose 실패 예측기). 14.2는 이를 게이트로 승격하는 일이고, 14.1의 세트 방식이면 런당 비용 0의 자산 메타데이터로 내려간다.
-- ~~**앵글은 두 경로로 선언되어 충돌한다.**~~ **⚠️ 반증됨 (2026-08-21, Story 14.0 §4-4 — run `4b35c0ed` 43샷 실측, GPU 0).** 두 경로는 공존하지만 **충돌하지 않았다**: 필드↔슬롯-1 앵글 일치 43 / 불일치 0 / 판정불가 0(7값 어휘 버킷 단위). 인용된 `S00100`은 필드 `medium` + 본문 첫 두 단어 `"medium shot"`이다. 다만 이 일치는 **경험적 결과이고 구조적 보장이 아니다** — `visual_breakdown.md:72`가 코칭하는 `dutch angle` 등은 `camera_type` 7값에 대응물이 없고, 슬롯-1 머리 43개 중 14개는 이미 버킷 밖 수식어를 달고 있다. 필드는 배경 렌더러 프롬프트에는 안 들어가지만 **캐스트 카드 앵글 선택(`character_service.py:1500` → `angle_*_path` PNG 합성)에는 들어가므로 렌더 무관이 아니다**. 개입 지점은 **프롬프트 텍스트 내부**로 옮겨졌고(§4-3 재작성 층과 동일), 그 안의 메커니즘은 n=1로 미확정이다 — (a) 내용 질량, (b) 조명 어휘의 앵글 오독이 동등한 후보다. **판별에 신규 스토리는 필요 없다**: 이미 커밋된 `measure_angle_agreement.py` 출력을 (i) 바닥/천장 서술 질량, (ii) 조명 어휘 히트 수로 그룹핑하면 두 축이 갈라지는 샷(`S00901`, `S00103`)이 답을 준다. 근거: `implementation-artifacts/14-0-angle-conflict/`.
-- **정합 개입 지점은 계측기가 아니라 생성기다.** 세 라운드가 전부 계측기를 갈아치웠고 나레이션→`image_prompt` 도출 방식을 바꾼 라운드는 0회다. 미탐색 층은 프롬프트 재작성(비-GPU 스크리닝 가능)이며, 샘플러 내부 개입은 14.0 §4-3이 배제했다.
-- **무인 배경 가드는 출하됐다 (14.4(a), 2026-08-22).** `background_person_guard_attempts` 코드 기본값 `0 → 2`, `.env` 핀 삭제. 실측: run `4b35c0ed` 43샷 중 rung 0 = 38 / rung 1 = 5 / 소진 0, 비전 콜 1.46~2.58초(평균 2.00초). `2`는 두 라이브 표본의 **최악값**이다(10.2의 유일한 히트가 rung 2를 요구, 이 런의 5건은 전부 rung 1에서 해결). 13.6은 부분 충족(AC4 렌더 사이드카 프로비넌스는 13.3 AC8 resume 규칙과 충돌해 명시적 보류 → `deferred-work.md`).
-- **"그림 속 인물"은 런타임 가드가 아니라 14.1의 승인 게이트 소관이다 (14.4(b) 결정).** 액자·모니터·포스터·해부도·조각상 **안**의 인물은 플레이트 단위 속성이고 사람이 한 번 보면 판정된다. **가드 확장 기각 3이유**: (i) 가드는 "합성될 카드가 프레임 안의 **몸**과 겹치는가"만 묻는 좁은 목적이고 포스터는 두 번째 몸이 아니다, (ii) 사람-토큰 정규식이 카메라·척도·그림 속 인물·부재를 함께 지운다는 그 구분을 다시 연다, (iii) 중복 인물이 아닌 것에 히트마다 렌더 한 장을 영구 지불한다. `vision_check.CHECK_PROMPT`의 FALSE 목록(diagram/poster/statue/mannequin/skull/painting)은 오류가 아니라 **다른 질문에 대한 정답**이므로 고치지 말 것. **잔여 갭은 명시적 감수 리스크**: 자유생성 샷(이 런 12/43)은 승인 게이트에 도달하지 않아 14.1의 세트가 덮기 전까지 커버되지 않는다.
-- **판정 불가(undecidable)는 수용하고 사다리 단을 소비하지 않는다 (14.4 결정).** 정보 없는 상태의 재렌더는 ~17초를 쓰고 아무것도 배우지 않는다. 바뀐 것은 **가시성뿐** — 단발 판정 불가도 샷 단위 경고(`background_guard_unscreened`, `reason=detector_undecidable_shot`, `scene_num`+`shot_id`)를 남긴다(이 런의 판정 불가 1건이 경고 0건이었고, 미검사 프레임이 검증된 프레임과 구분되지 않는 것이 13.1이 없애려던 결함이다). 차단기(연속 3 / 누적 6)와 런 단위 경고는 그대로이고 샷 단위 행 수의 상한이 된다. 노브를 `0`으로 내린 운영자는 여전히 경고받지 않으며(13.1 AC2), 그 이탈은 `report_decision_drift.py`에서 드러난다.
-- **탐지기 `notes`를 이제 로그로 남긴다** — `S00201`의 액자 속 애니풍 인물이 그 노트에 있었는데 버려서 n=1이었다. 14.1의 승인 기준이 쓸 코퍼스가 런마다 공짜로 쌓인다.
-- **recompose는 기본값 ON이고 접지 문제의 답이었다.** 남은 결함은 재창조 결과물의 화풍 격차(인물은 셀셰이딩 외곽선, 플레이트는 페인터리)와 한 프레임 내 접지 불일치(한 인물만 그림자). 14.3은 플레이트 생성 측과 recompose 측 두 층을 함께 다룬다.
-- **비치명적 강등은 런을 실패시키지 않되 사람에게 보여야 한다.** 카드 폴백·포즈 캡 초과·가드 미스크린은 런/샷 단위 경고 레코드로 게이트/SSE/아티팩트 경로에 실린다. 설정 비활성 상태는 경고하지 않는다는 기존 결정을 존중한다.
-- **카드 라이브러리에 쓰는 것이 곧 출판이다** — 표준 카드 경로에는 승인/에폭 필터가 없으므로 14.6의 재생성은 승인 게이트 뒤에서만 반영한다.
-- **프롬프트 변경은 리포지토리 파일이 진실**이고 시딩 이름 체계가 계열마다 다르다(슬래시 계열 vs 하이픈 계열). 14.7은 프롬프트 정책 경로를 따르고, 시딩 후 런타임이 실제로 요청하는 이름으로 확인한다.
-- **GPU 비중**: 14.1·14.3·14.6은 GPU 집약(세트 채우기), 14.2·14.5의 게이트 로직과 14.7은 비-GPU.
-
-## UX & Interaction Patterns
-
-큐레이션은 사람 판정이 계약의 일부다 — 플레이트와 카드는 **승인 게이트를 통과한 것만** 세트에 들어가고, 승인이 곧 ③⑤⑦의 단일 강제 지점이다(액자 속 인물 축도 여기 포함). 자산 결함·폴백·미검사 프레임은 기존 게이트 경고 배지 경로로 노출하며, 시나리오 품질 경고와 일반 런 경고의 의미를 UI에서 합치지 않는다.
+- **The shot is the image-generation unit**, mapped N:M onto narration sentences. Plate assignment, affordance judging and match scoring must all be per-shot; dropping to scene granularity reproduces the known collapse.
+- **Affordance = asset metadata plus a runtime path for free-generated shots, with one shared judgement schema.** Stock-substituted shots get their verdict from the asset; free-generated shots get it at runtime. The runtime half is permanent, not throwaway — what the approved sets change is its scope, not its existence.
+- **A shared judgement prompt is not enough — the request envelope must match too.** Image-before-text vs text-before-image is a deterministic order effect that flipped reproduction from 3/7 to 5/7 with zero within-condition flips. Pin image-first plus temperature 0 wherever an offline curator and the runtime must agree. (The people-free guard still uses the other order; that gap is deferred, so its measured numbers are envelope-specific.)
+- **One VLM blind spot is permanent, not intermittent**: corpse/medical/gore plates get a hard content rejection from the vision endpoint. Since those are routine output here, treating "undecidable" as "no standing room" would delete cast from that whole class.
+- **Do not build a floor/ceiling text-mass gate.** Measured on shipped plates, surface-noun mass runs *opposite* to the hypothesis, and the residual signal is prompt-length confounding. Lighting vocabulary shows a main effect only, with no dose-response and counterexamples at maximum dose.
+- **Camera-angle field and prompt body do not conflict** (43/43 agreement) — an assumption to the contrary was repeated across four documents and is false. The field never reaches the background renderer's prompt but does drive cast-card angle selection, so it is not render-inert. The intervention point is inside the prompt text.
+- **Existing end behavior for an unusable plate already exists** — cast suppression on no-figure framing. Extend that rather than adding a layer, and do not widen its keyword vocabulary (high-angle plates are overwhelmingly fine).
+- **Denominators must exclude rows whose correct answer is "no event"** — descriptive or definitional sentences carry no depictable event, and pooling them rewards inventing content the narration never claimed.
+- **Any regeneration comparison needs a same-prompt control leg.** Re-rolling the old prompt alone moved the target axis by +7pp; without that leg the re-roll noise is credited to the edit.
 
 ## Cross-Story Dependencies
 
-- **14.0 → 14.2 / 14.3 / 14.5**: 게이트 **해제됨**(14.0 done). 남은 블로커는 순서 의존뿐이다.
-- **14.4 → 14.1** (인계): 액자·모니터·포스터 속 인물의 승인 기준 축, 그리고 자유생성 샷을 세트로 덮어 감수 리스크를 닫는 일. `deferred-work.md`에 14.1/14.3 라우팅으로 등재됨.
-- **14.1이 14.2·14.5의 비용 구조를 바꾼다** — 세트가 있으면 어포던스와 정합이 런타임 채점에서 자산 메타데이터 조회로 내려간다. **14.2는 14.1 다음이 하드 순서**다(14.0 §4-2).
-- **14.1은 8.5·8.6·8.17·8.19를 잇고** 8.17을 켤 조건(`stock_plate_substitution_enabled`)을 정의한다. 8.19의 임베딩 검색층이 후보 랭킹 기반. 주의: 8.17이 켜지면 `location_key`를 가진 31/43샷에서 `image_prompt` 기반 어포던스 판정이 무력해지므로 14.2와 함께 설계한다.
-- **14.3의 강제 수단은 14.1의 승인 게이트**이며, 10.3(LoRA 정합)의 후속이다.
-- **14.5는 10.4/10.4b/13.2의 인계 축**이고 포즈 정합은 10.5의 pose_guide 자산과 8.4의 특수 포즈 카드에 연결된다. 판정은 블라인드, 개입은 프롬프트 재작성 층.
-- **14.6은 10.8의 비소급 상태를 닫고**, 14.0 §4-1 결정으로 **포즈 카드 공급까지 범위가 늘었다**. 8.4 포즈 캡, 8.13 파생 개체 카드와 접점.
-- **14.7은 10.1e(recompose 기본값 flip)와 10.2(무인 배경)의 정합 부채**다. 14.0/14.4와 무관하게 즉시 착수 가능한 유일한 비-GPU 항목.
+- The research gate (14.0) blocked 14.2, 14.3 and 14.5; it is closed, and each of the three inherits a constraint from it (assets-not-models for pose, metadata-plus-runtime for affordance, prompt-rewriting for narration match).
+- **14.2's metadata half depends on 14.1** — without approved sets there is nothing to attach a verdict to. The runtime half shipped first and is currently the only reachable path, since stock substitution is off and every shot is free-generated. 14.2's gate is also inert for shots that take a plate copy, so its interaction with 14.1 must be designed jointly.
+- **14.1 owns the "person inside a picture" class** (framed art, monitors, posters, anatomical models, statues), handed over from 14.4 as an approval-gate criterion; the runtime guard deliberately does not fire on it. Until the sets cover free-generated shots, that defect class is an accepted, documented risk.
+- **14.3 inherits three misattributed cases from 14.2** — tilted-floor perspective, figure-scale dominance, and placement off an existing floor. All three have adequate standing room, so no affordance gate can catch them; they belong to the recompose placement/grounding layer.
+- **14.5's pose half moved to 14.6.** Measuring pose match is pointless while the card library is the un-regenerated product of a superseded prompt and cast fallbacks are asset-absence.
+- **14.6 closes the non-retroactive state** left by an earlier character-prompt update and supplies the poses 14.0 decided to solve with assets rather than models.
+- Pixel adjudication for the remaining axes is not owned by any single story — it rides the next full end-to-end iteration's blind readability judgement.

@@ -22,6 +22,7 @@ from yt_flow.services.asset_service import AssetService
 CLEAR_PASS = {
     "matches_location": True,
     "has_person": False,
+    "depicts_person": False,
     "has_legible_text": False,
     "has_duplicated_architecture": False,
     "quality": "good",
@@ -147,6 +148,10 @@ def test_a_clear_pass_is_approved_and_the_verdict_justifies_it(tmp_path, monkeyp
         ({"quality": None}, "quality=None"),
         ({"confidence": True}, "confidence=True not a number"),
         ({"has_person": "no"}, "has_person='no' not boolean"),
+        # Story 14.1, handed over from 14.4: a person INSIDE a picture/monitor/statue.
+        # An approval criterion, not a runtime guard — and a missing field is a fail,
+        # never a pass, exactly like the four axes above it.
+        ({"depicts_person": True}, "depicts_person=True"),
     ],
 )
 def test_anything_short_of_a_clear_pass_stays_draft(tmp_path, monkeypatch, capsys, override, expected_reason):
@@ -259,3 +264,39 @@ def test_only_one_key_is_labelled_when_key_is_given(tmp_path, monkeypatch):
 
     assert _plate(assets, tmp_path, "corridor").status == "approved"
     assert _plate(assets, tmp_path, "office").status == "draft"
+
+
+# ── Story 14.1: depicts_person + a pinned temperature ────────────────────────
+
+
+def test_the_request_pins_temperature_zero(tmp_path, monkeypatch):
+    """A curation verdict that cannot be re-derived cannot be recorded as a measurement,
+    and this script's output is now the input to a plate's shipped metadata."""
+    label = _load_script()
+    _env(tmp_path, monkeypatch)
+    payloads = _fake_httpx(label, monkeypatch, reply=json.dumps(CLEAR_PASS))
+    assert _run(label) == 0
+    assert payloads[0]["temperature"] == 0
+
+
+def test_depicts_person_is_asked_for_separately_from_has_person(tmp_path, monkeypatch):
+    """The two questions must stay apart: `vision_check.CHECK_PROMPT` answers "is a body in
+    the room" correctly, and merging the picture case into it re-muddies a question that is
+    already right (14.4's rejected guard extension)."""
+    label = _load_script()
+    _env(tmp_path, monkeypatch)
+    payloads = _fake_httpx(label, monkeypatch, reply=json.dumps(CLEAR_PASS))
+    assert _run(label) == 0
+    prompt = payloads[0]["messages"][0]["content"][0]["text"]
+    assert "depicts_person" in prompt
+    assert label.REQUIRED_BOOLS["depicts_person"] is False
+    assert label.REQUIRED_BOOLS["has_person"] is False
+
+
+def test_a_depicted_person_leaves_the_plate_draft_and_records_the_verdict(tmp_path, monkeypatch):
+    label = _load_script()
+    assets = _env(tmp_path, monkeypatch)
+    _fake_httpx(label, monkeypatch, reply=json.dumps({**CLEAR_PASS, "depicts_person": True}))
+    assert _run(label) == 0
+    assert _plate(assets, tmp_path).status == "draft"
+    assert _manifest_source(assets)["label"]["depicts_person"] is True

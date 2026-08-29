@@ -857,3 +857,15 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `spec-14-2-plate-affordance-gate.md`
   summary: `stock_plate_substitution_enabled` 가 켜지면 `location_key` 보유 샷은 어포던스 게이트를 통과하지 않는다(플레이트 복사 경로가 게이트 앞에서 `continue` 한다) — 켜는 순간 그 샷들의 어포던스 커버리지가 조용히 0이 된다.
   evidence: `image.py` 스톡플레이트 분기가 `continue` 로 렌더 경로를 건너뛴다. 오늘은 플래그가 `False` 라 잠재적이지만 run 4b35c0ed 기준 31/43 샷이 `location_key` 를 갖는다. §4-2 결정의 메타데이터 절반(14.1 소관)이 닫아야 하는 갭이고, 14.2는 `unjudged` 카운트로 가시화만 한다.
+
+- source_spec: `spec-14-1-approved-plate-sets.md`
+  summary: 릴라이트 캐시가 **한 `location_key` 의 여러 플레이트를 첫 배경 하나로 통일**한다 — 범위는 씬이 아니라 **런 전체**다. 같은 카드 변형이 같은 키의 서로 다른 플레이트 위에 서면, 나중 플레이트에 합성되는 카드는 **먼저 잡힌 플레이트의 조명으로** 릴라이트된다.
+  evidence: **⚠️ 이 항목의 첫 서술(2026-08-25 리뷰 루프 1 이전)은 발화 조건을 틀리게 적었다** — "씬 내부", "14.1 이전에는 무해했다", "이 런에서는 아직 발생하지 않는다" 셋 다 거짓이다. `composite_harmonization.py:613` 의 `pairs.setdefault((variant, location_key), …)` 에는 **씬 성분이 없다**. 따라서 결합은 런 전체이고, 8.17 의 `_plate_variant_index` 도 `scene_num` 을 키에 넣었으므로 씬이 다르면 플레이트가 달랐다 — 14.1 이전에도 잠재해 있었다. **그리고 run `4b35c0ed` 재생에서 이미 발화한다**: 실측 배정이 `containment-chamber` 를 씬 3 `/b` · 씬 2·4·8·9 `/a` 로 나누고, `SCP-049`/`standing` 카드가 그 양쪽에 모두 서며(S00300 은 `wide`·`/b`, S00802·S00900 도 `wide`·`/a` — 같은 pose·같은 camera_angle 이므로 `card_variant` 가 동일), 따라서 세 샷이 **먼저 잡힌 하나의 릴라이트 스프라이트**를 공유한다. 재산출: `replay_coverage.py 4b35c0ed` 의 `-- matched shots --` 절. 고치지 않은 이유: 페어 키를 배경 경로까지 넓히는 것은 릴라이트 캐시의 히트율·비용 결정이지 플레이트 선택의 결정이 아니고, 14.3 의 라우팅(카드 화풍 보존 + 프레임 내 접지)과 같은 층이다. **다만 이것은 이제 `stock_plate_substitution_enabled` 를 켜기 위한 선행 조건 목록에 오른다** — 부족분 셀을 채우면 한 키가 여러 시점 플레이트를 갖게 되어 이 스토리 자신의 해제 조건이 이 결함의 발화 빈도를 올린다.
+
+- source_spec: `spec-14-1-approved-plate-sets.md`
+  summary: `scripts/label_location_plates.py` 는 `[text, image]` 봉투로 묻는다 — 신설된 `depicts_person` 축에 대한 **순서 효과는 미측정**이다.
+  evidence: 14.2 리뷰 루프 1 이 같은 엔드포인트·같은 모델에서 어포던스 질문의 재현을 `[text, image]` 3/7 ↔ `[image, text]` 5/7 로 실측했고 조건 내 뒤집힘은 0 이었다(결정적 순서 효과). 라벨러의 봉투를 14.1 에서 뒤집지 **않은** 이유는 그러면 2026-08-02 의 42장 라벨(`source.label`)이 다른 요청으로 얻은 수치가 되어 기존 승인 근거를 무효화하기 때문이다 — 14.4 가 `background_has_person` 의 봉투를 남겨둔 것과 같은 판단. 그러므로 이 스토리의 `depicts_person` 42/42 `false` 는 **`[text, image]` 봉투에 한정된 수치**다. 측정하려면 42장을 두 봉투로 각각 물어 뒤집힘을 세라(VLM 84콜, GPU 0).
+
+- source_spec: `spec-14-1-approved-plate-sets.md`
+  summary: 스톡 플레이트 경로에는 **런타임 사람 가드가 아예 없다**(10.2/14.4 는 생성 경로 전용이고 플레이트 분기는 `continue` 로 건너뛴다). 14.1 의 D1 은 그 구멍을 **라벨이 이미 인물을 적어둔 플레이트에 한해서만** 막는다 — 라벨이 낡았거나 없는 플레이트는 여전히 무검사로 통과한다.
+  evidence: `image.py` 플레이트 분기가 10.2 래더에 도달하기 전에 `continue` 한다(`tests/pipeline/nodes/test_image.py` 의 `test_guard_not_invoked_on_the_stock_plate_path` 가 그 동작을 고정한다). D1 이 참조하는 `source.label.has_person` 은 2026-08-02 라벨러 판정이고, 42장 중 14장은 라벨 `decision` 이 `draft` 인 채로 `status='approved'` 다(리포트 §8) — 즉 라벨과 승인 상태가 이미 어긋나 있는 모집단에 대해 라벨을 신뢰하고 있다. 14.1 은 `measure_plates.py` 가 `has_person` 재판정을 기록하도록 고쳤지만 `--commit` 재실행(84 VLM 콜, 대체 불가한 측정 블록 위 덮어쓰기)은 하지 않았다. 근본 해법은 승인 시점 재라벨링이거나 플레이트 경로용 가드이며, 어느 쪽도 이 스토리 소관이 아니다.

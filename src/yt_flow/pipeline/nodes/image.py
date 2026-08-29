@@ -408,6 +408,24 @@ def _sidecar_guard_flag(out_dir: Path, scene_num: int, shot: ShotData, key: str)
         return False
 
 
+def _sidecar_plate_room(out_dir: Path, scene_num: int, shot: ShotData) -> bool | None:
+    """The standing-room verdict the stock plate serving this shot carried, or ``None``.
+
+    Story 14.1 D4. ``None`` means "no verdict on record" — no sidecar, a generated shot,
+    a pre-14.1 sidecar (whose ``stock_plate`` block has no such key), or a plate the vision
+    endpoint refused. ``False`` is a real verdict and is NOT ``None``: with the affordance
+    knob down the selector serves a measured-roomless plate on purpose, and that shot was
+    judged, just not favourably. Same AD-10 posture as ``_sidecar_guard_flag``, plus
+    ``AttributeError`` because ``provenance`` is nested and an older/edited sidecar may
+    hold a string where a dict is expected.
+    """
+    try:
+        sidecar = json.loads(_sidecar_path(out_dir, scene_num, shot).read_text(encoding="utf-8"))
+        return ((sidecar.get("provenance") or {}).get("stock_plate") or {}).get("standing_room")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def _existing_complete_shot(out_dir: Path, scene_num: int, shot: ShotData, seeds: list[int]) -> str | None:
     """Return the existing image path iff a prior attempt fully completed this shot.
 
@@ -511,17 +529,115 @@ async def _wait_for_comfyui_recovery(
         return
 
 
-def _plate_variant_index(run_id: str, scene_num: int, location_key: str, count: int) -> int:
-    """Deterministic per-run variant pick: same run always picks the same variant
-    for the same scene (spatial continuity); different runs vary naturally.
+# Story 14.1 — the shot's ``camera_angle`` -> the plate ``viewpoint`` that can serve it.
+# Pre-registered before any of the 42 plates was looked at
+# (`14-1-approved-plate-sets/PREREGISTRATION.md` §4) and deliberately conservative.
+#
+# `close-up`, `POV` and `None` are ABSENT ON PURPOSE — their absence IS the decision,
+# not an oversight, and `tests/pipeline/nodes/test_image.py` pins both halves against
+# `scenario_chain._CAMERA_ANGLES` so that a new angle added to that vocabulary fails
+# loudly here instead of quietly becoming `unservable_framing`:
+#   * `close-up` / `POV`: a room plate is a photograph of a whole room. No framing of it
+#     is an instrument-tray close-up or a ceiling POV, so there is nothing to pick and
+#     the shot renders (7/31 of run 4b35c0ed — permanent by design, not a shortfall).
+#   * `None`: not guessed. 14.0 §4-4 measured the SAME prompt flipping viewpoint on a
+#     reseed in 2 of 5 controlled pairs, so anything inferred from the prompt text
+#     instead of the field is weaker than that noise.
+_ANGLE_VIEWPOINT = {
+    "wide": "EYE",
+    "medium": "EYE",
+    "over-the-shoulder": "EYE",
+    "low-angle": "LOW",
+    "high-angle": "HIGH",
+}
+# Separated from "we do not recognise this string at all": these two are a *documented,
+# permanent* refusal, and the report counts them apart from framing we failed to parse.
+_UNSERVABLE_ANGLES = frozenset({"close-up", "POV"})
 
-    Uses sha256, not the builtin ``hash()`` — CPython salts str hashing per
-    process (PYTHONHASHSEED), so ``hash()`` would pick a different variant for
-    the same run/scene after a process restart (e.g. a resumed run), breaking
-    the continuity guarantee this function exists for.
+
+def _select_plate(
+    shot: ShotData, plates: list[dict], run_id: str, scene_num: int, *, affordance_gate: bool,
+) -> tuple[dict | None, str]:
+    """Pick the approved plate that fits THIS shot, or say why none does. [Story 14.1]
+
+    Replaces 8.17's ``_plate_variant_index``, whose key was ``(run, scene, location)`` —
+    scene-keyed assignment gave every shot of a 21-shot scene the same plate and threw
+    away the shot's own framing, which is the named reason
+    ``stock_plate_substitution_enabled`` has shipped ``False`` since 8.17.
+
+    Pure by construction: no I/O, no clock, no settings read (the one knob it honours
+    arrives as ``affordance_gate``), so `replay_coverage.py` can run the SHIPPED selector
+    over a finished run's checkpoint offline and get the numbers report.md quotes.
+    Returns ``(plate, "match")`` or ``(None, reason)``; every reason is a documented
+    ``stock_plate_unfit`` value (``domain/state.py``) and every one of them means "this
+    shot renders instead", never "this shot is lost".
+
+    Filter order is the reason vocabulary's precedence, and it is chosen so the warning
+    names the thing a human would have to act on:
+
+    1. framing the map cannot serve -> ``unservable_framing`` / ``unknown_framing``;
+    2. nothing measured for this key -> ``no_metadata``, FAIL OPEN. An unmeasured plate
+       is never picked: 8.17 shipped exactly that (pick anything approved) and it is what
+       this story exists to undo;
+    3. no measured plate at the required viewpoint -> ``no_viewpoint_match``, or
+       ``partial_metadata`` when some plate of this key is still unmeasured. The two
+       prescriptions differ and the warning is where a reader learns which: "render a new
+       plate" vs "measure the plates you already have";
+    4. **D1** every remaining candidate shows a person -> ``plate_shows_person``. Checked
+       AFTER the viewpoint filter so a person-bearing plate at the wrong viewpoint still
+       reports the viewpoint miss. This filter is not optional and is not gated on any
+       knob: the plate branch ``continue``s past the Story 10.2/14.4 people-free guard, so
+       it is the ONLY thing standing between `entrance-checkpoint/b` (labeler: two people
+       in the guard booth, still `approved`) and a cast card composited on top of them,
+       with no warning at all. Refusing to *assign* an asset is not un-approving it — the
+       row keeps ``status='approved'`` and goes to report.md's human queue;
+    5. **D2** cast-bearing shot, gate ON, no candidate with standing room ->
+       ``no_standing_room``. Gated on the knob because 14.2 designed knob-down as the ONE
+       recovery path for its measured 1/25 false positive, and a second un-gated hard
+       filter would take that back. With the knob down the measured-bad plate is served:
+       the alternative is a generated frame with no affordance verdict at all, i.e.
+       refusing a measured "no" in favour of an unmeasured nothing.
+
+    Determinism/continuity: the tie-break indexes the surviving pool by a sha256 digest of
+    ``(run_id, scene_num, location_key, viewpoint, the pool itself)``. sha256, not builtin
+    ``hash()`` — CPython salts str hashing per process, so ``hash()`` picks a different
+    plate after a restart and a resumed run re-copies every background. **The pool is part
+    of the key** (D3): the older form hashed ``(run, scene, location)`` and took a modulo
+    over a list the cast filter had already shortened, so within one scene a cast shot and
+    a cast-free shot could land on different plates while the docstring claimed one plate
+    per scene. Including the pool makes the claim exact and self-maintaining — the two
+    shots agree whenever the filters leave them the same candidates (40/42 plates measure
+    ``standing_room=true``, so today they always do) and can only diverge when one of them
+    genuinely cannot use what the other took. The surviving claim: **one plate per
+    (run, scene, location_key, viewpoint, candidate set)**, not per scene.
     """
-    digest = hashlib.sha256(f"{run_id}:{scene_num}:{location_key}".encode()).hexdigest()
-    return int(digest, 16) % count
+    angle = shot.get("camera_angle")
+    viewpoint = _ANGLE_VIEWPOINT.get(angle or "")
+    if viewpoint is None:
+        # Anything else — including a pre-14.0 checkpoint's raw prose string — is
+        # `unknown_framing`, NOT `unservable_framing`: that reason is documented as
+        # "close-up/POV, permanent by design", and lending it to a string we simply
+        # failed to recognise would hide a parser gap inside a designed refusal.
+        return None, "unservable_framing" if angle in _UNSERVABLE_ANGLES else "unknown_framing"
+    measured = [p for p in plates if "viewpoint" in p]
+    if not measured:
+        return None, "no_metadata"
+    pool = [p for p in measured if p["viewpoint"] == viewpoint]
+    if not pool:
+        return None, "partial_metadata" if len(measured) < len(plates) else "no_viewpoint_match"
+    candidates = [p for p in pool if not p.get("has_person") and not p.get("depicts_person")]
+    if not candidates:
+        return None, "plate_shows_person"
+    if affordance_gate and shot.get("cast"):
+        # `is True`, never truthiness: an undecidable verdict is recorded as an ABSENT
+        # key (the endpoint rejects corpse/medical plates deterministically — 14.2), and
+        # `None` must never read as "there is room here".
+        candidates = [p for p in candidates if p.get("standing_room") is True]
+        if not candidates:
+            return None, "no_standing_room"
+    key = ":".join([run_id, str(scene_num), shot.get("location_key") or "", viewpoint,
+                    *(str(p.get("variant")) for p in candidates)])
+    return candidates[int(hashlib.sha256(key.encode()).hexdigest(), 16) % len(candidates)], "match"
 
 
 @observe(name="image")
@@ -838,10 +954,18 @@ async def image_node(state: PipelineState) -> dict:
                                 card_keys=_card_keys(shot),
                             ))
                             resumed = typing.cast(ShotData, {**shot, "cast": []})
-                        else:
+                        elif _sidecar_plate_room(out_dir, scene["scene_num"], shot) is None:
                             # Cached frame, no verdict asked on THIS pass (the gate sits after
                             # the render). Counted so the tally cannot read as coverage, and
                             # if the earlier pass could not judge it either, that says so.
+                            #
+                            # Story 14.1 D4 carved out the one case where a verdict DOES
+                            # exist: a shot served from a stock plate has the plate's
+                            # curation-time standing-room judgement in its sidecar. Counting
+                            # that `unjudged` would put a judged shot in the never-screened
+                            # bucket — the distinction 14.2 exists to make, running backwards,
+                            # and silently, because `affordance_undecidable` is `False` on
+                            # exactly those sidecars so no warning explains the count.
                             affordance_counts["unjudged"] += 1
                             if _sidecar_guard_flag(out_dir, scene["scene_num"], shot,
                                                    "affordance_undecidable"):
@@ -858,14 +982,24 @@ async def image_node(state: PipelineState) -> dict:
                         if location_key not in plate_cache:
                             plate_cache[location_key] = await _location_service(location_key)
                         plates = plate_cache[location_key]
-                        if plates:
-                            plate = plates[_plate_variant_index(run_id, scene["scene_num"], location_key, len(plates))]
+                        # Story 14.1: per SHOT, on the shot's own framing. `affordance_gate`
+                        # is the knob alone, not `affordance_off` — this verdict came off
+                        # the asset weeks ago and needs no API key today.
+                        plate, reason = _select_plate(
+                            shot, plates, run_id, scene["scene_num"],
+                            affordance_gate=affordance_enabled,
+                        ) if plates else (None, "")
+                        if plate is not None:
                             dest = out_dir / f"{_shot_base(scene['scene_num'], shot)}.png"
                             shutil.copyfile(plate["path"], dest)
-                            # Story 14.2: a copied plate is 14.1's job to pre-judge, so this
-                            # path asks nothing — but a cast-bearing shot that was not judged
-                            # is still not a shot that passed, on this run or on a resume.
-                            plate_unjudged = bool(shot.get("cast"))
+                            # Story 14.2 asked nothing here and counted the shot `unjudged`,
+                            # with a note that pre-judging a copied plate was 14.1's job.
+                            # It is done: the plate carries a curation-time verdict, so a
+                            # cast-bearing shot served from a plate that HAS one is judged —
+                            # by an asset-scoped call that cost this run nothing. Only a plate
+                            # whose verdict is absent (the endpoint refused it) is unjudged.
+                            room = plate.get("standing_room")
+                            plate_unjudged = bool(shot.get("cast")) and room is None
                             if plate_unjudged:
                                 affordance_counts["unjudged"] += 1
                             _write_sidecar(out_dir, scene["scene_num"], shot, seed, {
@@ -874,29 +1008,51 @@ async def image_node(state: PipelineState) -> dict:
                                     "location_key": location_key,
                                     "variant": plate["variant"],
                                     "path": plate["path"],
+                                    # Why THIS plate, and the verdict that came with it. The
+                                    # resume path reads `standing_room` back (D4) instead of
+                                    # counting every cached cast shot as never-judged.
+                                    "viewpoint": plate.get("viewpoint"),
+                                    "standing_room": room,
+                                    "reason": reason,
                                 },
                             }, affordance_undecidable=plate_unjudged and affordance_enabled)
                             image_count += 1
                             stock_plate_count += 1
                             logger.info(
-                                "shot %s using STOCK plate %s variant %s",
-                                shot["shot_id"], location_key, plate["variant"],
+                                "shot %s using STOCK plate %s variant %s (%s)",
+                                shot["shot_id"], location_key, plate["variant"], plate.get("viewpoint"),
                             )
                             new_shots.append(await _with_depth(shot, str(dest)))
                             continue
-                        logger.warning(
-                            "location_key %r has no approved plates, falling back to generation", location_key,
-                        )
                         # Per SHOT, not per location key: the lookup is cached once per run
                         # (and stays cached), but "which shots ended up on a generated
                         # background instead of the plate the writer asked for" is the
                         # question this story exists to answer. The identity is
                         # code+stage+scene+shot+location, so a retry re-derives the same
                         # record and merges to the same list.
-                        warnings.append(make_warning(
-                            "stock_plate_missing", scene_num=scene["scene_num"],
-                            shot_id=shot["shot_id"], location_key=location_key,
-                        ))
+                        if plates:
+                            # Kept apart from `stock_plate_missing` (Story 8.5): "this key
+                            # has no approved plate at all" and "this key has plates, none
+                            # of which can serve this framing" have different fixes, and
+                            # the second is the normal, permanent outcome for 7/31 shots.
+                            logger.info(
+                                "shot %s: no approved %s plate fits (%s), generating",
+                                shot["shot_id"], location_key, reason,
+                            )
+                            warnings.append(make_warning(
+                                "stock_plate_unfit", scene_num=scene["scene_num"],
+                                shot_id=shot["shot_id"], location_key=location_key,
+                                reason=reason,
+                            ))
+                        else:
+                            logger.warning(
+                                "location_key %r has no approved plates, falling back to generation",
+                                location_key,
+                            )
+                            warnings.append(make_warning(
+                                "stock_plate_missing", scene_num=scene["scene_num"],
+                                shot_id=shot["shot_id"], location_key=location_key,
+                            ))
                     except Exception as exc:  # noqa: BLE001 — AD-10: plate lookup is best-effort, never fails the stage
                         logger.warning(
                             "stock plate resolution failed for %r, falling back to generation: %s", location_key, exc,

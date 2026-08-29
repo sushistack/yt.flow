@@ -124,3 +124,99 @@ def test_abs_asset_path_resolves_against_assets_root(svc, settings):
     assert svc._abs_asset_path("locations/corridor/a.png") == str(
         settings_path(settings) / "locations/corridor/a.png"
     )
+
+
+# ── Story 14.1: resolve_stock_plates carries the measurement ─────────────────
+
+
+def _write_manifest(settings, session, key, source):
+    service = AssetService(settings.assets_path, session)
+    manifest = service.load_manifest()
+    manifest["assets"][key]["source"] = source
+    service.save_manifest(manifest)
+
+
+def test_resolve_merges_the_measurement_and_the_labeler_person_flag(svc, session, settings):
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "plate_meta": {"viewpoint": "HIGH", "y_h": 0.19, "standing_room": True,
+                       "depicts_person": False},
+        "label": {"has_person": True, "decision": "draft"},
+    })
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert plate["viewpoint"] == "HIGH"
+    assert plate["standing_room"] is True
+    # Two different questions living in two different places in the entry, and
+    # `image._select_plate` filters on both — the plate path skips the runtime
+    # people-free guard entirely, so this seam is the only carrier.
+    assert plate["has_person"] is True
+    assert plate["depicts_person"] is False
+    assert plate["variant"] == "a"
+
+
+def test_an_unmeasured_plate_has_no_viewpoint_key_at_all(svc, session, settings):
+    """Not `{}`, not `None`. The selector has to tell "never measured" (fail open) from
+    "measured and unfit", and a null collapses the two into one silent wrong pick."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert "viewpoint" not in plate
+    assert set(plate) == {"variant", "path"}
+
+
+def test_metadata_can_never_shadow_variant_or_path(svc, session, settings):
+    """A hand-edited `plate_meta` carrying either key would otherwise redirect the copy —
+    which is why they are written last, not merged."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "plate_meta": {"viewpoint": "EYE", "variant": "z", "path": "/etc/passwd"}})
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert plate["variant"] == "a"
+    assert plate["path"].endswith("locations/corridor/a.png")
+
+
+def test_either_curator_saying_person_keeps_the_flag_true(svc, session, settings):
+    """The 2026-08-02 labeler and the 2026-08-25 measurement ask the same question of the
+    same pixels. A re-judgement must not quietly clear the earlier flag — reconciling a
+    disagreement is the human queue's job, not this merge's."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "plate_meta": {"viewpoint": "EYE", "has_person": False},
+        "label": {"has_person": True}})
+    assert svc.resolve_stock_plates("corridor")[0]["has_person"] is True
+
+
+@pytest.mark.parametrize("source", [None, "a string", [], {"plate_meta": None},
+                                    {"plate_meta": "wat", "label": 7}])
+def test_a_malformed_source_block_degrades_to_unmeasured(svc, session, settings, source):
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source=source)
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert set(plate) == {"variant", "path"}
+
+
+@pytest.mark.parametrize("manifest", [
+    {"style_epoch": 1, "assets": []},                       # assets is not a dict
+    {"style_epoch": 1, "assets": {"corridor/a": None}},     # the entry is null
+    {"style_epoch": 1, "assets": {"corridor/a": "gone"}},   # …or a bare string
+    {"style_epoch": 1},                                     # no `assets` key at all
+    {"broken": True},
+])
+def test_a_corrupt_manifest_falls_open_to_no_metadata_not_an_exception(
+        svc, session, settings, manifest):
+    """The declared fallback is `stock_plate_unfit(no_metadata)` — one warning per shot,
+    generation, done. An exception here instead files `stock_plate_resolution_failed` for
+    every key in the run, which reads as "the plate database is down" and is a lie.
+    `AttributeError`/`TypeError` are the shapes a narrower `except` would have leaked."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    AssetService(settings.assets_path, session).save_manifest(manifest)
+    plates = svc.resolve_stock_plates("corridor")
+    assert [set(p) for p in plates] == [{"variant", "path"}]
+
+
+def test_a_missing_manifest_file_is_not_an_error(svc, session, settings):
+    """`load_manifest` already answers `{"assets": {}}` for an absent file, so this is the
+    no-plates-registered case rather than a failure — asserted so the merge above cannot
+    start depending on the file existing."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    (settings_path(settings) / "manifest.json").unlink()
+    assert [set(p) for p in svc.resolve_stock_plates("corridor")] == [{"variant", "path"}]

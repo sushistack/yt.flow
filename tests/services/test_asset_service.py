@@ -376,3 +376,72 @@ def test_pose_guide_lifecycle_does_not_disturb_other_assets(svc, tmp_path):
     svc.approve_pose_guide(key)
     assert svc.get_asset("SCP-049/standing_front") is not None
     assert svc.verify_all() == []
+
+
+# ── Story 14.1: record_source ────────────────────────────────────────────────
+
+
+def _approved_plate(service, root, key="corridor/a"):
+    rel = f"locations/{key}.png"
+    (root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (root / rel).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    service.add_asset(key, rel, {"type": "test"})
+    service.approve_asset(key)
+    return key
+
+
+def test_record_source_preserves_status_and_approved_at(tmp_path, session):
+    """The whole reason this exists rather than a second `add_asset`: re-adding resets
+    `status` to draft, nulls `approved_at` and re-stamps `created_at`, which would
+    silently un-approve every plate the measurement touched."""
+    service = AssetService(tmp_path, session)
+    key = _approved_plate(service, tmp_path)
+    before = service.get_asset(key)
+
+    service.record_source(key, "plate_meta", {"viewpoint": "EYE", "standing_room": True})
+
+    after = service.get_asset(key)
+    assert after["status"] == "approved"
+    assert after["approved_at"] == before["approved_at"]
+    assert after["created_at"] == before["created_at"]
+    assert after["sha256"] == before["sha256"]
+    assert after["source"]["plate_meta"] == {"viewpoint": "EYE", "standing_room": True}
+    assert after["source"]["type"] == "test"  # merged into `source`, not over it
+
+
+def test_record_source_overwrites_only_its_own_field(tmp_path, session):
+    service = AssetService(tmp_path, session)
+    key = _approved_plate(service, tmp_path)
+    service.record_source(key, "label", {"has_person": False})
+    service.record_source(key, "plate_meta", {"viewpoint": "LOW"})
+    service.record_source(key, "plate_meta", {"viewpoint": "HIGH"})
+    source = service.get_asset(key)["source"]
+    assert source["label"] == {"has_person": False}
+    assert source["plate_meta"] == {"viewpoint": "HIGH"}
+
+
+def test_record_source_raises_on_an_unregistered_key(tmp_path, session):
+    """A curator that thinks it attached a measurement and did not is the failure this
+    exists to prevent — a silent no-op would produce exactly that."""
+    with pytest.raises(LookupError):
+        AssetService(tmp_path, session).record_source("nope/a", "plate_meta", {})
+
+
+@pytest.mark.parametrize("broken", [None, "legacy string", 7, ["a"]])
+def test_record_source_replaces_a_non_dict_source_instead_of_dying(tmp_path, session, broken):
+    """A hand-edited or pre-8.6 entry can carry `source: null`. `setdefault` hands that
+    back untouched and the assignment raises TypeError — mid-sweep, with the manifest
+    already saved for every key before it. The advisory dict has nowhere to merge into, so
+    it replaces; the LookupError contract promises a curator this call either records or
+    raises, never no-ops."""
+    service = AssetService(tmp_path, session)
+    key = _approved_plate(service, tmp_path)
+    manifest = service.load_manifest()
+    manifest["assets"][key]["source"] = broken
+    service.save_manifest(manifest)
+
+    service.record_source(key, "plate_meta", {"viewpoint": "EYE"})
+
+    after = service.get_asset(key)
+    assert after["source"] == {"plate_meta": {"viewpoint": "EYE"}}
+    assert after["status"] == "approved"

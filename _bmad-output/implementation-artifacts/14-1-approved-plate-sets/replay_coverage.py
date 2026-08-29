@@ -1,0 +1,233 @@
+#!/usr/bin/env python
+"""Story 14.1: replay `image._select_plate` over a run's shots, offline. GPU 0, VLM 0.
+
+    uv run python .../replay_coverage.py 4b35c0ed
+
+Every number in report.md §2/§3 comes out of here. It reads the run's shots from the
+LangGraph checkpoint (loader shape copied from
+`14-0-angle-conflict/measure_angle_agreement.py` — thread-prefix match, refuse an
+ambiguous prefix) and the plate metadata from `plate_meta.json` + the approved
+`location_plates` rows, assembles exactly the dicts `LocationService.resolve_stock_plates`
+would hand `image_node`, and calls the SHIPPED selector. Nothing is re-implemented: if
+the selector changes, this number changes with it.
+
+It does not render, does not call ComfyUI, does not touch the DB except read-only, and
+does not care whether `stock_plate_substitution_enabled` is on — it answers "what WOULD
+this run get", which is the flag's entry condition, not its current behaviour.
+
+Exit codes:
+    0  replayed at least one location-keyed shot
+    2  usage error
+    3  nothing to measure (no such run, empty `scenes`, ambiguous thread prefix)
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
+sys.path.insert(0, str(REPO / "src"))
+
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer  # noqa: E402
+
+from yt_flow.config import Settings  # noqa: E402
+from yt_flow.domain.state import LOCATION_KEYS  # noqa: E402
+from yt_flow.pipeline.nodes.image import _ANGLE_VIEWPOINT, _select_plate  # noqa: E402
+
+_EXIT_OK, _EXIT_USAGE, _EXIT_NOTHING = 0, 2, 3
+
+# Pre-registered bars (PREREGISTRATION.md §5). Copied here so the script prints its own
+# verdict rather than leaving the reader to re-apply them by hand — NOT re-decided here.
+C3_MIN_SHARE = 0.90
+
+
+def load_scenes(db: Path, thread_prefix: str) -> tuple[str, list]:
+    """The last checkpoint of the matching thread that carries a non-empty ``scenes``.
+
+    Returns the FULL ``thread_id`` beside the scenes, not just the scenes. The selector's
+    tie-break hashes ``run_id``, and ``run_id`` is that whole string — passing the CLI's
+    convenience prefix (`4b35c0ed`) produces the right aggregate counts but a per-shot
+    plate assignment that does not reproduce in the run being replayed, which is exactly
+    the number a report names plates in.
+    """
+    if not db.exists():
+        print(f"no checkpoint DB at {db}", file=sys.stderr)
+        return "", []
+    serde = JsonPlusSerializer()
+    scenes: list = []
+    threads: set[str] = set()
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        for thread_id, _cid, typ, blob in conn.execute(
+            "SELECT thread_id, checkpoint_id, type, checkpoint FROM checkpoints "
+            "WHERE thread_id LIKE ? ORDER BY checkpoint_id", (thread_prefix + "%",),
+        ):
+            threads.add(thread_id)
+            try:
+                found = (serde.loads_typed((typ, blob)).get("channel_values") or {}).get("scenes")
+            except Exception:  # a partial/foreign blob is not this measurement's problem
+                continue
+            if found:
+                scenes = found
+    if len(threads) > 1:
+        print(f"prefix {thread_prefix!r} matches {len(threads)} thread_ids — refusing to mix runs",
+              file=sys.stderr)
+        return "", []
+    return (threads.pop() if threads else ""), scenes
+
+
+def load_plates(settings: Settings) -> dict[str, list[dict]]:
+    """``location_key -> [plate dicts]``, byte-shaped like ``resolve_stock_plates`` output."""
+    meta = json.loads((HERE / "plate_meta.json").read_text(encoding="utf-8"))
+    plates: dict[str, list[dict]] = defaultdict(list)
+    with sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True) as conn:
+        rows = conn.execute(
+            "SELECT location_key, variant, image_path FROM location_plates "
+            "WHERE status='approved' ORDER BY location_key, variant")
+        for key, variant, image_path in rows:
+            plates[key].append({**meta.get(f"{key}/{variant}", {}), "variant": variant,
+                                "path": str(Path(settings.assets_path) / image_path)})
+    return plates
+
+
+def _people_free(plate: dict) -> bool:
+    """The D1 predicate, in ONE place.
+
+    C1/C2 below and `image._select_plate` have to exclude the same plates or the
+    pre-registered coverage bars and the shipped runtime describe different sets.
+    """
+    return not plate.get("has_person") and not plate.get("depicts_person")
+
+
+def main(run: str) -> int:
+    settings = Settings()
+    thread_id, scenes = load_scenes(REPO / settings.db_path, run)
+    if not scenes:
+        return _EXIT_NOTHING
+    plates = load_plates(settings)
+    # The shipped knob, printed, because it is an input to the replay: with the affordance
+    # gate down `_select_plate` serves a measured-roomless plate to a cast shot on purpose
+    # (D2 — 14.2's recovery path), so a reader has to know which side of that the numbers
+    # were taken on.
+    affordance_gate = settings.plate_affordance_gate_enabled
+    print(f"thread_id {thread_id}  (plate_affordance_gate_enabled={affordance_gate})")
+
+    shots = [(sc["scene_num"], s) for sc in scenes for s in sc["shots"]]
+    keyed = [(n, s) for n, s in shots if s.get("location_key")]
+    print(f"run {run}: {len(shots)} shots, {len(keyed)} carry a location_key, "
+          f"{len(shots) - len(keyed)} do not")
+
+    reasons: Counter[str] = Counter()
+    picked: list[tuple[int, str, str, str, object, bool]] = []
+    for scene_num, shot in keyed:
+        key = shot["location_key"]
+        pool = plates.get(key, [])
+        plate, reason = _select_plate(shot, pool, thread_id, scene_num,
+                                      affordance_gate=affordance_gate)
+        # A key with no approved plate at all is `stock_plate_missing` at runtime, not a
+        # selector reason — image_node never calls the selector in that case. Counting it
+        # under whatever the selector happens to say about an empty list (`no_metadata`)
+        # would make this table disagree with the warnings the run actually files.
+        reasons["stock_plate_missing" if not pool else reason] += 1
+        if plate is not None:
+            picked.append((scene_num, shot["shot_id"], f"{key}/{plate['variant']}",
+                           str(plate.get("viewpoint")), plate.get("standing_room"),
+                           bool(shot.get("cast"))))
+
+    print("\n-- selector outcome over the location-keyed shots --")
+    for reason, n in reasons.most_common():
+        print(f"  {reason:22s} {n}")
+
+    servable = [(n, s) for n, s in keyed if _ANGLE_VIEWPOINT.get(s.get("camera_angle") or "")]
+    hits = reasons["match"]
+    share = hits / len(servable) if servable else 0.0
+    print(f"\nservable shots (camera_angle maps to a viewpoint): {len(servable)}"
+          f"  ->  match {hits} ({share:.1%})")
+    roomless = sum(1 for _n, _sid, _pk, _vp, room, cast in picked if cast and room is not True)
+    print(f"cast-bearing hits whose plate lacks standing_room=True: {roomless}"
+          f"  (0 => the affordance knob does not change this replay)")
+
+    # -- C1/C2: demanded (location_key, viewpoint) cells ------------------------------
+    demand: dict[tuple[str, str], list] = defaultdict(list)
+    for scene_num, shot in servable:
+        demand[(shot["location_key"], _ANGLE_VIEWPOINT[shot["camera_angle"]])].append(shot)
+
+    print("\n-- demanded cells --")
+    short_c1, short_c2 = [], []
+    for cell in sorted(demand):
+        key, viewpoint = cell
+        cast_shots = sum(1 for s in demand[cell] if s.get("cast"))
+        pool = [p for p in plates.get(key, [])
+                if p.get("viewpoint") == viewpoint and _people_free(p)]
+        room = [p for p in pool if p.get("standing_room") is True]
+        c1 = "OK " if pool else "MISS"
+        c2 = "-   " if not cast_shots else ("OK " if room else "MISS")
+        if not pool:
+            short_c1.append(cell)
+        elif cast_shots and not room:
+            short_c2.append(cell)
+        print(f"  {key:22s} {viewpoint:4s} shots={len(demand[cell]):2d} cast={cast_shots:2d} "
+              f"C1={c1} ({len(pool)} plate(s))  C2={c2} ({len(room)} with room)")
+
+    print("\n-- pre-registered bars (PREREGISTRATION.md §5) --")
+    print(f"  C1 cell coverage      : {'PASS' if not short_c1 else 'FAIL'} "
+          f"({len(demand) - len(short_c1)}/{len(demand)} cells)")
+    print(f"  C2 affordance coverage: {'PASS' if not short_c2 else 'FAIL'}")
+    print(f"  C3 servable share >= {C3_MIN_SHARE:.0%}: "
+          f"{'PASS' if share >= C3_MIN_SHARE else 'FAIL'} ({hits}/{len(servable)} = {share:.1%})")
+    if short_c1 or short_c2:
+        print("\n-- shortfall: what an expansion batch must render --")
+        for key, viewpoint in short_c1:
+            n = len(demand[(key, viewpoint)])
+            cast = sum(1 for s in demand[(key, viewpoint)] if s.get("cast"))
+            print(f"  ({key}, {viewpoint}): 0 plates, {n} shot(s) demand it"
+                  f"{', standing room required' if cast else ''} -> render >=1")
+        for key, viewpoint in short_c2:
+            print(f"  ({key}, {viewpoint}): plates exist but none has standing room -> render >=1")
+
+    # -- the shots a plate can never reach -------------------------------------------
+    # Is `location_key = None` a VOCABULARY gap (the room is not in LOCATION_KEYS) or an
+    # EMISSION gap (the writer described a room that IS in the vocabulary and left the
+    # field empty)? The two need different fixes and only one of them is 14.1-adjacent.
+    unkeyed = [(n, s) for n, s in shots if not s.get("location_key")]
+    # Per SHOT: a prompt naming two rooms ("from the corridor into the control room") used
+    # to contribute two rows to a numerator whose denominator counts shots, so the ratio
+    # could exceed 1. The shot is the unit here, and the keys it names are its detail.
+    named = {s["shot_id"]: [k for k in LOCATION_KEYS if k.replace("-", " ") in s["image_prompt"].lower()]
+             for _n, s in unkeyed}
+    named = {sid: keys for sid, keys in named.items() if keys}
+    print(f"\n-- the {len(unkeyed)} shots with no location_key --")
+    print(f"  {len(named)}/{len(unkeyed)} name a LOCATION_KEYS room in image_prompt anyway "
+          f"-> emission gap, not vocabulary gap")
+    for shot_id, keys in named.items():
+        print(f"    {shot_id} -> {', '.join(keys)}")
+
+    # -- declared VARIANT_CAMERAS vs measured viewpoint -------------------------------
+    # Evidence about whether the plates' ControlNet geometry control actually delivered the
+    # camera the prompt asked for. NEVER a correction to the labels: the labels were fixed
+    # in viewpoint_verdicts.csv before this table was computed (PREREGISTRATION.md §2).
+    meta = json.loads((HERE / "plate_meta.json").read_text(encoding="utf-8"))
+    declared = {"a": "EYE", "b": "LOW", "c": None}  # c declares framing, not a viewpoint
+    print("\n-- declared variant camera vs measured viewpoint --")
+    for variant, want in declared.items():
+        got = Counter(m["viewpoint"] for k, m in meta.items() if k.endswith(f"/{variant}"))
+        agree = f"{got[want]}/{sum(got.values())}" if want else "n/a (no viewpoint declared)"
+        print(f"  {variant}: declared {want or 'off-axis framing':16s} measured {dict(got)}"
+              f"  agreement {agree}")
+
+    print("\n-- matched shots --")
+    for scene_num, shot_id, plate_key, viewpoint, room, cast in picked:
+        print(f"  scene {scene_num} {shot_id} -> {plate_key} ({viewpoint}, "
+              f"standing_room={room}, cast={cast})")
+    return _EXIT_OK
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print(__doc__, file=sys.stderr)
+        raise SystemExit(_EXIT_USAGE)
+    raise SystemExit(main(sys.argv[1]))

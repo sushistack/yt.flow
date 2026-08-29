@@ -40,6 +40,16 @@ from yt_flow.services.location_service import LocationService  # noqa: E402
 REQUIRED_BOOLS = {
     "matches_location": True,
     "has_person": False,
+    # Story 14.1, handed over from 14.4 (2026-08-22): a person DEPICTED inside the frame —
+    # framed art, a monitor feed, a poster, an anatomical chart, a statue or a mannequin.
+    # This is an APPROVAL criterion only. It deliberately does not touch `has_person`
+    # (a real body occupying space), and it deliberately does not reach the runtime guard:
+    # extending `vision_check.CHECK_PROMPT` was rejected because a poster cannot collide
+    # with a composited card, and that prompt's FALSE list is the right answer to a
+    # different question. Adding it here blocks AUTO-APPROVAL of new plates; already
+    # approved plates are unaffected (measuring one `true` is a human's queue item, never
+    # an automatic un-approval).
+    "depicts_person": False,
     "has_legible_text": False,
     "has_duplicated_architecture": False,
 }
@@ -53,12 +63,18 @@ LABEL_PROMPT = """You are grading one background plate rendered for an SCP Found
 The plate is supposed to read as: {description}
 
 Reply with a single JSON object and nothing else:
-{{"matches_location": true|false, "has_person": true|false, "has_legible_text": true|false,
- "has_duplicated_architecture": true|false, "quality": "good"|"acceptable"|"poor",
+{{"matches_location": true|false, "has_person": true|false, "depicts_person": true|false,
+ "has_legible_text": true|false, "has_duplicated_architecture": true|false,
+ "quality": "good"|"acceptable"|"poor",
  "confidence": 0.0-1.0, "notes": "one short sentence"}}
 
 Field rules:
-- has_person: any human, humanoid, creature, figure or silhouette, however small or blurred.
+- has_person: a real body occupying space in the room — any human, humanoid, creature,
+  figure or silhouette physically present, however small or blurred.
+- depicts_person: a person shown INSIDE something in the room rather than standing in it —
+  a framed painting or photograph, a poster, a screen or monitor feed, an anatomical
+  diagram or medical illustration, a statue, bust or mannequin. These are NOT bodies in
+  the room, so has_person stays false for them; answer this field separately.
 - has_legible_text: any readable signage, label, caption or watermark.
 - has_duplicated_architecture: the same doorway, window or corridor repeated or mirrored
   as a rendering artifact rather than as real architecture.
@@ -116,6 +132,11 @@ async def score_plate(settings: Settings, image_path: Path, description: str) ->
                 "model": settings.character_vision_model,
                 "messages": [{"role": "user", "content": content}],
                 "max_tokens": settings.character_vision_max_tokens,
+                # Story 14.1: pinned, previously left to the endpoint default. A curation
+                # verdict that cannot be re-derived cannot be recorded as a measurement
+                # (`gotcha_a-measurement-without-its-sample-band`), and this script's
+                # output is now the input to a plate's shipped metadata.
+                "temperature": 0,
             },
         )
     resp.raise_for_status()
@@ -125,17 +146,16 @@ async def score_plate(settings: Settings, image_path: Path, description: str) ->
 def _record_verdict(asset_service: AssetService, plate, verdict: dict, decision: str) -> bool:
     """Merge the verdict into the plate's manifest entry. False if it has none.
 
-    load/save around the one key rather than ``add_asset``: re-adding would reset
-    ``status`` to draft and overwrite created_at/approved_at — exactly the wrong thing
-    to do to a plate that is about to be approved.
+    The load/save-around-one-key pattern (never ``add_asset``, which would reset ``status``
+    to draft and drop ``approved_at``) moved to ``AssetService.record_source`` in Story
+    14.1, so this script and ``14-1-approved-plate-sets/measure_plates.py`` share one
+    implementation instead of two hand-written copies.
     """
-    key = f"{plate.location_key}/{plate.variant}"
-    manifest = asset_service.load_manifest()
-    entry = manifest["assets"].get(key)
-    if entry is None:
+    try:
+        asset_service.record_source(
+            f"{plate.location_key}/{plate.variant}", "label", {**verdict, "decision": decision})
+    except LookupError:
         return False
-    entry.setdefault("source", {})["label"] = {**verdict, "decision": decision}
-    asset_service.save_manifest(manifest)
     return True
 
 
