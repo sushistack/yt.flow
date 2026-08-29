@@ -2,8 +2,9 @@
 title: 'Story 14.1: 승인된 배경 플레이트 세트 — 샷 단위·프레이밍 정합 재사용'
 type: 'feature'
 created: '2026-08-25'
-status: 'in-review' # draft | ready-for-dev | in-progress | in-review | done | blocked
+status: 'done' # draft | ready-for-dev | in-progress | in-review | done | blocked
 baseline_revision: '80ee501c5284deb3f411f71a5310d63c84d3a446'
+final_revision: 'e8b8d2f031d3e2e705ec59fb04b1ae9188d66dd6'
 review_loop_iteration: 1
 followup_review_recommended: true
 context:
