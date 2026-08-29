@@ -1,5 +1,7 @@
 # Story 14.6 — 게이트·계약·수요를 먼저 세운다 (리뷰 루프 1 재구현 + 루프 2 패치)
 
+> ⚠️ **2026-08-30 전제 정정**: 이 문서의 "GPU 부재" 근거는 **거짓**이다 — `nvidia-smi`로 진단했으나 이 박스는 AMD(gfx1100, 24GB, ROCm)이고 GPU는 정상이다. ComfyUI가 안 떠 있었을 뿐이다. 전문: `GPU-PREMISE-CORRECTION-2026-08-30.md`
+
 스펙: `_bmad-output/implementation-artifacts/spec-14-6-dclass-object-asset-sets.md`
 작성: 2026-08-29 / baseline `1bd0e84`
 개정: 2026-08-29 리뷰 루프 2 — 설계는 통과했고 패치 부류만 적용했다. 이 리포트가

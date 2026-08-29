@@ -11,6 +11,9 @@ context: []
 warnings: [multiple-goals, oversized]
 ---
 
+> ⚠️ **2026-08-30 전제 정정**: 이 문서의 "GPU 부재" 근거는 **거짓**이다 — `nvidia-smi`로 진단했으나 이 박스는 AMD(gfx1100, 24GB, ROCm)이고 GPU는 정상이다. ComfyUI가 안 떠 있었을 뿐이다. 전문: `GPU-PREMISE-CORRECTION-2026-08-30.md`
+
+
 <intent-contract>
 
 ## Intent
