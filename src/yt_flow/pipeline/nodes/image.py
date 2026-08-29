@@ -373,6 +373,21 @@ def _write_sidecar(
     It is **required**, not defaulted: 11.1's lesson (``seed``) is that a writer
     path which silently omits a sidecar field is only discovered in a live run,
     and each of the three paths owes a *different, honest* provenance object.
+
+    ``recompose`` (Story 14.3) is a KEY LITERAL, not a parameter. image_node never
+    recomposes, so there is no argument to take and no caller to take it from
+    (ponytail: no scaffolding for a writer that does not exist). ``recompose_service``
+    fills it in later, in place.
+
+    The explicit ``null`` (rather than an omitted key) is for a READER OF THE FILE, and
+    the distinction is not one any code makes: ``recompose_service._stamp_sidecar``
+    treats absent and null identically (``isinstance(record.get("recompose"), dict)``),
+    and there is no other reader. What it buys is forensic — a sidecar with the key at
+    null was written by a 14.3-or-later run that did not recompose this shot, one
+    without the key predates the story, and that is the difference between "the
+    attribution was never owed" and "the attribution may have been lost". Claiming the
+    service depends on it would be inventing a consumer, which is what the key itself
+    is careful not to do. Additive and uncompared, like every key above.
     """
     _sidecar_path(out_dir, scene_num, shot).write_text(
         json.dumps({
@@ -384,6 +399,7 @@ def _write_sidecar(
             "affordance_unusable": affordance_unusable,
             "affordance_undecidable": affordance_undecidable,
             "provenance": provenance,
+            "recompose": None,
         }),
         encoding="utf-8",
     )

@@ -874,3 +874,197 @@ async def test_flag_on_without_an_injected_resolver_is_not_silent(monkeypatch, t
 
     row = next(w for w in out["run_warnings"] if w["code"] == "recompose_shots_degraded")
     assert row["context"]["reason"] == "resolver_not_injected"
+
+
+# ── Story 14.3: recompose attribution reaches the gate and the trace ──────────
+
+
+async def test_precompute_relights_is_unreachable_at_the_shipped_tier(monkeypatch, tmp_path, assets):
+    """The disproof of the coupling handover, pinned.
+
+    Story 14.1 handed 14.3 a relight/harmonization pair-key defect described as "already
+    firing in run 4b35c0ed". It cannot fire: the pair key lives inside
+    `composite_harmonization.precompute_relights`, `video_node` calls that function only
+    at `composite_harmonization_tier >= 3`, and the shipped default is 1 (tier 3 is
+    IC-Light, which Jay's 10.1b viewing rejected). Asserting the default here as well as
+    the branch is deliberate — a test that only checked the branch would keep passing if
+    someone raised the default, which is precisely the state that would make the
+    handover true.
+    """
+    from yt_flow.config import Settings
+
+    shipped = Settings.model_fields["composite_harmonization_tier"].default
+    assert shipped == 1, "the shipped tier moved; re-open the 14.1 relight handover"
+
+    called = []
+
+    async def _resolver(scenes, cast_cards):
+        called.append(1)
+        return {}, {"computed": 0, "failed": 0}
+
+    monkeypatch.setattr(video, "_settings",
+                        lambda: _settings_ns(tmp_path, composite_harmonization_tier=shipped))
+    monkeypatch.setattr(video, "_relight_resolver", _resolver)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+
+    out = await video_node(_state([_relight_scene(assets)]))
+
+    assert out.get("error") is None
+    assert called == []          # the pair key is never built, so it cannot collide
+    assert [w for w in out["run_warnings"] if w["code"].startswith("relight")] == []
+
+
+async def _recompose_run(monkeypatch, tmp_path, assets, *, resolver, ffmpeg=None):
+    settings = _settings_ns(tmp_path)
+    settings.shot_recompose_enabled = True
+    monkeypatch.setattr(video, "_settings", lambda: settings)
+    monkeypatch.setattr(video, "_recompose_resolver", resolver)
+
+    async def _fake(*args):
+        Path(args[-1]).write_bytes(b"FAKE_MP4")
+        return 0, ""
+
+    monkeypatch.setattr(video, "_run_ffmpeg", ffmpeg or _fake)
+    _inject_resolver(monkeypatch, {"1:S001": [_card(assets.character, card_key="STOCK-d-class")]})
+    return await video_node(_state([_relight_scene(assets)]))
+
+
+async def test_a_lost_recompose_attribution_reaches_the_gate(monkeypatch, tmp_path, assets):
+    """Its own code, not `recompose_shots_degraded`: the frame is correct and only the
+    record is gone, so the operator must be told NOT to re-render it."""
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {
+            "recomposed": 1, "skipped": 0, "failed": 0,
+            "warnings": [
+                {"scene_num": 1, "shot_id": "S001", "detail": "OSError: [Errno 28]"}]}
+
+    out = await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert out.get("error") is None
+    row = next(w for w in out["run_warnings"] if w["code"] == "recompose_sidecar_failed")
+    assert row["stage"] == "video"
+    # scene and shot as SEPARATE fields, the way every sibling warning in this node
+    # carries them — a row whose `shot_id` were "1:S001" would never join against them.
+    assert row["context"] == {
+        "scene_num": 1, "shot_id": "S001", "detail": "OSError: [Errno 28]"}
+
+
+@pytest.mark.parametrize("payload", ["not a dict", None, ["recomposed", 1]])
+async def test_a_malformed_stats_payload_is_not_reported_as_a_preflight_bail(
+    monkeypatch, tmp_path, assets, payload,
+):
+    """Not a preflight bail, but not silent either.
+
+    By the time the resolver returns it has already rewritten `image_path` on every shot
+    it recomposed, so `recompose_preflight_failed` ("recompose did not run, everything is
+    on the overlay") would be a false statement about swapped frames. Coercing to `{}`
+    with nothing filed was the opposite failure and shipped first: the trace reads 0/0/0
+    and no warning exists, which is byte-identical to "recompose was off" — after 33
+    frames were already swapped. The outcome is unreadable, and unreadable is a finding.
+    """
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, payload
+
+    out = await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert out.get("error") is None
+    assert [w["code"] for w in out["run_warnings"] if w["code"].startswith("recompose")] == [
+        "recompose_shots_degraded"]
+    row = next(w for w in out["run_warnings"] if w["code"] == "recompose_shots_degraded")
+    assert row["context"]["reason"] == "stats_payload_unreadable"
+    assert type(payload).__name__ in row["context"]["detail"]
+
+
+@pytest.mark.parametrize("bad_cast", ["not a dict", None, [("1:S001", [])]])
+async def test_an_unreadable_cast_map_does_not_silently_empty_the_render(
+    monkeypatch, tmp_path, assets, bad_cast,
+):
+    """A non-dict FIRST element drops every card, and "no cards composited" is exactly
+    what a fully successful recompose looks like — so the shot would ship people-less
+    with nothing said anywhere."""
+    async def _resolver(scenes, cast_cards):
+        return bad_cast, {"recomposed": 0, "skipped": 0, "failed": 0}
+
+    out = await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert out.get("error") is None
+    row = next(w for w in out["run_warnings"] if w["code"] == "recompose_shots_degraded")
+    assert row["context"]["reason"] == "cast_payload_unreadable"
+
+
+@pytest.mark.parametrize(
+    "warnings_payload", ["boom", {"shot_id": "x"}, [None, 3, "y"], [{"oops": 1}], [{"shot_id": 7}]])
+async def test_a_malformed_sidecar_warning_list_is_ignored_not_fatal(
+    monkeypatch, tmp_path, assets, warnings_payload,
+):
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {"recomposed": 1, "skipped": 0, "failed": 0,
+                            "warnings": warnings_payload}
+
+    out = await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert out.get("error") is None
+    assert [w for w in out["run_warnings"] if w["code"] == "recompose_sidecar_failed"] == []
+
+
+async def test_recompose_counts_reach_the_trace(monkeypatch, tmp_path, assets):
+    traces = []
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: traces.append(kw))
+
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {"recomposed": 12, "skipped": 3, "reentered": 4,
+                            "failed": 2, "attributed": 11}
+
+    await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert traces[-1]["recomposed"] == 12
+    assert traces[-1]["recompose_skipped"] == 3
+    assert traces[-1]["recompose_failed"] == 2
+    # Re-entry is its own field, never folded into `skipped` — a retried video stage over
+    # already-recomposed shots would otherwise trace "33 shots were not recomposed".
+    assert traces[-1]["recompose_reentered"] == 4
+    # And how many of the recomposed frames actually carry a sidecar block, so
+    # `recomposed` is readable as coverage instead of assumed to be.
+    assert traces[-1]["recompose_attributed"] == 11
+
+
+async def test_recompose_counts_survive_a_later_stage_failure(monkeypatch, tmp_path, assets):
+    """The error path used to trace 0/0/0, which is also what "recompose ran and did
+    nothing" looks like. Recompose runs early and its frames are already on disk."""
+    traces = []
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: traces.append(kw))
+
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {"recomposed": 12, "skipped": 3, "failed": 2}
+
+    async def _dying_ffmpeg(*args):
+        raise RuntimeError("ffmpeg died after the frames were swapped")
+
+    out = await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver, ffmpeg=_dying_ffmpeg)
+
+    assert out["error"]
+    assert traces[-1]["error"] is not None
+    assert traces[-1]["recomposed"] == 12
+    assert traces[-1]["recompose_skipped"] == 3
+    assert traces[-1]["recompose_failed"] == 2
+
+
+@pytest.mark.parametrize("bad", [True, "12", None, 1.5])
+async def test_a_non_int_recompose_count_traces_as_zero(monkeypatch, tmp_path, assets, bad):
+    """`True` is an `int` in Python and would trace as 1; a `str` would break the span
+    encoder inside `_record_trace`'s blanket except and lose the whole metadata dict."""
+    traces = []
+    monkeypatch.setattr(video, "_record_trace", lambda **kw: traces.append(kw))
+
+    async def _resolver(scenes, cast_cards):
+        return cast_cards, {"recomposed": bad, "skipped": 0, "failed": 0}
+
+    await _recompose_run(monkeypatch, tmp_path, assets, resolver=_resolver)
+
+    assert traces[-1]["recomposed"] == 0

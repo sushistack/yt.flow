@@ -234,3 +234,157 @@ def test_plate_t2i_fallback_target_is_still_a_lora_loader():
     graph = nodes(WORKFLOW_DIR / PLATE)
     model_id = resolve_nodes(graph, ("ytflow:model",))["ytflow:model"]
     assert str(graph[model_id]["class_type"]).startswith(LORA_PREFIX)
+
+
+# ── Story 14.3: the art-style contract ───────────────────────────────────────
+# Jay's viewing verdict ⑦ ("화풍 유지 안 됨") has two candidate layers, and only one of
+# them is written down anywhere: the graphs themselves. A 43-shot sweep of run
+# 4b35c0ed's `image_prompt`s found no neon/foreign-style vocabulary to constrain (2/7
+# drift-labelled shots vs 2/36 others, the single term being `LED`, a light fixture),
+# so the prescription "constrain the palette to a closed vocabulary" has nothing to
+# delete. What IS declarable is which model each graph loads and at what LoRA strength.
+# This turns that from prose into an executable record.
+#
+# Read the record before quoting "one style": the graphs do NOT all agree on a base
+# model, and the disagreement is on the majority surface. The SDXL trio (background,
+# plate, card) share AnimagineXL v3.1 + darkness_xl_v2 and differ only in strength
+# (0.5/0.5/0.3, pinned as an xfail below) — but they drew 10 of run 4b35c0ed's 43
+# delivered frames. The other 33 were drawn by the recompose graph, which is
+# UnetLoaderGGUF on qwen-image-edit-2511-Q4_K_M with a Lightning-4steps LoRA at 1.0: a
+# different base model entirely. That is by far the largest style divergence in the
+# shipped pipeline, and it is encoded here as a PASSING assertion
+# (`test_recompose_is_held_to_a_different_contract...`) because it is intended, not
+# because it is small. A different contract is not the same as no divergence.
+#
+# The population is swept, not enumerated (`gotcha_closing-a-class-needs-a-population-sweep`):
+# an earlier draft of this contract listed background/plate/card and silently omitted the
+# recompose graph, which ships ON since 10.1e and drew 33 of that run's 43 delivered
+# frames. Every graph a shipped default points at must be classified here or the sweep
+# below fails.
+RECOMPOSE = Path(  # the graph that drew 33/43 delivered frames of run 4b35c0ed
+    "data/workflows/comfyui_shot_recompose_qwen_api.json").name
+
+# workflow -> the style contract it is held to. Two contracts, not one contract plus an
+# exemption: the recompose graph is a Qwen-Image-Edit editor and cannot load an SDXL
+# checkpoint or an SDXL LoRA, so holding it to the SDXL row would be incoherent, and
+# leaving it out of the table would be the omission described above.
+STYLE_FAMILY = {
+    API2: "sdxl-animagine",         # shot backgrounds (image_node)
+    PLATE: "sdxl-animagine",        # approved stock location plates (seed script)
+    MULTI_ANGLE: "sdxl-animagine",  # character cards
+    POSE_GUIDE: "sdxl-animagine",   # pose-conditioned character cards
+    RECOMPOSE: "qwen-image-edit",   # shot recompose — plate + cards -> one frame
+}
+FAMILY_BASE = {
+    "sdxl-animagine": "AnimagineXL_v31.safetensors",
+    "qwen-image-edit": "qwen-image-edit-2511-Q4_K_M.gguf",
+}
+# Shipped graphs that draw no art style, with the reason. Being on this list is a
+# decision, which is the point: an unclassified graph fails `test_every_shipped_...`.
+NON_STYLE_WORKFLOWS = {
+    "comfyui_iclight_relight_api.json":
+        "relights a sprite that already exists; reachable only at "
+        "composite_harmonization_tier >= 3 and the shipped default is 1",
+    "comfyui_depth_anything_v2_api.json":
+        "produces a depth map, not a picture",
+}
+# The set the spec's weight divergence is about. POSE_GUIDE is in the family above (and
+# asserted there) but not here: it is a second card graph, so it adds no third value.
+SDXL_STYLE_SET = [API2, PLATE, MULTI_ANGLE]
+STYLE_LORA = "darkness_xl_v2.safetensors"
+
+
+def _shipped_workflow_names() -> set[str]:
+    """Every ComfyUI graph a SHIPPED DEFAULT points at.
+
+    Read off `Settings.model_fields` rather than an instance: constructing `Settings()`
+    pulls in `.env` and the credential guards, and the question here is what the code
+    ships with, not what this box is configured for. The pose-guide path is a module
+    constant rather than a settings field, so it is added by name.
+    """
+    from yt_flow.config import Settings
+
+    paths = {
+        field.default
+        for field in Settings.model_fields.values()
+        if isinstance(field.default, str) and field.default.startswith("data/workflows/")
+    }
+    paths.add(character_image_provider._POSE_GUIDE_WORKFLOW_PATH)
+    return {Path(p).name for p in paths}
+
+
+def lora_strengths(graph: dict, lora_name: str) -> set[float]:
+    """Every numeric strength `lora_name` is applied at, across every loader applying it.
+
+    A set over all loaders, not one node's field: a graph may patch the same LoRA in
+    twice (`LoraLoaderModelOnly` for the model, `LoraLoader` for both), and picking "the"
+    node would be picking whichever `dict` order handed over first. Non-numeric values are
+    dropped rather than coerced — a strength wired from another node is the list
+    `["3", 0]`, and `float()` on it raises `TypeError` inside a contract test that is
+    supposed to REPORT the graph, not crash on it.
+    """
+    return {
+        float(value)
+        for node in graph.values()
+        if str(node.get("class_type", "")).startswith(LORA_PREFIX)
+        if (node.get("inputs") or {}).get("lora_name") == lora_name
+        for field in ("strength_model", "strength_clip")
+        if isinstance(value := (node.get("inputs") or {}).get(field), (int, float))
+        if not isinstance(value, bool)
+    }
+
+
+def test_every_shipped_workflow_is_classified_by_the_style_contract():
+    """The sweep. Add a graph to a shipped default and this fails until it is classified."""
+    unclassified = _shipped_workflow_names() - set(STYLE_FAMILY) - set(NON_STYLE_WORKFLOWS)
+    assert not unclassified, (
+        f"{sorted(unclassified)} render for shipped code paths but are in neither "
+        "STYLE_FAMILY nor NON_STYLE_WORKFLOWS — decide which, do not delete the row"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(STYLE_FAMILY), ids=lambda n: n)
+def test_style_workflow_loads_its_declared_base_model(name: str):
+    graph = nodes(WORKFLOW_DIR / name)
+    assert base_models(graph) == {FAMILY_BASE[STYLE_FAMILY[name]]}
+
+
+def test_the_sdxl_style_set_shares_one_checkpoint_and_one_style_lora():
+    """The half of the art-style contract that already holds."""
+    for name in SDXL_STYLE_SET:
+        graph = nodes(WORKFLOW_DIR / name)
+        assert base_models(graph) == {FAMILY_BASE["sdxl-animagine"]}, name
+        assert lora_names(graph) == {STYLE_LORA}, name
+        assert lora_strengths(graph, STYLE_LORA), f"{name}: no numeric strength to compare"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "MEASURED DIVERGENCE, DELIBERATELY NOT FIXED (Story 14.3). The three SDXL graphs "
+    "apply darkness_xl_v2 at 0.5 (background) / 0.5 (plate) / 0.3 (card). Recompose feeds "
+    "the card in as a reference image and is asked to render it 'in the same illustration "
+    "style as the background', so a card rendered at a different LoRA strength than the "
+    "background is a DECLARATION-LEVEL candidate cause of the 'pasted-on' look Jay "
+    "reported. It is not changed here for two reasons that are both blocking: (1) aligning "
+    "the weight makes the 42 approved plates and 52 approved cards inconsistent with every "
+    "new render, and asset_service has no epoch-archive path (`asset_service.py:58-61` "
+    "`# ponytail:`), so a re-render overwrites them in place; (2) this box has no GPU, and "
+    "no art-style default in this project has ever been changed without a human judging "
+    "rendered frames. xfail(strict) rather than a comment: if someone aligns the weights "
+    "this xpasses and FAILS, which surfaces the decision instead of burying it."))
+def test_the_sdxl_style_set_applies_that_lora_at_one_strength():
+    by_workflow = {
+        name: lora_strengths(nodes(WORKFLOW_DIR / name), STYLE_LORA) for name in SDXL_STYLE_SET
+    }
+    assert len({frozenset(v) for v in by_workflow.values()}) == 1, by_workflow
+
+
+def test_recompose_is_held_to_a_different_contract_not_exempted_from_this_one():
+    """A Qwen-Image-Edit graph cannot satisfy the SDXL row, and must not be silently
+    dropped for it — the omission that made an earlier draft of this contract miss the
+    graph that drew 33 of run 4b35c0ed's 43 delivered frames."""
+    assert STYLE_FAMILY[RECOMPOSE] != STYLE_FAMILY[API2]
+    recompose, background = nodes(WORKFLOW_DIR / RECOMPOSE), nodes(WORKFLOW_DIR / API2)
+    assert base_models(recompose).isdisjoint(base_models(background))
+    assert lora_names(recompose).isdisjoint(lora_names(background))
+    # And its own family's allowlist is the one it is checked against.
+    assert lora_names(recompose) <= ALLOWED_LORAS[FAMILY_BASE["qwen-image-edit"]]

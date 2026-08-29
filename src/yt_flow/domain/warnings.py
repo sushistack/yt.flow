@@ -95,6 +95,15 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
         "video",
         "일부 샷의 재구성이 실패하거나 건너뛰어져 오버레이로 렌더했습니다",
     ),
+    # Story 14.3. The copy has to say "the frame is fine, only the record is lost",
+    # because the obvious operator reaction to a recompose warning is to re-render
+    # the shot — and here that would spend a GPU pass on a frame that is already
+    # correct. What was lost is the attribution (which workflow, which placement
+    # instruction drew it), which no re-render restores either.
+    "recompose_sidecar_failed": (
+        "video",
+        "재구성 프레임은 정상이지만 기록(사이드카)에 남기지 못했습니다 — 재렌더하지 마세요, 그 샷의 생성 근거만 추적이 안 됩니다",
+    ),
 }
 if set(RUN_WARNING_CATALOG) != set(get_args(RunWarningCode)):
     # `raise`, not `assert`: the docstring promises import-time failure, and `python -O`

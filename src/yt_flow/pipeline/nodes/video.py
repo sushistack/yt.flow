@@ -1188,6 +1188,11 @@ def _record_trace(
     composite_harmonization_tier: int = 0,
     relit_pairs_computed: int = 0,
     relit_pairs_failed: int = 0,
+    recomposed: int = 0,
+    recompose_skipped: int = 0,
+    recompose_reentered: int = 0,
+    recompose_failed: int = 0,
+    recompose_attributed: int = 0,
     camera_noise_enabled: bool = False,
     renderer_counts: dict[str, int] | None = None,
     parallax_25d_enabled: bool = False,
@@ -1215,6 +1220,24 @@ def _record_trace(
             "composite_harmonization_tier": composite_harmonization_tier,
             "relit_pairs_computed": relit_pairs_computed,
             "relit_pairs_failed": relit_pairs_failed,
+            # Story 14.3: which shots this run actually recomposed. Recompose has shipped
+            # ON since 10.1e and drew 33 of run 4b35c0ed's 43 frames, yet the trace said
+            # nothing about it — `renderer_counts` below describes the BACKGROUND
+            # renderer, and a recomposed shot is a background-only shot by construction,
+            # so nothing in the span distinguished "recompose ran" from "recompose was
+            # off". Reported unconditionally, like the relight pair counts above.
+            # `recompose_skipped` means NOT RECOMPOSED (unreadable plate, a card_key
+            # outside CARD_LOOKS). Shots that arrived already recomposed — video is a
+            # retryable stage — are `recompose_reentered`; folding them into `skipped`,
+            # as this first shipped, made a retry over 33 recomposed shots trace
+            # `recomposed=0, recompose_skipped=33`, i.e. the exact inverse of the truth.
+            # `recompose_attributed` is how many of them actually got a sidecar block, so
+            # `recomposed` is readable as coverage rather than assumed to be.
+            "recomposed": recomposed,
+            "recompose_skipped": recompose_skipped,
+            "recompose_reentered": recompose_reentered,
+            "recompose_failed": recompose_failed,
+            "recompose_attributed": recompose_attributed,
             # Per-scene card counts (Story 8.3, replaces 1.9c's single character_scenes).
             "card_counts": card_counts or [],
             # Story 8.8: aggregate style counts + table version replace 1.9c's
@@ -1259,6 +1282,28 @@ def _record_trace(
         get_client().update_current_span(metadata=metadata)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _stat_count(stats: object, key: str) -> int:
+    """One count out of a resolver's stats payload, or 0.
+
+    The resolver is injected, so its payload is not this module's to trust: `bool` is an
+    `int` in Python and `True` would trace as 1, and a string count would break the span
+    encoder inside `_record_trace`'s blanket except — silently losing the whole metadata
+    dict, not just this key.
+
+    A value that is PRESENT but unusable is logged rather than quietly zeroed: `"33"` and
+    `33.0` are both plausible payloads from a resolver someone edited, both mean the run
+    recomposed 33 shots, and both would otherwise trace as 0 — which reads as "recompose
+    did nothing", the single conclusion this trace field exists to rule out. Absent stays
+    silent, because absent legitimately means the stage never ran.
+    """
+    value = stats.get(key) if isinstance(stats, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if value is not None:
+        logger.warning("Recompose stat %r is %r, not a count — tracing 0", key, value)
+    return 0
 
 
 def _validate_scene_assets(
@@ -2469,6 +2514,11 @@ async def video_node(state: PipelineState) -> dict:
     # Story 13.1 — declared outside the try for the same reason as the trace counters:
     # a stage that fails later must still report what already degraded.
     warnings: list[RunWarning] = []
+    # Story 14.3 — outside the try for the same reason `warnings` is: recompose runs
+    # early and rewrites `image_path` on every shot it touches, so a later ffmpeg failure
+    # must not trace 0/0/0 and make "recompose ran and did nothing" indistinguishable
+    # from "recompose never got there". That ambiguity is what these counters remove.
+    recompose_stats: dict = {}
     try:
         if not shutil.which("ffmpeg"):
             raise EnvironmentError("ffmpeg not found in PATH; install ffmpeg to use video_node")
@@ -2565,8 +2615,63 @@ async def video_node(state: PipelineState) -> dict:
                                           detail="no recompose resolver was injected"))
         if getattr(s, "shot_recompose_enabled", False) and _recompose_resolver is not None and cast_cards:
             try:
-                cast_cards, recompose_stats = await _recompose_resolver(scenes, cast_cards)
+                new_cast, recompose_stats = await _recompose_resolver(scenes, cast_cards)
                 logger.info("Shot recompose: %s", recompose_stats)
+                if isinstance(new_cast, dict):
+                    cast_cards = new_cast
+                else:
+                    # Not assigned blind. A non-dict first element (None, a list, a tuple)
+                    # makes every card vanish from the render, and "no cards composited"
+                    # is exactly what a fully successful recompose looks like — so the
+                    # frames would ship people-less with nothing said. The cards are still
+                    # dropped rather than kept: the resolver may already have swapped
+                    # `image_path` on shots that now contain the figures, and overlaying
+                    # onto those draws everyone twice.
+                    logger.warning("Shot recompose returned a %s cast map, not a dict",
+                                   type(new_cast).__name__)
+                    cast_cards = {}
+                    warnings.append(make_warning(
+                        "recompose_shots_degraded", reason="cast_payload_unreadable",
+                        detail=f"resolver returned {type(new_cast).__name__} for the cast map",
+                    ))
+                if not isinstance(recompose_stats, dict):
+                    # Coerced here, NOT left to the blanket except below: by the time the
+                    # resolver returns it has already rewritten `image_path` on every shot
+                    # it recomposed, so filing `recompose_preflight_failed` ("recompose did
+                    # not run, everything rendered on the overlay") would be a false
+                    # report about frames that are already swapped.
+                    # But coercing SILENTLY, as this first shipped, was a regression of its
+                    # own: `{}` traces 0/0/0 and files nothing, which is byte-identical to
+                    # "recompose was off" after 33 frames were already swapped. Degraded,
+                    # not preflight — the frames shipped, only the outcome is unreadable.
+                    logger.warning("Shot recompose returned %s, not a stats dict",
+                                   type(recompose_stats).__name__)
+                    warnings.append(make_warning(
+                        "recompose_shots_degraded", reason="stats_payload_unreadable",
+                        detail=f"resolver returned {type(recompose_stats).__name__}, "
+                               "so recomposed/skipped/failed counts are unknown",
+                    ))
+                    recompose_stats = {}
+                # Story 14.3: the frame is fine and the attribution is gone. Its own code
+                # rather than a `recompose_shots_degraded` reason, because the operator
+                # action is opposite — degraded shots may be worth re-rendering, these
+                # must not be.
+                sidecar_rows = recompose_stats.get("warnings")
+                for row in sidecar_rows if isinstance(sidecar_rows, list) else []:
+                    # The KEYS are checked, not just the row's type: a well-formed list of
+                    # dicts with unexpected keys produced an operator row naming no shot at
+                    # all (`shot_id=None, detail=None` — make_warning drops the nulls, so
+                    # the row arrived with no context whatsoever). A warning nobody can act
+                    # on is worse than the log line it came from.
+                    if isinstance(row, dict) and isinstance(row.get("shot_id"), str):
+                        warnings.append(make_warning(
+                            "recompose_sidecar_failed",
+                            scene_num=row.get("scene_num"), shot_id=row["shot_id"],
+                            detail=row.get("detail"),
+                        ))
+                    else:
+                        logger.warning(
+                            "Ignoring unusable recompose sidecar warning row: %r", row)
                 if recompose_stats.get("preflight_failed"):
                     # Story 10.1d: the run bailed out of recompose before the first shot —
                     # ComfyUI is misconfigured, which is wrong for every shot rather than
@@ -2591,6 +2696,10 @@ async def video_node(state: PipelineState) -> dict:
                     # card_key outside CARD_LOOKS. Those shots render on the overlay while
                     # their neighbours are recomposed, and until this row existed the only
                     # reported recompose outcome was the all-or-nothing preflight bail.
+                    # `skipped` here is the service's post-14.3-review counter, which
+                    # excludes re-entry: a shot arriving already recomposed is counted
+                    # `reentered`, and firing this row for it would tell the operator that
+                    # a recomposed frame "rendered on the overlay".
                     warnings.append(make_warning(
                         "recompose_shots_degraded",
                         reason=f"failed={recompose_stats.get('failed', 0)}"
@@ -2598,9 +2707,11 @@ async def video_node(state: PipelineState) -> dict:
                         detail=f"recomposed={recompose_stats.get('recomposed', 0)}",
                     ))
             except Exception as exc:  # noqa: BLE001 — AD-10: falls back to the overlay path
-                # Warns, not just logs: a raising resolver (or a non-dict stats payload) is
-                # a run-level failure, and leaving it at WARNING reproduces the invisible
-                # skip Story 10.1d exists to end — the render below is identical either way.
+                # Warns, not just logs: a raising resolver is a run-level failure, and
+                # leaving it at WARNING reproduces the invisible skip Story 10.1d exists to
+                # end — the render below is identical either way. A raise (unlike the
+                # malformed payloads handled above, which are their own `degraded` rows)
+                # means nothing came back at all, so the preflight code is the honest one.
                 logger.warning("Shot recompose failed, keeping the overlay path: %s", exc)
                 warnings.append(make_warning("recompose_preflight_failed",
                                               reason="resolver_error",
@@ -2875,6 +2986,11 @@ async def video_node(state: PipelineState) -> dict:
             composite_harmonization_tier=s.composite_harmonization_tier,
             relit_pairs_computed=relight_stats["computed"],
             relit_pairs_failed=relight_stats["failed"],
+            recomposed=_stat_count(recompose_stats, "recomposed"),
+            recompose_skipped=_stat_count(recompose_stats, "skipped"),
+            recompose_reentered=_stat_count(recompose_stats, "reentered"),
+            recompose_failed=_stat_count(recompose_stats, "failed"),
+            recompose_attributed=_stat_count(recompose_stats, "attributed"),
             camera_noise_enabled=s.camera_noise_enabled,
             renderer_counts=renderer_counts,
             parallax_25d_enabled=s.parallax_25d_enabled,
@@ -2895,6 +3011,13 @@ async def video_node(state: PipelineState) -> dict:
         _record_trace(
             run_id=run_id, scene_count=len(state.get("scenes", [])),
             latency_ms=_ms(t0), error=exc,
+            # The counts, not the defaults: recompose runs early and its frames are on
+            # disk and wired into `scenes` by the time anything downstream can raise.
+            recomposed=_stat_count(recompose_stats, "recomposed"),
+            recompose_skipped=_stat_count(recompose_stats, "skipped"),
+            recompose_reentered=_stat_count(recompose_stats, "reentered"),
+            recompose_failed=_stat_count(recompose_stats, "failed"),
+            recompose_attributed=_stat_count(recompose_stats, "attributed"),
         )
         return {"current_stage": "video", "error": f"stage=video run_id={run_id}: {exc}",
                 "run_warnings": merge_warnings(state.get("run_warnings", []), cap_samples(warnings))}

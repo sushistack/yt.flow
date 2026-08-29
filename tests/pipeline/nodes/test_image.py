@@ -3206,3 +3206,73 @@ async def test_the_warning_names_the_card_that_left_the_frame(monkeypatch, tmp_p
         "scene_num": 1, "shot_id": "S000", "reason": "no_standing_room_earlier_run",
         "card_keys": "SCP-049,Dr-Bright",
     }
+
+
+# ── Story 14.3: the recompose key ────────────────────────────────────────────
+
+
+async def test_the_sidecar_declares_the_recompose_key_as_an_explicit_null(monkeypatch, tmp_path):
+    """Written, not omitted. `null` says "this run did not recompose this shot"; an ABSENT
+    key says "this sidecar predates Story 14.3".
+
+    No code branches on the difference — `_stamp_sidecar` treats absent and null the same —
+    so this pins a schema slot for whoever reads a sidecar, not a runtime behaviour. The
+    test is here because the slot is easy to drop by accident and impossible to backfill.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings",
+                        lambda: FakeSettings(mock=False, workflow_path=_wf_file(tmp_path)))
+
+    async def fake_fetch(url, workflow):
+        return RGB_PNG + b"\x00" * 1200
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+
+    assert out.get("error") is None
+    sidecar = json.loads(
+        (tmp_path / "workspace" / "run-img-1" / "images" / "scene_001_S001_done.json")
+        .read_text())
+    assert "recompose" in sidecar
+    assert sidecar["recompose"] is None
+
+
+async def test_a_sidecar_carrying_a_recompose_block_is_still_a_resume_hit(monkeypatch, tmp_path):
+    """The invariant every checkpoint in the workspace depends on.
+
+    `_existing_complete_shot` compares exactly three keys — image_prompt,
+    negative_prompt, seed-in-ladder. recompose_service writes a fourth into the same
+    file after the fact; if that became a compared key, every recomposed shot would
+    re-render on the next resume, which is 33 of run 4b35c0ed's 43 shots.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(img, "_settings", lambda: _resume_settings(tmp_path))
+    d = tmp_path / "workspace" / "run-img-1" / "images"
+    d.mkdir(parents=True)
+    for base, prompt, negative in (
+        ("scene_001_S001", "a dark room", "blurry"),
+        ("scene_001_S002", "an agent", "text"),
+        ("scene_002_S003", "a corridor", "watermark"),
+    ):
+        _write_complete_shot(d, base, prompt, negative)
+        sidecar = d / f"{base}_done.json"
+        record = json.loads(sidecar.read_text())
+        record["recompose"] = {
+            "recomposed_at": "2026-08-29T00:00:00+00:00", "source": "rendered",
+            "workflow_path": "data/workflows/comfyui_shot_recompose_qwen_api.json",
+            "workflow_sha256": "a" * 64, "digest": "0123456789abcdef",
+            "output_path": str(d.parent / "recomposed" / "S001_0123456789abcdef.png"),
+            "passes": [{"card_key": "SCP-049", "position": "left", "depth": "mid"}],
+        }
+        sidecar.write_text(json.dumps(record))
+
+    async def fake_fetch(url, workflow):
+        raise AssertionError("a recompose block must not trigger a re-render")
+
+    monkeypatch.setattr(img.comfyui_client, "submit_and_fetch", fake_fetch)
+
+    out = await img.image_node(_state())
+
+    assert out.get("error") is None
+    assert all(s["image_path"] for sc in out["scenes"] for s in sc["shots"])

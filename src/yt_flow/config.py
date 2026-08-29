@@ -332,6 +332,26 @@ class Settings(BaseSettings):
     #   (b) Jay's viewing verdict on an E2E iteration run with substitution ON.
     #       Precedent is unanimous (10.1c, 10.5, 10.1e, 14.2): a visual default
     #       does not flip before a human has watched frames.
+    # A THIRD CONDITION WAS PROPOSED ELSEWHERE AND IS WITHDRAWN — do not add it back.
+    # Story 14.1's report, epics.md, deferred-work.md and epic-14-context.md all carried
+    # a "(c) fix the relight coupling" on the reasoning that the pair key
+    # `(card_variant, location_key)` in `composite_harmonization.py:613` has no scene
+    # component (true) and therefore "already fires in run 4b35c0ed" (FALSE). That key is
+    # built inside `precompute_relights`, which `video.py` calls only at
+    # `composite_harmonization_tier >= 3`; the shipped tier is 1 and tier 3 (IC-Light) was
+    # rejected by Jay's 10.1b viewing. That one line is the whole disproof.
+    # A second leg was drafted alongside it — "and with recompose ON no shot reaches the card
+    # compositing chain anyway" — and it is WITHDRAWN as an overstatement: that is an
+    # observation about run 4b35c0ed, not an invariant. `recompose_run_shots` pops a shot from
+    # the cast map only on its success and re-entry branches, so a shot counted `failed`
+    # (ComfyUI dying mid-sweep) or `skipped` (a card_key outside CARD_LOOKS) keeps its cast and
+    # DOES enter the overlay chain. The tier leg alone makes it unreachable, so it cannot gate
+    # this flag. (Third time in this project a recorded root cause has been inverted — this
+    # one planted by the correcting note itself; see
+    # `gotcha_recorded-root-cause-can-be-inverted`.) Story 14.3, 2026-08-29; pinned by
+    # `test_precompute_relights_is_unreachable_at_the_shipped_tier`. The coupling itself is
+    # still a real, unfixed defect that fires if tier 3 is turned on and stays in
+    # `deferred-work.md` — what is withdrawn is its link to THIS flag.
     # No `.env` / `.env.example` pin, and NO `DECISIONS` row — there is still no
     # dated *promotion* verdict, only a dated statement of what promotion requires
     # (see the "NO DATE, so no row" note further down; it stands).
