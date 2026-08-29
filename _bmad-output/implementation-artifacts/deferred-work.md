@@ -909,7 +909,7 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
   evidence: 원인은 `config.py:554-560`에 기록돼 있다 — `_DEPTH_PHRASE["near"]`가 *"in the foreground close to camera"* 와 *"whole body from head to feet visible in frame"* 를 함께 요구하는데 16:9에서 두 절이 양립 불가라 모델이 인물을 키워 둘 다 만족시킨다(Jay가 E2E iteration 4 시청에서 같은 지적). **고치지 않은 이유는 성능이 아니라 무효화 범위다**: 그 문구를 바꾸면 43-plate 스윕과 10.1e 검증 슬레이트가 통째로 무효가 되고, 그 둘을 다시 뽑는 데 GPU 세션이 필요하다(14.3 스펙의 Block If에 명시). 그리고 문구를 바꾼 뒤 기존 `recompose` 블록들은 여전히 `depth: "near"`라고만 적혀 있게 되므로, 14.3이 `instruction_sha256`을 블록에 넣은 것이 바로 이 편집을 예상한 것이다 — 편집 전후 프레임이 해시로 갈린다. 재개 조건: GPU 세션 + 스윕/슬레이트 재산출 예산. 근거: `14-3-art-style-contract/report.md` §9.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
-  summary: **`S00105` — 기존 바닥 밖 배치.** 인물이 배경에 실재하는 바닥면이 아닌 곳에 놓인다. 14.2 전수 판정에서 **판정기가 옳고 Claude 라벨이 틀린** 경우로 확인된 행이기도 하다.
+  summary: **⚠️ 2026-08-30 Jay 판정으로 전제가 약해졌다 — Jay는 `S00105`를 지목하지 않았다**(`14-3-art-style-contract/VERDICT.md` §2). 이 행은 14.2의 전수 판정에서만 결함으로 남아 있고 사람 판정에는 없다. 지우지 않는 이유는 14.2가 이 샷을 **판정기가 옳고 라벨이 틀린** 경우로 독립 기록했기 때문이다 — 두 기록이 어긋나므로 다음 런에서 재확인한다. 원 서술: **`S00105` — 기존 바닥 밖 배치.** 인물이 배경에 실재하는 바닥면이 아닌 곳에 놓인다. 14.2 전수 판정에서 **판정기가 옳고 Claude 라벨이 틀린** 경우로 확인된 행이기도 하다.
   evidence: 세 인계 결함 중 유일하게 14.2에서 "미검출 1건"으로 분류됐던 것 — 라벨보다 판정기가 옳았다. 배치 지시는 이미 존재하고(`placement_instruction`), 8.16 depth 접지는 **recompose된 샷에 도달하지 않는다**: `video.py`의 순서상 recompose가 8.16 ground resolver보다 **먼저** 돌고 recompose된 샷은 cast 맵에서 빠지므로 접지 해석이 소비될 카드가 없다(구조적 우회, 플래그 검사 아님). 즉 이 결함은 **recompose 내부의 배치 문제**이고 오버레이 층의 접지 코드로는 못 닿는다. 고치지 않은 이유: 판별에 렌더된 페어가 필요하고 이 박스에 GPU가 없다. 재개 조건: GPU 세션. 근거: `14-3-art-style-contract/report.md` §9.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
@@ -923,3 +923,15 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
   summary: `recompose_service`의 `run_dir` 폴백 유도(`plate_path.parent.name != "images"`이면 `workspace`)는 **다른 런의 사이드카를 겨냥할 수 있다.**
   evidence: `run_dir = plate_path.parent.parent if plate_path.parent.name == "images" else workspace`. 폴백이 잡히면 `_sidecar_for(workspace, shot_id)`가 `workspace/images/*_{shot_id}_done.json`을 글롭하는데, `workspace/`는 **모든 런의 부모**다. 정상 파이프라인에서는 플레이트가 항상 `<run>/images/`에 있어 폴백이 안 잡히고(그래서 관측 0건), 손으로 놓은 플레이트나 다른 레이아웃에서만 도달한다. 지금은 `workspace/images/`가 존재하지 않아 글롭이 비고 `stamp`가 조용히 반환하므로 **오염이 아니라 미귀속**으로 끝난다 — 그러나 누군가 `workspace/images/`를 만드는 순간 한 런의 프레임이 다른 런의 사이드카에 기록된다. 올바른 수정은 `run_id`를 리졸버까지 넘기는 것인데, 그것은 `video_node`가 순수 상태 함수로 유지하려고 일부러 안 넘긴 값이다(같은 파일의 주석) — 범위 밖.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
+  summary: **판독불가 배경 — 이 에픽이 추적한 적 없는 신규 부류 3건**(`S00503` 소용돌이, `S00801` 정체불명 원형 조, `S00903` 아무것도 읽히지 않는 청회색 면). Jay가 `S00903`에 *"뭔지모르는배경"*이라고 직접 적었다.
+  evidence: 2026-08-30 Jay 전수 판정 17건 중 3건이 이 부류다(`14-3-art-style-contract/VERDICT.md` §3). ⑦(화풍)으로 접수된 시청 판정 안에 섞여 있었고, 어느 스토리도 이 축을 소관으로 들고 있지 않다. **팔레트 지표로는 못 잡는다** — 랭크 22·39·42로 하위권이다(저채도이므로 당연하다). 10.4b가 닫으며 남긴 `visible_event 84.9%`와 `gotcha_diffusion-cannot-render-an-absence`가 같은 계열일 개연이 있으나 **귀속은 미확정**이다(그쪽은 나레이션-이미지 정합이고 이쪽은 배경 자체의 판독성). 재개 조건: 다음 E2E iteration에서 기저율을 재고 10.4b 계열인지 판별.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
+  summary: **`S00201` 액자 속 인물이 화면에서 확인됐다** — 14.4(b)가 "감수 리스크"로 명시한 자유생성 샷 갭이 Jay 시청 판정에 실제로 걸렸다. 소관은 14.1의 승인 게이트인데, **승인 게이트는 이 샷에 도달하지 않는다.**
+  evidence: 2026-08-30 Jay 판정에서 *"배경에 왜 사람이 있는거냐고"*로 지목(`VERDICT.md` §1). 14.4(b) 결정은 액자·모니터·포스터 속 인물의 소관을 14.1 승인 게이트로 보내고 런타임 가드 확장을 기각하면서, **`stock_plate_substitution_enabled`가 꺼져 있는 동안 자유생성 샷은 게이트에 도달하지 않으므로 감수한다**고 기록했다. 이 런은 43/43이 자유생성이므로 그 감수가 그대로 화면에 나온 것이다. 즉 새 결함이 아니라 **기록된 리스크의 실현**이고, 닫는 길은 가드 확장이 아니라 플레이트 치환을 켜는 것(14.1의 (a)+(b) 조건)이다. 부정 프롬프트는 해법이 아니다 — `BG_NEGATIVE_SUFFIX`에 인물 토큰이 이미 있는데도 그려졌다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
+  summary: **합성 결함 4건이 인계 목록 밖에서 새로 나왔다** — `S00702` `S00800` `S00802` `S00904`. Jay가 셋에 *"합성문제"*, `S00802`에 *"환자 캐릭터? 이상함"*을 직접 적었다.
+  evidence: 14.2가 14.3으로 넘긴 합성 계열은 `S00504`·`S00803` 둘뿐이었는데, 2026-08-30 전수 판정에서 같은 부류가 **4건 더** 나왔다(`VERDICT.md` §3). 즉 이 부류의 기저율도 인계 시점 추정보다 크다(2 → 6/43). 넷 다 recompose된 샷이고 배치 지시는 이미 프롬프트에 있으므로(`shot_recompose.py:61-80`) 원인은 텍스트 밖이다. Jay 결정 (B)에 따라 **E2E iteration 5**에서 다룬다. 그때 14.3이 깐 `recompose` 블록(`workflow_sha256` + `instruction_sha256` + 패스별 position/depth/pose)이 프레임↔지시 귀속을 제공한다.

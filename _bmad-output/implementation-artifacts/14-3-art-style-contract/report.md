@@ -299,3 +299,19 @@ uv run python .../build_style_sheet.py  4b35c0ed-8a1e-4448-8594-11bd9997376d
 uv run pytest tests/test_workflow_definitions.py tests/services/test_recompose_service.py \
               tests/pipeline/nodes/test_video_harmonization.py -q
 ```
+
+---
+
+## 10. Jay 판정 (2026-08-30) — 라벨 확정, 그리고 ⑦은 한 부류가 아니었다
+
+전문은 `VERDICT.md`. 요지 셋:
+
+1. **17/43** 지목. Claude 라벨 7건 중 **6건 일치, `S00105` 반증, 11건 미탐** — 기저율이
+   2.4배 틀렸다(이 에픽 세 번째 라벨 역전).
+2. **17건은 다섯 부류다** — 팔레트 7 / 합성 5 / 판독불가 3 / 척도 1 / 배경에 사람 1.
+   ⑦로 접수된 것의 **59%가 ⑦이 아니다.**
+3. **지표 재채점**: 17건 전체 대상 상위 17위 안 8/17(무작위 기대 6.7 — 신호 없음),
+   팔레트 부류 7건만 대상 상위 7위 안 4/7(기대 1.1). §6의 게이트 미제작 사유가
+   **다섯째**로 늘었다 — 이 축 위의 커트는 ⑦의 41%만 닫고 나머지를 "검사됨"으로 계상한다.
+
+Jay 결정 **(B)**: 층 2는 E2E iteration 5로. `_DEPTH_PHRASE["near"]` 편집도 그때.
