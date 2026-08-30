@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-08-30T19:08:50+0900",
+  "seed_workflow": "data/workflows/comfyui_shot_recompose_qwen_seed20260830.json",
+  "seed_workflow_sha256": "684a5281dc5491f5",
+  "note": "동일 플레이트·카드·지시문·시드·워크플로. 차이는 렌더 비결정성뿐이다.",
+  "rows": [
+    {
+      "shot_id": "S00702",
+      "reps": 5,
+      "distinct_sha": 5,
+      "sha": [
+        "7a6f4998b1e5876b",
+        "4250d4f3263839a8",
+        "e9e655e935c1db1d",
+        "c3e41d757b261316",
+        "7c2982d451bb58b3"
+      ],
+      "bytes_min": 1051676,
+      "bytes_max": 1051676
+    },
+    {
+      "shot_id": "S00800",
+      "reps": 5,
+      "distinct_sha": 5,
+      "sha": [
+        "d8b108d6460610cf",
+        "f1c4c10fd6ca1e0d",
+        "dc11b99955fa3b3e",
+        "4d9ef86294cb30cc",
+        "c5e6f77cb5ee51b0"
+      ],
+      "bytes_min": 1112062,
+      "bytes_max": 1112062
+    },
+    {
+      "shot_id": "S00904",
+      "reps": 5,
+      "distinct_sha": 5,
+      "sha": [
+        "0e5287e102c3f1e7",
+        "a33bf67201501b41",
+        "706f7c55a68ff442",
+        "d5bab1b10db25841",
+        "2817a46b84b0ee79"
+      ],
+      "bytes_min": 1103754,
+      "bytes_max": 1103754
+    }
+  ]
+}

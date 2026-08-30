@@ -64,13 +64,32 @@ _DEPTH_PHRASE = {
     # rewrite, an explicit scale anchor) were screened as text and rejected in
     # `14-9-recompose-placement-scale/candidates.md` §3, the second for adding placement
     # instruction to a sentence that already ships grounding and style clauses.
-    # VERIFIED BY: a 3-arm blind sheet over 7 shots of run 4b35c0ed — A (delivered frame),
-    # B (this old phrase, fresh seed 20260830), C (the new phrase, THE SAME SEED). B is the
-    # reroll control without which the reroll noise is booked as the edit's credit
-    # (`gotcha_regeneration-needs-a-same-prompt-control`). `mid`/`far` are untouched, and
-    # the 3 target shots with no `near` pass are the experiment's own null control.
-    # THE HUMAN VERDICT ON THAT SHEET HAS NOT HAPPENED YET — see
-    # `14-9-recompose-placement-scale/report.md`.
+    # ⚠️ NOT PROVEN. The human verdict happened on 2026-08-30 and it was INCONCLUSIVE.
+    # A 3-arm blind sheet over 7 shots of run 4b35c0ed — A (delivered frame), B (the old
+    # phrase, fresh seed 20260830), C (this new phrase, THE SAME SEED) — put Jay on C for
+    # 3 of the 4 treated shots and on B for none of them. That reads as SHIP until the
+    # experiment's own null control kills it: on the 3 shots with no `near` pass, where B
+    # and C ship BYTE-IDENTICAL instructions at the same seed and the same workflow file,
+    # he still told 2 of them apart. The preregistered VETO fires on that: "결론 없음".
+    # ⚠️ CORRECTED the same day: the VETO's stated cause was wrong. The first reading blamed
+    # render nondeterminism from differing sha256s — but ComfyUI embeds the prompt in a
+    # 4844-byte tEXt chunk, and this harness passes a per-arm shot_id, so the sha differs
+    # while the pixels do not. Measured on pixels: 5 repeats at one seed and one prompt are
+    # IDENTICAL (max |Δ| = 0 over 10 pairs x 3 shots), and so are the null-control B/C
+    # frames. The renderer is deterministic. So the null control was DEGENERATE — two
+    # pixel-identical tiles in one row, a forced choice between the same image — and it
+    # measured nothing. The verdict stays "결론 없음" (a gate is not rewritten after seeing
+    # its result — 14.2's precedent), but the treated shots ARE clean: their B/C differ in
+    # 84-99% of pixels, all of it from this one phrase, so Jay's 3-0 for C is not reroll
+    # noise. n=4, one judge, one pass — screening, not a gate.
+    # WHY THE EDIT STAYS ANYWAY (Jay, 2026-08-30): reverting is not the neutral option —
+    # it restores an instruction that cannot be satisfied, diagnosed in `config.py` and
+    # raised twice by Jay off frames. No treated shot preferred the old phrase. Keeping an
+    # unproven-but-coherent sentence is the smaller risk than restoring a known-broken one.
+    # THE BURDEN MOVES TO E2E ITERATION 5: that run re-verifies the 10.1e slate this edit
+    # invalidated, and if the scale defect does not fall there, revert this line.
+    # `mid`/`far` are untouched. Evidence and the verdict arithmetic:
+    # `14-9-recompose-placement-scale/{VERDICT,report}.md`.
     "near": "in the foreground, his whole body from head to feet visible in frame",
     "mid": "at mid distance, his whole body from head to feet visible in frame",
     "far": "far from camera, small in the frame, whole body visible",
