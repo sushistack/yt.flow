@@ -63,7 +63,9 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
     # common reason of all: `unservable_framing` (close-up/POV, 7/31 shots of run
     # 4b35c0ed and permanent by design) fires on keys whose approved backgrounds are
     # perfectly good — the shot is simply a close-up. The same row also rides
-    # `no_metadata`, where the prescription is to measure plates we already have.
+    # `no_metadata`, where the prescription is to attach a PERSON VERDICT to plates we
+    # already have — 14.8 moved that sentinel off `viewpoint`, so "re-measure them" is no
+    # longer the action; both curators answering is.
     # One sentence for five reasons (seven until Story 14.8 retired `no_viewpoint_match`
     # and `partial_metadata` with the viewpoint axis) has to state what happened (a plate
     # was not assigned, the background was generated), not diagnose why. 14.2 took this

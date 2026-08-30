@@ -61,6 +61,7 @@ from yt_flow.config import (
 )
 from yt_flow.domain.state import PipelineState, RunWarning, SceneState, ShotData
 from yt_flow.domain.warnings import cap_samples, make_warning, merge as merge_warnings
+from yt_flow.pipeline.nodes.scenario_chain import _CAMERA_ANGLES
 from yt_flow.services import comfyui_client, vision_check
 from yt_flow.services.comfyui_client import ComfyUIError
 
@@ -548,9 +549,9 @@ async def _wait_for_comfyui_recovery(
 # Story 14.1, amended by Story 14.8 — the seven-value `camera_angle` vocabulary split
 # into the five framings a room plate can serve and the two it cannot.
 #
-# 14.8 RETIRED THE MAPPING'S *VALUES* FROM THE SELECTOR. `_select_plate` reads only
-# MEMBERSHIP of this dict ("is this a framing a room plate can serve at all"); it never
-# evaluates `_ANGLE_VIEWPOINT[angle]`, because the adopted matching axis does not involve
+# 14.8 RETIRED THIS MAPPING FROM THE SELECTOR ENTIRELY. `_select_plate` does not read it
+# at all any more — not the values, and (since the review that added `_SERVABLE_ANGLES`
+# below) not the keys either — because the adopted matching axis does not involve
 # viewpoint (`14-8-plate-reuse-shipping/AXIS-CANDIDATES.md` ②). The values are KEPT, and
 # that is a deliberate non-deletion after a reader census, not an oversight:
 # `14-1-approved-plate-sets/replay_coverage.py` needs them twice — for the servable
@@ -580,6 +581,17 @@ _ANGLE_VIEWPOINT = {
 # Separated from "we do not recognise this string at all": these two are a *documented,
 # permanent* refusal, and the report counts them apart from framing we failed to parse.
 _UNSERVABLE_ANGLES = frozenset({"close-up", "POV"})
+# WHAT THE SELECTOR ACTUALLY ASKS: "is this framing one a room plate can serve?". Derived
+# from the vocabulary minus the documented refusal, NOT from `_ANGLE_VIEWPOINT`'s keys —
+# a 14.8 review finding. Keying servability off the retired axis's map meant an eighth
+# `camera_angle` could only be served by inventing an EYE/LOW/HIGH value in a dict this
+# function no longer reads, i.e. the retired measurement would still be gating assignment.
+# The two sets are equal today and `tests/pipeline/nodes/test_image.py` pins that they are;
+# what changes is which one is the definition. `_CAMERA_ANGLES` is imported rather than
+# re-listed here for the reason that constant's own comment gives — it was module-private
+# until a consumer outside `scenario_chain` had to COMPARE against the vocabulary, and this
+# is that consumer (`gotcha_deleting-a-constant-needs-a-reader-census`).
+_SERVABLE_ANGLES = frozenset(_CAMERA_ANGLES) - _UNSERVABLE_ANGLES
 
 
 def _select_plate(
@@ -602,12 +614,20 @@ def _select_plate(
     it: ``location_key`` is a closed 14-value enum the scenario LLM writes
     (`domain/state.py` ``LOCATION_KEYS``) and the plate side is a manifest key, so the
     comparison is string equality on unordered values — there is no "near a boundary".
-    ``plates`` already arrives keyed (``LocationService.resolve_stock_plates(key)``), so
-    that equality is the CALLER's lookup and this function has no viewpoint step left.
-    NOTHING here reads ``viewpoint`` any more — not the filters, not the digest, not the
-    pool-entry sentinel (14.8's review found the sentinel still keyed on it, which made
-    the "does not read viewpoint" claim false and left a rename able to route every plate
-    to ``no_metadata`` with no test to notice).
+    That equality is applied HERE, on the pool this function is handed, even though every
+    caller already looked the pool up by key: 14.8's review found the axis had escaped
+    into the two call sites, which made this docstring and `replay_coverage.py`'s "nothing
+    is re-implemented" both untrue. NOTHING here reads ``viewpoint`` any more — not the
+    filters, not the digest, not the pool-entry sentinel (14.8's review found the sentinel
+    still keyed on it, which made the "does not read viewpoint" claim false and left a
+    rename able to route every plate to ``no_metadata`` with no test to notice).
+
+    ⚠️ WHAT (b)=0 DOES NOT COVER: the *comparison* is exact, the *production* of
+    ``shot.location_key`` by the scenario LLM was never measured. The same replay reports
+    12/43 shots with no key at all, 7 of which name a ``LOCATION_KEYS`` room in their own
+    ``image_prompt`` — a measured producer-side emission gap, registered in
+    `deferred-work.md`. A wrongly emitted key serves the WRONG ROOM, which is a larger
+    defect than the viewpoint mismatch C4′ discloses.
 
     THE PRICE, measured, not hidden: 7 shots of run 4b35c0ed that 14.1 refused with
     ``no_viewpoint_match`` (4 high-angle, 3 low-angle) now take eye-level plates, and 5 of
@@ -627,9 +647,11 @@ def _select_plate(
     Filter order is the reason vocabulary's precedence, and it is chosen so the warning
     names the thing a human would have to act on:
 
-    1. framing the map cannot serve -> ``unservable_framing`` / ``unknown_framing``. The
-       framing step SURVIVES the axis change: it is not a viewpoint match, it is the
-       statement that a whole-room photograph cannot stand in for an instrument close-up;
+    1. a framing no room plate can serve -> ``unservable_framing`` / ``unknown_framing``.
+       The framing step SURVIVES the axis change: it is not a viewpoint match, it is the
+       statement that a whole-room photograph cannot stand in for an instrument close-up.
+       Its set is ``_SERVABLE_ANGLES`` (the vocabulary minus the documented refusal), not
+       ``_ANGLE_VIEWPOINT``'s keys;
     2. no plate of this key carries a PERSON VERDICT -> ``no_metadata``, FAIL OPEN. An
        unjudged plate is never picked: 8.17 shipped exactly that (take anything approved)
        and it is what this story exists to undo. Both curators must have answered — see
@@ -665,7 +687,10 @@ def _select_plate(
     with ``reason="match"``. That label is PATH B of this axis's own two-path check
     (`14-8-plate-reuse-shipping/verify_two_paths.py`), whose pre-registered band was
     committed BEFORE the measurement and which the axis passed at 1/42 = 2.4% against a
-    5.0% bar — that one row IS the measured disagreement the band admitted. Promoting it
+    5.0% bar — that one row IS the measured disagreement the band admitted. ⚠️ Carry the
+    band's own disclosed limitation with the number: PREREGISTRATION §0 records that the
+    5.0% was written AFTER a manifest field sweep, so it is NOT blind and the 2.4% reads as
+    an UPPER BOUND on reproducibility, not a floor. Promoting it
     to a runtime filter after seeing which row it was would be re-cutting the gate on its
     own result, the mirror image of lowering a bar. It stays visible instead: printed by
     `verify_two_paths.py` every run, written up in `14-8-plate-reuse-shipping/report.md`,
@@ -702,19 +727,25 @@ def _select_plate(
     (`image_node` below) is what tells the two apart afterwards.
     """
     angle = shot.get("camera_angle")
-    if angle not in _ANGLE_VIEWPOINT:
+    if angle not in _SERVABLE_ANGLES:
         # Anything else — including a pre-14.0 checkpoint's raw prose string — is
         # `unknown_framing`, NOT `unservable_framing`: that reason is documented as
         # "close-up/POV, permanent by design", and lending it to a string we simply
         # failed to recognise would hide a parser gap inside a designed refusal.
-        # MEMBERSHIP only: the mapped value is never read here (Story 14.8).
         return None, "unservable_framing" if angle in _UNSERVABLE_ANGLES else "unknown_framing"
+    # THE MATCHING AXIS, applied HERE and not left to the caller (14.8 review). Callers
+    # hand this function a pool they looked up by key — `resolve_stock_plates(key)` at
+    # runtime, `plates[key]` in the replay — and while the axis lived only in those
+    # lookups the docstring's claim and `replay_coverage.py`'s "nothing is re-implemented"
+    # were both false: the axis was a property of two call sites, not of the reviewed
+    # function. String equality on a closed enum, so this is the whole axis.
+    pool = [p for p in plates if p.get("location_key") == shot.get("location_key")]
     # The pool-entry sentinel is the PERSON VERDICT — a field D1 immediately below
     # actually uses — and no longer `"viewpoint" in p`, a field this function stopped
     # reading when the axis changed. `resolve_stock_plates` merges `source.label` and
     # `source.plate_meta`, and an unseeded/unmeasured plate arrives with the keys ABSENT
     # (not `{}`, not `None`), so presence is the honest test for "has anyone judged this".
-    judged = [p for p in plates
+    judged = [p for p in pool
               if p.get("has_person") is not None and p.get("depicts_person") is not None]
     if not judged:
         return None, "no_metadata"
@@ -1102,14 +1133,22 @@ async def image_node(state: PipelineState) -> dict:
                                     "location_key": location_key,
                                     "variant": plate["variant"],
                                     "path": plate["path"],
-                                    # WHICH RULE ASSIGNED THIS. Story 14.8 replaced the
-                                    # matching axis and with it the sha256 digest's
-                                    # composition, so a run resumed ACROSS that commit
-                                    # keeps 14.1's plate for shots already rendered and
-                                    # draws 14.8's for the rest. Without this marker the
-                                    # two are indistinguishable in the artifacts, and the
-                                    # frames a viewing verdict is taken on would be a
-                                    # silent mixture of two axes.
+                                    # WHICH RULE ASSIGNED THIS — FORWARD provenance, and
+                                    # that is the whole of its justification. An earlier
+                                    # draft justified it with a resume hazard (a run
+                                    # straddling the 14.8 commit mixing two axes); 14.8's
+                                    # review killed that: `stock_plate_substitution_enabled`
+                                    # has never shipped `True`, so ZERO `stock_plate`
+                                    # sidecars written under 14.1's axis exist anywhere and
+                                    # the mixture cannot occur. What it earns instead is
+                                    # the NEXT replacement: the first frames this project
+                                    # ever assigns from a plate set will be judged by a
+                                    # human, and a later axis change must be able to tell
+                                    # that verdict's frames from its own.
+                                    # A HARDCODED LITERAL, deliberately: nothing derives it
+                                    # from the selector, so `test_stock_plate_sidecar…`
+                                    # asserts only that the string is stamped — it is not
+                                    # evidence about which axis the selector ran.
                                     "axis": "location_key",
                                     # The verdict that RODE THE ASSET, not the basis of the
                                     # selection: since 14.8 `_select_plate` does not read

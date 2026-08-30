@@ -602,12 +602,23 @@ RunWarningCode = Literal[
                                         #   unservable_framing  close-up/POV: a room plate cannot
                                         #                       serve an object close-up or a
                                         #                       ceiling POV. Permanent by design
-                                        #   no_metadata         no plate of that key carries a
-                                        #                       person verdict from EITHER curator
-                                        #                       yet — fail-open, an unjudged plate
-                                        #                       is never picked. 14.8 moved this
+                                        #   no_metadata         no plate of that key carries BOTH
+                                        #                       curators' person verdicts yet —
+                                        #                       fail-open, an unjudged plate is
+                                        #                       never picked. BOTH, not either:
+                                        #                       half a verdict is not a verdict
+                                        #                       (`test_d1_half_a_verdict_is_not_a
+                                        #                       _verdict`). 14.8 moved this
                                         #                       sentinel off `viewpoint`, which the
-                                        #                       selector stopped reading
+                                        #                       selector stopped reading. THE NAME
+                                        #                       IS KEPT although the trigger is now
+                                        #                       narrower: "the metadata this
+                                        #                       selector needs is missing" is still
+                                        #                       exactly what it means, and a reason
+                                        #                       string is written into finished
+                                        #                       runs' warnings, so renaming it
+                                        #                       rewrites history that is already on
+                                        #                       disk
                                         #   plate_shows_person  every judged candidate is labelled
                                         #                       has_person / depicts_person.
                                         #                       Refusing to assign it is NOT
