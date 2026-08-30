@@ -9,9 +9,12 @@ LangGraph checkpoint (loader shape copied from
 `14-0-angle-conflict/measure_angle_agreement.py` — thread-prefix match, refuse an
 ambiguous prefix) and the plate metadata from `plate_meta.json` + `assets/manifest.json`'s
 `source.label` + the approved `location_plates` rows, assembles exactly the dicts
-`LocationService.resolve_stock_plates` would hand `image_node` — including the
-``has_person = label OR plate_meta`` fold — and calls the SHIPPED selector. Nothing is
-re-implemented: if the selector changes, this number changes with it.
+`LocationService.resolve_stock_plates` would hand `image_node` — folding both person
+verdicts through the SHIPPED `_fold_verdict` — and calls the SHIPPED selector. Nothing is
+re-implemented: if the selector changes, this number changes with it. That guarantee was
+briefly FALSE (14.8 review): the matching axis had escaped `_select_plate` into this
+file's `plates[key]` lookup, so a change to the axis would not have moved this number.
+It is back inside the function; the lookup here is now the runtime's SHAPE, not the rule.
 
 It does not render, does not call ComfyUI, does not touch the DB except read-only, and
 does not care whether `stock_plate_substitution_enabled` is on — it answers "what WOULD
@@ -21,8 +24,12 @@ Exit codes:
     0  replayed at least one location-keyed shot
     2  usage error
     3  nothing to measure (no such run, empty `scenes`, ambiguous thread prefix)
-    4  the retired-axis CONTROL no longer reproduces 14.1's committed verdict — the
-       before/after delta below it would be meaningless, so it is not printed as measured
+    4  the retired-axis CONTROL no longer reproduces 14.1's committed verdict ON THE RUN
+       AND INPUTS IT WAS TAKEN FROM — the before/after delta below it would be
+       meaningless, so it is not printed as measured. Replaying any OTHER run, or this
+       run with changed inputs (plates approved/re-labelled, the affordance knob raised),
+       prints the control as SKIPPED and still exits 0: those are changed inputs, not a
+       broken control, and conflating the two is a 14.8 review finding.
 """
 
 from __future__ import annotations
@@ -42,8 +49,21 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer  # noqa: E402
 from yt_flow.config import Settings  # noqa: E402
 from yt_flow.domain.state import LOCATION_KEYS  # noqa: E402
 from yt_flow.pipeline.nodes.image import _ANGLE_VIEWPOINT, _select_plate  # noqa: E402
+from yt_flow.services.location_service import _PERSON_VERDICTS, _fold_verdict  # noqa: E402
 
 _EXIT_OK, _EXIT_USAGE, _EXIT_NOTHING, _EXIT_CONTROL = 0, 2, 3, 4
+
+
+def _repo_path(path: str) -> Path:
+    """Absolutise a `Settings` path against the REPO, not the cwd.
+
+    `Settings.db_path` / `assets_path` are repo-relative strings. `db_path` was already
+    joined to `REPO` while `assets_path` was not, so this script only worked from the repo
+    root — a 14.8 review finding, and the kind of thing that makes a committed number
+    unreproducible for the next reader.
+    """
+    p = Path(path)
+    return p if p.is_absolute() else REPO / p
 
 # Pre-registered bars. Copied here so the script prints its own verdict rather than
 # leaving the reader to re-apply them by hand — NOT re-decided here.
@@ -62,12 +82,20 @@ _EXIT_OK, _EXIT_USAGE, _EXIT_NOTHING, _EXIT_CONTROL = 0, 2, 3, 4
 # only line here that carries information about the axis change.
 C3_MIN_SHARE = 0.90
 
-# 14.1's committed verdict on this run (`14-1-approved-plate-sets/report.md:227-244`),
-# used to CHECK the retired-axis control below rather than trust it. A control that does
-# not reproduce these is a broken control, and a broken control would hand the report a
-# "17 -> 24" it did not earn.
+# 14.1's committed verdict on ONE run over ONE snapshot of the corpus
+# (`14-1-approved-plate-sets/report.md:227-244`), used to CHECK the retired-axis control
+# below rather than trust it. A control that does not reproduce these is a broken control,
+# and a broken control would hand the report a "17 -> 24" it did not earn.
+#
+# BOTH the run and its preconditions are pinned, because the expectation is coupled to
+# inputs the expectation itself does not mention (14.8 review): approving the 5 draft
+# plates, re-running `scripts/label_location_plates.py`, or raising
+# `plate_affordance_gate_enabled` all move these numbers legitimately. Without the pins
+# the script answers "control broken" to a question that was "inputs changed".
+CONTROL_RUN = "4b35c0ed"
 CONTROL_EXPECTED = {"c1_ok_cells": 5, "c1_cells": 10, "c2_pass": True,
                     "c3_hits": 17, "c3_servable": 24}
+CONTROL_PRECONDITIONS = {"approved_plates": 42, "affordance_gate": False}
 
 
 def load_scenes(db: Path, thread_prefix: str) -> tuple[str, list]:
@@ -120,12 +148,26 @@ def load_plates(settings: Settings) -> dict[str, list[dict]]:
     reads); the measurement half stays on the committed `plate_meta.json` snapshot, which
     is byte-equal to the manifest's `source.plate_meta` for all 42 rows and is the sample
     band this directory's reports cite.
+
+    The fold itself is `location_service._fold_verdict`, IMPORTED, not re-expressed: it
+    carries two rules a copy here would lose (an explicit `null` or a non-bool stays
+    undecidable rather than reading as "no person") and it folds BOTH verdicts, which is
+    the 14.8 review fix that lets a labelled-but-unmeasured plate be assignable at all.
     """
     meta = json.loads((HERE / "plate_meta.json").read_text(encoding="utf-8"))
-    manifest = json.loads(
-        (Path(settings.assets_path) / "manifest.json").read_text(encoding="utf-8"))["assets"]
+    assets = _repo_path(settings.assets_path)
+    try:
+        manifest = json.loads((assets / "manifest.json").read_text(encoding="utf-8"))["assets"]
+    except Exception as exc:  # noqa: BLE001
+        # Fail open, exactly as `LocationService._manifest_assets` does — but LOUDLY,
+        # because here the missing half is the labeler's verdicts and a silent `{}` would
+        # quietly reproduce the pre-14.8 bug this loader's docstring is about.
+        print(f"⚠️ manifest unreadable ({type(exc).__name__}: {exc}) — `source.label` half "
+              f"of every plate is MISSING; person verdicts below are plate_meta only",
+              file=sys.stderr)
+        manifest = {}
     plates: dict[str, list[dict]] = defaultdict(list)
-    with sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True) as conn:
+    with sqlite3.connect(f"file:{_repo_path(settings.db_path)}?mode=ro", uri=True) as conn:
         rows = conn.execute(
             "SELECT location_key, variant, image_path FROM location_plates "
             "WHERE status='approved' ORDER BY location_key, variant")
@@ -133,12 +175,19 @@ def load_plates(settings: Settings) -> dict[str, list[dict]]:
             entry = f"{key}/{variant}"
             plate = dict(meta.get(entry, {}))
             label = ((manifest.get(entry) or {}).get("source") or {}).get("label")
-            if isinstance(label, dict) and "has_person" in label:
-                # OR, exactly as the runtime folds it: either curator saying "there is a
-                # person in this room" keeps the plate off a shot.
-                plate["has_person"] = bool(label["has_person"]) or bool(plate.get("has_person"))
-            plates[key].append({**plate, "variant": variant,
-                                "path": str(Path(settings.assets_path) / image_path)})
+            label = label if isinstance(label, dict) else {}
+            for field in _PERSON_VERDICTS:
+                verdict = _fold_verdict(label.get(field), plate.get(field))
+                if verdict is None:
+                    plate.pop(field, None)
+                else:
+                    plate[field] = verdict
+            # `location_key` rides the plate because since 14.8's review it IS the axis and
+            # `_select_plate` re-checks it on the pool it is handed. Keying this dict as
+            # well is the runtime's shape (`resolve_stock_plates(key)`), not a second
+            # expression of the rule.
+            plates[key].append({**plate, "location_key": key, "variant": variant,
+                                "path": str(assets / image_path)})
     return plates
 
 
@@ -158,8 +207,12 @@ def _people_free(plate: dict) -> bool:
 
 
 def main(run: str) -> int:
-    settings = Settings()
-    thread_id, scenes = load_scenes(REPO / settings.db_path, run)
+    # `_env_file` explicitly: `Settings.model_config` names a RELATIVE `.env`, so run from
+    # anywhere but the repo root this script read a different (usually absent) env file
+    # and died on the required keys. Same 14.8 review finding as `_repo_path` — a number
+    # nobody else can re-derive is not a committed number.
+    settings = Settings(_env_file=REPO / ".env")
+    thread_id, scenes = load_scenes(_repo_path(settings.db_path), run)
     if not scenes:
         return _EXIT_NOTHING
     plates = load_plates(settings)
@@ -188,8 +241,13 @@ def main(run: str) -> int:
         # would make this table disagree with the warnings the run actually files.
         reasons["stock_plate_missing" if not pool else reason] += 1
         if plate is not None:
+            # The viewpoint is kept RAW (`None` when the plate was never measured), not
+            # `str()`-ed: C4' has to tell "unmeasured" from "measured and different", and
+            # stringifying made every unmeasured plate read as a mismatch (14.8 review —
+            # the sentinel moved off `viewpoint`, so an unmeasured plate is now legal in
+            # the pool and this distinction became reachable).
             picked.append((scene_num, shot["shot_id"], f"{key}/{plate['variant']}",
-                           str(plate.get("viewpoint")), plate.get("standing_room"),
+                           plate.get("viewpoint"), plate.get("standing_room"),
                            bool(shot.get("cast")), shot.get("camera_angle")))
 
     print("\n-- selector outcome over the location-keyed shots --")
@@ -256,13 +314,22 @@ def main(run: str) -> int:
     # verdict, and C4's failure mode is the number being absent from the report. With
     # C1'/C2'/C3' all vacuous this is the only informative line in the block.
     print("\n-- C4' viewpoint mismatches among the hits (no threshold, disclosure only) --")
+    # TWO LINES, not one (14.8 review). "Never measured" and "measured, and it is the
+    # wrong one" are different findings with different actions — measure the plate vs.
+    # accept the mismatch — and C4' is the only informative number this script prints, so
+    # folding them together would corrupt the one line that carries information.
+    unmeasured = [(sid, pk, ang) for _n, sid, pk, vp, _r, _c, ang in picked if vp is None]
     mismatched = [(sid, pk, vp, ang) for _n, sid, pk, vp, _r, _c, ang in picked
-                  if vp != _ANGLE_VIEWPOINT.get(ang or "")]
-    print(f"  {len(mismatched)}/{len(picked)} assigned plates sit at a viewpoint the shot's "
-          f"camera_angle did not ask for")
+                  if vp is not None and vp != _ANGLE_VIEWPOINT.get(ang or "")]
+    print(f"  {len(mismatched)}/{len(picked)} assigned plates sit at a MEASURED viewpoint "
+          f"the shot's camera_angle did not ask for")
     for sid, plate_key, viewpoint, angle in mismatched:
         print(f"    {sid} camera_angle={angle} (wants {_ANGLE_VIEWPOINT.get(angle or '')}) "
               f"-> {plate_key} measured {viewpoint}")
+    print(f"  {len(unmeasured)}/{len(picked)} assigned plates have NO viewpoint measurement "
+          f"(legal in the pool since 14.8; not a mismatch, not a match)")
+    for sid, plate_key, angle in unmeasured:
+        print(f"    {sid} camera_angle={angle} -> {plate_key} unmeasured")
 
     # -- CONTROL: the retired 14.1 axis, same run, same plates ------------------------
     # NOT the shipped selector — `_select_plate` no longer has a viewpoint step, so the
@@ -299,14 +366,32 @@ def main(run: str) -> int:
           f"({old_hits}/{len(servable)} = {old_share:.1%})")
     got = {"c1_ok_cells": len(old_demand) - len(old_c1), "c1_cells": len(old_demand),
            "c2_pass": not old_c2, "c3_hits": old_hits, "c3_servable": len(servable)}
-    if got == CONTROL_EXPECTED:
-        print(f"  control reproduces 14.1's committed verdict {CONTROL_EXPECTED} -> VALID")
-    else:
-        # Loud and non-zero: a broken control must not be quoted as a baseline.
-        print(f"  ⚠️ CONTROL BROKEN — expected {CONTROL_EXPECTED}, got {got}", file=sys.stderr)
+    # THREE outcomes, not two (14.8 review). `CONTROL_EXPECTED` is one run's verdict over
+    # one corpus snapshot, and comparing it unconditionally made any other thread — or
+    # this thread with legitimately changed inputs — exit 4 reporting a control that is
+    # not broken. Say which of the two happened.
+    inputs = {"approved_plates": sum(len(ps) for ps in plates.values()),
+              "affordance_gate": affordance_gate}
+    if not thread_id.startswith(CONTROL_RUN):
+        checked = (f"SKIPPED — the expectation was taken on run {CONTROL_RUN}, this is "
+                   f"{thread_id[:8]}. Not a broken control; nothing was checked.")
+    elif inputs != CONTROL_PRECONDITIONS:
+        checked = (f"SKIPPED — INPUTS CHANGED, not a broken control: expected "
+                   f"{CONTROL_PRECONDITIONS}, got {inputs}. Approving or re-labelling "
+                   f"plates, or raising the affordance knob, moves these numbers "
+                   f"legitimately; re-take the expectation, do not debug the control.")
+    elif got != CONTROL_EXPECTED:
+        # Loud and non-zero: a broken control must not be quoted as a baseline. Reached
+        # only when the run AND its preconditions are the ones the expectation was taken
+        # on, so "the control drifted" is the only remaining explanation.
+        print(f"  ⚠️ CONTROL BROKEN — same run, same inputs {inputs}; "
+              f"expected {CONTROL_EXPECTED}, got {got}", file=sys.stderr)
         print("     Refusing to present the axis-change delta below as measured.",
               file=sys.stderr)
         return _EXIT_CONTROL
+    else:
+        checked = f"VALID — reproduces {CONTROL_EXPECTED} with preconditions {inputs}"
+    print(f"  control check: {checked}")
     # The shots the retired axis REFUSED, listed rather than counted: they are the whole
     # of the difference between the two axes on this run, and C4' above is their image.
     old_rejected = [(s["shot_id"], s["location_key"], s["camera_angle"], len(s.get("cast") or []))
@@ -318,7 +403,9 @@ def main(run: str) -> int:
     for shot_id, key, angle, cast_n in old_rejected:
         print(f"    {shot_id} {key} camera_angle={angle} cast={cast_n}")
     print(f"  axis change: servable match {old_hits} -> {hits} "
-          f"({old_share:.1%} -> {share:.1%}), C4' cost {len(mismatched)} mismatched hit(s)")
+          f"({old_share:.1%} -> {share:.1%}), C4' cost {len(mismatched)} mismatched + "
+          f"{len(unmeasured)} unmeasured hit(s)"
+          f"{'' if checked.startswith('VALID') else '  [CONTROL UNCHECKED]'}")
 
     # -- the shots a plate can never reach -------------------------------------------
     # Is `location_key = None` a VOCABULARY gap (the room is not in LOCATION_KEYS) or an
