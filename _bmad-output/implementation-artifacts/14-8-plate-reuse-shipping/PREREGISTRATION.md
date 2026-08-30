@@ -176,3 +176,80 @@ git log --oneline --diff-filter=A -- \
 
 <!-- 사전등록 커밋 해시: 아래 줄은 이 파일이 커밋된 뒤 후속 커밋에서만 채운다. -->
 **사전등록 커밋**: `d797a8a` — `verify_two_paths.py`는 이 커밋에 **없었다**(다음 커밋에서 추가됐다). 위 명령의 `--diff-filter=A` 출력이 두 파일의 추가 순서를 보여준다.
+
+---
+
+## 7. 반증 가능성의 모집단 대조 (2026-08-30 추가 — 리뷰 패스 1 이후, Phase 2 재도출 중)
+
+> **이 절은 위의 §1~§6을 한 글자도 고치지 않는다.** 위 텍스트는 측정 전에 커밋된 그대로
+> 남고(`d797a8a`), 이 절은 그 위에 **검사 결과**를 얹는다. 무엇이 고쳐졌는지가 기록에서
+> 읽히려면 덮어쓰는 게 아니라 덧붙여야 한다.
+
+**왜 필요한가.** §3은 새 기준마다 *"오늘 데이터에서 실패할 수 있는 경로"*를 한 줄씩 적으라는
+스펙 요구를 따랐고 C3′에는 공허성을 **미리** 공시했다. 그러나 C1′·C2′에 적은 실패 경로는
+**모집단에 대조되지 않은 채로** 적혔고, 리뷰가 대조해 보니 **셋 다 발화 불가**였다. 사례를
+하나 들어 "경로가 있다"고 적는 것과 모집단 전수로 "이 경로가 오늘 발화 가능하다"를 보이는 것은
+다른 일이다(`gotcha_closing-a-class-needs-a-population-sweep`).
+
+### 7.1 실측 기준선 — 승인 42장 전수 (재산출 명령은 §7.4)
+
+| `location_key` | 승인 | 사람판정 보유 | D1 통과(people-free) | 그중 `standing_room is True` | 이 런의 수요 |
+|---|---|---|---|---|---|
+| autopsy-room | 3 | 3 | 3 | 3 | **YES** |
+| cafeteria | 3 | 3 | 3 | 3 | - |
+| containment-chamber | 3 | 3 | 3 | 3 | **YES** |
+| control-room | 3 | 3 | 3 | 3 | **YES** |
+| corridor | 3 | 3 | 3 | 3 | **YES** |
+| entrance-checkpoint | 3 | 3 | **2** | 2 | - |
+| facility-exterior | 3 | 3 | 3 | 3 | - |
+| interview-room | 3 | 3 | 3 | 3 | - |
+| maintenance-tunnel | 3 | 3 | 3 | 3 | - |
+| medical-bay | 3 | 3 | 3 | 3 | **YES** |
+| observation-room | 3 | 3 | 3 | 3 | **YES** |
+| office | 3 | 3 | 3 | 3 | - |
+| server-room | 3 | 3 | 3 | **1** | - |
+| storage-vault | 3 | 3 | 3 | 3 | - |
+
+파생 사실: **14키 전부 승인 3장씩(42/42)** · `plate_meta.depicts_person == true` **0/42** ·
+`label.has_person == true` **1장**(`entrance-checkpoint/b`) · `standing_room is False` **2장**
+(`server-room/b`·`/c`) · `plate_affordance_gate_enabled = False`(`config.py`, 이 스토리에서
+켜지 않음) · 사람 판정을 **한 장도 빠짐없이** 갖고 있다(42/42, `label.has_person` +
+`plate_meta.depicts_person`).
+
+### 7.2 각 기준의 §3 선언 실패 경로 × 모집단 판정
+
+| 기준 | §3이 적은 실패 경로 | 모집단 대조 | 판정 |
+|---|---|---|---|
+| **C1′** | "수요 키 하나의 3장이 전부 D1에 걸리면 MISS" | D1에 걸리는 플레이트는 **전 코퍼스에 1장**(`entrance-checkpoint/b`)이고 그 키는 **수요 밖**이다. 어떤 키도 3장 중 2장 이상을 잃을 수 없다 → **0 키가 MISS 가능**. 부수 경로 `no_metadata`도 불가(사람 판정 42/42 보유) | **VACUOUS** |
+| **C2′** | "`server-room`에 cast 샷이 키잉되면 `server-room/a` 한 장에 걸린다" | `standing_room is False`는 2장뿐이고 **둘 다 `server-room`**, 그 키는 이 런의 수요 밖이다. 게다가 `standing_room` 필터는 **어포던스 노브 뒤**에 있고 노브는 OFF이므로 **런타임 배정을 바꿀 수 없다** — 이 기준이 MISS로 뒤집혀도 어떤 샷의 플레이트도 달라지지 않는다(재생기의 `cast-bearing hits whose plate lacks standing_room=True: 0`이 같은 사실이다) | **VACUOUS** (이중으로) |
+| **C3′** | §3이 이미 *"축 ②에서 실패할 수 없다"*를 **측정 전에** 공시 | C1′가 MISS 불가이고 servable 샷에서 발화 가능한 남은 reason이 없으므로(`no_metadata` 불가, `plate_shows_person` 불가, `no_standing_room`은 노브 OFF) 24/24가 **대수적으로 강제**된다 | **VACUOUS** (사전 공시대로) |
+| **C4′** | 기준이 아니라 **공개 의무**(임계값 없음). 실패 모드는 "숫자가 리포트에 없는 것" | 실제로 **발화한다**: 7/24(고 4·저 3, cast 5샷·카드 6장). 목록이 `replay_coverage.py`와 `report.md` 양쪽에 있다 | **NOT VACUOUS** — 축 교체의 유일한 정보성 산출 |
+| **B1**(§2, 2-경로) | 42행 중 3행 이상 불일치면 FAIL | `label.matches_location == false`가 1/42라 실측은 1행이지만 **3행 이상은 구조적으로 가능**했다(모집단에 상한이 없다) → 발화 가능한 기준 | **NOT VACUOUS** (단 §0의 비맹검 한계는 그대로 적용) |
+
+### 7.3 이 판정이 무엇을 뜻하는가 — 그리고 무엇을 **하지 않는가**
+
+- **VACUOUS로 표기된 기준을 근거로 어떤 결정도 세우지 않는다.** 특히
+  `stock_plate_substitution_enabled`의 코드 기본값은 **`False`로 유지**된다. 해제 조건
+  (a)∧(b) 중 (a)는 문자 그대로는 충족됐으나 **그 충족이 반증 불가한 세 기준 위에 서 있고**,
+  (b)(Jay 시청 판정)는 없다. §5가 이미 *"C1′~C3′ 전부 충족돼도 (b) 없이는 켜지 않는다"*고
+  적었고, 그것이 정본이다.
+- **기준을 낮추지도, 새 임계값으로 갈아치우지도 않는다.** servable 분모 **24**와
+  `C3_MIN_SHARE = 0.90`은 여전히 한 글자도 안 바뀌었다. 공허성 표기는 기준을 **약화**하는 것이
+  아니라 그 기준이 실어 나를 수 있는 **증거의 무게를 0으로 적는** 것이다.
+- **공허하지 않은 축은 그대로 남는다**: C4′(7/24, 임계값 없음, Jay 판정 대상)와 B1(1/42 PASS).
+- 이 절은 **새 기준을 만들지 않는다.** 발화 가능한 C1″를 지금 설계하면 그것이야말로 결과를 본
+  뒤의 기준 신설이다. 발화 가능한 커버리지 기준이 필요하다면 그것은 **다른 코퍼스**(수요 키가
+  더 넓거나 D1 배제가 실제로 일어나는 런)를 요구하고, 그 판단은 이 스토리 밖이다.
+
+### 7.4 재산출
+
+```
+uv run python _bmad-output/implementation-artifacts/14-1-approved-plate-sets/replay_coverage.py 4b35c0ed
+uv run python _bmad-output/implementation-artifacts/14-8-plate-reuse-shipping/verify_two_paths.py
+```
+
+§7.1의 키별 표는 `assets/manifest.json`의 `source.plate_meta` + `source.label`과
+`location_plates WHERE status='approved'` 42행을 런타임과 같은 조립
+(`has_person = label OR plate_meta`, `location_service.py:105-112`)으로 접은 결과다 —
+`replay_coverage.load_plates`가 **같은 조립**을 쓰고, 그 동형성은 이번 재도출에서 고쳐졌다
+(이전 판본은 `plate_meta.json` 단독으로 읽어 `entrance-checkpoint/b`를 people-free로 봤다).
