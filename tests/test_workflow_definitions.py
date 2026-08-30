@@ -11,6 +11,7 @@ five workflows. The allowlist below is what keeps it from coming back.
 ponytail: pure stdlib, table-driven over a glob, no fixtures.
 """
 
+import ast
 import functools
 import importlib.util
 import json
@@ -294,13 +295,41 @@ SDXL_STYLE_SET = [API2, PLATE, MULTI_ANGLE]
 STYLE_LORA = "darkness_xl_v2.safetensors"
 
 
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+
+
+def _module_constant_workflows() -> set[str]:
+    """Every `data/workflows/...` path assigned at module level anywhere under `src/`.
+
+    `Settings` is not the only place a shipped graph is declared — `_POSE_GUIDE_WORKFLOW_PATH`
+    is a plain module constant — and naming those one at a time is the enumeration this
+    file's sweep exists to replace (`gotcha_closing-a-class-needs-a-population-sweep`): a
+    constant added tomorrow escapes the sweep, and an unclassified shipped graph then
+    PASSES the test whose whole job is to make that impossible.
+
+    Parsed rather than imported: importing every module under `src/` to read its constants
+    would execute their import-time side effects inside a JSON contract test. Module level
+    only — a literal inside a function is a call site, and every one in the tree today
+    duplicates a `Settings` default this sweep already has.
+    """
+    found = set()
+    for path in SRC_DIR.rglob("*.py"):
+        for node in ast.parse(path.read_text(encoding="utf-8"), str(path)).body:
+            targets = ([node.value] if isinstance(node, (ast.Assign, ast.AnnAssign))
+                       and node.value is not None else [])
+            found |= {v.value for v in targets
+                      if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                      and v.value.startswith("data/workflows/")}
+    return found
+
+
 def _shipped_workflow_names() -> set[str]:
     """Every ComfyUI graph a SHIPPED DEFAULT points at.
 
     Read off `Settings.model_fields` rather than an instance: constructing `Settings()`
     pulls in `.env` and the credential guards, and the question here is what the code
-    ships with, not what this box is configured for. The pose-guide path is a module
-    constant rather than a settings field, so it is added by name.
+    ships with, not what this box is configured for. Module-level constants are swept
+    alongside them — see `_module_constant_workflows`.
     """
     from yt_flow.config import Settings
 
@@ -309,8 +338,15 @@ def _shipped_workflow_names() -> set[str]:
         for field in Settings.model_fields.values()
         if isinstance(field.default, str) and field.default.startswith("data/workflows/")
     }
-    paths.add(character_image_provider._POSE_GUIDE_WORKFLOW_PATH)
-    return {Path(p).name for p in paths}
+    return {Path(p).name for p in paths | _module_constant_workflows()}
+
+
+def test_the_sweep_sees_a_workflow_declared_outside_settings():
+    """The pose-guide graph is a module constant, not a `Settings` default. It used to be
+    added to the sweep by name; if the discovery ever narrows back to declared fields,
+    this fails instead of the sweep going quietly blind."""
+    assert POSE_GUIDE in _shipped_workflow_names()
+    assert character_image_provider._POSE_GUIDE_WORKFLOW_PATH in _module_constant_workflows()
 
 
 def lora_strengths(graph: dict, lora_name: str) -> set[float]:
@@ -386,5 +422,22 @@ def test_recompose_is_held_to_a_different_contract_not_exempted_from_this_one():
     recompose, background = nodes(WORKFLOW_DIR / RECOMPOSE), nodes(WORKFLOW_DIR / API2)
     assert base_models(recompose).isdisjoint(base_models(background))
     assert lora_names(recompose).isdisjoint(lora_names(background))
-    # And its own family's allowlist is the one it is checked against.
-    assert lora_names(recompose) <= ALLOWED_LORAS[FAMILY_BASE["qwen-image-edit"]]
+    # EQUALITY, not `<=`. A subset bound is vacuously true on the empty set, so a
+    # re-export that dropped the LoraLoaderModelOnly left this green while the graph
+    # still sampled on a 4-step schedule — the SDXL trio get `==` plus a wiring test and
+    # the Qwen row, which drew 33 of run 4b35c0ed's 43 delivered frames, got neither.
+    assert lora_names(recompose) == ALLOWED_LORAS[FAMILY_BASE["qwen-image-edit"]]
+
+
+def test_the_recompose_lightning_lora_still_reaches_its_sampler():
+    """The other half of the same defect: an allowlist (even an equality one) says the
+    node exists, not that it is still wired in. Lightning-4steps is what makes this graph
+    viable at 4 steps; bypassed, the graph samples a 4-step schedule with no distilled
+    LoRA behind it and every recomposed frame is undercooked — silently, at 33 frames a
+    run. The SDXL graphs have had this assertion since 13.3."""
+    graph = nodes(WORKFLOW_DIR / RECOMPOSE)
+    sampler = next(nid for nid, n in graph.items() if n.get("class_type") == "KSampler")
+    chain = model_chain_sources(graph, sampler)
+    assert any(str(c).startswith(LORA_PREFIX) for c in chain), (
+        f"{RECOMPOSE}: KSampler model input no longer passes through a LoraLoader ({chain})"
+    )

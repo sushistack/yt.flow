@@ -15,9 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from yt_flow.pipeline.nodes.shot_recompose import placement_instruction
 from yt_flow.services import recompose_service
-from yt_flow.services.recompose_service import CARD_LOOKS, recompose_run_shots
+from yt_flow.services.recompose_service import recompose_run_shots
 
 # Only `dimensions()` inspects the bytes, and it reads the IHDR alone.
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + struct.pack(">II", 8, 8)
@@ -45,6 +44,10 @@ class _StubClient:
         self.uploads: list[str] = []
         self.submits = 0
         self.stats_urls: list[str] = []
+        # What the render path actually SUBMITTED, in submission order. The instruction
+        # hash claims to reconstruct exactly this, so this is the only thing it can be
+        # checked against — see `test_the_block_hashes_the_instruction_the_render_...`.
+        self.prompts: list[str] = []
 
     async def get_system_stats(self, url):
         self.stats_urls.append(url)
@@ -56,6 +59,7 @@ class _StubClient:
 
     async def submit_and_fetch(self, url, workflow):
         self.submits += 1
+        self.prompts.append(workflow["positive"]["inputs"]["prompt"])
         return self.result
 
 
@@ -459,6 +463,9 @@ async def test_a_recomposed_shot_records_what_drew_it(env):
                      "attributed": 1}
     block = _block(sidecar)
     assert block["source"] == "rendered"
+    # The digest was recomputed from this pass's own plate bytes, card paths and
+    # placement fields, so the recorded `passes` really are what drew the frame.
+    assert block["digest_verified"] is True
     assert block["workflow_sha256"] == hashlib.sha256(
         Path(env.settings.shot_recompose_workflow_path).read_bytes()).hexdigest()
     assert block["output_path"] == env.shot["image_path"]
@@ -516,9 +523,10 @@ async def test_a_cache_hit_fills_in_an_attribution_that_is_missing(env):
 
 
 async def test_reentry_over_an_already_recomposed_shot_still_records_the_attribution(env):
-    """Re-entry counts as `skipped`, which used to `continue` before anything was
-    recorded — so a shot whose stamp failed lost even its warning on the retry. That is
-    the silence this story exists to remove, reintroduced by this story."""
+    """Re-entry used to `continue` before anything was recorded, so a shot whose stamp
+    failed lost even its warning on the retry — the silence this story exists to remove,
+    reintroduced by this story. It counts as `reentered`, never `skipped`: it IS
+    recomposed, and every reader of `skipped` means "not recomposed" by it."""
     sidecar = _sidecar(env)
     await recompose_run_shots(env.scenes, env.cast, env.settings)
     _sidecar(env)                      # attribution lost; shot still points at the frame
@@ -606,28 +614,48 @@ async def test_the_stamp_is_atomic(env, monkeypatch):
 
     await recompose_run_shots(env.scenes, env.cast, env.settings)
 
-    assert (f"{sidecar.name}.tmp", sidecar.name) in seen
+    # Process-scoped tmp name, not a fixed `<sidecar>.tmp`: this repo runs parallel
+    # agent sessions over one workspace, and a shared tmp filename makes two stampers
+    # `replace` each other's bytes into place over a file carrying `image_prompt`/`seed`.
+    tmp_name = next(src for src, dst in seen if dst == sidecar.name)
+    assert tmp_name.startswith(f"{sidecar.name}.") and tmp_name.endswith(".tmp")
+    assert tmp_name != f"{sidecar.name}.tmp"
+    assert str(os.getpid()) in tmp_name
     assert not list(sidecar.parent.glob("*.tmp"))
 
 
 # ── Story 14.3 review patches ────────────────────────────────────────────────
 
 
-async def test_the_block_hashes_the_instruction_text_not_just_its_inputs(env):
+async def test_the_block_hashes_the_instruction_the_render_path_actually_submitted(env):
     """`workflow_sha256` covers the graph and `digest` covers the placement FIELDS —
     neither covers the Python that turns `depth="near"` into a sentence. The next fix
     queued in this area edits `_DEPTH_PHRASE["near"]`, after which every block written
     on either side of it still says `depth: "near"` and reconstructs to different text.
+
+    Checked against the PROMPTS THE STUB WAS SENT, never against
+    `_instruction_sha256`'s own expression re-typed here: the field's premise is that it
+    RECONSTRUCTS the submitted text rather than capturing it, so the only drift it exists
+    to catch is `recompose_shot`'s submission diverging from that reconstruction — and a
+    test built from the same expression is structurally blind to exactly that
+    (`gotcha_pinned-ffmpeg-arg-string-is-not-a-test`).
+
+    Two cards, because the join order is the only non-trivial part: `order_cast` puts the
+    FAR figure first (it is drawn under the nearer one), so a hash joined in cast order
+    would disagree with the render on every two-card shot and never on a one-card shot.
     """
     sidecar = _sidecar(env)
+    env.cast["1:S001"].append({
+        "path": str(env.tmp_path / "card.png"), "card_key": "STOCK-d-class",
+        "position": "right", "depth": "far", "pose": "kneeling",
+    })
 
     await recompose_run_shots(env.scenes, env.cast, env.settings)
 
-    card = env.cast["1:S001"][0]
+    assert len(env.client.prompts) == 2                 # one pass per character
+    assert "orange prison jumpsuit" in env.client.prompts[0]   # far band submitted first
     assert _block(sidecar)["instruction_sha256"] == hashlib.sha256(
-        placement_instruction(
-            CARD_LOOKS[card["card_key"]], card["position"], card["depth"], None,
-        ).encode("utf-8")).hexdigest()
+        "\n".join(env.client.prompts).encode("utf-8")).hexdigest()
 
 
 async def test_a_cache_fill_dates_the_frame_by_its_mtime_not_by_today(env):
@@ -711,3 +739,165 @@ async def test_one_shots_attribution_failure_does_not_abort_the_sweep(env, monke
     assert remaining == {}
     assert [w["shot_id"] for w in stats["warnings"]] == ["S001", "S002"]
     assert all("RuntimeError" in w["detail"] for w in stats["warnings"])
+
+
+# ── Story 14.3 follow-up review patches ──────────────────────────────────────
+
+
+async def test_reentry_is_stamped_but_does_not_count_towards_this_runs_coverage(env):
+    """`attributed` is a coverage figure over `recomposed` and nothing else.
+
+    Incrementing it from the re-entry branch made a second pass over ONE already-recomposed
+    shot report `recomposed=0, reentered=1, attributed=1` — a coverage figure over an empty
+    denominator, which at run scale traced `recomposed=0, recompose_attributed=33` and made
+    `recomposed - attributed` equal -33 while two comments called it a coverage figure.
+    """
+    sidecar = _sidecar(env)
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+    assert _block(sidecar)["source"] == "rendered"
+
+    _, stats = await recompose_run_shots(env.scenes, dict(env.cast), env.settings)
+
+    assert stats["recomposed"] == 0 and stats["reentered"] == 1
+    assert stats["attributed"] == 0
+    assert stats["recomposed"] - stats["attributed"] == 0
+    # Still stamped, and still warned about when the stamp fails — the counter is what
+    # changed, not the record.
+    assert _block(sidecar)["source"] == "rendered"
+    assert "warnings" not in stats
+
+
+async def test_a_cache_hit_restamps_a_block_that_describes_a_different_frame(env):
+    """The no-restamp guard reproduced the misattribution it was written to prevent.
+
+    Render at digest X, change `position` so digest Y renders and replaces the block,
+    revert the change so X is served from cache: the guard preserved Y's block, and the
+    state is PERMANENT — every later pass hits the same cache and the same guard, so the
+    sidecar says `output_path` Y and `passes` "right" for a shipped frame that is X at
+    "left". A block describing a different frame is not an older truth to protect.
+    """
+    sidecar = _sidecar(env)
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+    frame_x = env.shot["image_path"]
+
+    env.shot["image_path"] = str(env.plate)
+    moved = {"1:S001": [{**env.cast["1:S001"][0], "position": "right"}]}
+    await recompose_run_shots(env.scenes, moved, env.settings)
+    frame_y = env.shot["image_path"]
+    assert frame_y != frame_x
+    assert _block(sidecar)["output_path"] == frame_y
+
+    env.shot["image_path"] = str(env.plate)
+    _, stats = await recompose_run_shots(env.scenes, dict(env.cast), env.settings)
+
+    assert env.shot["image_path"] == frame_x
+    assert env.client.submits == 2                    # X came off the cache, unrendered
+    block = _block(sidecar)
+    assert block["output_path"] == frame_x
+    assert [p["position"] for p in block["passes"]] == ["left"]
+    # Re-stamped, but still not claiming to have drawn it: this pass did not.
+    assert block["source"] == "cache"
+    assert block["workflow_sha256"] is None and block["instruction_sha256"] is None
+    assert stats["attributed"] == 1
+
+
+async def test_a_reentry_fill_does_not_assert_todays_cast_over_an_unread_digest(env):
+    """On re-entry the digest is read off the FILENAME and nothing recomputes it — the
+    plate that produced it has already been replaced by the frame itself — so today's
+    cast is not known to be the cast that drew it. Recording it as `passes` asserts
+    exactly the thing that cannot be checked."""
+    sidecar = _sidecar(env)
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+    _sidecar(env)                      # attribution lost; shot still points at the frame
+
+    _, stats = await recompose_run_shots(env.scenes, dict(env.cast), env.settings)
+
+    block = _block(sidecar)
+    assert stats["reentered"] == 1
+    assert block["source"] == "cache"
+    assert block["digest_verified"] is False
+    # Null plus the flag, so a reader can tell this apart from a frame drawn with no cast.
+    assert block["passes"] is None
+
+
+async def test_the_sidecar_is_disambiguated_by_scene_not_by_sort_order(env):
+    """`*_{shot_id}_done.json` + `sorted(...)[0]` discarded the `scene_num` the caller was
+    holding two arguments away. It was unambiguous only because production ids embed their
+    scene — a property of the id generator, not of this function."""
+    other = _sidecar(env, base="scene_000_S001")     # sorts first; belongs to scene 0
+    sidecar = _sidecar(env)                          # scene_001_S001 — this shot's own
+
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert _block(sidecar) is not None
+    assert _block(other) is None
+
+
+@pytest.mark.parametrize("declared", [
+    [{"card_key": "SCP-049", "position": "left", "depth": "mid"}],   # every entry pathless
+    ["SCP-049"],                                                     # malformed entries
+    [{"path": "", "card_key": "SCP-049"}],                           # empty path
+])
+async def test_a_cast_bearing_shot_with_no_usable_card_is_counted_not_vanished(env, declared):
+    """It used to `continue` ahead of every counter, so the shot was invisible in the
+    trace AND in the gate: `recomposed`/`skipped`/`failed` all excluded it and no warning
+    named it. `skipped` is the honest counter — it renders on the overlay."""
+    env.cast["1:S001"] = declared
+
+    remaining, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats == {"recomposed": 0, "skipped": 1, "reentered": 0, "failed": 0,
+                     "attributed": 0}
+    assert remaining == {"1:S001": declared}         # its cards still reach the overlay
+    assert env.shot["image_path"] == str(env.plate)
+
+
+async def test_a_cast_bearing_shot_with_no_plate_is_counted_not_vanished(env):
+    env.shot.pop("image_path")
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats["skipped"] == 1
+
+
+async def test_a_shot_with_no_cast_at_all_is_still_counted_nowhere(env):
+    """The other half: `skipped` means "had cast, was not recomposed". A shot the writer
+    cast nobody into is not a recompose outcome and must not inflate a degradation row."""
+    env.cast.clear()
+
+    _, stats = await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert stats == {"recomposed": 0, "skipped": 0, "reentered": 0, "failed": 0,
+                     "attributed": 0}
+
+
+async def test_the_workflow_sha_is_read_per_rendered_shot_not_once_per_run(env):
+    """Hoisting it out of the loop assumed the graph cannot change mid-run, but
+    `recompose_shot` -> `_load_workflow` opens the file on EVERY shot. A mid-run edit
+    stamps post-edit frames with the pre-edit sha — the misattribution the cache rule
+    exists to prevent, arriving through the rendered path."""
+    second = env.plate.parent / "S002.png"
+    second.write_bytes(PNG + b"plate2")
+    env.scenes[0]["shots"].append({"shot_id": "S002", "image_path": str(second)})
+    env.cast["1:S002"] = [{"path": str(env.tmp_path / "card.png"), "card_key": "SCP-049",
+                           "position": "right", "depth": "mid"}]
+    first_sidecar, second_sidecar = _sidecar(env), _sidecar(env, base="scene_001_S002")
+    workflow = Path(env.settings.shot_recompose_workflow_path)
+    edited = []
+    real_submit = env.client.submit_and_fetch
+
+    async def edit_between_shots(url, wf):
+        if not edited:                 # the graph is edited after shot 1, before shot 2
+            edited.append(workflow.read_bytes())
+            workflow.write_text(workflow.read_text(encoding="utf-8").replace(
+                '"prompt": "x"', '"prompt": "edited"'), encoding="utf-8")
+        return await real_submit(url, wf)
+
+    env.client.submit_and_fetch = edit_between_shots
+
+    await recompose_run_shots(env.scenes, env.cast, env.settings)
+
+    assert _block(first_sidecar)["workflow_sha256"] == hashlib.sha256(edited[0]).hexdigest()
+    assert _block(second_sidecar)["workflow_sha256"] == hashlib.sha256(
+        workflow.read_bytes()).hexdigest()
+    assert _block(first_sidecar)["workflow_sha256"] != _block(second_sidecar)["workflow_sha256"]

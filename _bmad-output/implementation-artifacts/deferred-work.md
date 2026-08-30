@@ -935,3 +935,7 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
   summary: **합성 결함 4건이 인계 목록 밖에서 새로 나왔다** — `S00702` `S00800` `S00802` `S00904`. Jay가 셋에 *"합성문제"*, `S00802`에 *"환자 캐릭터? 이상함"*을 직접 적었다.
   evidence: 14.2가 14.3으로 넘긴 합성 계열은 `S00504`·`S00803` 둘뿐이었는데, 2026-08-30 전수 판정에서 같은 부류가 **4건 더** 나왔다(`VERDICT.md` §3). 즉 이 부류의 기저율도 인계 시점 추정보다 크다(2 → 6/43). 넷 다 recompose된 샷이고 배치 지시는 이미 프롬프트에 있으므로(`shot_recompose.py:61-80`) 원인은 텍스트 밖이다. Jay 결정 (B)에 따라 **E2E iteration 5**에서 다룬다. 그때 14.3이 깐 `recompose` 블록(`workflow_sha256` + `instruction_sha256` + 패스별 position/depth/pose)이 프레임↔지시 귀속을 제공한다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
+  summary: 14.3이 `recompose_stats`에 적용한 **try 밖 호이스팅**(늦은 실패에도 실제 숫자가 트레이스에 남도록)이 `relight_stats`·`renderer_counts`·`composite_harmonization_tier`에는 **적용되지 않았다** — 셋 다 여전히 `video.py`의 `try` 안에서 초기화된다.
+  evidence: `video.py:2733` 부근에서 `relight_stats = {"computed": 0, "failed": 0}`, `renderer_counts: dict[str, int] = {}`가 `try` 블록 안에 선언된다. tier 3 런에서 리라이트가 끝난 뒤 컴포지팅 중 ffmpeg가 죽으면 에러 span은 `relit_pairs_computed=0`을 보고하는데, 이는 "리라이트가 아예 안 돌았다"와 구별되지 않는다 — recompose 호이스팅이 없앤 바로 그 "돌긴 돌았나?" 모호성이다. 14.3 이전부터 있던 8.7 계열 코드이고 이번 리뷰에서 드러났을 뿐이라 이 스토리의 리뷰 패치 범위 밖으로 둔다. 고치는 형태는 recompose와 동일하다(세 변수를 `try` 앞으로 올리고 예외 경로의 `_record_trace`에 실어 보낸다). 재개 조건: tier 3가 실제로 켜지는 스토리, 또는 `video_node` 트레이스를 손대는 다음 작업.

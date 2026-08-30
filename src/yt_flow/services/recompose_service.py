@@ -13,6 +13,7 @@ the characters in it.
 import hashlib
 import json
 import logging
+import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -320,7 +321,7 @@ def _digest_from_name(frame: Path) -> str | None:
     return stem.rsplit("_", 1)[1] if "_" in stem else None
 
 
-def _sidecar_for(run_dir: Path, shot_id: str) -> Path | None:
+def _sidecar_for(run_dir: Path, scene_num: object, shot_id: str) -> Path | None:
     """image_node's completion sentinel for this shot, or ``None`` if there is none.
 
     Globbed rather than rebuilt from ``scene_{n:03d}_{shot_id}``: that format belongs to
@@ -329,13 +330,25 @@ def _sidecar_for(run_dir: Path, shot_id: str) -> Path | None:
     image_node (mock fixtures, hand-placed plates), so there is no record to annotate and
     inventing a partial one would put a sidecar with no `image_prompt` in front of the
     resume check. ponytail: no synthesis, no warning; the run that owns the shot stamps it.
+
+    `scene_num` NARROWS the glob rather than replacing it (Story 14.3 review). The bare
+    ``*_{shot_id}_done.json`` + ``sorted(...)[0]`` discarded the scene the caller was
+    already holding, and was unambiguous only because production shot ids happen to embed
+    their scene (``S00301``) — a property of the id generator, not of this function, and
+    an undocumented dependency the day it stops holding. The scene prefix wins when it
+    matches something; when it matches nothing the whole match list stands, so a sidecar
+    named by anything but `image._shot_base` still resolves.
     """
-    return next(iter(sorted((run_dir / "images").glob(f"*_{shot_id}_done.json"))), None)
+    matches = sorted((run_dir / "images").glob(f"*_{shot_id}_done.json"))
+    if isinstance(scene_num, int) and not isinstance(scene_num, bool):
+        matches = [m for m in matches if m.name.startswith(f"scene_{scene_num:03d}_")] or matches
+    return next(iter(matches), None)
 
 
 def _recompose_block(
     *, source: str, workflow_path: str, workflow_sha256: str | None,
     instruction_sha256: str | None, digest: str | None, out: Path, cast: list[dict],
+    digest_verified: bool,
 ) -> dict:
     """What drew this frame, in pass order.
 
@@ -351,6 +364,16 @@ def _recompose_block(
     this story is about), so the value is the file's mtime, and ``None`` when even that
     cannot be read — never today's clock, which is the identical misattribution one field
     across.
+
+    ``digest_verified`` says whether ``digest`` was RECOMPUTED from the inputs this pass
+    is holding, or merely read off the frame's filename. On the re-entry fill it is read
+    off the filename and nothing can recompute it — the plate that produced it has
+    already been replaced by the frame itself — so today's cast is not known to be the
+    cast that drew it. Writing it into ``passes`` would assert exactly the thing that
+    cannot be checked (Story 14.3 review), which is the same class of lie as stamping
+    today's workflow sha onto a cached frame. ``passes`` is null there, and
+    ``digest_verified`` is on the block so a reader can tell that null apart from a
+    frame drawn with no cast at all.
     """
     if source == "cache":
         try:
@@ -368,6 +391,7 @@ def _recompose_block(
         "workflow_sha256": workflow_sha256,
         "instruction_sha256": instruction_sha256,
         "digest": digest,
+        "digest_verified": digest_verified,
         "output_path": str(out),
         "passes": [
             {
@@ -378,7 +402,7 @@ def _recompose_block(
                 "pose": c.get("pose"),
             }
             for c in order_cast(cast)
-        ],
+        ] if digest_verified else None,
     }
 
 
@@ -389,19 +413,34 @@ def _stamp_sidecar(sidecar: Path, block: dict, *, overwrite: bool) -> str | None
     write makes `_existing_complete_shot` miss and re-renders the shot on the next resume
     — spending a GPU pass to record that a GPU pass happened.
 
-    ``overwrite=False`` (a cache hit) keeps an existing block untouched, so the original
-    `workflow_sha256`/`recomposed_at` survive; it still WRITES when the key is absent or
-    null, which is what makes a previously failed stamp recoverable instead of permanently
-    silent. ``TypeError``/``ValueError`` are caught alongside ``OSError`` because the
+    ``overwrite=False`` (a cache hit) keeps an existing block, so the original
+    `workflow_sha256`/`recomposed_at` survive — but ONLY when that block describes the
+    frame being shipped, i.e. its `digest` and `output_path` match. Keeping any block at
+    all reproduced the very misattribution this rule was written to prevent, and did so
+    permanently (Story 14.3 review): render at digest X, edit `position` so digest Y
+    renders and replaces the block, revert the edit so X is served from cache — the
+    preserved block says Y, `output_path` Y, `passes` Y for a shipped frame that is X.
+    A block describing a DIFFERENT frame is not an older truth to protect, so it is
+    re-stamped (with `source="cache"` and null shas, because this pass still did not draw
+    the frame). It also still WRITES when the key is absent or null, which is what makes a
+    previously failed stamp recoverable instead of permanently silent.
+    ``TypeError``/``ValueError`` are caught alongside ``OSError`` because the
     sidecar is JSON someone may have edited: a list where a dict belongs raises the former
     two, and attribution must never fail the run. [AD-10]
+
+    The tmp name carries this process's pid. A fixed ``<sidecar>.tmp`` is one filename two
+    processes race on, and this repo runs parallel agent sessions over one workspace
+    (commit 590db09): A reads, B reads, A writes tmp, B overwrites tmp, A `replace`s B's
+    bytes into place — over a file that carries `image_prompt` and `seed`.
     """
-    tmp = sidecar.with_name(f"{sidecar.name}.tmp")
+    tmp = sidecar.with_name(f"{sidecar.name}.{os.getpid()}.tmp")
     try:
         record = json.loads(sidecar.read_text(encoding="utf-8"))
         if not isinstance(record, dict):
             return f"sidecar is {type(record).__name__}, not an object"
-        if not overwrite and isinstance(record.get("recompose"), dict):
+        existing = record.get("recompose")
+        if not overwrite and isinstance(existing, dict) and all(
+                existing.get(key) == block[key] for key in ("digest", "output_path")):
             return None
         record["recompose"] = block
         tmp.write_text(json.dumps(record), encoding="utf-8")
@@ -434,9 +473,16 @@ async def recompose_run_shots(
     # takes it to mean "NOT recomposed". Re-entry means the opposite: the shot was already
     # recomposed on an earlier attempt of a retryable stage. A retried video stage over 33
     # recomposed shots traced `recomposed=0, recompose_skipped=33` and warned that 33 shots
-    # had used the overlay, when all 33 were recomposed frames. `attributed` counts the
-    # stamps that landed, so `recomposed` can be read as a coverage figure instead of an
-    # assumption (a shot with no sidecar is silently un-stampable — see `_sidecar_for`).
+    # had used the overlay, when all 33 were recomposed frames.
+    #
+    # `attributed` is a coverage figure over `recomposed` AND NOTHING ELSE: it counts the
+    # stamps that landed on the frames THIS RUN recomposed, so `recomposed - attributed`
+    # is how many shipped frames carry no record (a shot with no sidecar is silently
+    # un-stampable — see `_sidecar_for`). Re-entered shots are stamped too, and still warn
+    # when that fails, but they are NOT counted here — they are not this run's recomposed
+    # frames, and counting them made a second pass over one already-recomposed shot report
+    # `recomposed=0, reentered=1, attributed=1`: a coverage figure over an empty
+    # denominator, which at 33 shots reads `recomposed - attributed = -33`.
     stats: dict = {"recomposed": 0, "skipped": 0, "reentered": 0, "failed": 0, "attributed": 0}
 
     # Story 10.1d — run-level refusal, distinct in kind from the per-shot skips below: a
@@ -452,17 +498,18 @@ async def recompose_run_shots(
         # `remaining` is already the untouched copy — nothing below has run yet.
         return remaining, {**stats, "preflight_failed": reason, "preflight_detail": message}
 
-    # Read once per run, not per shot: the graph cannot change mid-loop, and a shipped
-    # 5-node JSON hashed 43 times is 43 reads for one answer.
-    workflow_sha = _workflow_sha256(s.shot_recompose_workflow_path)
     sidecar_failures: list[dict] = []
 
     def stamp(
         run_dir: Path, scene_num: object, shot_id: str, *, source: str,
         workflow_sha256: str | None, digest: str | None, out: Path, cast: list[dict],
-        overwrite: bool, shot_key: str,
-    ) -> None:
+        digest_verified: bool, overwrite: bool, shot_key: str,
+    ) -> bool:
         """Record the attribution, or record that it could not be recorded.
+
+        Returns whether a block is now on disk for this frame. The caller decides what
+        that counts towards — only the `recomposed` path adds to `attributed`, because
+        that is the only denominator the figure is a coverage of (see `stats` above).
 
         Both halves matter. The warning is raised on EVERY pass that finds the block
         missing — including the cached and re-entry passes below — because a stamp that
@@ -482,16 +529,16 @@ async def recompose_run_shots(
         `shot_id` is `"3:S00301"` never joins against them.
         """
         try:
-            sidecar = _sidecar_for(run_dir, shot_id)
+            sidecar = _sidecar_for(run_dir, scene_num, shot_id)
             if sidecar is None:
-                return
+                return False
             detail = _stamp_sidecar(sidecar, _recompose_block(
                 source=source, workflow_path=s.shot_recompose_workflow_path,
                 workflow_sha256=workflow_sha256,
                 # Same rule as the workflow sha: a cached frame's instruction text is
                 # whatever drew it, not whatever this checkout would render today.
                 instruction_sha256=_instruction_sha256(cast) if source == "rendered" else None,
-                digest=digest, out=out, cast=cast,
+                digest=digest, digest_verified=digest_verified, out=out, cast=cast,
             ), overwrite=overwrite)
         except Exception as exc:  # noqa: BLE001 — AD-10: attribution never fails the run
             detail = f"{type(exc).__name__}: {exc}"
@@ -499,15 +546,30 @@ async def recompose_run_shots(
             logger.warning("Recompose sidecar write failed for %s: %s", shot_key, detail)
             sidecar_failures.append(
                 {"scene_num": scene_num, "shot_id": shot_id, "detail": detail})
-        else:
-            stats["attributed"] += 1
+            return False
+        return True
 
     for scene in scenes:
         for shot in scene.get("shots") or []:
             shot_key = f"{scene['scene_num']}:{shot['shot_id']}"
-            cast = [c for c in remaining.get(shot_key, []) if isinstance(c, dict) and c.get("path")]
+            declared = remaining.get(shot_key) or []
+            cast = [c for c in declared if isinstance(c, dict) and c.get("path")]
             plate = shot.get("image_path")
+            if not declared:
+                continue                     # no cast at all: not this path's shot
             if not cast or not plate:
+                # Story 14.3 review: the shot HAS cast and cannot be recomposed — every
+                # entry is malformed or carries no `path`, or the shot has no plate. This
+                # used to `continue` ahead of every counter, so the shot was invisible in
+                # both the trace and the gate: `recomposed`/`skipped`/`failed` all excluded
+                # it and no warning named it. `skipped` is the honest counter — every
+                # reader of it (the degraded warning's copy, the run trace) means "not
+                # recomposed, rendered on the overlay", which is exactly what happens here.
+                logger.warning(
+                    "Recompose skipped for %s: %s", shot_key,
+                    "the shot has no image_path" if not plate
+                    else f"none of its {len(declared)} cast entries carries a usable path")
+                stats["skipped"] += 1
                 continue
             if any(c.get("card_key") not in CARD_LOOKS for c in cast):
                 # No description means no way to name the character in the instruction.
@@ -531,11 +593,14 @@ async def recompose_run_shots(
                 # its warning. It counts as `reentered`, NOT `skipped`: it IS recomposed,
                 # and every reader of `skipped` (the degraded warning's copy, the run
                 # trace) means "not recomposed" by it.
+                # `digest_verified=False`: the digest is read off the filename and the
+                # plate that produced it is gone, so today's cast cannot be shown to be
+                # the cast that drew this frame — see `_recompose_block`.
                 stamp(
                     plate_path.parent.parent, scene["scene_num"], shot["shot_id"],
                     source="cache", workflow_sha256=None,
-                    digest=_digest_from_name(plate_path), out=plate_path, cast=cast,
-                    overwrite=False, shot_key=shot_key,
+                    digest=_digest_from_name(plate_path), digest_verified=False,
+                    out=plate_path, cast=cast, overwrite=False, shot_key=shot_key,
                 )
                 remaining.pop(shot_key, None)
                 stats["reentered"] += 1
@@ -559,7 +624,15 @@ async def recompose_run_shots(
             out = recompose_cache_path(run_dir, shot["shot_id"], digest)
 
             rendered = not out.exists()
+            workflow_sha = None
             if rendered:
+                # Hashed HERE, not once per run. `recompose_shot` -> `_load_workflow`
+                # opens the file on EVERY shot, so a hoisted hash stamps post-edit frames
+                # with the pre-edit sha — the misattribution the cache rule exists to
+                # prevent, arriving through the rendered path instead. Story 14.9 is
+                # adding recompose workflow files right now, so this is reachable, and a
+                # 5-node JSON re-read per rendered shot costs nothing against a GPU pass.
+                workflow_sha = _workflow_sha256(s.shot_recompose_workflow_path)
                 image = await recompose_shot(
                     plate_path, cast, CARD_LOOKS, comfyui_client,
                     s.shot_recompose_workflow_path, s.comfyui_url, shot_id=shot["shot_id"],
@@ -583,15 +656,19 @@ async def recompose_run_shots(
                     continue
 
             shot["image_path"] = str(out)
-            stamp(
+            if stamp(
                 run_dir, scene["scene_num"], shot["shot_id"],
                 source="rendered" if rendered else "cache",
-                workflow_sha256=workflow_sha if rendered else None,
-                digest=digest, out=out, cast=cast,
+                workflow_sha256=workflow_sha,      # None unless this pass drew the frame
+                # Recomputed from this pass's own plate bytes, card paths and placement
+                # fields, and `out` is named after it — so the cast IS what drew the frame.
+                digest=digest, digest_verified=True, out=out, cast=cast,
                 # A cache hit did not draw this frame, so it may not overwrite the record
-                # of the pass that did — but it must still fill an absent one in.
+                # of the pass that did — but it must still fill an absent one in, and it
+                # must not preserve a block describing some OTHER frame (`_stamp_sidecar`).
                 overwrite=rendered, shot_key=shot_key,
-            )
+            ):
+                stats["attributed"] += 1
             # The depth map describes the *empty plate*, not the characters the model just
             # drew into the frame, so warping the new image with it would slide the figures
             # against their own background. Dropping the key makes 11.5 report NO_DEPTH

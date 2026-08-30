@@ -5,8 +5,8 @@ created: '2026-08-29'
 baseline_revision: '2bc7534'
 final_revision: 'c75b123'
 status: 'done' # draft | ready-for-dev | in-progress | in-review | done | blocked
-review_loop_iteration: 1
-followup_review_recommended: true
+review_loop_iteration: 0
+followup_review_recommended: false
 context: []
 warnings: [multiple-goals, oversized]
 ---
@@ -175,6 +175,45 @@ warnings: [multiple-goals, oversized]
   - `[medium]` `[patch]` 그 외 12건: 워크플로 sha `None`이 캐시히트 `None`과 구분 불가·무로그 / 캐시 채움 경로가 `recomposed_at`을 오늘로 / `.tmp` 잔존 / 귀속 커버리지 미측정(`recomposed=33`을 "33장 귀속"으로 못 읽음) / 명시적 `null`의 근거가 거짓(읽는 코드 없음) / **출하 33/43을 그린 Qwen 그래프의 베이스 모델 격차가 통과 단언에 묻혀 있었다**(0.5-vs-0.3 가중치보다 큰 격차인데 xfail로 드러나지 않는다) / 블록이 지시문 해시 없이 "어느 지시가 그렸는가"를 주장 / 잘못된 키의 경고 행이 샷을 못 지목 / 비-딕트 cast가 전 카드를 조용히 삭제 / 스탬프 예외가 스윕을 중단 / 경고 컨텍스트 `shot_id` 포맷 불일치 / `_stat_count`가 float·숫자문자열을 무로그로 0 처리 / 재진입 digest 파싱의 구분자 부재
   - `[low]` `[patch]` 3건(경고 컨텍스트 분리·불가용 값 로깅·digest 구분자 가드)은 위에 포함
 
+### 2026-08-30 — Review pass 3 (독립 후속 리뷰)
+
+`followup_review_recommended: true` 가 가리킨 갭을 닫는다 — 패스 2의 19건 수정이 독립 검토를
+받은 적이 없었다. 대상은 `c75b123` 의 `src/`+`tests/` 기여분. 리뷰어 둘을 독립으로 돌렸고
+**둘 다 실제 프로브 테스트로 확인**한 뒤 보고했다.
+
+- intent_gap: 0
+- bad_spec: 0
+- patch: 16: (high 5, medium 9, low 2)
+- defer: 1: (medium 1)
+- reject: 0
+- addressed_findings:
+  - `[high]` `[patch]` **캐시 히트 가드가 자기가 막으려던 오귀속을 재현했다** — 기존 블록이
+    dict이기만 하면 조기 반환하고 그 블록이 **출하되는 프레임을 서술하는지** 검사하지 않았다.
+    프로브 확인: digest X 렌더 → 배치 변경으로 Y가 블록을 덮어씀 → 배치 복원으로 X가 캐시
+    히트 → 블록은 여전히 Y를 가리키고 **영구히 고쳐지지 않는다**. `digest`·`output_path`
+    일치 시에만 보존하도록 수정
+  - `[high]` `[patch]` **`attributed` 가 재진입 분기에서도 증가**해 커버리지 수치가 아니었다.
+    프로브 확인: 재진입 1건이 `{recomposed:0, attributed:1}` → 33샷 재시도면
+    `recomposed − attributed = −33`. 주석 두 곳이 커버리지라고 단언하고 있었다
+  - `[high]` `[patch]` **딕트인데 카운트가 불가용이면 경고 없이 0으로 강등** — 자매 수정이
+    닫은 "recompose 꺼짐과 바이트 동일" 상태 그대로다. 프로브 확인: `{"recomposed":"33"}` 로
+    33프레임 교체 후 트레이스 0, 경고 0행. 그 갭을 고정하던 테스트도 함께 뒤집음
+  - `[high]` `[patch]` **워크플로 sha 를 루프 밖에서 한 번만 계산**하는데 `_load_workflow` 는
+    샷마다 파일을 연다 — 중간 편집 시 편집 후 프레임에 편집 전 sha가 찍힌다. 14.9가 지금
+    recompose 워크플로 파일을 추가하고 있어 **도달 가능**하다. 렌더 직전 계산으로 이동
+  - `[high]` `[patch]` **recompose 그래프의 LoRA 단언이 부분집합 경계라 공집합에서 공허하게
+    통과** — 출하 33/43을 그린 그래프인데 Lightning LoRA 존재도 배선도 단언되지 않았다.
+    `==` + 샘플러 도달 테스트 추가
+  - `[medium]` `[patch]` 그 외 9건: 지시문 sha 테스트가 구현식으로 기대값을 계산(자기검증) /
+    `_sidecar_for` 가 `scene_num` 을 버림 / `cast_payload_unreadable` 가 skipped·failed 샷의
+    카드까지 삭제 / `_stamp_sidecar` tmp 이름이 고정이라 **병렬 세션 간 경쟁**(이 저장소는
+    병렬 세션을 돌린다) / off 런과 on-but-noop 런의 트레이스가 동일 / 캐시·재진입 채움이
+    오늘의 cast를 그 프레임의 passes로 기록 / 모듈 상수 워크플로 경로가 스윕을 빠져나감 /
+    성공한 재스탬프 후에도 낡은 `recompose_sidecar_failed` 행이 철회되지 않음 / cast는 있는데
+    카드 경로·플레이트가 없는 샷이 모든 카운터와 경고에서 사라짐
+  - `[low]` `[patch]` 2건: 재진입을 `skipped` 라고 말하는 스테일 docstring(테스트 본문이 반박) /
+    `shot_id=""` 가 str 검사를 통과해 샷을 못 지목하는 경고 행 생성
+
 ## Design Notes
 
 **왜 게이트를 안 만드는가.** 팔레트 지표는 라벨 7건 중 6건을 상위 11위 안에 놓지만(`vivid_frac` 랭크 0·1·2·4·6·10) 일곱 번째 `S00303`은 랭크 28이다 — 플랫 아이소메트릭 스케치는 **저채도**라 팔레트 축에 원리적으로 안 잡힌다. 그리고 그 라벨들은 **Claude 단독**이다. 14.2에서 같은 종류의 인계 라벨 2건이 전수 판정으로 뒤집혔고(`S00504`·`S00803`), 미검출 1건은 **판정기가 옳고 라벨이 틀린** 경우였다. 라벨이 확정되지 않은 상태에서 임계값을 고르면 그 임계값은 라벨에 적합된 것이지 결함에 적합된 것이 아니다. 10.3 §5가 이 축의 재개 조건과 **방법까지** 사전등록해 뒀다 — *"build it on ComfyUI CLIPVision embeddings of the run's own shot images, scored as distance from the run's own median shot"* — 그리고 그것은 GPU 패스를 요구한다. 이 런은 GPU가 없다.
@@ -263,3 +302,22 @@ Status: **done** — 단, **이 스토리는 화풍을 고치지 않았다. 고�
 
 산출물: `14-3-art-style-contract/VERDICT.md`. `deferred-work.md`에 신규 3부류 등재,
 `S00105` 행은 전제 약화 표기(지우지 않음 — 14.2 기록과 어긋나므로 다음 런에서 재확인).
+
+### 2026-08-30 — 독립 후속 리뷰 종결
+
+`followup_review_recommended` 를 **false** 로 내린다. 패스 2의 19건 수정이 받지 못했던 독립
+검토를 리뷰어 둘로 수행했고, 나온 17건 중 **16건을 수정**했다(1건 defer).
+
+**가장 중대한 셋은 전부 "수정 자체의 결함"이었다** — 패스 2가 급히 기운 자리가 새 구멍을
+냈다는 뜻이고, `followup_review_recommended` 가 존재하는 이유가 이것이다:
+캐시 히트 가드가 자기가 막으려던 오귀속을 **영구 상태로** 재현했고, `attributed` 가 재진입에서도
+증가해 커버리지 산술이 **음수**가 되며, 딕트 페이로드의 불가용 카운트가 경고 없이 0으로 강등돼
+"recompose 꺼짐과 구분 불가" 상태가 남아 있었다. 셋 다 **리뷰어의 실제 프로브 테스트로 확인**됐다.
+
+검증: 357 passed / 1 xfailed(타깃) · 전체 **3444 passed / 1 failed**(14.5가 기존 결함으로 기록한
+`test_render_pose_guides.py` PNG SHA 핀) · ruff clean · `report_decision_drift.py` exit 0 ·
+pyright 3파일 **16 errors = 베이스라인**. 신규 경고 코드 없음(P3은 기존 코드 재사용),
+`_existing_complete_shot` 비교 키 3개 불변, config 기본값·프롬프트·워크플로 JSON 무변경.
+
+**여전히 미주장**: 14.3의 화풍 판정은 Jay가 2026-08-30에 했고(17/43, 다섯 부류) 그 결과는
+`VERDICT.md` 에 있다. 이 리뷰는 **코드에 대한 것이고 픽셀에 대한 것이 아니다.**
