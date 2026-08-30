@@ -1,0 +1,337 @@
+{
+ "S00105": {
+  "a": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   }
+  },
+  "b": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   }
+  },
+  "c": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   }
+  }
+ },
+ "S00504": {
+  "a": {
+   "STOCK-d-class": {
+    "error": "seed not in mask"
+   },
+   "SCP-049": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 466,
+    "right": 1916,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 617831,
+    "seed": [
+     1350,
+     400
+    ]
+   }
+  },
+  "b": {
+   "STOCK-d-class": {
+    "error": "seed not in mask"
+   },
+   "SCP-049": {
+    "top": 44,
+    "bottom": 1076,
+    "left": 547,
+    "right": 1916,
+    "h": 1033,
+    "pct_frame": 95.6,
+    "area": 486722,
+    "seed": [
+     1380,
+     400
+    ]
+   }
+  },
+  "c": {
+   "STOCK-d-class": {
+    "error": "seed not in mask"
+   },
+   "SCP-049": {
+    "top": 47,
+    "bottom": 1076,
+    "left": 547,
+    "right": 1916,
+    "h": 1030,
+    "pct_frame": 95.4,
+    "area": 452815,
+    "seed": [
+     1380,
+     400
+    ]
+   }
+  }
+ },
+ "S00702": {
+  "a": {
+   "STOCK-researcher": {
+    "top": 209,
+    "bottom": 796,
+    "left": 485,
+    "right": 741,
+    "h": 588,
+    "pct_frame": 54.4,
+    "area": 85295,
+    "seed": [
+     620,
+     500
+    ]
+   },
+   "SCP-049-2": {
+    "top": 83,
+    "bottom": 1076,
+    "left": 949,
+    "right": 1579,
+    "h": 994,
+    "pct_frame": 92.0,
+    "area": 185706,
+    "seed": [
+     1340,
+     400
+    ]
+   }
+  },
+  "b": {
+   "STOCK-researcher": {
+    "error": "seed not in mask"
+   },
+   "SCP-049-2": {
+    "top": 194,
+    "bottom": 1076,
+    "left": 1016,
+    "right": 1544,
+    "h": 883,
+    "pct_frame": 81.8,
+    "area": 121972,
+    "seed": [
+     1390,
+     450
+    ]
+   }
+  },
+  "c": {
+   "STOCK-researcher": {
+    "error": "seed not in mask"
+   },
+   "SCP-049-2": {
+    "top": 194,
+    "bottom": 1076,
+    "left": 1016,
+    "right": 1544,
+    "h": 883,
+    "pct_frame": 81.8,
+    "area": 121972,
+    "seed": [
+     1390,
+     450
+    ]
+   }
+  }
+ },
+ "S00800": {
+  "a": {
+   "SCP-049": {
+    "top": 124,
+    "bottom": 1076,
+    "left": 454,
+    "right": 1916,
+    "h": 953,
+    "pct_frame": 88.2,
+    "area": 310256,
+    "seed": [
+     580,
+     400
+    ]
+   },
+   "SCP-049-2": {
+    "top": 124,
+    "bottom": 1076,
+    "left": 454,
+    "right": 1916,
+    "h": 953,
+    "pct_frame": 88.2,
+    "area": 310256,
+    "seed": [
+     1290,
+     450
+    ]
+   }
+  },
+  "b": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   },
+   "SCP-049-2": {
+    "error": "seed not in mask"
+   }
+  },
+  "c": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   },
+   "SCP-049-2": {
+    "error": "seed not in mask"
+   }
+  }
+ },
+ "S00802": {
+  "a": {
+   "SCP-049": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 225,
+    "right": 1906,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 584941,
+    "seed": [
+     580,
+     500
+    ]
+   },
+   "SCP-049-2": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 225,
+    "right": 1906,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 584941,
+    "seed": [
+     1400,
+     500
+    ]
+   }
+  },
+  "b": {
+   "SCP-049": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 126,
+    "right": 1908,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 580419,
+    "seed": [
+     570,
+     500
+    ]
+   },
+   "SCP-049-2": {
+    "error": "seed not in mask"
+   }
+  },
+  "c": {
+   "SCP-049": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 126,
+    "right": 1907,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 556530,
+    "seed": [
+     570,
+     500
+    ]
+   },
+   "SCP-049-2": {
+    "error": "seed not in mask"
+   }
+  }
+ },
+ "S00803": {
+  "a": {
+   "SCP-049": {
+    "error": "seed not in mask"
+   }
+  },
+  "b": {
+   "SCP-049": {
+    "top": 3,
+    "bottom": 1076,
+    "left": 585,
+    "right": 1462,
+    "h": 1074,
+    "pct_frame": 99.4,
+    "area": 226809,
+    "seed": [
+     970,
+     500
+    ]
+   }
+  },
+  "c": {
+   "SCP-049": {
+    "top": 3,
+    "bottom": 938,
+    "left": 810,
+    "right": 1152,
+    "h": 936,
+    "pct_frame": 86.7,
+    "area": 153657,
+    "seed": [
+     970,
+     500
+    ]
+   }
+  }
+ },
+ "S00904": {
+  "a": {
+   "SCP-049": {
+    "top": 6,
+    "bottom": 1076,
+    "left": 1151,
+    "right": 1916,
+    "h": 1071,
+    "pct_frame": 99.2,
+    "area": 230013,
+    "seed": [
+     1450,
+     400
+    ]
+   }
+  },
+  "b": {
+   "SCP-049": {
+    "top": 65,
+    "bottom": 726,
+    "left": 1277,
+    "right": 1738,
+    "h": 662,
+    "pct_frame": 61.3,
+    "area": 126103,
+    "seed": [
+     1440,
+     400
+    ]
+   }
+  },
+  "c": {
+   "SCP-049": {
+    "top": 65,
+    "bottom": 726,
+    "left": 1277,
+    "right": 1738,
+    "h": 662,
+    "pct_frame": 61.3,
+    "area": 126103,
+    "seed": [
+     1440,
+     400
+    ]
+   }
+  }
+ }
+}

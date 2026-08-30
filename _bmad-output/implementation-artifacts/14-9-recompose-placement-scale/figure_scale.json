@@ -1,0 +1,163 @@
+{
+  "S00105": {
+    "a": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.19430700231481482,
+      "row_profile_max": 0.5239583333333333
+    },
+    "b": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.19505063657407407,
+      "row_profile_max": 0.4895833333333333
+    },
+    "c": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.15243055555555557,
+      "row_profile_max": 0.48541666666666666
+    }
+  },
+  "S00504": {
+    "a": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.39916377314814816,
+      "row_profile_max": 0.6619791666666667
+    },
+    "b": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.35151523919753086,
+      "row_profile_max": 0.60625
+    },
+    "c": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.3456833526234568,
+      "row_profile_max": 0.48541666666666666
+    }
+  },
+  "S00702": {
+    "a": {
+      "diff_band_top": 31,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1049,
+      "changed_frac": 0.19953028549382718,
+      "row_profile_max": 0.375
+    },
+    "b": {
+      "diff_band_top": 27,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1053,
+      "changed_frac": 0.16845148533950619,
+      "row_profile_max": 0.29739583333333336
+    },
+    "c": {
+      "diff_band_top": 27,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1053,
+      "changed_frac": 0.16845148533950619,
+      "row_profile_max": 0.29739583333333336
+    }
+  },
+  "S00800": {
+    "a": {
+      "diff_band_top": 85,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 995,
+      "changed_frac": 0.2743291859567901,
+      "row_profile_max": 0.5973958333333333
+    },
+    "b": {
+      "diff_band_top": 84,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 996,
+      "changed_frac": 0.29205729166666666,
+      "row_profile_max": 0.6213541666666667
+    },
+    "c": {
+      "diff_band_top": 84,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 996,
+      "changed_frac": 0.29205729166666666,
+      "row_profile_max": 0.6213541666666667
+    }
+  },
+  "S00802": {
+    "a": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.3886352237654321,
+      "row_profile_max": 0.8677083333333333
+    },
+    "b": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.38280574845679016,
+      "row_profile_max": 0.8578125
+    },
+    "c": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.3743894675925926,
+      "row_profile_max": 0.8463541666666666
+    }
+  },
+  "S00803": {
+    "a": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.28717399691358025,
+      "row_profile_max": 0.471875
+    },
+    "b": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.29332127700617283,
+      "row_profile_max": 0.7552083333333334
+    },
+    "c": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.23748890817901236,
+      "row_profile_max": 0.3625
+    }
+  },
+  "S00904": {
+    "a": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.20114872685185184,
+      "row_profile_max": 0.31927083333333334
+    },
+    "b": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.16187114197530866,
+      "row_profile_max": 0.27708333333333335
+    },
+    "c": {
+      "diff_band_top": 0,
+      "diff_band_bottom": 1079,
+      "diff_band_h": 1080,
+      "changed_frac": 0.16187114197530866,
+      "row_profile_max": 0.27708333333333335
+    }
+  }
+}
