@@ -413,7 +413,8 @@ GPU 여유가 아니다) · 14.9가 in-review이므로 같은 런 선점 여부 
 uv run python .../14-1-approved-plate-sets/replay_coverage.py 4b35c0ed   # exit 0, §4
 uv run python .../14-8-plate-reuse-shipping/verify_two_paths.py          # exit 0, §3 (Phase 1)
 uv run pytest tests/pipeline/nodes/test_image.py tests/services/test_location_service.py \
-              tests/test_report_decision_drift.py tests/pipeline/test_gates.py -q   # 243 passed
+              tests/test_report_decision_drift.py tests/pipeline/test_gates.py \
+              tests/domain/test_run_warnings.py -q                       # 285 passed (리뷰 패스 2)
 uv run pytest -q                                                         # 전체 — §10 아래
 uv run python scripts/report_decision_drift.py                           # exit 0, 세 버킷 무등장
 uv run ruff check                                                        # 아래
@@ -421,10 +422,13 @@ git diff --stat assets/ prompts/                                         # 빈 �
 grep -rn 'STOCK_PLATE_SUBSTITUTION' .env .env.example                    # 빈 출력 (exit 1)
 ```
 
-**`ruff check`는 clean이 아니다 — 기존 2건, 신규 0건.** 앞선 리포트는 "clean"이라고 적었고 그것은
-거짓이었다. 두 건 다 이 스토리가 건드리지 않은 파일이다:
+**`ruff check`는 clean이 아니다 — 이 스토리 기준 기존 2건, 신규 0건.** 앞선 리포트는 "clean"이라고
+적었고 그것은 거짓이었다. 두 건 다 이 스토리가 건드리지 않은 파일이다:
 `10-1b-live-validation/measure.py:63` E731(람다 대입) · `14-3-art-style-contract/measure_palette.py:148`
 F541(플레이스홀더 없는 f-string).
+⚠️ 리뷰 패스 2 시점의 `ruff check`는 **14건**을 낸다 — 늘어난 12건은 전부 병렬 세션이 같은 시각에
+추가한 미추적 스크립트(`14-9-recompose-placement-scale/_bands.py`·`_blobs.py`·`_figbox.py`·`_grid.py`)
+에서 나오고 이 스토리가 만진 파일에서는 **0건**이다.
 
 **전체 스위트**: `tests/test_render_pose_guides.py`의 PNG SHA 핀 1건이 실패한다. 이것은 이 스토리의
 회귀가 **아니다** — 14.1/14.5/14.6이 이미 기록한 기존 결함이고, `git stash` 후에도 같은 실패임을
@@ -436,7 +440,9 @@ F541(플레이스홀더 없는 f-string).
 
 ```
 uv run pytest -q
-  1 failed, 3455 passed, 1 skipped, 1 xfailed, 1 warning in 380.26s (0:06:20)   # 최종 커밋 상태 재실행
+  1 failed, 3455 passed, 1 skipped, 1 xfailed, 1 warning in 380.26s (0:06:20)   # 재도출 최종 커밋
+  1 failed, 3470 passed, 1 skipped, 1 xfailed, 1 warning in 375.73s (0:06:15)   # 리뷰 패스 2 최종 커밋
+                                                                                # (+15 = 신규 테스트)
   FAILED tests/test_render_pose_guides.py::test_render_is_deterministic_and_content_pinned[humanoid_lying_supine]
 ```
 
