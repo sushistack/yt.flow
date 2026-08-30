@@ -1049,6 +1049,26 @@
       "status": "approved",
       "variant": "c"
     },
+    "containment-chamber/e": {
+      "approved_at": null,
+      "created_at": "2026-08-30T02:06:06.255614+00:00",
+      "location_key": "containment-chamber",
+      "path": "locations/containment-chamber/e.png",
+      "sha256": "ff6736088f02523476b2ae4be862e7ef87a39e53e0b61e2d5f241cd1790839b5",
+      "source": {
+        "render_size": "1344x768",
+        "reroll_salt": "r3",
+        "seed": 1109561402,
+        "structure_hint": {
+          "kind": "reference",
+          "ref": "containment-chamber/ref_a.png",
+          "strength": 0.9
+        },
+        "type": "comfyui_generation"
+      },
+      "status": "draft",
+      "variant": "e"
+    },
     "control-room/a": {
       "approved_at": "2026-08-02T09:04:02.022717+00:00",
       "created_at": "2026-08-02T07:09:39.916056+00:00",
@@ -1270,6 +1290,26 @@
       },
       "status": "approved",
       "variant": "c"
+    },
+    "corridor/d": {
+      "approved_at": null,
+      "created_at": "2026-08-30T02:06:34.705003+00:00",
+      "location_key": "corridor",
+      "path": "locations/corridor/d.png",
+      "sha256": "55094be88dde7335e0a3ed0401203cee611b20ea4ea6a5640545caf45dfb7235",
+      "source": {
+        "render_size": "1344x768",
+        "reroll_salt": "r3",
+        "seed": 1072339357,
+        "structure_hint": {
+          "kind": "reference",
+          "ref": "corridor/ref_a.png",
+          "strength": 0.9
+        },
+        "type": "comfyui_generation"
+      },
+      "status": "draft",
+      "variant": "d"
     },
     "entrance-checkpoint/a": {
       "approved_at": "2026-08-02T12:57:02.931985+00:00",
@@ -1826,6 +1866,26 @@
       "status": "approved",
       "variant": "c"
     },
+    "medical-bay/d": {
+      "approved_at": null,
+      "created_at": "2026-08-30T02:06:48.853826+00:00",
+      "location_key": "medical-bay",
+      "path": "locations/medical-bay/d.png",
+      "sha256": "eb29c964cd0320ffcde9645101c4c341a7fed85062601361962e04c7ca6de1ca",
+      "source": {
+        "render_size": "1344x768",
+        "reroll_salt": "r3",
+        "seed": 397208879,
+        "structure_hint": {
+          "kind": "reference",
+          "ref": "medical-bay/ref_b.png",
+          "strength": 0.9
+        },
+        "type": "comfyui_generation"
+      },
+      "status": "draft",
+      "variant": "d"
+    },
     "observation-room/a": {
       "approved_at": "2026-08-02T09:04:59.510141+00:00",
       "created_at": "2026-08-02T07:05:34.770058+00:00",
@@ -1936,6 +1996,46 @@
       },
       "status": "approved",
       "variant": "c"
+    },
+    "observation-room/d": {
+      "approved_at": null,
+      "created_at": "2026-08-30T02:07:04.045027+00:00",
+      "location_key": "observation-room",
+      "path": "locations/observation-room/d.png",
+      "sha256": "f042772a41355be370fd03f6ce6108b675ede3d427213e03a126622fa136bc9a",
+      "source": {
+        "render_size": "1344x768",
+        "reroll_salt": "r3",
+        "seed": 762098509,
+        "structure_hint": {
+          "kind": "reference",
+          "ref": "observation-room/ref_b.png",
+          "strength": 0.9
+        },
+        "type": "comfyui_generation"
+      },
+      "status": "draft",
+      "variant": "d"
+    },
+    "observation-room/e": {
+      "approved_at": null,
+      "created_at": "2026-08-30T02:06:20.526106+00:00",
+      "location_key": "observation-room",
+      "path": "locations/observation-room/e.png",
+      "sha256": "7fddae5a6fb179c4819ea64af0caad8b8e03c91d51dc62539384fcc1575401bd",
+      "source": {
+        "render_size": "1344x768",
+        "reroll_salt": "r3",
+        "seed": 1086502601,
+        "structure_hint": {
+          "kind": "reference",
+          "ref": "observation-room/ref_a.png",
+          "strength": 0.9
+        },
+        "type": "comfyui_generation"
+      },
+      "status": "draft",
+      "variant": "e"
     },
     "office/a": {
       "approved_at": "2026-08-02T09:05:11.847473+00:00",

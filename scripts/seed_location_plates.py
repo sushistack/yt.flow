@@ -53,7 +53,16 @@ from yt_flow.services import comfyui_client  # noqa: E402
 from yt_flow.services.asset_service import AssetService  # noqa: E402
 from yt_flow.services.comfyui_client import ComfyUIError  # noqa: E402
 
-VARIANTS = ("a", "b", "c")
+# Story 14.1 §3 added "d"/"e": the shortfall report's five uncovered (location_key,
+# viewpoint) cells are all HIGH or LOW, and a/b/c cannot serve them — variant "b"
+# declares "low angle" but measured EYE 9 / HIGH 3 across 14 plates (2/14 held), so
+# the set had no viewpoint spread to draw on. NOTE the batch size: a full seed run is
+# now 5 variants per key, not 3. Target the additions with --key/--variant.
+# Text does NOT guarantee a rendered viewpoint (14.0 §4-4: same prompt, new seed
+# flipped the category in 2 of 5 pairs), so these two are a starting point for a
+# detect-then-regenerate loop, not a promise — render, measure y_h against
+# PREREGISTRATION §2, and --reroll the ones outside the band.
+VARIANTS = ("a", "b", "c", "d", "e")
 # Story 13.3: the eleven injection targets, resolved from ``_meta.title`` once at
 # load and threaded through as a {key: node_id} map. They used to be hardcoded id
 # strings, and three of the writes below are *link* rewrites (`[id, 0]` edges) —
@@ -134,6 +143,10 @@ VARIANT_CAMERAS = {
     "a": "wide establishing shot from the doorway, eye level, the far wall visible",
     "b": "three-quarter view from a corner of the room, low angle looking slightly up",
     "c": "closer asymmetric framing of the room's main feature, camera off to one side",
+    "d": "high-angle shot looking steeply down from near the ceiling, the floor plane "
+         "filling most of the frame, the far wall's base visible, no ceiling in view",
+    "e": "low-angle shot from floor level looking up, the ceiling plane and its fixtures "
+         "filling the upper frame, only a narrow strip of floor at the bottom edge",
 }
 assert set(VARIANT_CAMERAS) == set(VARIANTS), "VARIANT_CAMERAS must cover every variant"
 

@@ -1,0 +1,7 @@
+# 원본 후보 렌더는 무시한다 — 기록된 시드/솔트로 재생성 가능하다(CLAUDE.md 라이브 검증 규칙).
+#   r0: seed_location_plates.py --key <k> --variant <v>          (시드는 AUGMENTATION-BATCH 로그)
+#   r1..r3: 같은 커맨드 + --reroll r1|r2|r3
+# 판정 근거로 커밋되는 것은 상위 디렉터리의 aug_contact_sheet.jpg 다.
+# ⚠️ 시점 판정(y_h)은 소실점 기하라 512px 타일에서 정밀 재판독이 어렵다 —
+#    재판독하려면 위 커맨드로 원본을 다시 뽑아라.
+*.png
