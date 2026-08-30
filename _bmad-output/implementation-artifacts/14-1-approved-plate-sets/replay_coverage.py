@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-"""Story 14.1 (axis replaced by 14.8): replay `image._select_plate` over a run's shots,
-offline. GPU 0, VLM 0.
+"""Story 14.1: replay `image._select_plate` over a run's shots, offline. GPU 0, VLM 0.
 
     uv run python .../replay_coverage.py 4b35c0ed
 
@@ -42,17 +41,8 @@ from yt_flow.pipeline.nodes.image import _ANGLE_VIEWPOINT, _select_plate  # noqa
 
 _EXIT_OK, _EXIT_USAGE, _EXIT_NOTHING = 0, 2, 3
 
-# Pre-registered bars. Copied here so the script prints its own verdict rather than
-# leaving the reader to re-apply them by hand — NOT re-decided here.
-#
-# Story 14.8 replaced the MATCHING AXIS (`camera_angle` -> plate `viewpoint` is retired;
-# the axis is `location_key` alone) and therefore re-cut C1/C2 into C1'/C2' over
-# `location_key` cells, added C4' as a disclosure with no threshold, and left C3 and this
-# constant untouched — `14-8-plate-reuse-shipping/PREREGISTRATION.md` §3. The servable
-# denominator (24) and 0.90 are the ONLY fixed points that prove no bar was lowered, so
-# they are byte-identical to 14.1's. C3' is disclosed IN ADVANCE (that file, §3) as
-# unable to fail on this run's data under the new axis; that vacuity is reported, not
-# enjoyed.
+# Pre-registered bars (PREREGISTRATION.md §5). Copied here so the script prints its own
+# verdict rather than leaving the reader to re-apply them by hand — NOT re-decided here.
 C3_MIN_SHARE = 0.90
 
 
@@ -107,10 +97,8 @@ def load_plates(settings: Settings) -> dict[str, list[dict]]:
 def _people_free(plate: dict) -> bool:
     """The D1 predicate, in ONE place.
 
-    C1'/C2' below, the retired-axis control and `image._select_plate` have to exclude the
-    same plates or the pre-registered coverage bars and the shipped runtime describe
-    different sets. This duplication is the known synchronisation risk of this file
-    (spec 14.8 §Boundaries), which is why the axis and these rules moved in ONE commit.
+    C1/C2 below and `image._select_plate` have to exclude the same plates or the
+    pre-registered coverage bars and the shipped runtime describe different sets.
     """
     return not plate.get("has_person") and not plate.get("depicts_person")
 
@@ -134,7 +122,7 @@ def main(run: str) -> int:
           f"{len(shots) - len(keyed)} do not")
 
     reasons: Counter[str] = Counter()
-    picked: list[tuple[int, str, str, str, object, bool, object]] = []
+    picked: list[tuple[int, str, str, str, object, bool]] = []
     for scene_num, shot in keyed:
         key = shot["location_key"]
         pool = plates.get(key, [])
@@ -148,7 +136,7 @@ def main(run: str) -> int:
         if plate is not None:
             picked.append((scene_num, shot["shot_id"], f"{key}/{plate['variant']}",
                            str(plate.get("viewpoint")), plate.get("standing_room"),
-                           bool(shot.get("cast")), shot.get("camera_angle")))
+                           bool(shot.get("cast"))))
 
     print("\n-- selector outcome over the location-keyed shots --")
     for reason, n in reasons.most_common():
@@ -159,98 +147,47 @@ def main(run: str) -> int:
     share = hits / len(servable) if servable else 0.0
     print(f"\nservable shots (camera_angle maps to a viewpoint): {len(servable)}"
           f"  ->  match {hits} ({share:.1%})")
-    roomless = sum(1 for *_h, room, cast, _a in picked if cast and room is not True)
+    roomless = sum(1 for _n, _sid, _pk, _vp, room, cast in picked if cast and room is not True)
     print(f"cast-bearing hits whose plate lacks standing_room=True: {roomless}"
           f"  (0 => the affordance knob does not change this replay)")
 
-    # -- C1'/C2': demanded `location_key` cells (Story 14.8) -------------------------
-    # The cell lost its `viewpoint` component with the axis. That is the ONLY change to
-    # C1/C2; the predicates (`_people_free`, `standing_room is True`) are byte-identical
-    # and shared with `_select_plate` through `_people_free` above.
-    demand: dict[str, list] = defaultdict(list)
-    for _scene_num, shot in servable:
-        demand[shot["location_key"]].append(shot)
+    # -- C1/C2: demanded (location_key, viewpoint) cells ------------------------------
+    demand: dict[tuple[str, str], list] = defaultdict(list)
+    for scene_num, shot in servable:
+        demand[(shot["location_key"], _ANGLE_VIEWPOINT[shot["camera_angle"]])].append(shot)
 
-    print("\n-- demanded cells (C1'/C2': `location_key`, no viewpoint component) --")
+    print("\n-- demanded cells --")
     short_c1, short_c2 = [], []
-    for key in sorted(demand):
-        cast_shots = sum(1 for s in demand[key] if s.get("cast"))
-        pool = [p for p in plates.get(key, []) if "viewpoint" in p and _people_free(p)]
+    for cell in sorted(demand):
+        key, viewpoint = cell
+        cast_shots = sum(1 for s in demand[cell] if s.get("cast"))
+        pool = [p for p in plates.get(key, [])
+                if p.get("viewpoint") == viewpoint and _people_free(p)]
         room = [p for p in pool if p.get("standing_room") is True]
         c1 = "OK " if pool else "MISS"
         c2 = "-   " if not cast_shots else ("OK " if room else "MISS")
         if not pool:
-            short_c1.append(key)
+            short_c1.append(cell)
         elif cast_shots and not room:
-            short_c2.append(key)
-        print(f"  {key:22s} shots={len(demand[key]):2d} cast={cast_shots:2d} "
-              f"C1'={c1} ({len(pool)} plate(s))  C2'={c2} ({len(room)} with room)")
+            short_c2.append(cell)
+        print(f"  {key:22s} {viewpoint:4s} shots={len(demand[cell]):2d} cast={cast_shots:2d} "
+              f"C1={c1} ({len(pool)} plate(s))  C2={c2} ({len(room)} with room)")
 
-    print("\n-- pre-registered bars (14-8-plate-reuse-shipping/PREREGISTRATION.md §3) --")
-    print(f"  C1' key coverage      : {'PASS' if not short_c1 else 'FAIL'} "
-          f"({len(demand) - len(short_c1)}/{len(demand)} keys)")
-    print(f"  C2' affordance coverage: {'PASS' if not short_c2 else 'FAIL'}")
-    print(f"  C3' servable share >= {C3_MIN_SHARE:.0%}: "
-          f"{'PASS' if share >= C3_MIN_SHARE else 'FAIL'} ({hits}/{len(servable)} = {share:.1%})"
-          "   [vacuity disclosed in advance, PREREGISTRATION §3]")
+    print("\n-- pre-registered bars (PREREGISTRATION.md §5) --")
+    print(f"  C1 cell coverage      : {'PASS' if not short_c1 else 'FAIL'} "
+          f"({len(demand) - len(short_c1)}/{len(demand)} cells)")
+    print(f"  C2 affordance coverage: {'PASS' if not short_c2 else 'FAIL'}")
+    print(f"  C3 servable share >= {C3_MIN_SHARE:.0%}: "
+          f"{'PASS' if share >= C3_MIN_SHARE else 'FAIL'} ({hits}/{len(servable)} = {share:.1%})")
     if short_c1 or short_c2:
         print("\n-- shortfall: what an expansion batch must render --")
-        for key in short_c1:
-            n = len(demand[key])
-            cast = sum(1 for s in demand[key] if s.get("cast"))
-            print(f"  {key}: 0 usable plates, {n} shot(s) demand it"
+        for key, viewpoint in short_c1:
+            n = len(demand[(key, viewpoint)])
+            cast = sum(1 for s in demand[(key, viewpoint)] if s.get("cast"))
+            print(f"  ({key}, {viewpoint}): 0 plates, {n} shot(s) demand it"
                   f"{', standing room required' if cast else ''} -> render >=1")
-        for key in short_c2:
-            print(f"  {key}: plates exist but none has standing room -> render >=1")
-
-    # -- C4': the price of the new axis, disclosed with no threshold ------------------
-    # PREREGISTRATION §3 makes printing this MANDATORY and deliberately sets no bar: the
-    # question "is a high-angle card on an eye-level plate acceptable" is Jay's viewing
-    # verdict, and C4's failure mode is the number being absent from the report.
-    print("\n-- C4' viewpoint mismatches among the hits (no threshold, disclosure only) --")
-    mismatched = [(sid, pk, vp, ang) for _n, sid, pk, vp, _r, _c, ang in picked
-                  if vp != _ANGLE_VIEWPOINT.get(ang or "")]
-    print(f"  {len(mismatched)}/{len(picked)} assigned plates sit at a viewpoint the shot's "
-          f"camera_angle did not ask for")
-    for sid, plate_key, viewpoint, angle in mismatched:
-        print(f"    {sid} camera_angle={angle} (wants {_ANGLE_VIEWPOINT.get(angle or '')}) "
-              f"-> {plate_key} measured {viewpoint}")
-
-    # -- CONTROL: the retired 14.1 axis, same run, same plates ------------------------
-    # NOT the shipped selector — `_select_plate` no longer has a viewpoint step, so the
-    # only way to show before/after on one screen is to re-express the retired step here.
-    # It is checked rather than trusted: on run 4b35c0ed it must reproduce the committed
-    # `14-1-approved-plate-sets/report.md:227-244` numbers (C1 FAIL 5/10 cells, C2 PASS,
-    # C3 FAIL 17/24 = 70.8%). A control that does not reproduce them is a broken control.
-    old_hits = 0
-    for _scene_num, shot in servable:
-        viewpoint = _ANGLE_VIEWPOINT[shot["camera_angle"]]
-        pool = [p for p in plates.get(shot["location_key"], [])
-                if p.get("viewpoint") == viewpoint and _people_free(p)]
-        if affordance_gate and shot.get("cast"):
-            pool = [p for p in pool if p.get("standing_room") is True]
-        old_hits += bool(pool)
-    old_demand: dict[tuple[str, str], list] = defaultdict(list)
-    for _scene_num, shot in servable:
-        old_demand[(shot["location_key"], _ANGLE_VIEWPOINT[shot["camera_angle"]])].append(shot)
-    old_c1 = [c for c in old_demand
-              if not [p for p in plates.get(c[0], [])
-                      if p.get("viewpoint") == c[1] and _people_free(p)]]
-    old_c2 = [c for c in old_demand
-              if c not in old_c1 and any(s.get("cast") for s in old_demand[c])
-              and not [p for p in plates.get(c[0], [])
-                       if p.get("viewpoint") == c[1] and _people_free(p)
-                       and p.get("standing_room") is True]]
-    old_share = old_hits / len(servable) if servable else 0.0
-    print("\n-- CONTROL: retired 14.1 axis (camera_angle -> plate viewpoint), same inputs --")
-    print(f"  C1  cell coverage      : {'PASS' if not old_c1 else 'FAIL'} "
-          f"({len(old_demand) - len(old_c1)}/{len(old_demand)} cells)")
-    print(f"  C2  affordance coverage: {'PASS' if not old_c2 else 'FAIL'}")
-    print(f"  C3  servable share >= {C3_MIN_SHARE:.0%}: "
-          f"{'PASS' if old_share >= C3_MIN_SHARE else 'FAIL'} "
-          f"({old_hits}/{len(servable)} = {old_share:.1%})")
-    print(f"  axis change: servable match {old_hits} -> {hits} "
-          f"({old_share:.1%} -> {share:.1%}), C4' cost {len(mismatched)} mismatched hit(s)")
+        for key, viewpoint in short_c2:
+            print(f"  ({key}, {viewpoint}): plates exist but none has standing room -> render >=1")
 
     # -- the shots a plate can never reach -------------------------------------------
     # Is `location_key = None` a VOCABULARY gap (the room is not in LOCATION_KEYS) or an
@@ -283,9 +220,9 @@ def main(run: str) -> int:
               f"  agreement {agree}")
 
     print("\n-- matched shots --")
-    for scene_num, shot_id, plate_key, viewpoint, room, cast, angle in picked:
+    for scene_num, shot_id, plate_key, viewpoint, room, cast in picked:
         print(f"  scene {scene_num} {shot_id} -> {plate_key} ({viewpoint}, "
-              f"standing_room={room}, cast={cast}, camera_angle={angle})")
+              f"standing_room={room}, cast={cast})")
     return _EXIT_OK
 
 

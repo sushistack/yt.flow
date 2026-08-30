@@ -545,18 +545,9 @@ async def _wait_for_comfyui_recovery(
         return
 
 
-# Story 14.1, amended by Story 14.8 — the seven-value `camera_angle` vocabulary split
-# into the five framings a room plate can serve and the two it cannot.
-#
-# 14.8 RETIRED THE MAPPING'S *VALUES* FROM THE SELECTOR. `_select_plate` now reads only
-# MEMBERSHIP of this dict ("is this a framing a room plate can serve at all"); it never
-# evaluates `_ANGLE_VIEWPOINT[angle]`, because the adopted matching axis does not involve
-# viewpoint (`14-8-plate-reuse-shipping/AXIS-CANDIDATES.md` ②). The values are KEPT, and
-# that is a deliberate non-deletion after a reader census, not an oversight:
-# `14-1-approved-plate-sets/replay_coverage.py` needs them twice — for the servable
-# denominator (24) and for C4′, the pre-registered disclosure of how many assigned plates
-# sit at a viewpoint the shot's framing did NOT ask for. That number is precisely what
-# 14.8 chose to accept, so deleting the values would delete the record of the cost.
+# Story 14.1 — the shot's ``camera_angle`` -> the plate ``viewpoint`` that can serve it.
+# Pre-registered before any of the 42 plates was looked at
+# (`14-1-approved-plate-sets/PREREGISTRATION.md` §4) and deliberately conservative.
 #
 # `close-up`, `POV` and `None` are ABSENT ON PURPOSE — their absence IS the decision,
 # not an oversight, and `tests/pipeline/nodes/test_image.py` pins both halves against
@@ -583,33 +574,12 @@ _UNSERVABLE_ANGLES = frozenset({"close-up", "POV"})
 def _select_plate(
     shot: ShotData, plates: list[dict], run_id: str, scene_num: int, *, affordance_gate: bool,
 ) -> tuple[dict | None, str]:
-    """Pick the approved plate that fits THIS shot, or say why none does. [14.1, axis by 14.8]
+    """Pick the approved plate that fits THIS shot, or say why none does. [Story 14.1]
 
     Replaces 8.17's ``_plate_variant_index``, whose key was ``(run, scene, location)`` —
     scene-keyed assignment gave every shot of a 21-shot scene the same plate and threw
     away the shot's own framing, which is the named reason
-    ``stock_plate_substitution_enabled`` shipped ``False`` from 8.17 to 14.8.
-
-    **The matching axis is ``location_key``, and only ``location_key`` (Story 14.8).**
-    14.1 matched the shot's ``camera_angle`` against each plate's MEASURED ``viewpoint``;
-    that axis was retired on measurement, not on taste — the ``y_h`` reading it stands on
-    reproduces to ±0.07 mean / 0.12 max between judges (category flips 2/5) against an
-    EYE band only 0.20 wide, so assignments near a boundary were a coin toss
-    (`14-8-plate-reuse-shipping/AXIS-CANDIDATES.md`, candidate ④). The replacement makes
-    the reproduction error structurally 0 by REMOVING the measurement rather than fixing
-    it: ``location_key`` is a closed 14-value enum the scenario LLM writes
-    (`domain/state.py` ``LOCATION_KEYS``) and the plate side is a manifest key, so the
-    comparison is string equality on unordered values — there is no "near a boundary".
-    ``plates`` already arrives keyed (``LocationService.resolve_stock_plates(key)``), so
-    that equality is the CALLER's lookup and this function has no viewpoint step left.
-
-    THE PRICE, measured, not hidden: 7 shots of run 4b35c0ed that 14.1 refused with
-    ``no_viewpoint_match`` (4 high-angle, 3 low-angle) now take eye-level plates, and 5 of
-    them carry cast — ``camera_angle`` is NOT render-inert, ``character_service.py:1556``
-    copies it into the per-shot catalog and ``_select_entity_angles`` picks the cast
-    card's angle from it, so a high/low-angle card gets composited onto an eye-level
-    plate. This function does not claim that is acceptable; `replay_coverage.py`'s C4′
-    prints the list every time and the verdict is Jay's, on rendered frames.
+    ``stock_plate_substitution_enabled`` has shipped ``False`` since 8.17.
 
     Pure by construction: no I/O, no clock, no settings read (the one knob it honours
     arrives as ``affordance_gate``), so `replay_coverage.py` can run the SHIPPED selector
@@ -621,60 +591,57 @@ def _select_plate(
     Filter order is the reason vocabulary's precedence, and it is chosen so the warning
     names the thing a human would have to act on:
 
-    1. framing the map cannot serve -> ``unservable_framing`` / ``unknown_framing``. The
-       framing step SURVIVES the axis change: it is not a viewpoint match, it is the
-       statement that a whole-room photograph cannot stand in for an instrument close-up;
-    2. nothing measured for this key -> ``no_metadata``, FAIL OPEN. ``viewpoint`` is read
-       here for PRESENCE only, as the sentinel of the 14.1 ``plate_meta`` record
-       (`location_service.resolve_stock_plates`: an unmeasured plate carries no
-       ``viewpoint`` key at all — not ``{}``, not ``None``). Its value is never compared.
-       Keeping the gate is what stops an unlabelled plate from sailing through D1 below
-       on absent fields; picking anything approved is exactly what 8.17 did;
-    3. **D1** every remaining candidate shows a person -> ``plate_shows_person``. This
-       filter is not optional and is not gated on any knob: the plate branch ``continue``s
-       past the Story 10.2/14.4 people-free guard, so it is the ONLY thing standing
-       between `entrance-checkpoint/b` (labeler: two people in the guard booth, still
-       `approved`) and a cast card composited on top of them, with no warning at all.
-       Refusing to *assign* an asset is not un-approving it — the row keeps
-       ``status='approved'`` and goes to report.md's human queue;
-    4. **D2** cast-bearing shot, gate ON, no candidate with standing room ->
+    1. framing the map cannot serve -> ``unservable_framing`` / ``unknown_framing``;
+    2. nothing measured for this key -> ``no_metadata``, FAIL OPEN. An unmeasured plate
+       is never picked: 8.17 shipped exactly that (pick anything approved) and it is what
+       this story exists to undo;
+    3. no measured plate at the required viewpoint -> ``no_viewpoint_match``, or
+       ``partial_metadata`` when some plate of this key is still unmeasured. The two
+       prescriptions differ and the warning is where a reader learns which: "render a new
+       plate" vs "measure the plates you already have";
+    4. **D1** every remaining candidate shows a person -> ``plate_shows_person``. Checked
+       AFTER the viewpoint filter so a person-bearing plate at the wrong viewpoint still
+       reports the viewpoint miss. This filter is not optional and is not gated on any
+       knob: the plate branch ``continue``s past the Story 10.2/14.4 people-free guard, so
+       it is the ONLY thing standing between `entrance-checkpoint/b` (labeler: two people
+       in the guard booth, still `approved`) and a cast card composited on top of them,
+       with no warning at all. Refusing to *assign* an asset is not un-approving it — the
+       row keeps ``status='approved'`` and goes to report.md's human queue;
+    5. **D2** cast-bearing shot, gate ON, no candidate with standing room ->
        ``no_standing_room``. Gated on the knob because 14.2 designed knob-down as the ONE
        recovery path for its measured 1/25 false positive, and a second un-gated hard
        filter would take that back. With the knob down the measured-bad plate is served:
        the alternative is a generated frame with no affordance verdict at all, i.e.
        refusing a measured "no" in favour of an unmeasured nothing.
 
-    ``no_viewpoint_match`` and ``partial_metadata`` were RETIRED with the axis, in the
-    same commit as ``domain/state.py``'s list and `tests/domain/test_run_warnings.py`'s
-    registration. Both named the step this function no longer has, and neither can fire:
-    with no post-metadata match step, a non-empty ``measured`` pool is a non-empty
-    candidate pool. Keeping a reason that can never fire would leave the retired axis
-    documented as if it were shipped.
-
     Determinism/continuity: the tie-break indexes the surviving pool by a sha256 digest of
-    ``(run_id, scene_num, location_key, the pool itself)``. sha256, not builtin ``hash()``
-    — CPython salts str hashing per process, so ``hash()`` picks a different plate after a
-    restart and a resumed run re-copies every background. **The pool is part of the key**
-    (D3): the older form hashed ``(run, scene, location)`` and took a modulo over a list
-    the cast filter had already shortened, so within one scene a cast shot and a cast-free
-    shot could land on different plates while the docstring claimed one plate per scene.
-    Including the pool makes the claim exact and self-maintaining. ``viewpoint`` LEFT the
-    digest key with the axis (14.8): keeping it there would have made two shots of one
-    room differ by a value nothing else in the function reads any more — a hidden
-    dependency on a retired measurement, and worse continuity than 14.1 had. The
-    surviving claim: **one plate per (run, scene, location_key, candidate set)**.
+    ``(run_id, scene_num, location_key, viewpoint, the pool itself)``. sha256, not builtin
+    ``hash()`` — CPython salts str hashing per process, so ``hash()`` picks a different
+    plate after a restart and a resumed run re-copies every background. **The pool is part
+    of the key** (D3): the older form hashed ``(run, scene, location)`` and took a modulo
+    over a list the cast filter had already shortened, so within one scene a cast shot and
+    a cast-free shot could land on different plates while the docstring claimed one plate
+    per scene. Including the pool makes the claim exact and self-maintaining — the two
+    shots agree whenever the filters leave them the same candidates (40/42 plates measure
+    ``standing_room=true``, so today they always do) and can only diverge when one of them
+    genuinely cannot use what the other took. The surviving claim: **one plate per
+    (run, scene, location_key, viewpoint, candidate set)**, not per scene.
     """
     angle = shot.get("camera_angle")
-    if angle not in _ANGLE_VIEWPOINT:
+    viewpoint = _ANGLE_VIEWPOINT.get(angle or "")
+    if viewpoint is None:
         # Anything else — including a pre-14.0 checkpoint's raw prose string — is
         # `unknown_framing`, NOT `unservable_framing`: that reason is documented as
         # "close-up/POV, permanent by design", and lending it to a string we simply
         # failed to recognise would hide a parser gap inside a designed refusal.
         return None, "unservable_framing" if angle in _UNSERVABLE_ANGLES else "unknown_framing"
-    candidates = [p for p in plates if "viewpoint" in p]  # presence, not value — see 2. above
-    if not candidates:
+    measured = [p for p in plates if "viewpoint" in p]
+    if not measured:
         return None, "no_metadata"
-    candidates = [p for p in candidates if not p.get("has_person") and not p.get("depicts_person")]
+    pool = [p for p in measured if p["viewpoint"] == viewpoint]
+    if not pool:
+        return None, "partial_metadata" if len(measured) < len(plates) else "no_viewpoint_match"
+    candidates = [p for p in pool if not p.get("has_person") and not p.get("depicts_person")]
     if not candidates:
         return None, "plate_shows_person"
     if affordance_gate and shot.get("cast"):
@@ -684,7 +651,7 @@ def _select_plate(
         candidates = [p for p in candidates if p.get("standing_room") is True]
         if not candidates:
             return None, "no_standing_room"
-    key = ":".join([run_id, str(scene_num), shot.get("location_key") or "",
+    key = ":".join([run_id, str(scene_num), shot.get("location_key") or "", viewpoint,
                     *(str(p.get("variant")) for p in candidates)])
     return candidates[int(hashlib.sha256(key.encode()).hexdigest(), 16) % len(candidates)], "match"
 

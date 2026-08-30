@@ -325,15 +325,10 @@ class Settings(BaseSettings):
     # line says assignment is decided by "`image_prompt`/`location_key`와의 정합" —
     # half of that is aspiration, not code.) Two conditions remain to turn this on,
     # and they are AND, not OR:
-    #   (a) measured coverage clears the pre-registered bar — CLOSED 2026-08-30 by
-    #       Story 14.8, but on a REPLACED bar, and that replacement is the story:
-    #       14.1's C1/C2/C3 (`14-1-approved-plate-sets/PREREGISTRATION.md` §5)
-    #       measured C1 FAIL 5/10 cells and C3 FAIL 17/24 = 70.8% on 2026-08-25,
-    #       and the reason was the AXIS, not the plate count — the `y_h` reading
-    #       that decided `viewpoint` reproduces to 0.072 mean / 0.12 max between
-    #       judges (category flips 2/5) against an EYE band 0.20 wide, so the
-    #       refusals near a boundary were a coin toss. See
-    #       `14-8-plate-reuse-shipping/AXIS-CANDIDATES.md`.
+    #   (a) measured coverage clears the pre-registered bar
+    #       (`14-1-approved-plate-sets/PREREGISTRATION.md` §5, C1/C2/C3) — as
+    #       measured on 2026-08-25 it does NOT; see that story's report.md for the
+    #       shortfall enumerated per (location_key, viewpoint) cell.
     #   (b) Jay's viewing verdict on an E2E iteration run with substitution ON.
     #       Precedent is unanimous (10.1c, 10.5, 10.1e, 14.2): a visual default
     #       does not flip before a human has watched frames.
@@ -357,48 +352,10 @@ class Settings(BaseSettings):
     # `test_precompute_relights_is_unreachable_at_the_shipped_tier`. The coupling itself is
     # still a real, unfixed defect that fires if tier 3 is turned on and stays in
     # `deferred-work.md` — what is withdrawn is its link to THIS flag.
-    # FLIPPED ON 2026-08-30 BY STORY 14.8, ON MATCHING AXIS ② (`location_key` ALONE).
-    # The verdict, and what it does and does not rest on:
-    #   * WHAT WAS MET. Against the bars pre-registered before the measurement
-    #     (`14-8-plate-reuse-shipping/PREREGISTRATION.md` §3, commit `d797a8a`):
-    #     C1' key coverage PASS 6/6, C2' affordance coverage PASS, C3' servable share
-    #     PASS 24/24 = 100.0% — against the retired axis's 17/24 = 70.8% printed as a
-    #     control by the same command,
-    #     `uv run python .../14-1-approved-plate-sets/replay_coverage.py 4b35c0ed`.
-    #     The servable denominator (24) and `C3_MIN_SHARE = 0.90` are byte-identical to
-    #     14.1's: they are the only fixed points that prove no bar was lowered.
-    #   * C3' COULD NOT HAVE FAILED on this run's data under axis ②, and that vacuity was
-    #     disclosed IN ADVANCE (PREREGISTRATION §3, same pre-measurement commit) rather
-    #     than discovered afterwards. It is reported, not enjoyed. The load-bearing
-    #     verdict here is C1'/C2', which retain live failure paths (`plate_shows_person`
-    #     on a key whose whole pool is flagged; `server-room`'s 2-of-3 `standing_room`
-    #     false if a cast shot ever keys there).
-    #   * WHAT IT COSTS, measured: C4' = 7 of 24 assigned plates sit at a viewpoint the
-    #     shot's `camera_angle` did not ask for (4 high-angle, 3 low-angle; 5 carry cast).
-    #     `camera_angle` is NOT render-inert — `character_service.py:1556` feeds it to
-    #     `_select_entity_angles` — so those get a high/low-angle CARD on an eye-level
-    #     PLATE. That is a viewing question, not a coverage number.
-    #   * (b) IS NOT MET. Jay's viewing verdict is still owed and arrives at E2E
-    #     iteration 5, which cannot run at all while this ships `False` (spec 14.8's E2E
-    #     task is conditioned on the flag being on). The flip is what MAKES (b)
-    #     obtainable; it is not a claim that (b) happened. If Jay's verdict goes against
-    #     it, this line goes back to `False` and the `DECISIONS` row goes with it.
-    #   * CONTRADICTION, recorded rather than resolved silently: this story's own
-    #     `PREREGISTRATION.md` §5 says "C1'~C3' 전부 충족돼도 (b) 없이는 켜지 않는다",
-    #     while the spec's task list and acceptance criteria require the default to be
-    #     `True` once coverage clears. Those two cannot both be honoured; the spec was
-    #     followed, and the deadlock (b requires a run, the run requires the flag) is the
-    #     reason. See `14-8-plate-reuse-shipping/report.md` §7.
-    #   * The SECOND blocker named at the top of this comment — `image_prompt` discarded,
-    #     no semantic match — is STILL UNSOLVED and shipping anyway. Enabling this shrinks
-    #     the prompt layer's reach from 43/43 shots to 12/43 on run 4b35c0ed; every later
-    #     prompt measurement has to state that denominator (14.5 handover,
-    #     `deferred-work.md`).
-    # No `.env` / `.env.example` pin — the decision reaches pixels from this line
-    # (`gotcha_a-decision-that-only-reaches-env-never-ships`). A `DECISIONS` row now
-    # EXISTS (it did not until 2026-08-30, and the "NO DATE, so no row" note below has
-    # been amended accordingly); this comment is the original and that row is its index.
-    stock_plate_substitution_enabled: bool = True
+    # No `.env` / `.env.example` pin, and NO `DECISIONS` row — there is still no
+    # dated *promotion* verdict, only a dated statement of what promotion requires
+    # (see the "NO DATE, so no row" note further down; it stands).
+    stock_plate_substitution_enabled: bool = False
     # Story 10.2 — extra renders image_node may spend when Qwen-VL says the generated
     # background already contains a person (a card composited onto it would make two
     # figures). 0 disables the guard entirely; the detector is never called.
@@ -769,11 +726,10 @@ class Decision(NamedTuple):
 # inventing a date here would make this table the deciding authority instead of an
 # index. The absences are recorded here so the gap reads as a decision rather than
 # an oversight — every one of them is a candidate 13.6 Task 1 named:
-#   - NO DATE, so no row: `post_fx_enabled` (True, story 7.2), `qwen_tts_voice`
-#     ("Cherry", coupled to `content_language`). These want a dated verdict from
-#     whoever owns them next. `stock_plate_substitution_enabled` WAS on this list
-#     (False, story 8.17, a measured rationale but undated) and left it on
-#     2026-08-30 when Story 14.8 dated the promotion verdict; it has a row below.
+#   - NO DATE, so no row: `stock_plate_substitution_enabled` (False, story 8.17, a
+#     measured rationale but undated), `post_fx_enabled` (True, story 7.2),
+#     `qwen_tts_voice` ("Cherry", coupled to `content_language`). These want a dated
+#     verdict from whoever owns them next — 14.1 for the plate flag.
 #   - DATED but outside Story 14.4's seed set: `depth_placement_enabled` ("ON after
 #     live verification (2026-08-03)", story 8.16) and `composite_harmonization_tier`
 #     ("Default 1 since Story 11.1", research dated 2026-08-01). Both look eligible;
@@ -818,11 +774,6 @@ DECISIONS: dict[str, Decision] = {
     "background_person_guard_attempts": Decision(
         "14.4", "2026-08-22", 2,
         "background_person_guard_attempts: `ON AT 2 SINCE STORY 14.4, 2026-08-22`",
-    ),
-    "stock_plate_substitution_enabled": Decision(
-        "14.8", "2026-08-30", True,
-        "stock_plate_substitution_enabled: `FLIPPED ON 2026-08-30 BY STORY 14.8, ON "
-        "MATCHING AXIS ② (`location_key` ALONE).`",
     ),
     "plate_affordance_gate_enabled": Decision(
         "14.2", "2026-08-24", False,

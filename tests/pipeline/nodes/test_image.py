@@ -40,16 +40,7 @@ class FakeSettings:
     def __init__(
         self, *, mock, workflow_path,
         health_poll_every_n_shots=20, crash_recovery_poll_sec=15.0, crash_recovery_timeout_sec=300.0,
-        # DELIBERATELY DIVERGES FROM THE SHIPPED DEFAULT, which is True since Story
-        # 14.8. This said "mirrors the real Settings default" until then, and the comment
-        # was load-bearing for nothing: flipping the real default would not have failed a
-        # single test here. `False` is kept because ~25 pre-14.1 tests below are about the
-        # generation path and would silently start copying plates instead; the plate tests
-        # opt in with `stock_plate_substitution=True`, exactly as the guard tests opt into
-        # `guard_attempts`. The shipped value is NOT pinned by a test on purpose — CLAUDE.md
-        # forbids asserting a decided value equals its default (it turns the drift report
-        # into a gate by proxy); `scripts/report_decision_drift.py` is the reader.
-        stock_plate_substitution=False,
+        stock_plate_substitution=False,  # mirrors the real Settings default
         # DELIBERATELY DIVERGES FROM THE SHIPPED DEFAULT, which is 2 since Story 14.4.
         # 0 here keeps the ~25 pre-10.2 tests below asserting exactly one render per
         # shot, which is what they are actually about; raising it to 2 would rewrite
@@ -1099,21 +1090,11 @@ def test_the_angle_map_is_a_checked_subset_of_the_scenario_vocabulary():
     assert img._UNSERVABLE_ANGLES == {"close-up", "POV"}
 
 
-@pytest.mark.parametrize("angle", ["wide", "medium", "over-the-shoulder",
-                                  "low-angle", "high-angle"])
-@pytest.mark.parametrize("viewpoint", ["EYE", "LOW", "HIGH"])
-def test_matrix_every_servable_framing_hits_whatever_the_plate_viewpoint(angle, viewpoint):
-    """THE Story 14.8 axis change, stated as a cross product: all 15 combinations hit.
-
-    14.1 required `_ANGLE_VIEWPOINT[angle] == plate["viewpoint"]` and refused the other 10.
-    That axis was retired on measurement — `y_h` reproduces to 0.072 mean / 0.12 max
-    between judges against an EYE band 0.20 wide, so the refusals near a boundary were a
-    coin toss (`14-8-plate-reuse-shipping/AXIS-CANDIDATES.md` ④). The axis is now
-    `location_key` alone, whose reproduction error is 0 by construction: it is a closed
-    14-value enum field compared with string equality, and `plates` arrives already keyed.
-
-    This test is deliberately the widest one in the block, because the cost of the change
-    is exactly the 10 combinations it now accepts and 14.1 refused."""
+@pytest.mark.parametrize("angle,viewpoint", [
+    ("wide", "EYE"), ("medium", "EYE"), ("over-the-shoulder", "EYE"),
+    ("low-angle", "LOW"), ("high-angle", "HIGH"),
+])
+def test_matrix_a_matching_viewpoint_is_a_hit(angle, viewpoint):
     plate, reason = img._select_plate(
         _shot(angle), [_measured(viewpoint=viewpoint)], "r", 1, affordance_gate=True)
     assert (plate["variant"], reason) == ("a", "match")
@@ -1168,27 +1149,20 @@ def test_matrix_an_angle_outside_the_vocabulary_is_unknown_not_unservable(angle)
         None, "unknown_framing")
 
 
-def test_the_retired_reasons_cannot_fire_and_are_gone_from_the_vocabulary():
-    """`no_viewpoint_match` and `partial_metadata` named the step 14.8 removed.
-
-    The input that produced each of them in 14.1 is replayed here and must now be a hit —
-    the first is the run-4b35c0ed shape (a HIGH-angle shot over an all-EYE pool: 7 such
-    shots, `replay_coverage.py`'s C4'), the second is a half-measured key. Neither string
-    may survive anywhere in the reason vocabulary, because a reason that cannot fire
-    documents a retired axis as though it shipped."""
-    plate, reason = img._select_plate(
+def test_matrix_no_plate_at_the_required_viewpoint():
+    assert img._select_plate(
         _shot("high-angle"), [_measured(viewpoint="EYE"), _measured("b", "LOW")],
-        "r", 1, affordance_gate=True)
-    assert reason == "match" and plate["viewpoint"] in {"EYE", "LOW"}
-    half = [_measured(viewpoint="EYE"), {"variant": "b", "path": "/p/b.png"}]
-    plate, reason = img._select_plate(_shot("high-angle"), half, "r", 1, affordance_gate=True)
-    # ...and the unmeasured plate is STILL never picked: `no_metadata` fails open, it does
-    # not fail into 8.17's "take anything approved".
-    assert (plate["variant"], reason) == ("a", "match")
-    # The two names still appear in `image.py`'s PROSE (the docstring records why they
-    # went), so the check is for the returnable literal — a quoted string — not the word.
-    source = pathlib.Path(img.__file__).read_text(encoding="utf-8")
-    assert '"no_viewpoint_match"' not in source and '"partial_metadata"' not in source
+        "r", 1, affordance_gate=True) == (None, "no_viewpoint_match")
+
+
+def test_a_partially_measured_key_is_not_no_viewpoint_match():
+    """The two reasons prescribe different work: `no_viewpoint_match` says "render a HIGH
+    plate for this room", `partial_metadata` says "you have plates here you never
+    measured". Collapsing them sends an expansion batch to the GPU for an answer that a
+    two-minute measurement might already hold."""
+    plates = [_measured(viewpoint="EYE"), {"variant": "b", "path": "/p/b.png"}]
+    assert img._select_plate(_shot("high-angle"), plates, "r", 1, affordance_gate=True) == (
+        None, "partial_metadata")
 
 
 def test_matrix_an_unmeasured_key_fails_open_to_generation():
@@ -1216,15 +1190,13 @@ def test_d1_a_plate_with_a_person_in_it_is_never_assigned(field):
     assert plate == before  # the selector refuses the ASSIGNMENT, it does not touch the asset
 
 
-def test_d1_fires_on_a_person_bearing_plate_whatever_its_viewpoint():
-    """14.1 answered this input `no_viewpoint_match`, because the viewpoint step ran first
-    and the person never got looked at. With that step gone, the person IS the finding —
-    which is the more actionable of the two warnings anyway: `entrance-checkpoint/b` is
-    approved with two people in it and the plate branch skips the 10.2/14.4 runtime
-    guard, so D1 is the only thing between it and a cast card on top of them."""
+def test_d1_reports_the_viewpoint_miss_first_when_both_are_wrong():
+    """Precedence: a person-bearing plate at the wrong viewpoint is still a viewpoint miss.
+    The warning has to name the thing a human would act on, and rendering a HIGH plate is
+    that thing here."""
     assert img._select_plate(
         _shot("high-angle"), [_measured(viewpoint="EYE", has_person=True)],
-        "r", 1, affordance_gate=True) == (None, "plate_shows_person")
+        "r", 1, affordance_gate=True) == (None, "no_viewpoint_match")
 
 
 def test_d1_prefers_the_people_free_candidate_rather_than_falling_back():
@@ -1275,46 +1247,30 @@ def test_d3_a_pool_the_filters_really_did_split_may_diverge_and_says_so():
     assert with_cast["variant"] == "b"  # 'a' has no room; the cast-free shot may take it
 
 
-def test_camera_angle_left_the_digest_key_with_the_axis():
-    """14.1 hashed the derived viewpoint too, so two shots of ONE scene and room with
-    different `camera_angle`s took different plates. 14.8 removed it: keeping a retired
-    measurement in the digest would make continuity within a room depend on a value
-    nothing else in the function reads. Two angles, one scene, one room -> ONE plate."""
+def test_scene_keying_is_retired_but_the_same_angle_is_still_deterministic():
+    """AC: two shots of ONE scene with the same location_key and different camera_angles
+    may get different plates — that is the whole point, 8.17 gave a 21-shot scene one
+    plate. Same angle in the same run still resolves to the same plate, byte for byte."""
     plates = [_measured("a", "EYE"), _measured("b", "HIGH")]
     eye, _ = img._select_plate(_shot("medium"), plates, "r", 1, affordance_gate=True)
     high, _ = img._select_plate(_shot("high-angle"), plates, "r", 1, affordance_gate=True)
-    assert eye["variant"] == high["variant"]
-
-
-def test_the_new_axis_is_deterministic_within_and_across_processes():
-    """Same inputs twice -> byte-identical output, and the digest is reproduced here from
-    the documented key so a switch back to builtin `hash()` (salted per process, so a
-    resumed run re-copies every background) fails instead of merely drifting."""
-    plates = [_measured(v) for v in "abc"]
-    first = img._select_plate(_shot("wide"), plates, "run-42", 7, affordance_gate=True)
-    second = img._select_plate(_shot("wide"), plates, "run-42", 7, affordance_gate=True)
-    assert first == second
-    key = ":".join(["run-42", "7", "corridor", "a", "b", "c"])
-    want = plates[int(hashlib.sha256(key.encode()).hexdigest(), 16) % 3]
-    assert first == (want, "match")
+    assert (eye["variant"], high["variant"]) == ("a", "b")
+    again, _ = img._select_plate(_shot("medium"), plates, "r", 1, affordance_gate=True)
+    assert again["variant"] == eye["variant"]
 
 
 async def test_an_unfit_plate_warns_with_its_reason_and_generates(monkeypatch, tmp_path):
     """`stock_plate_unfit` stays a separate code from `stock_plate_missing`: "this key has
-    no approved plate" and "this key's plates cannot serve this shot" have different fixes,
-    and the second is the normal permanent outcome for 7/31 shots.
-
-    The unfit case used to be built from a viewpoint mismatch; Story 14.8 made that a HIT,
-    so the wiring is exercised through D1 instead — which is also the reason a human most
-    needs to see, since the plate branch skips the runtime people-free guard."""
+    no approved plate" and "this key's plates cannot serve this framing" have different
+    fixes, and the second is the normal permanent outcome for 7/31 shots."""
     async def resolve(location_key):
-        return [_measured(has_person=True)]
+        return [_measured(viewpoint="LOW")]  # the shot is `wide` -> EYE
 
     warnings = await _plate_warnings(monkeypatch, tmp_path, resolver=resolve)
     assert [w["code"] for w in warnings] == ["stock_plate_unfit"]
     assert warnings[0]["context"] == {
         "scene_num": 1, "shot_id": "S001", "location_key": "corridor",
-        "reason": "plate_shows_person"}
+        "reason": "no_viewpoint_match"}
 
 
 async def test_an_empty_key_still_reports_missing_not_unfit(monkeypatch, tmp_path):

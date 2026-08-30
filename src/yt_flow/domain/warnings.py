@@ -63,11 +63,10 @@ RUN_WARNING_CATALOG: dict[str, tuple[StageName, str]] = {
     # common reason of all: `unservable_framing` (close-up/POV, 7/31 shots of run
     # 4b35c0ed and permanent by design) fires on keys whose approved backgrounds are
     # perfectly good — the shot is simply a close-up. The same row also rides
-    # `no_metadata`, where the prescription is to measure plates we already have.
-    # One sentence for five reasons (seven until Story 14.8 retired `no_viewpoint_match`
-    # and `partial_metadata` with the viewpoint axis) has to state what happened (a plate
-    # was not assigned, the background was generated), not diagnose why. 14.2 took this
-    # lesson already.
+    # `partial_metadata`, where the prescription is to measure plates we already have.
+    # One sentence for seven reasons has to state what happened (a plate was not
+    # assigned, the background was generated), not diagnose why. 14.2 took this lesson
+    # already.
     "stock_plate_unfit": (
         "image", "이 샷에는 승인 배경을 배정하지 않고 배경을 생성했습니다"),
     "background_guard_unscreened": (

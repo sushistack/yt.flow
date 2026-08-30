@@ -588,36 +588,34 @@ RunWarningCode = Literal[
     "stock_plate_resolver_unavailable",
     "stock_plate_missing",
     "stock_plate_resolution_failed",
-    "stock_plate_unfit",                # Story 14.1, reasons re-cut by 14.8 — approved plates
-                                        # exist but none was assigned to this shot. The fallback
-                                        # is generation, never a lost shot. `reason` is one of
-                                        # FIVE, in the order `image._select_plate` decides them:
+    "stock_plate_unfit",                # Story 14.1 — approved plates exist but none was assigned
+                                        # to this shot. The fallback is generation, never a lost
+                                        # shot. `reason` is one of seven, in the order
+                                        # `image._select_plate` decides them:
                                         #   unknown_framing     camera_angle absent, or a string
                                         #                       outside the vocabulary (a pre-14.0
                                         #                       checkpoint) — never guessed
                                         #   unservable_framing  close-up/POV: a room plate cannot
                                         #                       serve an object close-up or a
                                         #                       ceiling POV. Permanent by design
-                                        #   no_metadata         no plate of that key carries the
-                                        #                       14.1 measurement yet — fail-open,
+                                        #   no_metadata         no plate of that key carries a
+                                        #                       measured viewpoint yet — fail-open,
                                         #                       an unmeasured plate is never picked
-                                        #   plate_shows_person  every candidate is labelled
-                                        #                       has_person / depicts_person.
-                                        #                       Refusing to assign it is NOT
-                                        #                       un-approving it
-                                        #   no_standing_room    the shot carries cast, the
-                                        #                       affordance knob is up and no
-                                        #                       candidate has room for a standing
+                                        #   partial_metadata    some plates of that key are still
+                                        #                       unmeasured and none of the measured
+                                        #                       ones matches. Distinct from the next
+                                        #                       one because the fix is "measure the
+                                        #                       rest", not "render more plates"
+                                        #   no_viewpoint_match  all measured, none at the viewpoint
+                                        #                       this angle needs -> render one
+                                        #   plate_shows_person  the viewpoint matched but every
+                                        #                       candidate is labelled has_person /
+                                        #                       depicts_person. Refusing to assign
+                                        #                       it is NOT un-approving it
+                                        #   no_standing_room    viewpoint matched, the shot carries
+                                        #                       cast, the affordance knob is up and
+                                        #                       no candidate has room for a standing
                                         #                       figure
-                                        # RETIRED BY STORY 14.8, with the axis they named:
-                                        # `no_viewpoint_match` and `partial_metadata`. The
-                                        # selector matches on `location_key` alone now, so there
-                                        # is no post-metadata match step for either to describe
-                                        # and neither can fire. They are removed rather than kept
-                                        # dormant so this list cannot document a retired axis as
-                                        # if it shipped. Warnings already written to a finished
-                                        # run's checkpoint keep their old string; nothing reads
-                                        # this list to validate history.
     "background_guard_unscreened",      # Story 10.2 — guard wanted but not applied
     "plate_affordance_unusable",        # Story 14.2 — the plate's standing room (or the lack of a verdict on it)
     # subtitle_node
