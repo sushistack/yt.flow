@@ -247,19 +247,25 @@ def test_the_resume_row_is_a_second_row_by_design_not_a_convergence():
 
 def test_stock_plate_unfit_is_registered_and_owned_by_the_image_stage():
     warning = make_warning("stock_plate_unfit", scene_num=1, shot_id="S001",
-                           location_key="corridor", reason="no_viewpoint_match")
+                           location_key="corridor", reason="no_metadata")
     assert warning["stage"] == "image"
     # Reason-neutral copy: the fallback is generation, not a lost shot, and one sentence
-    # rides seven reasons. "맞는 승인 배경이 없어" would be FALSE for the commonest of them
-    # — `unservable_framing` (7/31 shots, permanent by design) fires on keys whose
-    # approved backgrounds are perfectly good; the shot is simply a close-up.
+    # rides five reasons (seven until Story 14.8 retired `no_viewpoint_match` and
+    # `partial_metadata` with the viewpoint axis). "맞는 승인 배경이 없어" would be FALSE
+    # for the commonest of them — `unservable_framing` (7/31 shots, permanent by design)
+    # fires on keys whose approved backgrounds are perfectly good; the shot is simply a
+    # close-up.
     assert "생성" in warning["message"]
     assert "맞는" not in warning["message"]
 
 
+# The reason vocabulary lives in FIVE places that move together (`image._select_plate`'s
+# returns, `domain/state.py`'s documented list, `replay_coverage.py`'s histogram,
+# `tests/pipeline/test_gates.py`'s warning row and THIS list) — Story 14.8's spec named
+# only four and missed this one, which is why it is called out here.
 @pytest.mark.parametrize("reason", [
-    "unknown_framing", "unservable_framing", "no_metadata", "partial_metadata",
-    "no_viewpoint_match", "plate_shows_person", "no_standing_room",
+    "unknown_framing", "unservable_framing", "no_metadata",
+    "plate_shows_person", "no_standing_room",
 ])
 def test_each_documented_reason_caps_separately(reason):
     """`cap_samples` keys on (code, reason), so a numerous cheap reason cannot push a rare
