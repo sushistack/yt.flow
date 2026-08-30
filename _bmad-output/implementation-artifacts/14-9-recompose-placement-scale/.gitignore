@@ -1,0 +1,12 @@
+# 원본 recompose 출력(1344x768)은 무시한다 — 리프레이밍된 arm_*/ 가 판정 대상이고
+# 원본은 run_arms.py + 시드 워크플로 + 매니페스트로 재생성 가능하다(CLAUDE.md 규칙).
+#   uv run python run_arms.py render --arm b --arm c
+# ⚠️ arm_a/ 는 재생성 불가가 아니다 — workspace/<run>/recomposed/ 가 원본이고 그쪽이
+#    이 저장소의 유일한 사본이므로 절대 지우지 마라.
+raw/
+arm_a/
+arm_b/
+arm_c/
+arm_b.precrash/
+arm_c.precrash/
+blind/

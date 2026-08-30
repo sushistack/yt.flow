@@ -238,14 +238,18 @@ def test_at_most_one_reference_per_variant_is_kept(tmp_path, monkeypatch):
     refs = _env(tmp_path, monkeypatch)
     _fake_search(fetch, monkeypatch, [_result(f"https://example.com/{i}.jpg") for i in range(6)])
     downloaded = _fake_download(fetch, monkeypatch)
-    _fake_vision(fetch, monkeypatch, replies=[json.dumps(CLEAR_KEEP)] * 6)
+    # Derived from VARIANTS, not pinned at three: Story 14.1's shortfall batch added the
+    # "d"/"e" viewpoint variants, so a hardcoded list fails for a reason unrelated to what
+    # this test asserts (one reference kept per variant).
+    n = len(fetch.VARIANTS)
+    _fake_vision(fetch, monkeypatch, replies=[json.dumps(CLEAR_KEEP)] * (2 * n))
 
     assert _run(fetch, ["--key", "control-room"]) == 0
 
     assert sorted(p.name for p in (refs / "control-room").glob("ref_*.png")) == [
-        "ref_a.png", "ref_b.png", "ref_c.png",
+        f"ref_{v}.png" for v in sorted(fetch.VARIANTS)
     ]
-    assert len(downloaded) == 3, "screening must stop once all three variants are filled"
+    assert len(downloaded) == n, "screening must stop once every variant is filled"
 
 
 def test_max_candidates_bounds_the_search(tmp_path, monkeypatch):

@@ -4,6 +4,7 @@ Every assertion here pins something that was established live on 2026-08-09 and 
 render to learn. They are regression guards for prompt/wiring rules, not unit trivia.
 """
 
+import hashlib
 import json
 
 import pytest
@@ -51,6 +52,54 @@ def test_instruction_uses_appearance_not_ordinal():
 def test_every_depth_band_demands_whole_body(depth):
     """`near` without this was rendered as a face close-up filling half the frame."""
     assert "whole body" in placement_instruction("a figure", "center", depth)
+
+
+# Story 14.9. `near` used to demand proximity AND head-to-feet in one clause; in 16:9
+# those cannot both hold, so the model oversized the figure to satisfy both. The edit
+# removed the proximity half and NOTHING ELSE.
+#
+# The phrase itself is deliberately NOT retyped here — a string pinned identically in
+# code and test only verifies itself (`gotcha_pinned-ffmpeg-arg-string-is-not-a-test`).
+# What is asserted is the CONDITION: no proximity claim coexisting with the head-to-feet
+# demand. Whoever rewords `near` again may say anything except those two at once.
+_PROXIMITY_CLAIMS = ("close to camera", "close-up", "closeup", "up close", "very near the camera")
+
+
+def test_near_no_longer_demands_proximity_and_head_to_feet_at_once():
+    near = placement_instruction("a figure", "center", "near")
+    # The half that STAYS: without it `near` rendered as a face close-up (live, S00403).
+    assert "head to feet" in near
+    offending = [claim for claim in _PROXIMITY_CLAIMS if claim in near.lower()]
+    assert not offending, (
+        f"`near` asks for {offending} while also demanding head-to-feet — the 16:9 "
+        "incompatibility Story 14.9 removed; the model satisfies both by oversizing the figure"
+    )
+
+
+def test_near_did_not_collapse_into_mid_or_far():
+    """Removing the proximity clause must not leave three bands saying two things.
+
+    The screened risk in `14-9-recompose-placement-scale/candidates.md` §4: with
+    "close to camera" gone, `near` could read as `mid`. Three distinct sentences is the
+    cheapest guard against that, and it is what `order_cast`'s depth ordering assumes.
+    """
+    bands = {d: placement_instruction("a figure", "center", d) for d in ("near", "mid", "far")}
+    assert len(set(bands.values())) == 3, bands
+
+
+# sha256 of the WHOLE instruction for `mid` and `far`, computed off revision 590db09 —
+# the byte state before Story 14.9 touched this module. Not a restatement of the text
+# (see above): it is an external pin, and the only way it passes is if the sentence is
+# byte-identical to the one the 43-plate sweep and the 10.1e slate were verified on.
+# Story 14.9 edited `near` alone; a diff that moves `mid` or `far` invalidates those
+# without saying so.
+_UNTOUCHED_BANDS_590DB09 = {"mid": "1d5edae7929b8a6b", "far": "227b7ff654e69e27"}
+
+
+@pytest.mark.parametrize("depth", sorted(_UNTOUCHED_BANDS_590DB09))
+def test_mid_and_far_instructions_are_byte_identical_to_pre_14_9(depth):
+    text = placement_instruction("LOOK", "center", depth)
+    assert hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] == _UNTOUCHED_BANDS_590DB09[depth]
 
 
 def test_instruction_preserves_existing_figures_without_a_framing_clause():

@@ -1,0 +1,225 @@
+{
+  "generated_at": "2026-08-30T12:43:35+0900",
+  "run": "4b35c0ed-8a1e-4448-8594-11bd9997376d",
+  "checkpoint": "file:yt_flow.db?mode=ro&uri=true",
+  "target": [
+    "S00105",
+    "S00504",
+    "S00702",
+    "S00800",
+    "S00802",
+    "S00803",
+    "S00904"
+  ],
+  "reproduced": [
+    "S00105",
+    "S00504",
+    "S00702",
+    "S00800",
+    "S00802",
+    "S00803",
+    "S00904"
+  ],
+  "excluded": [],
+  "treatment_shots": [
+    "S00105",
+    "S00504",
+    "S00802",
+    "S00803"
+  ],
+  "null_control_shots": [
+    "S00702",
+    "S00800",
+    "S00904"
+  ],
+  "passes_per_arm": 11,
+  "seed": 20260830,
+  "seed_workflow": "data/workflows/comfyui_shot_recompose_qwen_seed20260830.json",
+  "near_before": "in the foreground close to camera, his whole body from head to feet visible in frame",
+  "near_after": "in the foreground, his whole body from head to feet visible in frame",
+  "shots": [
+    {
+      "shot_id": "S00105",
+      "scene_num": 1,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_001_S00105.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00105_228551d85804d2bb.png",
+      "digest_from_filename": "228551d85804d2bb",
+      "digest_recomputed": "228551d85804d2bb",
+      "digest_matches": true,
+      "camera_angle": "POV",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "hint:b36d4021a2",
+          "path": "assets/characters/SCP-049/epoch_1/hint_b36d4021a2_front.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": "reaching toward camera"
+        }
+      ]
+    },
+    {
+      "shot_id": "S00504",
+      "scene_num": 5,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_005_S00504.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00504_9bcc1674b70bcd49.png",
+      "digest_from_filename": "9bcc1674b70bcd49",
+      "digest_recomputed": "9bcc1674b70bcd49",
+      "digest_matches": true,
+      "camera_angle": "high-angle",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        },
+        {
+          "card_key": "STOCK-d-class",
+          "position": "left",
+          "depth": "near",
+          "pose": "standing",
+          "path": "assets/characters/STOCK-d-class/epoch_2/back_candidate_1.png",
+          "pose_in_checkpoint": "sitting",
+          "pose_hint": "collapsed dead"
+        }
+      ]
+    },
+    {
+      "shot_id": "S00702",
+      "scene_num": 7,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_007_S00702.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00702_a6e062a19a91a5c8.png",
+      "digest_from_filename": "a6e062a19a91a5c8",
+      "digest_recomputed": "a6e062a19a91a5c8",
+      "digest_matches": true,
+      "camera_angle": "high-angle",
+      "cast": [
+        {
+          "card_key": "STOCK-researcher",
+          "position": "left",
+          "depth": "far",
+          "pose": "standing",
+          "path": "assets/characters/STOCK-researcher/epoch_2/front_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049-2/epoch_2/side_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        }
+      ]
+    },
+    {
+      "shot_id": "S00800",
+      "scene_num": 8,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00800.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00800_7ec2e7a9d03ebe29.png",
+      "digest_from_filename": "7ec2e7a9d03ebe29",
+      "digest_recomputed": "7ec2e7a9d03ebe29",
+      "digest_matches": true,
+      "camera_angle": "over-the-shoulder",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049/epoch_1/three_quarter_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049-2/epoch_2/front_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        }
+      ]
+    },
+    {
+      "shot_id": "S00802",
+      "scene_num": 8,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00802.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00802_4c067cd279ed7000.png",
+      "digest_from_filename": "4c067cd279ed7000",
+      "digest_recomputed": "4c067cd279ed7000",
+      "digest_matches": true,
+      "camera_angle": "wide",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "left",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049/epoch_1/side_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        },
+        {
+          "card_key": "SCP-049-2",
+          "position": "right",
+          "depth": "near",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049-2/epoch_2/three_quarter_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        }
+      ]
+    },
+    {
+      "shot_id": "S00803",
+      "scene_num": 8,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_008_S00803.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00803_658415639373ba34.png",
+      "digest_from_filename": "658415639373ba34",
+      "digest_recomputed": "658415639373ba34",
+      "digest_matches": true,
+      "camera_angle": "low-angle",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "center",
+          "depth": "near",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049/epoch_1/front_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        }
+      ]
+    },
+    {
+      "shot_id": "S00904",
+      "scene_num": 9,
+      "plate": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/images/scene_009_S00904.png",
+      "delivered": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00904_0adce4b067d5dcd7.png",
+      "digest_from_filename": "0adce4b067d5dcd7",
+      "digest_recomputed": "0adce4b067d5dcd7",
+      "digest_matches": true,
+      "camera_angle": "high-angle",
+      "cast": [
+        {
+          "card_key": "SCP-049",
+          "position": "right",
+          "depth": "mid",
+          "pose": "standing",
+          "path": "assets/characters/SCP-049/epoch_1/back_candidate_1.png",
+          "pose_in_checkpoint": "standing",
+          "pose_hint": null
+        }
+      ]
+    }
+  ]
+}

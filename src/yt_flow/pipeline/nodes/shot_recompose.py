@@ -50,7 +50,28 @@ _POSITION_PHRASE = {
     "right": "on the right side of the frame",
 }
 _DEPTH_PHRASE = {
-    "near": "in the foreground close to camera, his whole body from head to feet visible in frame",
+    # EDITED 2026-08-30 (Story 14.9). WAS: "in the foreground close to camera, his whole
+    # body from head to feet visible in frame" — two clauses that cannot both hold in 16:9.
+    # A 1.9 m figure truly close to camera is not head-to-feet in frame, so the model
+    # satisfied both by drawing the figure OVERSIZED against the room's own scale cues.
+    # Jay raised it on the 10.1e viewing and again on E2E iteration 4; the diagnosis sat
+    # written down in `config.py` for 13 days because editing this line invalidates the
+    # 43-plate sweep and the 10.1e slate, and a false "this box has no GPU" premise sat on
+    # top of that (`GPU-PREMISE-CORRECTION-2026-08-30.md`).
+    # ONLY THE PROXIMITY CLAUSE IS REMOVED. Deleting the whole-body clause instead would
+    # bring back the face close-up measured live on S00403 — that regression is why all
+    # three bands carry it. Nothing is added: two other candidates (a relative-depth
+    # rewrite, an explicit scale anchor) were screened as text and rejected in
+    # `14-9-recompose-placement-scale/candidates.md` §3, the second for adding placement
+    # instruction to a sentence that already ships grounding and style clauses.
+    # VERIFIED BY: a 3-arm blind sheet over 7 shots of run 4b35c0ed — A (delivered frame),
+    # B (this old phrase, fresh seed 20260830), C (the new phrase, THE SAME SEED). B is the
+    # reroll control without which the reroll noise is booked as the edit's credit
+    # (`gotcha_regeneration-needs-a-same-prompt-control`). `mid`/`far` are untouched, and
+    # the 3 target shots with no `near` pass are the experiment's own null control.
+    # THE HUMAN VERDICT ON THAT SHEET HAS NOT HAPPENED YET — see
+    # `14-9-recompose-placement-scale/report.md`.
+    "near": "in the foreground, his whole body from head to feet visible in frame",
     "mid": "at mid distance, his whole body from head to feet visible in frame",
     "far": "far from camera, small in the frame, whole body visible",
 }

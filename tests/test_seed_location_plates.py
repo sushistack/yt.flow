@@ -335,9 +335,13 @@ def test_a_mid_batch_abort_recovers_and_continues_with_the_next_plate(tmp_path, 
 
     assert _run(seed, ["--key", "corridor"]) == 0
 
-    assert len(calls) == 4, "3 plates + one retry of the aborted submit"
-    assert recoveries == [(1, 3)]
-    assert sorted(row.variant for row in _rows()) == ["a", "b", "c"]
+    # Derived from VARIANTS, not pinned at 3: Story 14.1's shortfall batch added the
+    # "d"/"e" viewpoint variants, and a test that hardcodes the count fails for a reason
+    # that has nothing to do with what it is testing (abort recovery).
+    n = len(seed.VARIANTS)
+    assert len(calls) == n + 1, "every plate + one retry of the aborted submit"
+    assert recoveries == [(1, n)]
+    assert sorted(row.variant for row in _rows()) == sorted(seed.VARIANTS)
 
 
 def test_an_exhausted_recovery_window_aborts_and_names_the_remaining_plates(tmp_path, monkeypatch, capsys):
@@ -387,9 +391,7 @@ def test_a_plate_without_a_reference_falls_back_to_the_procedural_blockout(tmp_p
     assert _run(seed, ["--key", "corridor"]) == 0
 
     by_variant = {call[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"]: call for call in calls}
-    assert set(by_variant) == {
-        "blockout_corridor_a.png", "blockout_corridor_b.png", "blockout_corridor_c.png",
-    }
+    assert set(by_variant) == {f"blockout_corridor_{v}.png" for v in seed.VARIANTS}
     # The blockout is already line art; passing it through scribble_hed would return each
     # stroke as a pair of thin parallel ones, so the fallback path drops the preprocessor.
     for workflow in by_variant.values():
@@ -414,7 +416,7 @@ def test_a_variant_without_its_own_reference_borrows_a_sibling_not_the_blockout(
     # every variant went through the photo path (preprocessor present, full strength) and
     # none fell back to the blockout.
     used = {call[nodes[seed.BLOCKOUT_KEY]]["inputs"]["image"] for call in calls}
-    assert used == {"locref_corridor_a.png", "locref_corridor_b.png", "locref_corridor_c.png"}
+    assert used == {f"locref_corridor_{v}.png" for v in seed.VARIANTS}
     for call in calls:
         assert nodes[seed.SCRIBBLE_KEY] in call
         assert call[nodes[seed.CONTROLNET_APPLY_KEY]]["inputs"]["strength"] != seed.BLOCKOUT_STRENGTH

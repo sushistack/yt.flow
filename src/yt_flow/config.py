@@ -571,14 +571,34 @@ class Settings(BaseSettings):
     # cards. Both are intended consequences of recreation-over-overlay, not bugs, but
     # they are now the shipped behaviour rather than a hypothetical.
     #
-    # KNOWN DEFECT SHIPPED WITH THIS FLIP, raised by Jay on the same viewing:
-    # `depth: "near"` figures are drawn oversized for the room. `_DEPTH_PHRASE["near"]`
-    # asks for "in the foreground close to camera, his whole body from head to feet
-    # visible in frame" — two clauses that fight, since a 1.9 m figure truly close to
-    # camera cannot be head-to-feet in a 16:9 frame, so the model satisfies both by
-    # oversizing the figure against the room's own scale cues. Recorded in
-    # `deferred-work.md`; NOT fixed here, because changing that phrase invalidates
-    # the 43-plate sweep and the slate this path was verified on.
+    # ~~KNOWN DEFECT SHIPPED WITH THIS FLIP, raised by Jay on the same viewing:~~
+    # ~~`depth: "near"` figures are drawn oversized for the room. `_DEPTH_PHRASE["near"]`~~
+    # ~~asks for "in the foreground close to camera, his whole body from head to feet~~
+    # ~~visible in frame" — two clauses that fight, since a 1.9 m figure truly close to~~
+    # ~~camera cannot be head-to-feet in a 16:9 frame, so the model satisfies both by~~
+    # ~~oversizing the figure against the room's own scale cues. Recorded in~~
+    # ~~`deferred-work.md`; NOT fixed here, because changing that phrase invalidates~~
+    # ~~the 43-plate sweep and the slate this path was verified on.~~
+    #
+    # UPDATED 2026-08-30 (Story 14.9). The struck text above is kept verbatim rather
+    # than rewritten (`gotcha_recorded-root-cause-can-be-inverted`: a note that quietly
+    # replaces its own history cannot be checked). Two of its three claims still stand;
+    # one has been acted on:
+    #   - THE DIAGNOSIS STANDS and was not re-derived: the two clauses do fight.
+    #   - THE REASON FOR NOT FIXING IT WAS HALF FALSE. "Changing the phrase invalidates
+    #     the 43-plate sweep and the slate" is true and remains true — but the thing
+    #     that actually blocked the re-render was a claim this box has no GPU, and that
+    #     claim was wrong (`GPU-PREMISE-CORRECTION-2026-08-30.md`). ComfyUI 0.12.3 on
+    #     gfx1100 / 24 GB / ROCm 7.1 rendered Story 14.9's 22 recompose passes.
+    #   - THE PHRASE IS NOW EDITED (`shot_recompose.py:_DEPTH_PHRASE["near"]`, dated
+    #     rationale there): the proximity half is deleted, the head-to-feet half kept,
+    #     nothing added.
+    # WHAT IS NOT YET DECIDED: whether the edit removes the defect on screen. It was
+    # rendered as a 3-arm blind sheet over 7 shots of run 4b35c0ed — A (delivered),
+    # B (old phrase, fresh seed), C (new phrase, THE SAME SEED) — and **Jay has not
+    # judged it yet**. Do not read this block as "fixed"; read
+    # `14-9-recompose-placement-scale/report.md` for the standing state. The 43-plate
+    # sweep and the 10.1e slate are, as the struck text says, now stale for `near`.
     # RETIREMENT IS NOW OWED (10.1e AC7). While this was False the overlay-only
     # machinery (ground placement, _GROUND_Y_MAX, occlusion, contact shadow, 11.5
     # parallax, 1.9c idle motion) is a FOLLOW-UP story, NEVER the flip commit —

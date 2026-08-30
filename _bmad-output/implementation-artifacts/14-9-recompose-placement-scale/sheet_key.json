@@ -1,0 +1,220 @@
+{
+  "salt": "14-9-recompose-placement-scale",
+  "id_rule": "sha256(f'{shot_id}|{arm}|{salt}').hexdigest()[:12]",
+  "order_rule": "random.Random(f'{shot_id}|{salt}|order').shuffle(['a','b','c'])",
+  "arms": {
+    "a": "출하 프레임 (recomposed/, seed 0, 편집 전 문구)",
+    "b": "재렌더 (seed 20260830, 편집 전 문구)",
+    "c": "재렌더 (seed 20260830, 편집 후 문구) — B와 같은 시드·같은 워크플로 파일"
+  },
+  "sheet": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/blind_sheet.jpg",
+  "tile_px": [
+    512,
+    288
+  ],
+  "rows": [
+    {
+      "row": 1,
+      "shot_id": "S00105",
+      "column_order": [
+        "b",
+        "c",
+        "a"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "edbca8ba474a",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00105.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "1ca77c40dc9d",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00105.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "b46cf74b1fab",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00105.png"
+        }
+      ]
+    },
+    {
+      "row": 2,
+      "shot_id": "S00504",
+      "column_order": [
+        "a",
+        "b",
+        "c"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "e3839f02c94f",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00504.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "970cf212e972",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00504.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "a9a8086adfdf",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00504.png"
+        }
+      ]
+    },
+    {
+      "row": 3,
+      "shot_id": "S00702",
+      "column_order": [
+        "c",
+        "a",
+        "b"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "e7ae1ad1232b",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00702.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "fbe81c0ec470",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00702.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "91ebd8a15fb2",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00702.png"
+        }
+      ]
+    },
+    {
+      "row": 4,
+      "shot_id": "S00800",
+      "column_order": [
+        "a",
+        "b",
+        "c"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "c447a2bcd54c",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00800.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "73ed4a7d9b91",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00800.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "451d547b9da3",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00800.png"
+        }
+      ]
+    },
+    {
+      "row": 5,
+      "shot_id": "S00802",
+      "column_order": [
+        "b",
+        "a",
+        "c"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "d98be227919d",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00802.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "64c94e5961e2",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00802.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "68f19e51a311",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00802.png"
+        }
+      ]
+    },
+    {
+      "row": 6,
+      "shot_id": "S00803",
+      "column_order": [
+        "b",
+        "a",
+        "c"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "b039ac38e775",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00803.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "16549cf9110e",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00803.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "107e699703e8",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00803.png"
+        }
+      ]
+    },
+    {
+      "row": 7,
+      "shot_id": "S00904",
+      "column_order": [
+        "c",
+        "a",
+        "b"
+      ],
+      "tiles": [
+        {
+          "column": 1,
+          "blind_id": "786c0c5edf21",
+          "arm": "c",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00904.png"
+        },
+        {
+          "column": 2,
+          "blind_id": "4eb8f71a33da",
+          "arm": "a",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00904.png"
+        },
+        {
+          "column": 3,
+          "blind_id": "e8cc4d5395cc",
+          "arm": "b",
+          "source": "yt.flow/_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00904.png"
+        }
+      ]
+    }
+  ]
+}

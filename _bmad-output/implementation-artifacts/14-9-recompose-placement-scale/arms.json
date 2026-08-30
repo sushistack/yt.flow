@@ -1,0 +1,566 @@
+{
+  "generated_at": "2026-08-30T15:37:53+0900",
+  "run": "4b35c0ed-8a1e-4448-8594-11bd9997376d",
+  "total_seconds": 1297.1,
+  "reframing_chain": "video._zoompan_filter(video._FUSION_STILL_SPEC, 1.0)",
+  "recomposed_intact": true,
+  "recomposed_before": {
+    "dir": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed",
+    "files": 33,
+    "sha256": "8b3af2fc26885ee0f3c2defd7fa1ea637902ddb8aae3126ab63459acad9410a5"
+  },
+  "recomposed_after": {
+    "dir": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed",
+    "files": 33,
+    "sha256": "8b3af2fc26885ee0f3c2defd7fa1ea637902ddb8aae3126ab63459acad9410a5"
+  },
+  "comfyui_argv": [
+    "main.py",
+    "--preview-method",
+    "auto",
+    "--cache-lru",
+    "10",
+    "--lowvram"
+  ],
+  "arms": {
+    "a": {
+      "arm": "a",
+      "near_phrase": "in the foreground close to camera, his whole body from head to feet visible in frame",
+      "seed": 0,
+      "workflow": "data/workflows/comfyui_shot_recompose_qwen_api.json",
+      "source": "workspace/<run>/recomposed (읽기 전용)",
+      "rendered": 7,
+      "failed": [],
+      "frames": [
+        {
+          "shot_id": "S00105",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00105_228551d85804d2bb.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00105.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00504",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00504_9bcc1674b70bcd49.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00504.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00702",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00702_a6e062a19a91a5c8.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00702.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00800",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00800_7ec2e7a9d03ebe29.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00800.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00802",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00802_4c067cd279ed7000.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00802.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00803",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00803_658415639373ba34.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00803.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        },
+        {
+          "shot_id": "S00904",
+          "source": "workspace/4b35c0ed-8a1e-4448-8594-11bd9997376d/recomposed/S00904_0adce4b067d5dcd7.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_a/S00904.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080"
+        }
+      ]
+    },
+    "b": {
+      "arm": "b",
+      "near_phrase": "in the foreground close to camera, his whole body from head to feet visible in frame",
+      "seed": 20260830,
+      "workflow": "data/workflows/comfyui_shot_recompose_qwen_seed20260830.json",
+      "workflow_sha256": "684a5281dc5491f5d22300c4e817b3693e0eb808e494f8be85fd50a67303faac",
+      "rendered": 7,
+      "failed": [],
+      "frames": [
+        {
+          "shot_id": "S00105",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00105.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00105.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 78.3,
+          "seconds_per_pass": 78.3,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, hint:b36d4021a2, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "d52610575c83d56c3f718794e09d7f206fb06767bec121f00034e7d9609277d9",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_5b4ba512586e.png",
+              "card_upload": "ytflow_recompose_43886e84f4d4.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00504",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00504.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00504.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.6,
+          "seconds_per_pass": 57.3,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_208910140e23.png",
+              "card_upload": "ytflow_recompose_f9b32cade7ff.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the man in the orange prison jumpsuit on the left side of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "caa24eea9ca57215f9d4a26e55672f0e5d233afd08f87a1bc053420a2491362c",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_46af8ca8cdc3.png",
+              "card_upload": "ytflow_recompose_953b059438b9.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00702",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00702.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00702.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 115.5,
+          "seconds_per_pass": 57.8,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the person in a white lab coat over office clothes on the left side of the frame, far from camera, small in the frame, whole body visible, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "87a6977c9a4f3761fd02892bc25eece82b33b195b9fa7edb27a4c654c5b8eb16",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_a72aadd6a346.png",
+              "card_upload": "ytflow_recompose_b1ca653e18a8.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_90570773e6fe.png",
+              "card_upload": "ytflow_recompose_689333df0f96.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00800",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00800.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00800.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 115.4,
+          "seconds_per_pass": 57.7,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the left side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_bf57eb09d155.png",
+              "card_upload": "ytflow_recompose_559b1342f11d.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_be89815ac1de.png",
+              "card_upload": "ytflow_recompose_1062652e0cbe.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00802",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00802.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00802.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.4,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the left side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_e685442f6dd6.png",
+              "card_upload": "ytflow_recompose_cb8820cdb455.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "95fc019e5c58f36cb84ecceff0787031ce06349ea6f6d841e3cbec45dea79535",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_6bf4ff4f56e9.png",
+              "card_upload": "ytflow_recompose_9fec80b42257.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00803",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00803.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00803.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 57.2,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "ed3d07abe76d80b6444e078d657929503770264e5a06a6a7dbd9d042b19c5ce6",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_ed7d6f041242.png",
+              "card_upload": "ytflow_recompose_85d0ea8471f3.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00904",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/b/S00904.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_b/S00904.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 57.2,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_fb1138511453.png",
+              "card_upload": "ytflow_recompose_b706426dbf3e.png"
+            }
+          ]
+        }
+      ]
+    },
+    "c": {
+      "arm": "c",
+      "near_phrase": "in the foreground, his whole body from head to feet visible in frame",
+      "seed": 20260830,
+      "workflow": "data/workflows/comfyui_shot_recompose_qwen_seed20260830.json",
+      "workflow_sha256": "684a5281dc5491f5d22300c4e817b3693e0eb808e494f8be85fd50a67303faac",
+      "rendered": 7,
+      "failed": [],
+      "frames": [
+        {
+          "shot_id": "S00105",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00105.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00105.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 57.2,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground, his whole body from head to feet visible in frame, hint:b36d4021a2, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "84a6a05e8a19b6c8f304d13153c5f9895c6f0d51f695489a7c4ec9f1e021860c",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_7e286e5e44c9.png",
+              "card_upload": "ytflow_recompose_2eafecc9830c.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00504",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00504.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00504.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.4,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_28350e4a3da4.png",
+              "card_upload": "ytflow_recompose_6260f92192f6.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the man in the orange prison jumpsuit on the left side of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "a5d5dd4195f26e178857314c3a004a1da241b0d5c5d9eff09b0742e4f7d7d109",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_63283960ef8b.png",
+              "card_upload": "ytflow_recompose_fe06282ef227.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00702",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00702.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00702.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.4,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the person in a white lab coat over office clothes on the left side of the frame, far from camera, small in the frame, whole body visible, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "87a6977c9a4f3761fd02892bc25eece82b33b195b9fa7edb27a4c654c5b8eb16",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_429d73fde526.png",
+              "card_upload": "ytflow_recompose_2d797546eb5e.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_4ead404e1f9f.png",
+              "card_upload": "ytflow_recompose_c4a1dd02ec6c.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00800",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00800.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00800.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.4,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the left side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_fb510749b07b.png",
+              "card_upload": "ytflow_recompose_d54cc8c0b3a1.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_6d2f24e0f536.png",
+              "card_upload": "ytflow_recompose_80577524b587.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00802",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00802.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00802.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 114.4,
+          "seconds_per_pass": 57.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the left side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_eeb57c9d6817.png",
+              "card_upload": "ytflow_recompose_28844dc6b95f.png"
+            },
+            {
+              "index": 1,
+              "instruction": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "a31f7cce359309da24bd0295e4302fd658ed25bbee1e4f2f85d75a61ee396d4a",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_a4ed05e5ec47.png",
+              "card_upload": "ytflow_recompose_63be3f7e8240.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00803",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00803.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00803.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 58.2,
+          "seconds_per_pass": 58.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "98f8c962eb31e03f7ad931c7ef92cf63fa5f2ea8bfedb06d35808a0de2e6e6f1",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_0f234140713d.png",
+              "card_upload": "ytflow_recompose_d73ef663a9f5.png"
+            }
+          ]
+        },
+        {
+          "shot_id": "S00904",
+          "raw": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/raw/c/S00904.png",
+          "path": "_bmad-output/implementation-artifacts/14-9-recompose-placement-scale/arm_c/S00904.png",
+          "raw_size": "1344x768",
+          "size": "1920x1080",
+          "seconds": 58.2,
+          "seconds_per_pass": 58.2,
+          "passes": [
+            {
+              "index": 0,
+              "instruction": "Place the figure in the long black hooded coat and white plague-doctor beak mask on the right side of the frame, at mid distance, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+              "instruction_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+              "seed": 20260830,
+              "plate_upload": "ytflow_recompose_e4781777edbe.png",
+              "card_upload": "ytflow_recompose_2e065a7fd181.png"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "instruction_diff": [
+    {
+      "shot_id": "S00105",
+      "pass": 0,
+      "treated": true,
+      "identical": false,
+      "b_sha256": "d52610575c83d56c3f718794e09d7f206fb06767bec121f00034e7d9609277d9",
+      "c_sha256": "84a6a05e8a19b6c8f304d13153c5f9895c6f0d51f695489a7c4ec9f1e021860c",
+      "b": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, hint:b36d4021a2, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "c": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground, his whole body from head to feet visible in frame, hint:b36d4021a2, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "single_substitution": true,
+      "shot_depths": [
+        "near"
+      ]
+    },
+    {
+      "shot_id": "S00504",
+      "pass": 0,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+      "c_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6"
+    },
+    {
+      "shot_id": "S00504",
+      "pass": 1,
+      "treated": true,
+      "identical": false,
+      "b_sha256": "caa24eea9ca57215f9d4a26e55672f0e5d233afd08f87a1bc053420a2491362c",
+      "c_sha256": "a5d5dd4195f26e178857314c3a004a1da241b0d5c5d9eff09b0742e4f7d7d109",
+      "b": "Place the man in the orange prison jumpsuit on the left side of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "c": "Place the man in the orange prison jumpsuit on the left side of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "single_substitution": true,
+      "shot_depths": [
+        "mid",
+        "near"
+      ]
+    },
+    {
+      "shot_id": "S00702",
+      "pass": 0,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "87a6977c9a4f3761fd02892bc25eece82b33b195b9fa7edb27a4c654c5b8eb16",
+      "c_sha256": "87a6977c9a4f3761fd02892bc25eece82b33b195b9fa7edb27a4c654c5b8eb16"
+    },
+    {
+      "shot_id": "S00702",
+      "pass": 1,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+      "c_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+      "shot_depths": [
+        "far",
+        "mid"
+      ]
+    },
+    {
+      "shot_id": "S00800",
+      "pass": 0,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+      "c_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1"
+    },
+    {
+      "shot_id": "S00800",
+      "pass": 1,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+      "c_sha256": "9fd54245734eb2438cb99cf0d482d6a7e17cf34a561e8ce93c90a002e5de942d",
+      "shot_depths": [
+        "mid",
+        "mid"
+      ]
+    },
+    {
+      "shot_id": "S00802",
+      "pass": 0,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1",
+      "c_sha256": "3266c20d71e373e5dbebaa749bd394f3ca2bfb17ae02458efed2ac03b004f1d1"
+    },
+    {
+      "shot_id": "S00802",
+      "pass": 1,
+      "treated": true,
+      "identical": false,
+      "b_sha256": "95fc019e5c58f36cb84ecceff0787031ce06349ea6f6d841e3cbec45dea79535",
+      "c_sha256": "a31f7cce359309da24bd0295e4302fd658ed25bbee1e4f2f85d75a61ee396d4a",
+      "b": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "c": "Place the reanimated figure in torn surgical scrubs on the right side of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "single_substitution": true,
+      "shot_depths": [
+        "mid",
+        "near"
+      ]
+    },
+    {
+      "shot_id": "S00803",
+      "pass": 0,
+      "treated": true,
+      "identical": false,
+      "b_sha256": "ed3d07abe76d80b6444e078d657929503770264e5a06a6a7dbd9d042b19c5ce6",
+      "c_sha256": "98f8c962eb31e03f7ad931c7ef92cf63fa5f2ea8bfedb06d35808a0de2e6e6f1",
+      "b": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground close to camera, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "c": "Place the figure in the long black hooded coat and white plague-doctor beak mask in the centre of the frame, in the foreground, his whole body from head to feet visible in frame, standing, into the scene of the first image. Keep the room and everyone already in it exactly as they are. Feet firmly on the ground with a contact shadow, lit by the same light as the room, rendered in the same illustration style as the background. Single cohesive illustration.",
+      "single_substitution": true,
+      "shot_depths": [
+        "near"
+      ]
+    },
+    {
+      "shot_id": "S00904",
+      "pass": 0,
+      "treated": false,
+      "identical": true,
+      "b_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+      "c_sha256": "bb7bb007574e86b3a8f96a201c33d7c76064f3f6b38a5fdc99d49390dee13be6",
+      "shot_depths": [
+        "mid"
+      ]
+    }
+  ]
+}
