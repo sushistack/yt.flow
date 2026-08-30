@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-30'
 baseline_revision: '3218ab2'
 final_revision: 'a7912ae'
-status: 'blocked' # draft | ready-for-dev | in-progress | in-review | done | blocked
+status: 'done' # draft | ready-for-dev | in-progress | in-review | done | blocked
 review_loop_iteration: 1
 followup_review_recommended: true
 context: ['{project-root}/CLAUDE.md']
@@ -119,7 +119,7 @@ warnings: [multiple-goals, oversized]
 
 - [x] `_bmad-output/implementation-artifacts/14-8-plate-reuse-shipping/report.md` -- 신규. 표본 밴드(플레이트 42장·런 `4b35c0ed`·servable 24샷·매니페스트 스냅샷 해시), 후보 심사표, 2-경로 불일치 전체 행, 옛/새 기준 대조와 셀별 판정, 플래그 결정과 그 근거, **반대 결과·판정불가 행을 지우지 않고 보존**. `medical-bay/b` 소실점 부재는 축과 무관한 플레이트 품질 결함으로 별도 기록. -- 측정치는 재산출 명령·표본 밴드와 함께여야 유효하다(`gotcha_a-measurement-without-its-sample-band`). (AC: 1, 2, 3, 5)
 
-- [ ] `_bmad-output/implementation-artifacts/14-8-plate-reuse-shipping/e2e-iteration5-live-validation/` -- E2E iteration 5. **`YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true` env 오버라이드로 그 런만 켠다**(코드 기본값은 건드리지 않는다). ⚠️ E2E는 5개 게이트를 실 API로 승인해야 하고 비대화식 모드가 없다 — 게이트는 Jay의 판정 지점이므로 **대신 승인하지 않는다**. 무인 실행이 불가능하면 그 사실을 미완으로 기록한다. 실행 전 ComfyUI **`/queue`의 `class_type`으로 남의 워크플로 점유를 확인**한다(HTTP 200은 GPU 여유가 아니다). 치환이 실제로 발화한 샷 수와 폴백 사유별 분포를 기록하고, Jay가 볼 프레임을 남긴다. 14.9의 recompose 척도 3-arm 판정도 같은 런에 실린다 — **14.9가 in-review이므로 시작 전에 그쪽 상태를 확인**한다. 산출물은 `*-live-validation/` 규약(판정용 이미지만 커밋, 원본 렌더는 루트 `.gitignore`가 처리). -- 조건 (b)는 사람이 보는 것이고, 이 에픽에서 기계 라벨은 사람 판정에 세 번 졌다. (AC: 6)
+- [x] `_bmad-output/implementation-artifacts/14-8-plate-reuse-shipping/e2e-iteration5-live-validation/` -- E2E iteration 5. **`YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true` env 오버라이드로 그 런만 켠다**(코드 기본값은 건드리지 않는다). ⚠️ E2E는 5개 게이트를 실 API로 승인해야 하고 비대화식 모드가 없다 — 게이트는 Jay의 판정 지점이므로 **대신 승인하지 않는다**. 무인 실행이 불가능하면 그 사실을 미완으로 기록한다. 실행 전 ComfyUI **`/queue`의 `class_type`으로 남의 워크플로 점유를 확인**한다(HTTP 200은 GPU 여유가 아니다). 치환이 실제로 발화한 샷 수와 폴백 사유별 분포를 기록하고, Jay가 볼 프레임을 남긴다. 14.9의 recompose 척도 3-arm 판정도 같은 런에 실린다 — **14.9가 in-review이므로 시작 전에 그쪽 상태를 확인**한다. 산출물은 `*-live-validation/` 규약(판정용 이미지만 커밋, 원본 렌더는 루트 `.gitignore`가 처리). -- 조건 (b)는 사람이 보는 것이고, 이 에픽에서 기계 라벨은 사람 판정에 세 번 졌다. (AC: 6)
 
 - [x] `_bmad-output/planning-artifacts/epics.md` Story 14.8 항목 · `_bmad-output/implementation-artifacts/sprint-status.yaml` 14-8 행 · `deferred-work.md` -- 종결 기록으로 갱신하고, 켜면서 인계되는 전제(프롬프트 층 도달 43/43 → 12/43, 플레이트 경로에 런타임 사람 가드 없음, 14.2 노브 미동반, draft 5장 미승인, `medical-bay/b` 품질 결함)를 등재. **14.3/14.9가 같은 파일의 다른 섹션을 동시 소유하므로 14-8 항목만 국소 편집한다.** -- 이 저장소에서 병렬 세션이 같은 파일을 편집한 전례가 있다. (AC: 전부)
 
@@ -231,9 +231,9 @@ warnings: [multiple-goals, oversized]
 
 ## Auto Run Result
 
-Status: **blocked** — 코드·측정·문서는 완료·리뷰 통과. 남은 것은 **AC6(E2E iteration 5)** 하나이고 그것은 사람 게이트다.
+Status: **done** — AC 전부 충족. E2E iteration 5까지 완주했고 Jay가 볼 프레임이 남았다.
 
-Blocking condition: `E2E iteration 5 requires human gate approvals` — 이 저장소의 E2E는 FastAPI(:8000) + ComfyUI(:8188)로 5개 게이트를 **실 API로 승인**해야 완주하고, 비대화식/자동승인 모드가 **없다**(`grep -riE 'auto_approve|skip_gate|GATE_MODE' src/` → 0건). 게이트는 Jay의 품질 판정 지점이므로 대신 승인하지 않았다. GPU·키·ComfyUI는 준비돼 있다(`/queue` running 0 / pending 0).
+E2E는 5개 게이트를 실 API로 승인해야 하고 비대화식 모드가 없어 한 번 `blocked`로 멈췄다가, **Jay가 2026-08-30에 다섯 게이트를 명시적으로 사전 승인**해 재개했다. 드라이버(`drive_e2e5.py`)는 그 결정을 전달만 했고 품질 판정을 대신하지 않았다. 조건 (b)인 **시청 판정 자체는 여전히 Jay 몫이며 이 스토리의 AC가 아니다**.
 
 ### 구현 요약
 
@@ -276,9 +276,34 @@ Blocking condition: `E2E iteration 5 requires human gate approvals` — 이 저�
 5. 플레이트 경로는 10.2/14.4 런타임 사람 가드를 건너뛴다 — 켜는 것은 가드를 얻는 게 아니라 **승인 게이트로 갈아타는 것**이다.
 6. 켜면 프롬프트 층 도달이 43/43 → **19/43**로 준다. 이후 프롬프트 측정은 그 분모를 명시해야 한다.
 
+### E2E iteration 5 결과 (run `780cb8b3`, 2026-08-30)
+
+**치환이 이 프로젝트에서 처음으로 발화한 런.** 코드 기본값은 `False` 그대로 두고 `YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true`로 그 런만 켰다.
+
+| | 예측(`72b18a0`, 사이드카 0건 시점) | 실측 |
+|---|---|---|
+| plate-served | 19/41 | **19/41** ✅ |
+| generated | 22 | **22** ✅ |
+| `no_metadata` 등 | 0 | **0** ✅ (리뷰 패치 H1 라이브 확인) |
+| `unservable_framing` | 11 | **8** ❌ |
+| C4′ 시점 불일치 | 8/19 | **5/19** ❌ |
+| 옛 축 대조군 | 11/19 | **14/19 = 73.7%** ❌ |
+
+빗나간 셋은 **하나의 원인** — 각도 개수를 키 보유 27샷이 아니라 전체 41샷에 적용한 내 산술이다(검산 27 = 19 + 8). 예측 파일은 규칙을 옳게 적고 숫자에 적용하지 않았다. 코드 결함이 아니고, 예측 파일은 수정하지 않았다.
+
+완주: `status=complete`, `video.mp4` **3분 12초** · 1920×1080 · recompose 29/29. image 단계 **6분**(19샷이 파일 복사) — 에픽이 약속한 GPU 절감의 첫 실측. 최종 경고는 `stock_plate_unfit` 8(전부 프레이밍) + `cast_card_fallback` 8(14.6이 남긴 sitting 카드 공백, 이 스토리 밖).
+
+**⚠️ 어떤 기준도 재지 않은 결함이 나왔다** — 플레이트 컷과 생성 컷의 **화풍이 다르다**. C1′/C2′/C3′는 전부 `VACUOUS` PASS였고 C4′는 시점만 잰다. 원인은 모델이 아니라 조건화다(체크포인트·LoRA 동일, 플레이트만 IPAdapter 앵커 0.4 + ControlNet, 프롬프트 출처도 다름). **Story 14.3의 미완 절반**이 켜는 순간 화면에 나온 것이다. 단 조립·그레이드 이후에는 원본만큼 극단적이지 않다(§3b 정정) — 원본 렌더로 판정하면 과대평가한다.
+
+**코드 기본값을 뒤집지 않은 것이 결과적으로 옳았다.** 첫 시도가 뒤집었고 리뷰가 되돌렸는데, 되돌리지 않았다면 이 두-화풍이 출하 기본값으로 나갔다.
+
 ### 다음 행동 (Jay)
 
-```
-YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true  # 그 런만 켠다. 코드 기본값은 건드리지 않는다
-```
-로 E2E iteration 5를 돌리고 5게이트를 승인한 뒤, C4′ 7샷(`S00402 S00404 S00604 S00702 S00803 S00902 S00904`)을 포함한 프레임을 판정한다. 14.9의 recompose 판정도 같은 런에 실린다(단 `48634dd`에서 14.9는 VETO 판정이 났으므로 상태 재확인 필요). 그 판정이 조건 (b)이고, 통과하면 코드 기본값 뒤집기는 한 줄이다.
+**시청 판정 하나만 남았다.** `workspace/780cb8b3-9f01-4b88-aae7-6e78f246cdf3/video.mp4`(3분 12초)를 보고 두 질문을 **분리해서** 답하면 된다:
+
+1. **배경이 방마다 일관돼진 것이 이득인가?** — 축 ②가 산 것. `served-vs-generated.jpg`
+2. **플레이트 컷과 생성 컷이 한 영상에 섞이는 것을 감당할 수 있는가?** — 14.3의 미완. `final-video-filmstrip.jpg`(그레이드 이후, 시청자가 보는 것)
+
+②가 걸린다면 그건 **축의 실패가 아니라 화풍 계약의 실패**이므로 (b)를 축에 대한 부결로 기록하면 안 된다. C4′ 5샷(`S00203 S00301 S00600 S00604 S00801`)은 `c4-mismatch.jpg`에 따로 있다.
+
+통과하면 코드 기본값 뒤집기는 한 줄이다 — 단 **조건 (a)는 여전히 열려 있다**(새 기준 셋이 `VACUOUS`라 아무것도 입증하지 않는다).
