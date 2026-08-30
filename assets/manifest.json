@@ -2,14 +2,15 @@
   "assets": {
     "SCP-049-2/hint:475c8a9231_front": {
       "angle": "front",
-      "approved_at": "2026-08-07T16:44:03.790929+00:00",
+      "approved_at": "2026-08-30T10:52:41.550398+00:00",
       "card_key": "SCP-049-2",
-      "created_at": "2026-08-07T16:44:03.789165+00:00",
+      "created_at": "2026-08-30T10:52:41.548827+00:00",
       "path": "characters/SCP-049-2/epoch_2/hint_475c8a9231_front.png",
       "pose": "hint:475c8a9231",
-      "sha256": "e5e0d740e5412a9a7bd1060826e258a9c983f5176fb50b7cbf4dc2119592dc68",
+      "sha256": "b171539268f0ab1cac8657af1bf7a9204a9881a395869ca4c96a39a526b0056e",
       "source": {
         "ipadapter_weight": 0.2,
+        "pose_guide": "humanoid_lying_supine",
         "type": "comfyui_generation"
       },
       "status": "approved"
@@ -66,6 +67,21 @@
       "sha256": "82b8eaeb2a4dd0ea96adf8b8762daae6993189db6229d933a5de5cf375aa2a02",
       "source": {
         "ipadapter_weight": 0.4,
+        "type": "comfyui_generation"
+      },
+      "status": "approved"
+    },
+    "SCP-049/hint:07e71387a6_front": {
+      "angle": "front",
+      "approved_at": "2026-08-30T10:52:16.910405+00:00",
+      "card_key": "SCP-049",
+      "created_at": "2026-08-30T10:52:16.908720+00:00",
+      "path": "characters/SCP-049/epoch_2/hint_07e71387a6_front.png",
+      "pose": "hint:07e71387a6",
+      "sha256": "4c8265b7e12790e13b7a8cb804b98ecd37ad55650eaf91fc11f6bb9d5ff75a80",
+      "source": {
+        "ipadapter_weight": 0.2,
+        "pose_guide": null,
         "type": "comfyui_generation"
       },
       "status": "approved"
