@@ -1,0 +1,511 @@
+{
+ "frame": [
+  1920,
+  1080
+ ],
+ "stats": {
+  "n_rows": 33,
+  "n_distinct": 28,
+  "min": 68.9,
+  "max": 95.5,
+  "median": 81.2,
+  "mean": 83.0
+ },
+ "rows": [
+  {
+   "shot": "S00105",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 76,
+   "bottom": 1027,
+   "height_px": 952,
+   "pct_frame": 88.1,
+   "x_band": [
+    800,
+    1200
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "어두운 인물/어두운 플레이트 — ±15px"
+  },
+  {
+   "shot": "S00105",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 106,
+   "bottom": 1013,
+   "height_px": 908,
+   "pct_frame": 84.1,
+   "x_band": [
+    800,
+    1200
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "±15px"
+  },
+  {
+   "shot": "S00105",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 158,
+   "bottom": 1030,
+   "height_px": 873,
+   "pct_frame": 80.8,
+   "x_band": [
+    800,
+    1200
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "±15px"
+  },
+  {
+   "shot": "S00504",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 122,
+   "bottom": 908,
+   "height_px": 787,
+   "pct_frame": 72.9,
+   "x_band": [
+    1230,
+    1560
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00504",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 97,
+   "bottom": 897,
+   "height_px": 801,
+   "pct_frame": 74.2,
+   "x_band": [
+    1230,
+    1560
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00504",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 105,
+   "bottom": 903,
+   "height_px": 799,
+   "pct_frame": 74.0,
+   "x_band": [
+    1230,
+    1560
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00504",
+   "arm": "a",
+   "figure": "STOCK-d-class",
+   "top": 42,
+   "bottom": 1045,
+   "height_px": 1004,
+   "pct_frame": 93.0,
+   "x_band": [
+    460,
+    850
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00504",
+   "arm": "b",
+   "figure": "STOCK-d-class",
+   "top": 53,
+   "bottom": 1068,
+   "height_px": 1016,
+   "pct_frame": 94.1,
+   "x_band": [
+    460,
+    850
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00504",
+   "arm": "c",
+   "figure": "STOCK-d-class",
+   "top": 68,
+   "bottom": 1050,
+   "height_px": 983,
+   "pct_frame": 91.0,
+   "x_band": [
+    460,
+    850
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00702",
+   "arm": "a",
+   "figure": "SCP-049-2",
+   "top": 147,
+   "bottom": 1012,
+   "height_px": 866,
+   "pct_frame": 80.2,
+   "x_band": [
+    1225,
+    1410
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00702",
+   "arm": "b",
+   "figure": "SCP-049-2",
+   "top": 202,
+   "bottom": 945,
+   "height_px": 744,
+   "pct_frame": 68.9,
+   "x_band": [
+    1280,
+    1470
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00702",
+   "arm": "c",
+   "figure": "SCP-049-2",
+   "top": 202,
+   "bottom": 945,
+   "height_px": 744,
+   "pct_frame": 68.9,
+   "x_band": [
+    1280,
+    1470
+   ],
+   "duplicate_of_arm_b": true,
+   "note": "arm b 와 픽셀 동일"
+  },
+  {
+   "shot": "S00702",
+   "arm": "a",
+   "figure": "STOCK-researcher",
+   "top": 190,
+   "bottom": 1053,
+   "height_px": 864,
+   "pct_frame": 80.0,
+   "x_band": [
+    485,
+    745
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00702",
+   "arm": "b",
+   "figure": "STOCK-researcher",
+   "top": 197,
+   "bottom": 1000,
+   "height_px": 804,
+   "pct_frame": 74.4,
+   "x_band": [
+    530,
+    760
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00702",
+   "arm": "c",
+   "figure": "STOCK-researcher",
+   "top": 197,
+   "bottom": 1000,
+   "height_px": 804,
+   "pct_frame": 74.4,
+   "x_band": [
+    530,
+    760
+   ],
+   "duplicate_of_arm_b": true,
+   "note": "arm b 와 픽셀 동일"
+  },
+  {
+   "shot": "S00800",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 178,
+   "bottom": 1015,
+   "height_px": 838,
+   "pct_frame": 77.6,
+   "x_band": [
+    480,
+    800
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "검은 인물 — ±15px; 든 무기 제외"
+  },
+  {
+   "shot": "S00800",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 195,
+   "bottom": 1008,
+   "height_px": 814,
+   "pct_frame": 75.4,
+   "x_band": [
+    480,
+    800
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "±15px; 든 무기 제외"
+  },
+  {
+   "shot": "S00800",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 195,
+   "bottom": 1008,
+   "height_px": 814,
+   "pct_frame": 75.4,
+   "x_band": [
+    480,
+    800
+   ],
+   "duplicate_of_arm_b": true,
+   "note": "±15px; 든 무기 제외; arm b 와 픽셀 동일"
+  },
+  {
+   "shot": "S00800",
+   "arm": "a",
+   "figure": "SCP-049-2",
+   "top": 170,
+   "bottom": 1012,
+   "height_px": 843,
+   "pct_frame": 78.1,
+   "x_band": [
+    1150,
+    1420
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00800",
+   "arm": "b",
+   "figure": "SCP-049-2",
+   "top": 181,
+   "bottom": 978,
+   "height_px": 798,
+   "pct_frame": 73.9,
+   "x_band": [
+    1150,
+    1420
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00800",
+   "arm": "c",
+   "figure": "SCP-049-2",
+   "top": 181,
+   "bottom": 978,
+   "height_px": 798,
+   "pct_frame": 73.9,
+   "x_band": [
+    1150,
+    1420
+   ],
+   "duplicate_of_arm_b": true,
+   "note": "arm b 와 픽셀 동일"
+  },
+  {
+   "shot": "S00802",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 188,
+   "bottom": 1032,
+   "height_px": 845,
+   "pct_frame": 78.2,
+   "x_band": [
+    455,
+    750
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "검은 인물 — ±15px"
+  },
+  {
+   "shot": "S00802",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 163,
+   "bottom": 1042,
+   "height_px": 880,
+   "pct_frame": 81.5,
+   "x_band": [
+    455,
+    750
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "±15px"
+  },
+  {
+   "shot": "S00802",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 163,
+   "bottom": 1048,
+   "height_px": 886,
+   "pct_frame": 82.0,
+   "x_band": [
+    455,
+    750
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "±15px"
+  },
+  {
+   "shot": "S00802",
+   "arm": "a",
+   "figure": "SCP-049-2",
+   "top": 35,
+   "bottom": 1055,
+   "height_px": 1021,
+   "pct_frame": 94.5,
+   "x_band": [
+    1160,
+    1600
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00802",
+   "arm": "b",
+   "figure": "SCP-049-2",
+   "top": 25,
+   "bottom": 1030,
+   "height_px": 1006,
+   "pct_frame": 93.1,
+   "x_band": [
+    1160,
+    1600
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00802",
+   "arm": "c",
+   "figure": "SCP-049-2",
+   "top": 45,
+   "bottom": 1075,
+   "height_px": 1031,
+   "pct_frame": 95.5,
+   "x_band": [
+    1160,
+    1600
+   ],
+   "duplicate_of_arm_b": false,
+   "note": "발끝이 프레임 하단(1079)에 닿음 — 하한값"
+  },
+  {
+   "shot": "S00803",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 25,
+   "bottom": 1038,
+   "height_px": 1014,
+   "pct_frame": 93.9,
+   "x_band": [
+    820,
+    1130
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00803",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 53,
+   "bottom": 1042,
+   "height_px": 990,
+   "pct_frame": 91.7,
+   "x_band": [
+    820,
+    1130
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00803",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 63,
+   "bottom": 1045,
+   "height_px": 983,
+   "pct_frame": 91.0,
+   "x_band": [
+    820,
+    1130
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00904",
+   "arm": "a",
+   "figure": "SCP-049",
+   "top": 75,
+   "bottom": 945,
+   "height_px": 871,
+   "pct_frame": 80.6,
+   "x_band": [
+    1290,
+    1620
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00904",
+   "arm": "b",
+   "figure": "SCP-049",
+   "top": 100,
+   "bottom": 985,
+   "height_px": 886,
+   "pct_frame": 82.0,
+   "x_band": [
+    1290,
+    1620
+   ],
+   "duplicate_of_arm_b": false,
+   "note": ""
+  },
+  {
+   "shot": "S00904",
+   "arm": "c",
+   "figure": "SCP-049",
+   "top": 100,
+   "bottom": 985,
+   "height_px": 886,
+   "pct_frame": 82.0,
+   "x_band": [
+    1290,
+    1620
+   ],
+   "duplicate_of_arm_b": true,
+   "note": "arm b 와 픽셀 동일"
+  }
+ ]
+}
