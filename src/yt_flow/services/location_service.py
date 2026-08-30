@@ -16,6 +16,32 @@ from yt_flow.services.asset_service import AssetService
 
 logger = logging.getLogger(__name__)
 
+# The two person verdicts D1 filters on (`image._select_plate`). Both are asked twice —
+# once by the 2026-08-02 seeding labeler (`scripts/label_location_plates.py`, which writes
+# both into `source.label`) and once by the 2026-08-25 measurement (`measure_plates.py`,
+# `source.plate_meta`) — and BOTH have to arrive or the selector calls the plate unjudged.
+_PERSON_VERDICTS = ("has_person", "depicts_person")
+
+
+def _fold_verdict(*values: object) -> bool | None:
+    """Either curator saying "true" wins; anything that is not a ``bool`` is undecidable.
+
+    Two rules in one line, and both were review findings against the Story 14.8 selector:
+
+    * **OR, not "the newer one wins".** The two writers ask the same question of the same
+      pixels months apart. Letting a re-judgement quietly clear an earlier flag is how a
+      plate with a person in it comes back; reconciling a disagreement is the human queue's
+      job, not this merge's.
+    * **``None`` (undecidable) is not ``False``.** The manifest holds whatever JSON the
+      labeler emitted, unvalidated — an explicit ``null``, a ``0``/``1``, ``"no"``. Under
+      the old ``bool(...)`` fold every one of those read as "no person here" and sailed
+      through D1's ``is False``; a truthy non-bool read as "person here" and would reject a
+      whole key's pool, silently disabling substitution for that room. Non-bool means
+      nobody answered, and the honest reason for that is ``no_metadata``.
+    """
+    answered = [v for v in values if isinstance(v, bool)]
+    return (True in answered) if answered else None
+
 
 class LocationService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
@@ -78,20 +104,32 @@ class LocationService:
         * ``source.plate_meta`` — the 2026-08-25 measurement (``viewpoint``, ``y_h``,
           ``standing_room``, ``depicts_person``, …), written by
           ``14-1-approved-plate-sets/measure_plates.py``.
-        * ``source.label.has_person`` — the *seeding-time* labeler's verdict on a real
-          person standing in the room. It lives somewhere else in the entry and is a
-          different question from ``depicts_person`` (a person inside a picture), and
-          ``image._select_plate`` needs both: the plate path skips the Story 10.2/14.4
-          people-free guard entirely (it ``continue``s before the render), so a plate the
-          labeler already flagged is only kept off the screen by this seam carrying the
-          flag through.
+        * ``source.label`` — the *seeding-time* labeler's verdicts
+          (`scripts/label_location_plates.py`), which include **both** ``has_person`` (a
+          real body in the room) and ``depicts_person`` (a person inside a picture). They
+          are two different questions and ``image._select_plate`` needs both: the plate
+          path skips the Story 10.2/14.4 people-free guard entirely (it ``continue``s
+          before the render), so a plate a curator already flagged is only kept off the
+          screen by this seam carrying the flag through.
+
+        BOTH verdicts are folded, and 14.8's review is why: until then only ``has_person``
+        was merged, so a plate that had been labelled but never measured arrived carrying
+        half a verdict — and 14.8's selector requires both to be present, which made such a
+        plate permanently unassignable (``no_metadata``). The only other writer of
+        ``plate_meta.depicts_person`` is `14-1-approved-plate-sets/measure_plates.py`, the
+        very instrument this story retired, so "just re-measure it" is not a path. In the
+        other direction the labeler's ``depicts_person=true`` was being dropped on the
+        floor whenever the measurement said ``false``.
 
         A plate with no measurement carries **no ``viewpoint`` key at all** — not ``{}``,
-        not ``None``. The selector has to tell "never measured" (fail open, fall back to
-        generation) from "measured and unfit", and a null would collapse the two.
+        not ``None`` — and the same convention holds for an undecidable person verdict
+        (see ``_fold_verdict``). The selector has to tell "never judged" (fail open, fall
+        back to generation) from "judged and unfit", and a null would collapse the two.
 
-        ``variant`` and ``path`` are written LAST so no metadata key can shadow the two
-        the copy depends on.
+        ``location_key``, ``variant`` and ``path`` are written LAST so no metadata key can
+        shadow the three the selector and the copy depend on. ``location_key`` is there
+        because it is the MATCHING AXIS itself (Story 14.8): ``_select_plate`` re-checks
+        the equality on the pool it is handed rather than trusting the caller's lookup.
         """
         assets = self._manifest_assets()
         plates = []
@@ -102,14 +140,17 @@ class LocationService:
             meta = source.get("plate_meta")
             label = source.get("label")
             plate = dict(meta) if isinstance(meta, dict) else {}
-            if isinstance(label, dict) and "has_person" in label:
-                # OR, not "the newer one wins": the two writers are the 2026-08-02 seeding
-                # labeler and the 2026-08-25 measurement, asking the same question of the
-                # same pixels months apart. Either one saying "there is a person in this
-                # room" keeps the plate off a shot; reconciling a disagreement is the human
-                # queue's job, and letting a re-judgement quietly clear an earlier flag is
-                # how a plate with two guards in it would come back.
-                plate["has_person"] = bool(label["has_person"]) or bool(plate.get("has_person"))
+            label = label if isinstance(label, dict) else {}
+            for field in _PERSON_VERDICTS:
+                verdict = _fold_verdict(label.get(field), plate.get(field))
+                # Absent, never `None`: "nobody judged this" is expressed the same way the
+                # unmeasured `viewpoint` is, so the selector's `is not None` sentinel and
+                # this seam cannot drift apart.
+                if verdict is None:
+                    plate.pop(field, None)
+                else:
+                    plate[field] = verdict
+            plate["location_key"] = p.location_key
             plate["variant"] = p.variant
             plate["path"] = self._abs_asset_path(p.image_path)
             plates.append(plate)

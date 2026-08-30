@@ -160,7 +160,7 @@ def test_an_unmeasured_plate_has_no_viewpoint_key_at_all(svc, session, settings)
     _seed_plate(session, settings, variant="a", status="approved")
     (plate,) = svc.resolve_stock_plates("corridor")
     assert "viewpoint" not in plate
-    assert set(plate) == {"variant", "path"}
+    assert set(plate) == {"location_key", "variant", "path"}
 
 
 def test_metadata_can_never_shadow_variant_or_path(svc, session, settings):
@@ -185,13 +185,71 @@ def test_either_curator_saying_person_keeps_the_flag_true(svc, session, settings
     assert svc.resolve_stock_plates("corridor")[0]["has_person"] is True
 
 
+@pytest.mark.parametrize("field", ["has_person", "depicts_person"])
+@pytest.mark.parametrize("holder", ["label", "plate_meta"])
+def test_either_curator_saying_true_wins_for_both_person_verdicts(
+        svc, session, settings, field, holder):
+    """Story 14.8's review finding: only ``has_person`` was folded.
+
+    `scripts/label_location_plates.py` asks for and records BOTH verdicts, so the
+    labeler's ``depicts_person`` was being dropped on the floor whenever the measurement
+    disagreed. Same OR in both directions, for both fields."""
+    other = "plate_meta" if holder == "label" else "label"
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        holder: {field: True}, other: {field: False}})
+    assert svc.resolve_stock_plates("corridor")[0][field] is True
+
+
+def test_a_plate_with_only_the_labelers_verdicts_arrives_with_both_keys(
+        svc, session, settings):
+    """The failure H1 named, pinned end to end: a newly rendered -> labelled -> approved
+    plate has no ``plate_meta`` at all. `_select_plate`'s pool-entry gate needs BOTH
+    verdicts, so before the fold covered ``depicts_person`` such a plate carried half a
+    verdict and was permanently unassignable (``no_metadata``) — and the only other writer
+    of ``plate_meta.depicts_person`` is the measurement instrument 14.8 retired."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "label": {"has_person": False, "depicts_person": False, "quality": "good"}})
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert plate["has_person"] is False and plate["depicts_person"] is False
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", "no", [], {}])
+def test_an_unbooleanable_verdict_stays_undecidable_rather_than_becoming_no_person(
+        svc, session, settings, value):
+    """The manifest holds the labeler's raw JSON, unvalidated.
+
+    Under the old ``bool(...)`` fold an explicit ``null`` — or a ``0``/``"false"`` — read
+    as "no person here" and sailed straight through D1's ``is False``, and a truthy
+    non-bool (``1``, ``"no"``) read as "person here" and would reject a whole key's pool,
+    silently disabling substitution for that room. Neither is a verdict: the key is
+    ABSENT, which is the same shape an unmeasured ``viewpoint`` has and which the selector
+    reports honestly as ``no_metadata``."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "label": {"has_person": value}, "plate_meta": {"depicts_person": value}})
+    (plate,) = svc.resolve_stock_plates("corridor")
+    assert "has_person" not in plate and "depicts_person" not in plate
+
+
+def test_the_location_key_rides_the_plate_because_it_is_the_matching_axis(
+        svc, session, settings):
+    """Story 14.8's review: `_select_plate` re-checks the key on the pool it is handed
+    instead of trusting the caller's lookup, so the operand has to be on the dict."""
+    _seed_plate(session, settings, variant="a", status="approved")
+    _write_manifest(session=session, settings=settings, key="corridor/a", source={
+        "plate_meta": {"location_key": "server-room"}})  # metadata must not shadow it
+    assert svc.resolve_stock_plates("corridor")[0]["location_key"] == "corridor"
+
+
 @pytest.mark.parametrize("source", [None, "a string", [], {"plate_meta": None},
                                     {"plate_meta": "wat", "label": 7}])
 def test_a_malformed_source_block_degrades_to_unmeasured(svc, session, settings, source):
     _seed_plate(session, settings, variant="a", status="approved")
     _write_manifest(session=session, settings=settings, key="corridor/a", source=source)
     (plate,) = svc.resolve_stock_plates("corridor")
-    assert set(plate) == {"variant", "path"}
+    assert set(plate) == {"location_key", "variant", "path"}
 
 
 @pytest.mark.parametrize("manifest", [
@@ -210,7 +268,7 @@ def test_a_corrupt_manifest_falls_open_to_no_metadata_not_an_exception(
     _seed_plate(session, settings, variant="a", status="approved")
     AssetService(settings.assets_path, session).save_manifest(manifest)
     plates = svc.resolve_stock_plates("corridor")
-    assert [set(p) for p in plates] == [{"variant", "path"}]
+    assert [set(p) for p in plates] == [{"location_key", "variant", "path"}]
 
 
 def test_a_missing_manifest_file_is_not_an_error(svc, session, settings):
@@ -219,4 +277,4 @@ def test_a_missing_manifest_file_is_not_an_error(svc, session, settings):
     start depending on the file existing."""
     _seed_plate(session, settings, variant="a", status="approved")
     (settings_path(settings) / "manifest.json").unlink()
-    assert [set(p) for p in svc.resolve_stock_plates("corridor")] == [{"variant", "path"}]
+    assert [set(p) for p in svc.resolve_stock_plates("corridor")] == [{"location_key", "variant", "path"}]
