@@ -127,8 +127,9 @@ cast-bearing hits whose plate lacks standing_room=True: 0
   C1  cell coverage      : FAIL (5/10 cells)
   C2  affordance coverage: PASS
   C3  servable share >= 90%: FAIL (17/24 = 70.8%)
-  control reproduces 14.1's committed verdict {'c1_ok_cells': 5, 'c1_cells': 10,
-    'c2_pass': True, 'c3_hits': 17, 'c3_servable': 24} -> VALID
+  control check: VALID — reproduces {'c1_ok_cells': 5, 'c1_cells': 10, 'c2_pass': True,
+    'c3_hits': 17, 'c3_servable': 24} with preconditions {'approved_plates': 42,
+    'affordance_gate': False}
   shots the retired axis rejected as `no_viewpoint_match`: 7
     S00402 containment-chamber camera_angle=low-angle cast=1
     S00404 corridor            camera_angle=high-angle cast=0
@@ -137,12 +138,19 @@ cast-bearing hits whose plate lacks standing_room=True: 0
     S00803 containment-chamber camera_angle=low-angle cast=1
     S00902 observation-room    camera_angle=low-angle cast=1
     S00904 observation-room    camera_angle=high-angle cast=1
-  axis change: servable match 17 -> 24 (70.8% -> 100.0%), C4' cost 7 mismatched hit(s)
+  axis change: servable match 17 -> 24 (70.8% -> 100.0%), C4' cost 7 mismatched
+    + 0 unmeasured hit(s)
 ```
 
 **대조군의 유효성은 가정이 아니라 단언된다.** 앞선 반복은 커밋 메시지에 *"검사된다"*고 적었지만
 코드에는 검사가 없었다. 지금은 재생 실패 시 **exit 4로 죽고 델타를 인쇄하지 않는다** — 망가진
 대조군이 "17 → 24"를 증거로 내놓지 못하게.
+⚠️ **그 단언에 전제가 붙었다(14.8 리뷰).** `CONTROL_EXPECTED`는 **한 런 × 한 코퍼스 스냅샷**의
+판정인데 무조건 대조되고 있었다 — 다른 스레드를 재생하면 exit 4로 죽으며 멀쩡한 대조군을
+"망가졌다"고 보고했고, draft 5장 승인·라벨러 재실행·어포던스 노브 점등처럼 **입력이 정당하게
+바뀐** 경우도 같은 오진을 냈다. 이제 `CONTROL_RUN`(런)과 `CONTROL_PRECONDITIONS`(승인 42행,
+노브 OFF)를 함께 검사해 **"입력이 바뀜"과 "대조군이 망가짐"을 구별**하고, 전자는 `SKIPPED`로
+찍고 exit 0으로 계속 간다. 검사되지 않은 델타 줄에는 `[CONTROL UNCHECKED]`가 붙는다.
 
 **로더 동형성이 고쳐졌다(리뷰 지적 3).** 재생기는 `plate_meta.json` 단독으로 읽었고 거기엔
 `has_person`이 42/42 부재라, `entrance-checkpoint/b`(`label.has_person=true`, `approved`)가
@@ -167,8 +175,13 @@ cast-bearing hits whose plate lacks standing_room=True: 0
 failure path를 유지한다"*고 적었고, 그것은 **거짓**이었다. 모집단 대조 없이 사례 하나를 들어
 "경로가 있다"고 적은 것이 원인이다(`gotcha_closing-a-class-needs-a-population-sweep`).
 
-**그래서 (a)는 문자 그대로는 충족됐고 증거로는 거의 비어 있다.** 그럼에도 **24와 0.90은 한 글자도
-바꾸지 않았다** — 그 둘이 "기준을 낮추지 않았다"의 유일한 고정점이고, 공허성 표기는 기준을
+**그래서 (a)는 문자 그대로만 충족됐고 증거는 0이다 — 즉 (a)는 닫히지 않았다.**
+⚠️ **정정(14.8 리뷰)**: 앞선 판본과 `config.py` 주석은 여기서 (a)를 닫힌 것으로 적고 (b)를
+*"유일한 잔여 조건"*이라 불렀다. 그것은 **이 스토리가 스스로 VACUOUS로 표기한 기준 위에 세운
+결정**이고, 다음 스토리에 (b)만 채우면 되는 무임승차권을 준다. 반증 불가한 기준은 증거를 0으로
+싣는다는 것이 §7의 결론이므로, **(a)와 (b)는 둘 다 열려 있다** — (a)는 *실패할 수 있는* 기준을,
+(b)는 Jay의 시청 판정을 기다린다. 이 스토리가 출하한 것은 **축 교체**이지 커버리지 충족이 아니다.
+그럼에도 **24와 0.90은 한 글자도 바꾸지 않았다** — 그 둘이 "기준을 낮추지 않았다"의 유일한 고정점이고, 공허성 표기는 기준을
 약화하는 것이 아니라 그 기준이 실을 수 있는 **증거의 무게를 0으로 적는** 것이다. 발화 가능한
 새 기준을 지금 만들지도 않았다: 그것이야말로 결과를 본 뒤의 기준 신설이다.
 
@@ -176,7 +189,7 @@ failure path를 유지한다"*고 적었고, 그것은 **거짓**이었다. 모�
 
 ```
 -- C4' viewpoint mismatches among the hits (no threshold, disclosure only) --
-  7/24 assigned plates sit at a viewpoint the shot's camera_angle did not ask for
+  7/24 assigned plates sit at a MEASURED viewpoint the shot's camera_angle did not ask for
     S00402 camera_angle=low-angle  (wants LOW)  -> containment-chamber/b measured EYE
     S00404 camera_angle=high-angle (wants HIGH) -> corridor/c            measured EYE
     S00604 camera_angle=high-angle (wants HIGH) -> observation-room/b    measured EYE
@@ -184,7 +197,15 @@ failure path를 유지한다"*고 적었고, 그것은 **거짓**이었다. 모�
     S00803 camera_angle=low-angle  (wants LOW)  -> containment-chamber/b measured EYE
     S00902 camera_angle=low-angle  (wants LOW)  -> observation-room/c    measured EYE
     S00904 camera_angle=high-angle (wants HIGH) -> observation-room/c    measured EYE
+  0/24 assigned plates have NO viewpoint measurement (legal in the pool since 14.8;
+    not a mismatch, not a match)
 ```
+
+⚠️ **두 줄로 갈랐다(14.8 리뷰).** 14.8이 풀 진입 센티널을 `viewpoint`에서 사람 판정으로 옮긴
+순간부터 **측정 없는 플레이트가 풀에 합법적으로 들어올 수 있고**, 앞선 판본은 그런 행을
+`str(None) != "EYE"`로 **시점 불일치에 계상**했다. C4′는 이 스토리의 **유일한 정보성 숫자**이므로
+"안 쟀다"와 "쟀는데 다르다"를 섞으면 그 하나가 오염된다(사람의 조치도 다르다 — 재측정 대 수용).
+오늘 코퍼스에서는 42/42가 측정돼 있어 **미측정 0**이고, 그래서 7이라는 값은 바뀌지 않았다.
 
 **7/7이 옛 축이 `no_viewpoint_match`로 거절하던 바로 그 샷들이다**(고 4 + 저 3). 그중 **5샷이
 cast를 가진다**(S00402·S00702·S00803·S00902·S00904, 카드 합 6). `camera_angle`은 render-inert가
@@ -210,7 +231,8 @@ cast를 가진다**(S00402·S00702·S00803·S00902·S00904, 카드 합 6). `came
 
 | 단 | 옛 (14.1) | 새 (14.8) |
 |---|---|---|
-| 1 프레이밍 | `_ANGLE_VIEWPOINT.get(angle)` → 값 사용 | **멤버십만** — `angle not in _ANGLE_VIEWPOINT` |
+| 1 프레이밍 | `_ANGLE_VIEWPOINT.get(angle)` → 값 사용 | **`_SERVABLE_ANGLES` 멤버십** = `_CAMERA_ANGLES` − `_UNSERVABLE_ANGLES`. 리뷰 전에는 `angle not in _ANGLE_VIEWPOINT`였고, 그러면 새 `camera_angle`을 서빙하려면 **은퇴한 축의 맵에 EYE/LOW/HIGH를 발명**해야 했다 |
+| 1.5 매칭 축 | (호출자의 룩업) | **`p["location_key"] == shot["location_key"]`를 선택기 안에서 재확인** — 리뷰 전에는 축이 함수 밖 두 호출부에만 있었다 |
 | 2 풀 진입 | `"viewpoint" in p` (존재) | **사람 판정 존재** — `has_person`·`depicts_person` 둘 다 `is not None` |
 | 3 시점 정합 | `p["viewpoint"] == viewpoint` | **삭제** |
 | 4 D1 사람 | `not p.get(...)` (부재=통과) | **`is False` 둘 다** (부재=판정불가, 통과 아님) |
@@ -240,7 +262,7 @@ cast를 가진다**(S00402·S00702·S00803·S00902·S00904, 카드 합 6). `came
 
 | 상수 | 독자 | 처분 |
 |---|---|---|
-| `_ANGLE_VIEWPOINT` | ① `image._select_plate`(이제 **멤버십만**) ② `replay_coverage.py` — servable 분모 24 **및 C4′** ③ `test_image.py`의 `_CAMERA_ANGLES` 대조 핀 | **값까지 유지 + 값을 고정하는 테스트 신설.** 선택기가 값을 안 써도 C4′가 값을 쓴다 — 지우거나 조용히 바꾸면 **축 교체의 대가를 기록할 수단이 사라진다.** 리뷰가 "값이 어느 테스트에도 안 걸려 있다"를 지적했다 |
+| `_ANGLE_VIEWPOINT` | ① `image._select_plate` — **더 이상 안 읽는다**(리뷰 후 `_SERVABLE_ANGLES`로 분리; 값도 키도 안 본다) ② `replay_coverage.py` — servable 분모 24 **및 C4′** ③ `test_image.py`의 `_CAMERA_ANGLES` 대조 핀 | **값까지 유지 + 값을 고정하는 테스트 신설.** 선택기가 값을 안 써도 C4′가 값을 쓴다 — 지우거나 조용히 바꾸면 **축 교체의 대가를 기록할 수단이 사라진다.** 리뷰가 "값이 어느 테스트에도 안 걸려 있다"를 지적했다 |
 | `_UNSERVABLE_ANGLES` | ① 선택기 ② `test_image.py` | **무변** |
 | reason 어휘 | 아래 표 | 7 → **5** |
 
@@ -249,7 +271,11 @@ cast를 가진다**(S00402·S00702·S00803·S00902·S00904, 카드 합 6). `came
 T2가 이 행을 측정했고 앞선 반복은 **아무 조치도 하지 않았다.** 이번에는 결정을 적는다:
 **필터하지 않고, 경고도 달지 않는다.** 근거 — 그 라벨은 이 축의 2-경로 검정의 **경로 B**이고,
 그 검정은 **측정 전에 커밋된** 밴드 5.0%에 대해 1/42 = 2.4%로 PASS했다. 즉 **이 한 행이 곧 밴드가
-받아들인 불일치 그 자체**다. 결과를 보고 그 행만 런타임 하드 필터로 승격하는 것은 게이트를 자기
+받아들인 불일치 그 자체**다.
+⚠️ **밴드의 공시된 한계를 함께 싣는다**(`PREREGISTRATION.md` §0, 14.8 리뷰 지적): 5.0%는
+매니페스트 **필드 전수조사 뒤에** 적혔으므로 맹검이 아니고, 그래서 2.4%는 재현성의 **상한**이지
+하한이 아니다. 이 결정은 "재현성이 검증됐다"가 아니라 "오늘 반증되지 않았다" 위에 선다.
+결과를 보고 그 행만 런타임 하드 필터로 승격하는 것은 게이트를 자기
 결과로 다시 재단하는 것이고, 기준을 낮추는 것의 거울상이다. 대신 **보이는 상태로 둔다**:
 `verify_two_paths.py`가 매번 인쇄하고, 이 리포트 §3-3이 적고, `deferred-work.md`가 플레이트 승인
 큐 담당에게 넘긴다. 그 키는 run `4b35c0ed`에 수요가 없어 오늘 걸리는 것도 없다.
@@ -288,13 +314,26 @@ default")은 **정정 대상이 아니었다**: 기본값이 `False`로 남으�
   뒤집는 경우를 전제한 것이었다.
 - OFF 경로 테스트(플래그 게이팅 파라미터화, 리졸버 미호출)는 무변경으로 통과한다.
 
+### 5.7 리뷰 패스 2에서 고친 것 (2026-08-30, 코드)
+
+이번 스토리가 만든 결함 셋과 승계 결함 둘. 전부 렌더 0·VLM 0으로 고쳤고 커버리지 수치는
+바뀌지 않았다(재생 출력 diff = C4′ 문구 2줄 + 대조군 문구 1줄).
+
+| # | 무엇 | 왜 이 스토리의 결함인가 | 조치 |
+|---|---|---|---|
+| H1 | `resolve_stock_plates`가 `label.depicts_person`을 **버리고 있었다** | 14.8이 풀 진입 게이트를 **두 판정 모두 필요**로 바꾼 순간, 라벨만 달린 새 플레이트가 "반쪽 판정"이 되어 **영구히 배정 불가**(`no_metadata`)가 된다. `plate_meta.depicts_person`의 유일한 writer는 이 스토리가 은퇴시킨 `measure_plates.py`(VLM 84콜)라 "재측정하면 된다"는 길이 아니다. 반대 방향으로는 라벨러의 `true`가 조용히 무시됐다 | 두 판정을 **같은 규칙으로** 접는다(어느 큐레이터든 true면 true, 나중 판정이 앞선 플래그를 못 지운다). 양방향 + "라벨만 있는 플레이트가 **두 키를 다 갖고** 도착한다"를 테스트로 고정 |
+| M6/M7 | 명시적 `null`·비-bool(`0`/`1`/`"false"`)이 `bool()`을 지나 **"사람 없음"**이 됐다 | 판정불가를 `False`로 접으면 `is False` 센티널이 그것을 통과시킨다 — 이 스토리가 D1에 도입한 규약("부재=판정불가")의 정반대. 반대로 truthy 비-bool은 **키 전체 풀을 기각**해 그 방의 치환을 조용히 끈다 | `_fold_verdict`: bool이 아니면 **판정불가**(키 삭제). 7값 파라미터화 테스트 |
+| M3 | **매칭 축이 순수 함수 밖으로 빠져나가 있었다** | `_select_plate`에 키 비교가 한 줄도 없어서 축은 두 호출부(`resolve_stock_plates(key)` / `plates[key]`)의 성질이었고, 그래서 `replay_coverage.py` 상단의 *"아무것도 재구현하지 않는다 — 선택기가 바뀌면 이 숫자도 바뀐다"*가 **거짓**이었다(축을 바꿔도 이 숫자는 안 움직였을 것) | `location_key`를 플레이트 dict에 실어 보내고 선택기가 **자기 안에서** 동등성을 재확인. 불일치 풀·혼합 풀 테스트 |
+| M4 | 서빙 가능 여부가 **은퇴한 축의 어휘**로 판정됐다 | `angle not in _ANGLE_VIEWPOINT`였으므로, 새 `camera_angle`을 서빙하려면 선택기가 더는 읽지도 않는 맵에 EYE/LOW/HIGH를 **발명**해야 했다 | `_SERVABLE_ANGLES = _CAMERA_ANGLES − _UNSERVABLE_ANGLES`. `_ANGLE_VIEWPOINT`의 **값은 그대로 유지**(C4′가 쓴다)하고 값 핀 테스트도 유지 |
+| M5 | `no_metadata`의 **문서가 코드와 반대**였다 | `domain/state.py`는 *"EITHER 큐레이터"*라 적었는데 게이트는 **둘 다**를 요구한다(이 스토리 자신의 `test_d1_half_a_verdict_is_not_a_verdict`가 증명). `domain/warnings.py`는 사유는 바꿔 놓고 처방(*"가진 플레이트를 측정하라"*)은 옛 축의 것을 남겼다 | 둘 다 정정. **이름 `no_metadata`는 유지** — 뜻("이 선택기가 필요로 하는 메타데이터가 없다")이 여전히 정확하고, reason 문자열은 끝난 런의 경고에 **이미 기록돼 있어** 이름을 바꾸면 디스크 위의 기록이 달라진다 |
+
 ---
 
 ## 6. 플래그 — **켜지 않았다.** 코드 기본값 `False` 유지, `DECISIONS` 행 없음
 
 `config.py`의 판정 주석에 날짜 붙은 기록만 넣었다(정본은 주석, 규약은 CLAUDE.md):
-축이 ②로 교체됐다는 것 / (a)가 **어떤 기준 위에서** 충족됐고 그 셋이 **전부 반증 불가**라는 것 /
-남은 것은 (b) 하나이며 **E2E는 env 오버라이드로 돌린다**는 것.
+축이 ②로 교체됐다는 것 / 대체 기준 셋이 **전부 반증 불가라 증거를 0으로 싣는다**는 것 /
+따라서 **(a)와 (b)가 둘 다 열려 있다**는 것 / **E2E는 env 오버라이드로 돌린다**는 것.
 
 ```
 uv run python scripts/report_decision_drift.py   # exit 0
@@ -358,7 +397,12 @@ GPU 여유가 아니다) · 14.9가 in-review이므로 같은 런 선점 여부 
 6. **`medical-bay/b`는 단일 소실점이 존재하지 않는다** — 축과 무관한 **플레이트 품질 결함**.
 7. **플레이트 경로에 런타임 사람 가드가 없다** — 켜는 것은 가드를 얻는 게 아니라 런타임 가드를
    승인 게이트로 **갈아타는** 것이다.
-8. **프롬프트 층 도달 43/43 → 12/43**(14.5 인계).
+8. **프롬프트 층 도달 43/43 → 19/43**(14.5 인계). ⚠️ **정정(14.8 리뷰)**: 앞선 판본은
+   **12/43**이라 적었고 그 12를 *"방이 있는 샷"*이라고 설명했는데 **둘 다 틀렸다.** 유도 —
+   43샷 − 플레이트를 받는 24샷(`replay_coverage.py`의 `match`) = **19샷**이 여전히
+   `image_prompt`로 렌더된다. 그 19 = `location_key` **부재 12** + `unservable_framing` **7**
+   (close-up 6 + POV 1; 플레이트가 서빙 못 하므로 프롬프트를 그대로 쓴다). **12는 "방이 있는"이
+   아니라 "방이 없는" 샷의 수**이고, 도달 범위가 아니라 그 부분집합이다.
 9. **14.2 노브 미동반 · 증설 draft 5장 미승인** — 축 ②가 요구하지 않는다.
 
 ---

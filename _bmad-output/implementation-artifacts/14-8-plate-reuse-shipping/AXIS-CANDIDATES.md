@@ -109,9 +109,18 @@
 그것이 실제로 일어나는 키는 **`autopsy-room` 하나**다:
 
 - `autopsy-room/b`는 측정 **HIGH**(`y_h` 0.38, `viewpoint_verdicts.csv`)이고 `autopsy-room`은
-  **EYE로만** 수요가 있다(3샷, 전부 cast). 옛 축에서 그 셀의 풀은 **2장**이었다
-  (`replay_coverage.py 4b35c0ed`: `autopsy-room EYE … C1=OK (2 plate(s))`). ②에서는 **3장**이 되고,
-  `S00600`·`S00602`·`S00603`(오늘 전부 `autopsy-room/c`)이 **부감 플레이트를 받을 수 있게 된다.**
+  **EYE로만** 수요가 있다(3샷, 전부 cast). 옛 축에서 그 `(autopsy-room, EYE)` 셀의 풀은
+  **2장**(`/a`·`/c`)이었다 — 재산출: `plate_meta.json`의 `autopsy-room/{a,b,c}` 3행 중
+  `viewpoint == "EYE"`가 둘, `"HIGH"`가 하나(`viewpoint_verdicts.csv` 같은 행). ②에서는
+  **3장**이 되고, 이는 `replay_coverage.py 4b35c0ed`가 `autopsy-room … C1'=OK  (3 plate(s))`로
+  찍는 수와 같다. 그래서 `S00600`·`S00602`·`S00603`(오늘 전부 `autopsy-room/c`)이 **부감
+  플레이트를 받을 수 있게 된다.**
+  ⚠️ **인용 정정(14.8 리뷰).** 이 줄은 처음에 `replay_coverage.py`가
+  `autopsy-room EYE … C1=OK (2 plate(s))`를 찍는다고 인용했는데 **그런 출력은 존재하지 않는다** —
+  현행 스크립트는 C1′를 키 단위로만 찍고 옛 축은 CONTROL 블록에서 셀 **개수**만 낸다(셀별 풀
+  크기는 인쇄하지 않는다). 이 문서 자신의 규칙("인용 없는 수치는 그 행을 실격시킨다")에 따라
+  **커밋된 파일 행**(`plate_meta.json`)과 **스크립트가 실제로 찍는 줄**로 다시 세웠다. 결론은
+  바뀌지 않았다: 2 → 3.
 - 나머지 5개 수요 키(containment-chamber · control-room · corridor · medical-bay ·
   observation-room)는 승인 3장이 전부 EYE라 풀 크기가 3 → 3으로 그대로다.
 - 코퍼스의 나머지 HIGH 3장(facility-exterior/a · maintenance-tunnel/b · server-room/b)과

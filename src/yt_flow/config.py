@@ -332,8 +332,8 @@ class Settings(BaseSettings):
     #   (a) measured coverage clears the pre-registered bar. 14.1's C1/C2/C3
     #       (`14-1-approved-plate-sets/PREREGISTRATION.md` §5) measured C1 FAIL 5/10
     #       cells and C3 FAIL 17/24 = 70.8% on 2026-08-25. See the 2026-08-30 record
-    #       below: the bar was REPLACED, the replacement was met, and all three of the
-    #       replacement criteria are VACUOUS.
+    #       below: the bar was REPLACED, the replacement was met in the letter, and all
+    #       three replacement criteria are VACUOUS — so (a) is still OPEN, not closed.
     #   (b) Jay's viewing verdict on an E2E iteration run with substitution ON.
     #       Precedent is unanimous (10.1c, 10.5, 10.1e, 14.2): a visual default
     #       does not flip before a human has watched frames.
@@ -367,7 +367,7 @@ class Settings(BaseSettings):
     #     (c) tolerance", exactly one passed: `location_key` alone, whose (b) is 0 because
     #     it DELETES the measurement (a closed 14-value enum compared by string equality),
     #     not because it fixes one. `14-8-plate-reuse-shipping/AXIS-CANDIDATES.md`.
-    #   * WHAT (a) NOW RESTS ON, AND WHY THAT IS THIN. Against the bars pre-registered
+    #   * WHAT (a) NOW RESTS ON — NOTHING, AND SO (a) STAYS OPEN. Against the bars pre-registered
     #     before the measurement (`14-8-plate-reuse-shipping/PREREGISTRATION.md` §3,
     #     commit `d797a8a`): C1' key coverage PASS 6/6, C2' affordance coverage PASS,
     #     C3' servable share PASS 24/24 = 100.0%, against the retired axis's 17/24 = 70.8%
@@ -382,15 +382,22 @@ class Settings(BaseSettings):
     #     cannot change a runtime assignment at all. C3' then follows from C1'
     #     algebraically. An EARLIER PASS OF THIS STORY PRINTED THE OPPOSITE HERE — that
     #     "C1'/C2' retain live failure paths" — and it was false; the sweep is what caught
-    #     it. So (a) is met in the letter and carries little evidence: what the axis
-    #     change actually did is C4', below.
+    #     it. A criterion that cannot fail carries ZERO evidence, so (a) IS NOT MET: what
+    #     14.8 shipped is the AXIS REPLACEMENT, and its coverage bar is a bar only in
+    #     name. An earlier pass of this comment called (a) closed and (b) "the one
+    #     remaining condition" — that is a decision resting on a criterion this same story
+    #     labelled VACUOUS, and it would hand the next story a free pass. Closing (a)
+    #     needs a criterion that CAN fail, which needs a different corpus (a run whose
+    #     demanded keys are wider, or where the D1 exclusion actually bites);
+    #     PREREGISTRATION §7.3 puts designing one outside this story on purpose, because
+    #     designing it now would be writing a bar after seeing the result.
     #   * WHAT IT COSTS, measured, and NOT vacuous: C4' = 7 of 24 assigned plates sit at a
     #     viewpoint the shot's `camera_angle` did not ask for (4 high-angle, 3 low-angle;
     #     5 carry cast, 6 cards). `camera_angle` is NOT render-inert —
     #     `character_service.py:1556` feeds it to `_select_entity_angles` — so those get a
     #     high/low-angle CARD on an eye-level PLATE. That is a viewing question, not a
     #     coverage number, which is why it has no threshold and must appear in the report.
-    #   * (b) IS THE ONE REMAINING CONDITION and it is NOT met: Jay's viewing verdict on an
+    #   * BOTH (a) AND (b) REMAIN OPEN. (b) is Jay's viewing verdict on an
     #     E2E iteration run with substitution ON. That run does NOT require flipping this
     #     line — `Settings` reads `env_prefix="YTFLOW_"` (see the top of this class), so
     #     `YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true` turns it on for that one run and
@@ -401,9 +408,15 @@ class Settings(BaseSettings):
     #     전부 충족돼도 (b) 없이는 켜지 않는다").
     #   * The SECOND blocker named at the top of this comment — `image_prompt` discarded,
     #     no semantic match — is still unsolved and is not a gate. When this does turn on,
-    #     the prompt layer's reach on run 4b35c0ed drops from 43/43 shots to 12/43; every
-    #     later prompt measurement has to state that denominator (14.5 handover,
-    #     `deferred-work.md`).
+    #     the prompt layer's reach on run 4b35c0ed drops from 43/43 shots to **19/43**;
+    #     every later prompt measurement has to state that denominator (14.5 handover,
+    #     `deferred-work.md`). DERIVATION, inline because the wrong number stood here:
+    #     43 shots - 24 that take a plate (`replay_coverage.py`'s `match`) = 19 still
+    #     rendered from `image_prompt` — 12 with no `location_key` at all PLUS 7
+    #     `unservable_framing` (close-up 6 + POV 1), which keep their prompt precisely
+    #     because no plate can serve them. **12 is the no-key count, not the reach**, and
+    #     it is emphatically not "the shots that have a room" — it is the shots that
+    #     have none.
     # No `.env` / `.env.example` pin, and NO `DECISIONS` row — there is still no
     # dated *promotion* verdict, only a dated statement of what promotion requires
     # (see the "NO DATE, so no row" note further down; it stands).
