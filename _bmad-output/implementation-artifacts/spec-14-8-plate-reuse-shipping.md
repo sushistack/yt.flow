@@ -3,7 +3,7 @@ title: 'Story 14.8: 배경 플레이트 재활용을 출하한다 — 판정 가
 type: 'feature'
 created: '2026-08-30'
 baseline_revision: '3218ab2'
-final_revision: 'acd3cda'
+final_revision: 'a7912ae'
 status: 'blocked' # draft | ready-for-dev | in-progress | in-review | done | blocked
 review_loop_iteration: 1
 followup_review_recommended: true
