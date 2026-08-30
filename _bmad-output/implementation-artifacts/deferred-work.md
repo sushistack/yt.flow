@@ -939,3 +939,43 @@ Edge-case review surfaced several pre-existing (not caused by this diff) guard-c
 - source_spec: `_bmad-output/implementation-artifacts/spec-14-3-art-style-contract.md`
   summary: 14.3이 `recompose_stats`에 적용한 **try 밖 호이스팅**(늦은 실패에도 실제 숫자가 트레이스에 남도록)이 `relight_stats`·`renderer_counts`·`composite_harmonization_tier`에는 **적용되지 않았다** — 셋 다 여전히 `video.py`의 `try` 안에서 초기화된다.
   evidence: `video.py:2733` 부근에서 `relight_stats = {"computed": 0, "failed": 0}`, `renderer_counts: dict[str, int] = {}`가 `try` 블록 안에 선언된다. tier 3 런에서 리라이트가 끝난 뒤 컴포지팅 중 ffmpeg가 죽으면 에러 span은 `relit_pairs_computed=0`을 보고하는데, 이는 "리라이트가 아예 안 돌았다"와 구별되지 않는다 — recompose 호이스팅이 없앤 바로 그 "돌긴 돌았나?" 모호성이다. 14.3 이전부터 있던 8.7 계열 코드이고 이번 리뷰에서 드러났을 뿐이라 이 스토리의 리뷰 패치 범위 밖으로 둔다. 고치는 형태는 recompose와 동일하다(세 변수를 `try` 앞으로 올리고 예외 경로의 `_record_trace`에 실어 보낸다). 재개 조건: tier 3가 실제로 켜지는 스토리, 또는 `video_node` 트레이스를 손대는 다음 작업.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **리서치 게이트의 심사 형식 `(b) 재현 오차 < (c) 허용 폭`이 결과를 일부 결정했다** — 그 형식은 **측정을 삭제하는 후보를 구조적으로 통과시키고 측정을 시도하는 후보를 구조적으로 탈락시킨다.** 방법론 소견으로 등재하고 다음 게이트 설계자에게 넘긴다.
+  evidence: 채택된 축 ②의 (b)=0은 `location_key`를 문자열로 비교해서 얻은 값이고, 재현 오차가 0인 이유는 **잴 것이 없기 때문**이다(`AXIS-CANDIDATES.md` ② — "①은 측정을 고정해 0을 만들고 ②는 측정을 없애서 0을 만든다"). 반대로 ①(결정론적 기하 추정기)과 ④(연속값 거리)는 **재려고 했기 때문에** (b)가 커졌고 그 값으로 떨어졌다. ③은 (c)가 정의되지 않아 떨어졌는데, 그것도 스코어러가 없다는 뜻이지 축이 나쁘다는 뜻이 아니다. 즉 이 게이트에서 통과 확률은 "축이 좋은가"보다 "축이 무엇을 측정하는가"에 더 민감하다. **②를 기각할 근거는 아니다** — 다른 셋은 각자의 이유로도 떨어졌고, 은퇴한 축이 실패한 방식이 정확히 재현 오차였으므로 이 기준을 고른 것 자체는 정당하다. 고치지 않은 이유: 이 스토리 안에서 기준을 바꾸면 그것이 곧 결과를 본 뒤의 기준 변경이다. 재개 조건: 다음 리서치 게이트를 설계하는 스토리 — 그때 "측정을 삭제하는 후보에는 별도의 대가 공시를 의무화한다"(이 스토리의 C4′가 그 원형이다) 같은 형태를 검토한다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **날짜 붙은 결정 둘이 서로를 무효화하는데 그 충돌을 보고하는 계기가 없다** — 14.4의 `background_person_guard_attempts=2`(2026-08-22)는 플레이트가 서빙한 모든 샷에서 커버리지를 잃는다.
+  evidence: `image.py`의 플레이트 히트 경로가 파일 복사 뒤 `continue`로 배경 인물 가드 앞을 빠져나간다. 치환이 켜지면 run `4b35c0ed` 기준 **24샷**이 그 경로로 가고 그 24샷의 사람-유무는 D1(승인 시점 라벨) 하나에만 걸린다. 14.4는 "가드를 2로 켠다"를 날짜와 함께 결정했고 14.8은 "플레이트를 쓴다"를 날짜와 함께 기록했는데, **둘이 동시에 참일 수 없는 샷이 24개**다. `scripts/report_decision_drift.py`는 이 부류를 못 잡는다 — 그것은 필드별 값이 결정값과 같은지만 보고 **한 결정이 다른 결정의 적용 범위를 잘라내는 것**은 축이 아니다. 고치지 않은 이유: 계기를 새로 만드는 것은 이 스토리 범위 밖이고, 올바른 형태(드리프트 리포터에 "적용 범위" 축을 추가할지, 아니면 플레이트 경로에도 가드를 태울지)가 미정이다. 재개 조건: 플래그가 실제로 켜지는 시점(E2E iteration 5 이후) — 그때 24샷의 사람-인-배경 발생률을 자유생성 19샷과 나눠 세면 어느 쪽이 옳은지가 데이터로 갈린다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **`LocationService._manifest_assets`의 fail-open이 이제 치환 경로 위에 앉았다** — 매니페스트 하나가 깨지면 전 샷이 샷별 경고만 남기고 생성으로 되돌아가고, **집계 신호가 없다.**
+  evidence: `_manifest_assets`는 매니페스트 읽기 실패를 `logger.warning` 후 `{}` 반환으로 삼킨다(문서화된 의도적 fail-open). 그 결과 모든 플레이트가 메타데이터 없이 조립되고, 14.8의 새 풀 진입 게이트에서 전부 `no_metadata`가 되어 **31샷 전부가 `stock_plate_unfit` 경고 하나씩을 달고 생성으로 간다.** 런은 죽지 않고 산출물도 나오지만, "이 런은 승인 플레이트를 한 장도 못 썼다"를 말해 주는 **단일 집계 라인이 없다** — 경고 31건이 샷별로 흩어지고 `cap_samples`가 12행으로 자른다. 이것은 축 교체가 만든 결함이 아니라(fail-open은 8.5부터 있었다) **치환이 켜지면 처음으로 하중을 받는** 경로다. 고치지 않은 이유: 올바른 형태는 `image_node`의 트레이스에 `stock_plate_count`와 나란히 "폴백 사유별 분포"를 싣는 것인데, 그 계기는 E2E iteration 5가 실제로 요구할 형태를 본 뒤 만드는 것이 싸다. 재개 조건: E2E iteration 5의 산출물 정리 — 그 리포트가 사유별 분포를 필요로 한다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **D1 사람 배제의 OR이 피연산자 하나로 돌고 있다** — `plate_meta.has_person`이 **42/42 부재**, `label.depicts_person`이 **42/42 부재**. 축의 2-경로 검증에서 P2·P3가 `UNDEFINED (0 comparable rows)`로 찍혔고 사전등록 규칙 U에 따라 **PASS로 계상되지 않았다.**
+  evidence: `uv run python .../14-8-plate-reuse-shipping/verify_two_paths.py` — P2 `comparable 0/42`, P3 `comparable 0/42`. spec의 Design Notes는 `location_service.py:105-112`의 `has_person` OR을 *"두 큐레이터가 갈린다는 인정"*으로 인용하며 2-경로 입력으로 쓰라고 했는데, **이 코퍼스에서 그 전제가 성립하지 않는다**(갈릴 두 값이 없다). 실질적 귀결: 빠진 피연산자가 채워지면 수요 키의 후보 풀은 **줄어들 수만 있고 늘 수 없으므로 오늘의 C1′ PASS는 상한이다.** 채우는 비용은 `14-1-approved-plate-sets/measure_plates.py --commit` 재실행 = VLM **84콜**이고, 14.1 이후 한 번도 실행되지 않았다. 재개 조건: 플레이트 코퍼스를 증설·재라벨하는 다음 스토리, 또는 D1이 실제로 한 장이라도 거절하는 것이 관측될 때.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **`label.decision == "draft"`인 플레이트 14/42가 DB에서는 `status="approved"`이고, 어느 C-규칙도 그 필드를 읽지 않는다.** 그중 둘이 run `4b35c0ed` 재생에서 **5샷에 배정된다.**
+  evidence: 매니페스트 `source.label.decision` 대 `location_plates.status` 대조 — draft 14장 중 수요 키에 있는 것이 `medical-bay/a`·`medical-bay/c`·`observation-room/b` 셋이고, `replay_coverage.py 4b35c0ed`에서 **`medical-bay/c`가 S00700·S00701·S00702·S00703 네 샷**(옛 축에서는 셋이었고 S00702는 `no_viewpoint_match`였다 — 축 교체가 한 샷을 더 얹었다)에, **`observation-room/b`가 S00604** 한 샷에 배정된다. 합 **5샷**. 즉 **자동 라벨러가 draft로 남긴 플레이트가 화면에 나간다.** 선택기·C-규칙 어느 쪽도 `decision`을 술어로 쓰지 않으며, 14.8은 이것을 **자산 승격 판단**으로 보고 범위 밖에 뒀다(spec Block If: 승인 42장의 라벨을 바꿔야 결론이 서면 HALT). 재개 조건: 플레이트 승인 큐를 사람이 도는 스토리 — 그때 draft 14장을 승인/기각으로 닫거나 `decision`을 D0 술어로 승격할지 결정한다.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **`interview-room/b`는 `label.matches_location=false`인데 `reason="match"`로 배정 가능하다** — 14.8은 **필터도 경고도 달지 않기로 명시 결정**했고, 그 결정이 옳은지는 플레이트 승인 큐가 판정한다.
+  evidence: `verify_two_paths.py`의 P1이 이 행을 유일한 불일치로 찍는다(구조 경로 `interview-room` ↔ 8.17 라벨러 `matches_location=False`). **필터하지 않은 이유**: 그 라벨은 축의 2-경로 검정의 **경로 B**이고, 그 검정은 측정 전에 커밋된 밴드 5.0%에 대해 1/42 = 2.4%로 PASS했다 — **이 한 행이 곧 밴드가 받아들인 불일치 그 자체**다. 결과를 보고 그 행만 런타임 하드 필터로 승격하면 게이트를 자기 결과로 재단하는 것이고, 기준을 낮추는 것의 거울상이다. 경고도 달지 않은 이유: `run_warnings`는 샷 단위 사건을 기록하는 채널이고 이것은 **자산 라벨의 상태**라 매 런 31샷에 같은 문장을 흘리게 된다. 오늘 걸리는 것은 없다 — `interview-room`은 run `4b35c0ed`의 수요 키가 아니다. 재개 조건: `interview-room`을 요구하는 시나리오가 나오거나, 플레이트 승인 큐 스토리가 `matches_location`을 승인 술어로 승격할 때.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **`medical-bay/b`에는 단일 소실점이 존재하지 않는다** — 시점 라벨과 무관한 **플레이트 품질 결함**이고, 축 교체로 사라지지 않는다.
+  evidence: `REREAD-2026-08-30.md:41-50` — 수동 선쌍이 376~810px로 흩어지고 매트리스 선쌍이 기하학적으로 불가능한 곳에서 만난다. 임시 기하 추정기는 같은 이미지에 에지 임계 3설정으로 `y_h` **0.93 / 0.97 / 0.41**을 냈다(`:43`). 새 축(②)은 `viewpoint`를 읽지 않으므로 이 플레이트의 라벨 오류는 배정에 영향을 주지 않지만, **플레이트 자체가 원근이 깨진 이미지라는 사실은 그대로다** — 그 위에 카드를 합성하면 접지·척도가 어긋날 개연이 있다. 이 스토리는 픽셀·라벨을 건드리지 않았다(Block If). 재개 조건: `medical-bay`가 시청 판정에서 지목되거나, 플레이트 재렌더 배치가 서는 스토리.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **플레이트 경로는 10.2/14.4 런타임 사람 가드를 건너뛴다.** 치환을 켜는 것은 가드를 **하나 더 얻는 것이 아니라 런타임 가드를 승인 게이트로 갈아타는 것**이다.
+  evidence: 플레이트 히트 경로가 `continue`로 배경 인물 가드 앞을 빠져나간다(`image.py`). 플래그 ON이면 `location_key` 보유 31/43 샷 중 24샷이 이 경로로 가고, 그 24샷의 사람-유무는 **D1(승인 시점 라벨)** 하나에만 걸린다 — 그리고 그 D1은 위 항목대로 오늘 피연산자 하나로 돈다. 반대로 자유생성으로 남는 19샷은 여전히 런타임 가드를 받는다. 즉 **켜는 것이 사람-인-배경 리스크를 줄이는지 늘리는지는 이 스토리가 측정하지 않았다** — `S00201`(액자 속 인물, 14.4(b)가 감수로 기록한 리스크의 실현)은 자유생성 샷이었으므로 방향은 개선 쪽으로 기대되나 **증거는 없다.** 재개 조건: E2E iteration 5의 프레임에서 두 경로의 사람-인-배경 발생률을 각각 세는 것.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **치환을 켜면 프롬프트 층의 도달 범위가 43/43 → 12/43으로 준다.** 이후 모든 프롬프트 측정은 그 분모를 명시해야 한다(14.5 인계의 실현). ⚠️ 플래그는 아직 `False`이므로 **오늘은 잠재적**이고, E2E iteration 5의 env 오버라이드 런에서 처음 실현된다.
+  evidence: `replay_coverage.py 4b35c0ed` — 31샷이 `location_key`를 갖고 그중 **24샷이 `match`**로 플레이트를 복사한다(`image_prompt`를 생성에 쓰지 않는다). 남는 19샷 중 7은 `unservable_framing`(close-up 6 + POV 1, 설계상 영구 폴백)이고 12는 `location_key` 부재다. 프롬프트 편집이 픽셀에 닿는 샷은 **19/43**이고, 그중 프롬프트 층이 실제로 겨냥해 온 "방이 있는" 샷은 **12/43**이다. 14.5·14.9처럼 프롬프트 문구 변경의 효과를 재는 스토리는 이 분모를 안 적으면 **효과 크기를 2~3배 과대평가한다.** 재개 조건: 다음 프롬프트 측정 스토리 착수 시점, 또는 플래그가 켜지는 시점 중 빠른 쪽.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-14-8-plate-reuse-shipping.md`
+  summary: **`plate_affordance_gate_enabled`는 동반 점등하지 않았고, 증설 draft 5장도 승인하지 않았다** — 둘 다 이 스토리가 요구하지 않았고 각자 별개의 선행 조건이 있다.
+  evidence: 노브는 `config.py`에서 `False` 유지 — 14.2가 남긴 **33-pair 사람 판정**이 선행이고, 노브가 꺼진 상태에서 D2는 발화하지 않으므로 `replay_coverage.py`의 `cast-bearing hits whose plate lacks standing_room=True: 0`이 "노브가 이 재생을 바꾸지 않는다"를 보인다(그리고 그 사실이 C2′를 이중으로 공허하게 만든다 — `PREREGISTRATION.md` §7.2). 증설 5장(`containment-chamber/e`·`corridor/d`·`medical-bay/d`·`observation-room/{d,e}`)은 `assets/locations/`에 draft로 남았다 — **축 ②는 그것들을 요구하지 않는다**(C1′ 6/6이 기존 42장으로 충족). 20렌더 중 목표 범주 도달 2/20이었으므로 시점 증설 자체가 유효한 수단인지도 미확정이다. 재개 조건: (노브) 14.2의 33-pair 판정이 돌아올 때, (5장) 시점을 술어로 쓰는 축이 다시 채택될 때 — 오늘은 그럴 축이 없다.

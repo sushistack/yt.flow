@@ -305,9 +305,13 @@ class Settings(BaseSettings):
     # substitution discards the shot's image_prompt entirely and is keyed on
     # scene_num, so every shot of a scene gets ONE identical background —
     # measured run-wide collapse from 155 distinct backgrounds to 41 (85% of
-    # shots; scene 5's containment chamber went 21 shots -> 1 image). Stays off
-    # until a plate-vs-prompt reconciliation story makes plate reuse per-shot and
-    # prompt-aware. ON reproduces 8.17 behaviour exactly.
+    # shots; scene 5's containment chamber went 21 shots -> 1 image). ON reproduced
+    # 8.17 behaviour exactly UNTIL Story 14.1 — the sentence that used to stand here
+    # ("stays off until a plate-vs-prompt reconciliation story makes plate reuse
+    # per-shot and prompt-aware") is retired as of 2026-08-30: 14.1 made the reuse
+    # per-shot and 14.8 replaced its matching axis, while the prompt-aware half was
+    # never a condition of this flag at all (see (a)/(b) below, which are). The
+    # discarded `image_prompt` remains a declared, accepted risk, not a gate.
     #
     # 2026-08-25, STORY 14.1: THE FRAMING HALF OF THE BLOCKER IS GONE, THE FLAG
     # STAYS `False`. This comment named two blockers — scene keying AND the
@@ -325,10 +329,11 @@ class Settings(BaseSettings):
     # line says assignment is decided by "`image_prompt`/`location_key`와의 정합" —
     # half of that is aspiration, not code.) Two conditions remain to turn this on,
     # and they are AND, not OR:
-    #   (a) measured coverage clears the pre-registered bar
-    #       (`14-1-approved-plate-sets/PREREGISTRATION.md` §5, C1/C2/C3) — as
-    #       measured on 2026-08-25 it does NOT; see that story's report.md for the
-    #       shortfall enumerated per (location_key, viewpoint) cell.
+    #   (a) measured coverage clears the pre-registered bar. 14.1's C1/C2/C3
+    #       (`14-1-approved-plate-sets/PREREGISTRATION.md` §5) measured C1 FAIL 5/10
+    #       cells and C3 FAIL 17/24 = 70.8% on 2026-08-25. See the 2026-08-30 record
+    #       below: the bar was REPLACED, the replacement was met, and all three of the
+    #       replacement criteria are VACUOUS.
     #   (b) Jay's viewing verdict on an E2E iteration run with substitution ON.
     #       Precedent is unanimous (10.1c, 10.5, 10.1e, 14.2): a visual default
     #       does not flip before a human has watched frames.
@@ -352,6 +357,53 @@ class Settings(BaseSettings):
     # `test_precompute_relights_is_unreachable_at_the_shipped_tier`. The coupling itself is
     # still a real, unfixed defect that fires if tier 3 is turned on and stays in
     # `deferred-work.md` — what is withdrawn is its link to THIS flag.
+    # 2026-08-30, STORY 14.8: THE MATCHING AXIS WAS REPLACED. THE FLAG STAYS `False`.
+    #   * WHAT CHANGED. `image._select_plate`'s viewpoint step is gone. 14.1 matched the
+    #     shot's `camera_angle` against each plate's MEASURED `viewpoint`; that axis was
+    #     retired on measurement, not on taste — the `y_h` reading it stands on reproduces
+    #     to 0.072 mean / 0.12 max between judges (category flips 2/5) against an EYE band
+    #     0.20 wide, so refusals near a boundary were a coin toss. Of the four candidate
+    #     axes screened on the single admissible criterion "(b) reproduction error <
+    #     (c) tolerance", exactly one passed: `location_key` alone, whose (b) is 0 because
+    #     it DELETES the measurement (a closed 14-value enum compared by string equality),
+    #     not because it fixes one. `14-8-plate-reuse-shipping/AXIS-CANDIDATES.md`.
+    #   * WHAT (a) NOW RESTS ON, AND WHY THAT IS THIN. Against the bars pre-registered
+    #     before the measurement (`14-8-plate-reuse-shipping/PREREGISTRATION.md` §3,
+    #     commit `d797a8a`): C1' key coverage PASS 6/6, C2' affordance coverage PASS,
+    #     C3' servable share PASS 24/24 = 100.0%, against the retired axis's 17/24 = 70.8%
+    #     printed as a checked control by the same command
+    #     (`uv run python .../14-1-approved-plate-sets/replay_coverage.py 4b35c0ed`). The
+    #     servable denominator (24) and `C3_MIN_SHARE = 0.90` are byte-identical to 14.1's.
+    #     ⚠️ ALL THREE OF THOSE CRITERIA ARE VACUOUS — none of them can fail on the
+    #     approved 42, and the population sweep proving it is §7 of that PREREGISTRATION:
+    #     every one of the 14 `location_key`s holds 3 approved plates, `depicts_person=true`
+    #     is 0/42, `label.has_person=true` is 1 plate (`entrance-checkpoint/b`, in a key
+    #     this run does not demand), and `plate_affordance_gate_enabled` ships OFF so C2'
+    #     cannot change a runtime assignment at all. C3' then follows from C1'
+    #     algebraically. An EARLIER PASS OF THIS STORY PRINTED THE OPPOSITE HERE — that
+    #     "C1'/C2' retain live failure paths" — and it was false; the sweep is what caught
+    #     it. So (a) is met in the letter and carries little evidence: what the axis
+    #     change actually did is C4', below.
+    #   * WHAT IT COSTS, measured, and NOT vacuous: C4' = 7 of 24 assigned plates sit at a
+    #     viewpoint the shot's `camera_angle` did not ask for (4 high-angle, 3 low-angle;
+    #     5 carry cast, 6 cards). `camera_angle` is NOT render-inert —
+    #     `character_service.py:1556` feeds it to `_select_entity_angles` — so those get a
+    #     high/low-angle CARD on an eye-level PLATE. That is a viewing question, not a
+    #     coverage number, which is why it has no threshold and must appear in the report.
+    #   * (b) IS THE ONE REMAINING CONDITION and it is NOT met: Jay's viewing verdict on an
+    #     E2E iteration run with substitution ON. That run does NOT require flipping this
+    #     line — `Settings` reads `env_prefix="YTFLOW_"` (see the top of this class), so
+    #     `YTFLOW_STOCK_PLATE_SUBSTITUTION_ENABLED=true` turns it on for that one run and
+    #     `scripts/report_decision_drift.py`'s `env-sourced` bucket exists to make exactly
+    #     that temporary override visible. There is no deadlock. An earlier pass of this
+    #     story flipped the default to `True` and justified it with one; the justification
+    #     was false and the flip also broke this story's own pre-registration §5 ("C1'~C3'
+    #     전부 충족돼도 (b) 없이는 켜지 않는다").
+    #   * The SECOND blocker named at the top of this comment — `image_prompt` discarded,
+    #     no semantic match — is still unsolved and is not a gate. When this does turn on,
+    #     the prompt layer's reach on run 4b35c0ed drops from 43/43 shots to 12/43; every
+    #     later prompt measurement has to state that denominator (14.5 handover,
+    #     `deferred-work.md`).
     # No `.env` / `.env.example` pin, and NO `DECISIONS` row — there is still no
     # dated *promotion* verdict, only a dated statement of what promotion requires
     # (see the "NO DATE, so no row" note further down; it stands).
@@ -727,9 +779,12 @@ class Decision(NamedTuple):
 # index. The absences are recorded here so the gap reads as a decision rather than
 # an oversight — every one of them is a candidate 13.6 Task 1 named:
 #   - NO DATE, so no row: `stock_plate_substitution_enabled` (False, story 8.17, a
-#     measured rationale but undated), `post_fx_enabled` (True, story 7.2),
+#     measured rationale but undated; Story 14.8 dated 2026-08-30 what promotion
+#     REQUIRES and shipped the new matching axis, but the promotion verdict itself —
+#     condition (b), Jay watching frames — has not happened, so this field stays on
+#     this list and gets no row), `post_fx_enabled` (True, story 7.2),
 #     `qwen_tts_voice` ("Cherry", coupled to `content_language`). These want a dated
-#     verdict from whoever owns them next — 14.1 for the plate flag.
+#     verdict from whoever owns them next — 14.8's E2E iteration 5 for the plate flag.
 #   - DATED but outside Story 14.4's seed set: `depth_placement_enabled` ("ON after
 #     live verification (2026-08-03)", story 8.16) and `composite_harmonization_tier`
 #     ("Default 1 since Story 11.1", research dated 2026-08-01). Both look eligible;
