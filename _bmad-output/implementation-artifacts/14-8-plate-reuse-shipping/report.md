@@ -392,7 +392,7 @@ F541(플레이스홀더 없는 f-string).
 
 ```
 uv run pytest -q
-  1 failed, 3455 passed, 1 skipped, 1 xfailed, 1 warning in 370.90s (0:06:10)
+  1 failed, 3455 passed, 1 skipped, 1 xfailed, 1 warning in 380.26s (0:06:20)   # 최종 커밋 상태 재실행
   FAILED tests/test_render_pose_guides.py::test_render_is_deterministic_and_content_pinned[humanoid_lying_supine]
 ```
 
