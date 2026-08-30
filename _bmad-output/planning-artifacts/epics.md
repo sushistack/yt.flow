@@ -2062,3 +2062,15 @@ VisualPrompter, GenPilot, Seeing-is-Believing) — **후자가 우리가 한 번
 
 DEV MODE 직승격 완료(`migrate_prompts.py --label production --source prompts` → `created: scenario/review`), **런타임 요청 이름으로 확인**(`scenario/review` **v11**, labels `[production, latest]`, `background-only`×2·면제 절·correction 채널 절 존재, 스테일 문장 부재). 작업트리와 **바이트 동일은 아니다 — 1바이트 차이이고 원인은 확인되었다**: `migrate_prompts.py:86`이 `.strip()`하므로 후행 개행이 빠진다(`rstrip("\n")` 후 동일). v10 리포트의 "바이트 동일" 주장도 같은 이유로 부정확했다. ⚠️ 스펙의 검증 URL은 틀렸다 — 이름의 슬래시를 퍼센트 인코딩해야 한다(`prompts/scenario%2Freview`); 생슬래시는 **404**라서 출하 성공을 실패로 오독시킨다. 가드 **5건**(`test_scenario_chain.py`): 배경 전용 규칙 6핀 / 스테일 문장 **부재**의 역방향 핀 / 스테일 규칙의 **형태** 핀(`entity_visible` ±120자 안에서 descriptor 요구 문구 금지 — 정확 문자열 핀은 패러프레이즈를 통과시킨다) / **생성기 측** 2핀(리뷰어가 강제하는 계약을 `visual_breakdown.md`가 여전히 발행하는지) / 두 프롬프트 금지어 목록 집합 동일성(따옴표 패턴 확장 + 11개 **하한**, 파일 부재는 skip이 아니라 **실패**). 파일: `14-7-scenario-reviewer-recompose-alignment.md`.
 
+
+### Story 14.8: 배경 플레이트 재활용을 실제로 출하한다
+
+**에픽의 중심 명제가 아직 한 번도 출하되지 않았다.** *"샷마다 생성하는 대신 승인된 세트에서 고른다"*가 이 에픽의 명제인데 `stock_plate_substitution_enabled: bool = False`(`config.py:358`)라 run `4b35c0ed`은 **43/43 샷이 자유생성**이었다. 승인 플레이트 42장과 14.1이 만든 샷 단위 선택기가 있는데 런타임이 한 장도 쓰지 않는다. 14.1은 8.17의 씬 키잉 붕괴(배경 155→41)를 은퇴시켰고, 남은 것은 켜는 일이다.
+
+**해제 조건은 둘이고 AND다**(`config.py:326-334`가 정본): **(a)** 측정 커버리지가 사전등록 C1/C2/C3 통과 — 2026-08-25 측정에서는 미달, **(b)** 치환을 켠 E2E에 대한 **Jay 시청 판정**(선례 만장일치 — 10.1c·10.5·10.1e·14.2). **(a)의 부족분은 이미 렌더됐다**: `e707482`이 HIGH 3셀을 블라인드 재판독해 42장 중 **HIGH 0장**을 확정하고 증설 명세를 **5장(LOW 2 + HIGH 3)**으로 확정했으며, 그 5장이 지금 `assets/locations/`에 **draft**로 있다(`observation-room/d,e` · `containment-chamber/e` · `medical-bay/d` · `corridor/d`). 이 스토리는 그 5장을 라벨·측정·승인시켜 (a)를 판정하고, 통과하면 플래그를 **코드 기본값으로** 올린 뒤 (b)를 위한 E2E iteration 5를 만든다.
+
+⚠️ **되살리면 안 되는 반증된 전제 둘.** ① **릴라이트 결합은 해제 조건이 아니다** — 14.1의 report·epics·deferred-work·epic-14-context 넷이 *"(c) 릴라이트 결합 수정"*을 실었으나 **14.3이 반증해 철회했다**(`c75b123`): 페어 키를 만드는 `precompute_relights`는 `composite_harmonization_tier >= 3`에서만 도달 가능한데 출하 tier는 1이고 tier 3은 10.1b 시청 기각이다(`test_precompute_relights_is_unreachable_at_the_shipped_tier`가 고정). 결함 자체는 실재하나 **이 플래그와의 연결**이 철회됐다 — 이 프로젝트 세 번째 원인 역전(`gotcha_recorded-root-cause-can-be-inverted`). ② **`image_prompt` 의미 정합은 이 스토리 밖이다** — 선택기는 `camera_angle`·`cast`·`location_key`만 읽고 프롬프트를 통째로 버리며, `location_key`는 방이지 씬이 아니라 한 방 안 서로 다른 두 샷이 구분되지 않는다. 이것은 **선언된 감수 리스크이고 게이트 조건이 아니다**((b)가 판정한다).
+
+**측정 함정 셋**(전부 실측된 것): 재현 오차가 사전등록 밴드보다 크다(corridor 3장에서 1·2차 판독 **0.07~0.13** 차, 밴드는 ±0.05 → **두 판정 병기, 덮어쓰기 금지**); `medical-bay/b`는 **단일 소실점이 존재하지 않는다**(시점 라벨과 별개의 품질 결함); 판독은 **블라인드**여야 한다(주 에이전트가 1차 값을 본 뒤 재판독하면 오염 — `e707482`은 저장소 문서 비열람 판정자를 썼다). 그리고 **기준을 결과에 맞춰 낮추지 마라** — `PREREGISTRATION.md §5`가 *"HIGH 0장이면 기준 도달 불가가 아니라 세트 부족이며 부족분으로 보고한다"*를 미리 적어뒀다.
+
+**인계 전제**: 켜지면 `location_key` 보유 **31/43** 샷이 `image_prompt`를 생성에 쓰지 않으므로 **14.5가 건드린 프롬프트 층의 도달 범위가 43/43 → 12/43**으로 준다(이후 프롬프트 측정은 그 분모를 명시할 것). `close-up` 6샷 + `POV` 1샷은 **설계상 영구 폴백**이고 결함이 아니다(C3 분모 24샷이 그것을 뺀 수). 14.2 어포던스 게이트도 `False`이고 `standing_room` 필터가 그 노브 뒤에 있으므로(14.1 D2) **함께 켤지를 명시적으로 결정**해야 한다 — C2가 존재하는 이유가 그것이다. 파일: `14-8-plate-reuse-shipping.md`. (ready-for-dev)
