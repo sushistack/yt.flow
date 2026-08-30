@@ -591,7 +591,7 @@ _UNSERVABLE_ANGLES = frozenset({"close-up", "POV"})
 # re-listed here for the reason that constant's own comment gives — it was module-private
 # until a consumer outside `scenario_chain` had to COMPARE against the vocabulary, and this
 # is that consumer (`gotcha_deleting-a-constant-needs-a-reader-census`).
-_SERVABLE_ANGLES = frozenset(_CAMERA_ANGLES) - _UNSERVABLE_ANGLES
+_SERVABLE_ANGLES: frozenset[str] = frozenset(_CAMERA_ANGLES).difference(_UNSERVABLE_ANGLES)
 
 
 def _select_plate(
