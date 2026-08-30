@@ -313,13 +313,17 @@ class ShotData(TypedDict):
                                # image_prompt only) but DOES feed cast-card angle selection
                                # (character_service._select_entity_angles -> angle_*_path PNG),
                                # so it is not render-inert.
-                               # Story 14.1 adds a THIRD consumer, and the "never reaches the
-                               # background" clause above stays true only about the *generation
-                               # prompt*: image._select_plate maps this field to the plate
-                               # viewpoint a stock-substituted shot requires, so with
-                               # stock_plate_substitution_enabled on, the field decides WHICH
-                               # background pixels ship. None is never guessed — it falls back
-                               # to generation.
+                               # Story 14.1 added a THIRD consumer and Story 14.8 NARROWED it.
+                               # 14.1 mapped this field to the plate `viewpoint` a
+                               # stock-substituted shot required; that matching axis was retired
+                               # on measurement (2026-08-30) and `image._select_plate` no longer
+                               # reads the mapped value at all. What survives is MEMBERSHIP: a
+                               # `close-up`/`POV` shot is refused a room plate (permanent by
+                               # design) and an unrecognised string falls back to generation
+                               # rather than being guessed. So with stock_plate_substitution_enabled
+                               # on, this field decides WHETHER a shot may take an approved plate,
+                               # not WHICH one — the which is `location_key` plus a sha256
+                               # tie-break. See `14-8-plate-reuse-shipping/AXIS-CANDIDATES.md` ②.
     camera_movement: str | None  # one of CAMERA_ARCHETYPES (Story 11.2) | legacy free-text hint | None
     image_path: str | None       # background-only render (Story 8.3); character overlays live in `cast`
     depth_map_path: NotRequired[str | None]  # Story 11.5: monocular depth companion of THIS
@@ -588,10 +592,10 @@ RunWarningCode = Literal[
     "stock_plate_resolver_unavailable",
     "stock_plate_missing",
     "stock_plate_resolution_failed",
-    "stock_plate_unfit",                # Story 14.1 — approved plates exist but none was assigned
-                                        # to this shot. The fallback is generation, never a lost
-                                        # shot. `reason` is one of seven, in the order
-                                        # `image._select_plate` decides them:
+    "stock_plate_unfit",                # Story 14.1, reasons re-cut by 14.8 — approved plates
+                                        # exist but none was assigned to this shot. The fallback
+                                        # is generation, never a lost shot. `reason` is one of
+                                        # FIVE, in the order `image._select_plate` decides them:
                                         #   unknown_framing     camera_angle absent, or a string
                                         #                       outside the vocabulary (a pre-14.0
                                         #                       checkpoint) — never guessed
@@ -599,23 +603,28 @@ RunWarningCode = Literal[
                                         #                       serve an object close-up or a
                                         #                       ceiling POV. Permanent by design
                                         #   no_metadata         no plate of that key carries a
-                                        #                       measured viewpoint yet — fail-open,
-                                        #                       an unmeasured plate is never picked
-                                        #   partial_metadata    some plates of that key are still
-                                        #                       unmeasured and none of the measured
-                                        #                       ones matches. Distinct from the next
-                                        #                       one because the fix is "measure the
-                                        #                       rest", not "render more plates"
-                                        #   no_viewpoint_match  all measured, none at the viewpoint
-                                        #                       this angle needs -> render one
-                                        #   plate_shows_person  the viewpoint matched but every
-                                        #                       candidate is labelled has_person /
-                                        #                       depicts_person. Refusing to assign
-                                        #                       it is NOT un-approving it
-                                        #   no_standing_room    viewpoint matched, the shot carries
-                                        #                       cast, the affordance knob is up and
-                                        #                       no candidate has room for a standing
+                                        #                       person verdict from EITHER curator
+                                        #                       yet — fail-open, an unjudged plate
+                                        #                       is never picked. 14.8 moved this
+                                        #                       sentinel off `viewpoint`, which the
+                                        #                       selector stopped reading
+                                        #   plate_shows_person  every judged candidate is labelled
+                                        #                       has_person / depicts_person.
+                                        #                       Refusing to assign it is NOT
+                                        #                       un-approving it
+                                        #   no_standing_room    the shot carries cast, the
+                                        #                       affordance knob is up and no
+                                        #                       candidate has room for a standing
                                         #                       figure
+                                        # RETIRED BY STORY 14.8, with the axis they named:
+                                        # `no_viewpoint_match` and `partial_metadata`. The
+                                        # selector matches on `location_key` alone now, so there
+                                        # is no post-metadata match step for either to describe
+                                        # and neither can fire. They are removed rather than kept
+                                        # dormant so this list cannot document a retired axis as
+                                        # if it shipped. Warnings already written to a finished
+                                        # run's checkpoint keep their old string; nothing reads
+                                        # this list to validate history.
     "background_guard_unscreened",      # Story 10.2 — guard wanted but not applied
     "plate_affordance_unusable",        # Story 14.2 — the plate's standing room (or the lack of a verdict on it)
     # subtitle_node

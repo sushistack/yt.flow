@@ -520,11 +520,18 @@ def _enforce_cast_diversity(shots: list) -> None:
     ``camera_angle`` is NOT "baked into the rendered background": ``image.py:212``
     assigns ``shot["image_prompt"]`` and nothing else, so the field never reaches
     the background renderer's *generation prompt*. (Story 14.1 added a third path
-    that is not the prompt: ``image._select_plate`` maps the field to the plate
-    viewpoint a stock-substituted shot requires, so when
-    ``stock_plate_substitution_enabled`` is on it decides which background pixels
-    ship. Off by default, so today this is latent — but the original wording, read
-    as "the field cannot move background pixels", is no longer safe.)
+    that is not the prompt, and Story 14.8 narrowed it: ``image._select_plate``
+    used to map the field to a plate ``viewpoint``; that axis was retired on
+    measurement in 14.8 and the selector now reads only MEMBERSHIP of
+    ``_ANGLE_VIEWPOINT`` — a ``close-up``/``POV`` shot is refused a plate, an
+    unrecognised string falls back to generation, and WHICH plate a servable shot
+    gets is decided by ``location_key`` plus a sha256 tie-break. So when
+    ``stock_plate_substitution_enabled`` is on, the field still decides WHETHER a
+    shot's background is copied or generated — which background pixels ship —
+    though no longer which of the approved plates. The flag ships ``False``
+    (2026-08-30: only Jay's viewing verdict is outstanding), so today this is
+    latent — but the original wording, read as "the field cannot move background
+    pixels", is no longer safe.)
     It is *not* render-inert either:
     ``character_service.py:1500`` copies it into the per-shot catalogue
     ``_select_entity_angles`` picks from, and that pick maps through
